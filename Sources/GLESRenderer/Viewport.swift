@@ -58,15 +58,12 @@ public struct Viewport: Equatable {
     /// larger than the drawable in one axis — the part that spills off — and
     /// under aspect fit it is the whole scene inside letterboxing.
     public var visibleSceneRect: CGRect {
-        let scale = self.scale
-        guard scale.x > 0, scale.y > 0 else { return CGRect(origin: .zero, size: sceneSize) }
-        let width = drawableSize.width / scale.x
-        let height = drawableSize.height / scale.y
-        // The scene's origin sits at its anchor point, and the extra width or
-        // height is shared evenly either side.
-        let originX = -anchorPoint.x * sceneSize.width - (width - sceneSize.width) / 2
-        let originY = -anchorPoint.y * sceneSize.height - (height - sceneSize.height) / 2
-        return CGRect(x: originX, y: originY, width: width, height: height)
+        // The shim's, so a touch mapped back by the scene
+        // (`convertPoint(fromView:)`) and a quad projected here agree.
+        SKScene.visibleRect(
+            sceneSize: sceneSize, anchorPoint: anchorPoint,
+            scaleMode: scaleMode, viewSize: drawableSize
+        )
     }
 
     /// Column-major 4x4, as GL wants it: scene points in, clip space out.

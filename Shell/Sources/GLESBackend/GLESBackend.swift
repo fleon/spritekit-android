@@ -63,6 +63,9 @@ public enum GLESBackend {
         // different second from the frame times that drive them.
         MediaTime.source = { TimeInterval(SDL_GetTicksNS()) / 1_000_000_000 }
 
+        PlayScene.autoSolves = DebugProperty.string("debug.switchlings.autosolve") == "1"
+            || ShellArguments.has("-AutoSolve")
+
         if let name = DebugProperty.string("debug.switchlings.scene"),
            let picked = Scene(rawValue: name) {
             scene = picked
@@ -83,35 +86,49 @@ public enum GLESBackend {
             drawableSize: context.size, sceneSize: size, scaleMode: .aspectFill
         ).scale.x
 
-        let scene: SKScene
-        switch Self.scene {
-        case .level:
-            // A real level if the catalog loaded, else the hand-laid preview,
-            // so a missing or broken level file shows the pipeline still
-            // works rather than a blank screen.
-            scene = AndroidLevels.scene(size: size) ?? BoardPreviewScene(size: size)
-        case .board:
-            scene = BoardPreviewScene(size: size)
-        case .sky:
-            scene = SkyBackdropScene(size: size, drawsBackdrop: true, banded: true)
-        case .skyBoardOnly:
-            scene = SkyBackdropScene(size: size, drawsBackdrop: false, banded: true)
-        case .skyUnbanded:
-            scene = SkyBackdropScene(size: size, drawsBackdrop: true, banded: false)
-        case .particles:
-            scene = EmitterPreviewScene(size: size)
-        case .warp:
-            scene = WarpProbeScene(size: size)
-        }
-        scene.scaleMode = .aspectFill
         Log.info("scene: \(Self.scene.rawValue), \(Int(size.width))x\(Int(size.height)) pt")
         let renderer = SceneRenderer(
-            scene: scene,
             drawableSize: context.size,
+            pointScale: pointScale,
             pageLoader: AssetBundle.page
-        )
+        ) { view in
+            switch Self.scene {
+            case .level:
+                // A real level, opened the way the game opens one: through
+                // `TransitionManager` and the loading screen. Else the
+                // hand-laid preview, so a missing or broken level file shows
+                // the pipeline still works rather than a blank screen.
+                if AndroidLevels.present(levelID: ShellArguments.value(after: "-StartLevel"), in: view) { return }
+                view.presentScene(aspectFill(BoardPreviewScene(size: size)))
+            case .board:
+                view.presentScene(aspectFill(BoardPreviewScene(size: size)))
+            case .sky:
+                view.presentScene(aspectFill(SkyBackdropScene(size: size, drawsBackdrop: true, banded: true)))
+            case .skyBoardOnly:
+                view.presentScene(aspectFill(SkyBackdropScene(size: size, drawsBackdrop: false, banded: true)))
+            case .skyUnbanded:
+                view.presentScene(aspectFill(SkyBackdropScene(size: size, drawsBackdrop: true, banded: false)))
+            case .particles:
+                view.presentScene(aspectFill(EmitterPreviewScene(size: size)))
+            case .warp:
+                view.presentScene(aspectFill(WarpProbeScene(size: size)))
+            }
+        }
         renderer.reportLabel = Self.scene.rawValue
+        if let slowdown = DebugProperty.string("debug.switchlings.transitionslowdown").flatMap(Double.init), slowdown > 1 {
+            renderer.view.transitionSpeed = 1 / slowdown
+            Log.info("transitions \(slowdown)x slower")
+        }
+        if let slowdown = DebugProperty.string("debug.switchlings.slowdown").flatMap(Double.init), slowdown > 1 {
+            renderer.slowdown = slowdown
+            Log.info("everything \(slowdown)x slower")
+        }
         return renderer
+    }
+
+    private static func aspectFill(_ scene: SKScene) -> SKScene {
+        scene.scaleMode = .aspectFill
+        return scene
     }
 
     /// `DesignSystem.sceneSize(for:)`, in points, from a drawable in pixels.
@@ -121,9 +138,13 @@ public enum GLESBackend {
     /// scale and a design point is a point at that scale. The sizing itself
     /// is the game's own, now that DesignSystem compiles here.
     static func sceneSize(for drawable: CGSize) -> CGSize {
-        let scale = AssetIndex.shared?.scale ?? 3
+        let scale = pointScale
         return AndroidLevels.sceneSize(
             forViewSize: CGSize(width: drawable.width / scale, height: drawable.height / scale)
         )
     }
+
+    /// Pixels per point: the art is exported at one scale, and a design
+    /// point is a point at that scale.
+    static var pointScale: CGFloat { AssetIndex.shared?.scale ?? 3 }
 }

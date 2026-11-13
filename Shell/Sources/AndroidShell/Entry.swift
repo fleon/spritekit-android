@@ -1,4 +1,5 @@
 import CAndroidShell
+import Foundation
 import GLESBackend
 import ShellCore
 import SpriteKitShim
@@ -25,6 +26,16 @@ public func SDL_main(
     // the process does in Swift, before anything reads Thread.mainThread.
     if !MainThread.claim() {
         Log.error("could not claim the main thread — anything that primes a shader will trap")
+    }
+
+    // `Task { @MainActor in … }` runs on this thread too, between frames.
+    let executor = MainActorJobs.executorReference
+    if switchlings_set_main_executor(executor.identity, UInt(executor.implementation)) == 0 || !MainActorJobs.isInstalled {
+        Log.error("could not take over the main executor — main-actor work will never run")
+    }
+    // Proof it took: this runs at the top of the frame loop's first pass.
+    Task { @MainActor in
+        Log.info("main actor: jobs run on the frame thread (\(Thread.isMainThread ? "main" : "not main"))")
     }
 
     // What SDL was handed by MainActivity.getArguments(). The process's own

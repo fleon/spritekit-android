@@ -145,6 +145,10 @@ public enum Shell {
                 continue
             }
 
+            // What was sent to the main actor since the last pass, as the
+            // main run loop would run it between frames (`MainActorJobs`).
+            MainActorJobs.drain()
+
             let now = ShellClock.now
             let frame = Frame(
                 time: now,
@@ -152,6 +156,12 @@ public enum Shell {
                 size: size,
                 index: index
             )
+            // A frame skipped is not drawn or swapped, so nothing waits on
+            // the display: wait a little here instead of spinning.
+            guard renderer.shouldDraw(frame) else {
+                SDL_Delay(Self.skippedFrameWait)
+                continue
+            }
             previous = now
 
             probe?.tick(at: now)
@@ -171,6 +181,11 @@ public enum Shell {
     }
 
     // MARK: - Odds and ends
+
+    /// How long a pass that skips its frame waits before asking again, in
+    /// milliseconds: a fraction of the shortest frame, so the next frame due
+    /// is never late by more than that.
+    static let skippedFrameWait: UInt32 = 2
 
     static var sdlError: String { String(cString: SDL_GetError()) }
 

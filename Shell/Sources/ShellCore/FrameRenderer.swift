@@ -34,6 +34,13 @@ public protocol FrameRenderer: AnyObject {
     /// shell's.
     func drawableSizeDidChange(to size: CGSize)
 
+    /// Whether to draw `frame` at all. Asked before each one; no means the
+    /// shell neither draws nor swaps, so what is on screen stays there, and
+    /// the next frame drawn carries the time since the last one drawn as its
+    /// `delta`. This is `SKView`'s `preferredFramesPerSecond`, `isPaused` and
+    /// its delegate's `view(_:shouldRenderAtTime:)`.
+    func shouldDraw(_ frame: Frame) -> Bool
+
     /// Draw one frame. The viewport has not been set — a renderer that cares
     /// sets it from `frame.size`.
     func drawFrame(_ frame: Frame)
@@ -54,6 +61,7 @@ public protocol FrameRenderer: AnyObject {
 public extension FrameRenderer {
     func rendererDidStart(_ context: RenderContext) {}
     func drawableSizeDidChange(to size: CGSize) {}
+    func shouldDraw(_ frame: Frame) -> Bool { true }
     func rendererWillStop() {}
     func receive(_ touch: TouchEvent) {}
 }

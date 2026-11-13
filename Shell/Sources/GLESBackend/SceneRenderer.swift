@@ -16,8 +16,10 @@ public final class SceneRenderer: FrameRenderer {
     private let batcher = SpriteBatcher()
     private lazy var targets = RenderTargetPool(device: device)
 
-    private let view: SKView
-    private let scene: SKScene
+    /// The view the game presents its scenes in. Its bounds are in points
+    /// (`pointScale` pixels each), as UIKit's are; the drawable is pixels.
+    public let view: SKView
+    private var drawableSize: CGSize
 
     private var vao: GLuint = 0
     private var vbo: GLuint = 0
@@ -101,15 +103,31 @@ public final class SceneRenderer: FrameRenderer {
     /// calls a frame if it is not kept.
     private var attributeLocations: [GLuint: [String: GLint]] = [:]
 
-    public init(
+    /// Shows `scene` from the first frame.
+    public convenience init(
         scene: SKScene,
         drawableSize: CGSize,
+        pointScale: CGFloat,
         pageLoader: @escaping (Int) -> (width: Int, height: Int, pixels: Data)?
     ) {
-        self.scene = scene
+        self.init(drawableSize: drawableSize, pointScale: pointScale, pageLoader: pageLoader) {
+            $0.presentScene(scene)
+        }
+    }
+
+    /// Hands `start` the view, which presents what it likes in it — through
+    /// the game's own `TransitionManager`, say.
+    public init(
+        drawableSize: CGSize,
+        pointScale: CGFloat,
+        pageLoader: @escaping (Int) -> (width: Int, height: Int, pixels: Data)?,
+        start: (SKView) -> Void
+    ) {
         self.pageLoader = pageLoader
+        self.drawableSize = drawableSize
         cache = ResourceCache(device: device)
-        view = SKView(bounds: CGRect(origin: .zero, size: drawableSize))
+        view = SKView(bounds: CGRect(origin: .zero, size: Self.points(drawableSize, scale: pointScale)))
+        view.contentScaleFactor = pointScale
         cache.pageSource = pageLoader
         // Textures the asset index does not back: the noise lattices the
         // shaders sample (`Starlight.noise` is an `SKTexture(data:size:)`
@@ -119,7 +137,11 @@ public final class SceneRenderer: FrameRenderer {
         // something plausible rather than nothing — a flat sky with no
         // nebula, which is how this was found.
         cache.pixelSource = Self.pixels(of:)
-        view.presentScene(scene)
+        start(view)
+    }
+
+    private static func points(_ pixels: CGSize, scale: CGFloat) -> CGSize {
+        scale > 0 ? CGSize(width: pixels.width / scale, height: pixels.height / scale) : pixels
     }
 
     // MARK: Lifecycle
@@ -194,7 +216,8 @@ public final class SceneRenderer: FrameRenderer {
     }
 
     public func drawableSizeDidChange(to size: CGSize) {
-        view.bounds = CGRect(origin: .zero, size: size)
+        drawableSize = size
+        view.bounds = CGRect(origin: .zero, size: Self.points(size, scale: view.contentScaleFactor))
         glViewport(0, 0, GLsizei(size.width), GLsizei(size.height))
         Log.info("drawable \(Int(size.width)) x \(Int(size.height))")
     }
@@ -221,7 +244,25 @@ public final class SceneRenderer: FrameRenderer {
 
     // MARK: Frames
 
+    /// The view's frame rate, pause and delegate decide.
+    public func shouldDraw(_ frame: Frame) -> Bool {
+        view.shouldRender(atTime: frame.time)
+    }
+
     public func drawFrame(_ frame: Frame) {
+        // The scene first: a transition, or a scene presenting another, can
+        // change which scene the view shows, and the projection is that
+        // scene's.
+        let started = MediaTime.source()
+        let list = view.tick(currentTime: frame.time, delta: frame.delta / max(slowdown, 1))
+        noteSceneChange(at: frame.time)
+        let passes = batcher.passes(for: list)
+        // Ticking the actions, flattening the scene graph and batching it:
+        // the port's own cost, with no GL in it. Worth separating, because
+        // the rest of the frame on an emulator is mostly the host GL pipe
+        // and says little about a phone, while this number carries across.
+        let flattened = MediaTime.source()
+
         let projection = viewport.projection
         deviceScale = max(viewport.scale.x, viewport.scale.y)
         glyphSource.deviceScale = deviceScale
@@ -248,15 +289,6 @@ public final class SceneRenderer: FrameRenderer {
         quadsDrawn = 0
         liveKept.removeAll(keepingCapacity: true)
         cropDepth = 0
-
-        let started = MediaTime.source()
-        let list = view.tick(currentTime: frame.time, delta: frame.delta)
-        let passes = batcher.passes(for: list)
-        // Ticking the actions, flattening the scene graph and batching it:
-        // the port's own cost, with no GL in it. Worth separating, because
-        // the rest of the frame on an emulator is mostly the host GL pipe
-        // and says little about a phone, while this number carries across.
-        let flattened = MediaTime.source()
 
         glBindVertexArray(vao)
         draw(passes, projection: projection, time: Float(frame.time))
@@ -649,6 +681,33 @@ public final class SceneRenderer: FrameRenderer {
         return batch
     }
 
+    /// Every action and transition runs this many times slower
+    /// (`debug.switchlings.slowdown`, as the game's `-AnimationSlowdown`), so
+    /// a 0.1-second fade can be filmed on an emulator.
+    public var slowdown: Double = 1
+
+    /// The scene on screen and whether a transition is playing, as last
+    /// logged.
+    private var loggedScene: ObjectIdentifier?
+    private var loggedTransition = false
+
+    /// Says in logcat when the view's scene changes and when its transition
+    /// lands, with the shell's clock, so a scene change can be timed.
+    private func noteSceneChange(at time: TimeInterval) {
+        let scene = view.scene.map(ObjectIdentifier.init)
+        let transitioning = view.isTransitioning
+        guard scene != loggedScene || transitioning != loggedTransition else { return }
+        let name = view.scene.map { String(describing: type(of: $0)) } ?? "nothing"
+        let stamp = String(format: "%.3f", time)
+        if scene != loggedScene {
+            Log.info("scene \(name) at \(stamp)\(transitioning ? ", transition playing" : "")")
+        } else if !transitioning {
+            Log.info("transition into \(name) landed at \(stamp)")
+        }
+        loggedScene = scene
+        loggedTransition = transitioning
+    }
+
     // MARK: Text
 
     /// Draws a label from the layout the node already made.
@@ -857,12 +916,13 @@ public final class SceneRenderer: FrameRenderer {
     /// graph. The projection is this renderer's, so undoing it is too: the
     /// shell passes SDL's normalised window coordinates through untouched.
     public func receive(_ touch: TouchEvent) {
-        let rect = viewport.visibleSceneRect
-        // SDL counts y down from the top of the window; a scene counts it up.
-        let point = CGPoint(
-            x: rect.minX + touch.location.x * rect.width,
-            y: rect.minY + (1 - touch.location.y) * rect.height
-        )
+        guard let scene = view.scene else { return }
+        // SDL's location is a share of the window from its top left, which
+        // is UIKit's way round; the scene maps it on through its camera.
+        let point = scene.convertPoint(fromView: CGPoint(
+            x: touch.location.x * view.bounds.width,
+            y: touch.location.y * view.bounds.height
+        ))
         let phase: UITouchPhase
         switch touch.phase {
         case .began: phase = .began
@@ -873,14 +933,16 @@ public final class SceneRenderer: FrameRenderer {
         scene.deliverTouch(phase: phase, at: point, identifier: touch.finger, timestamp: touch.time)
     }
 
-    /// How scene points map onto the drawable, which is also what maps a
-    /// touch back the other way.
+    /// How the presented scene's points map onto the drawable. In a
+    /// transition the view draws both scenes in the incoming one's
+    /// coordinates, so this is always the presented scene's.
     private var viewport: Viewport {
-        Viewport(
-            drawableSize: view.bounds.size,
-            sceneSize: scene.size,
-            scaleMode: scene.scaleMode,
-            anchorPoint: scene.anchorPoint
+        let scene = view.scene
+        return Viewport(
+            drawableSize: drawableSize,
+            sceneSize: scene?.size ?? view.bounds.size,
+            scaleMode: scene?.scaleMode ?? .aspectFill,
+            anchorPoint: scene?.anchorPoint ?? .zero
         )
     }
 

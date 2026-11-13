@@ -110,7 +110,7 @@ precisely because this package ships a module by that name.
 
 ```
 swift build                                             # shim, macOS
-swift test                                              # 213 tests, macOS
+swift test                                              # 240 tests, macOS
 swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple aarch64-unknown-linux-android23    # shim, Android
 
@@ -718,3 +718,84 @@ adb shell setprop debug.switchlings.scene warp
 # or, for one launch, without touching a shared emulator's property:
 adb shell am start -n com.fleon.switchlings/.MainActivity --esa args "-WarpProbe"
 ```
+
+## Scene changes: the view, its camera and its transitions
+
+The game changes scene the way it does on Apple: `TransitionManager`,
+`LoadingScene` (with `CharacterNode`, `BrickRunNode` and
+`LoadingSpinnerNode`) and `SceneLayout` compile here unchanged, so the app
+opens its first level through the real loading screen — a fade to black,
+the Switchling hopping along its world's bricks while the level builds off
+the main thread, a fade into the level — and a cleared level opens the next
+the same way. `-StartLevel garden-3` picks the first one.
+
+**The view** (`SKView.swift`, `UIKitView.swift`). `SKView` is a `UIView`
+here as on Apple, with what the game reads off one: `bounds` **in points**
+(the shell divides the drawable by the art's scale; the game sizes every
+scene from `bounds`, so pixels would make each one three times too big),
+`contentScaleFactor`, `safeAreaInsets`, `traitCollection`, a `window` (nil:
+`SceneLayout` then takes its square-cornered path) and `convert(_:to:)`.
+
+**Transitions** (`SKTransition.swift`). `presentScene(_:transition:)` swaps
+at once, as SpriteKit does: the old scene hears `willMove(from:)`, the new
+one becomes `view.scene` and hears `didMove(to:)` before the call returns.
+The old one stays in the view, drawn and — unless `pausesOutgoingScene` —
+updating and running its actions, until the transition lands; the new one
+runs unless `pausesIncomingScene`. Both default to true, as on Apple; the
+game turns both off. A scene presented mid-transition ends that one where
+it stands. The view composes both scenes into one `DrawList` in the
+incoming scene's coordinates, so scenes of different sizes and anchors (the
+loading screen is anchored in its middle, a level is not) meet in the view
+rather than in scene space. Kinds: `fade(withDuration:)` (through black, the
+game's one), `fade(with:duration:)`, `crossFade`, `push`, `moveIn` and
+`reveal`; each scene draws its `backgroundColor` over the whole view first.
+A translucent scene is one `.effect` command, so it fades as one picture
+through the renderer's render targets.
+
+**The camera** (`SKCameraNode.swift`). The game's own scenes never set one
+(only the Mac's video tools do), but the view's mapping runs through it:
+`DrawList(scene:transform:)` draws the scene through
+`SKScene.cameraTransform` — the camera's position in the middle of the view,
+its scale and rotation undone, its children fixed on the screen — and
+`convertPoint(fromView:)`/`(toView:)`, which the renderer now maps touches
+through, undo it. `contains(_:)` and `containedNodeSet()` test against what
+the view shows. `SKScene.visibleRect` is the one place the visible rectangle
+is worked out; `GLESRenderer.Viewport` projects with it.
+
+**The delegate and the frame loop.** `FrameRenderer.shouldDraw(_:)` is asked
+before every frame; `SceneRenderer` answers with `SKView.shouldRender(atTime:)`
+— not while paused, no sooner than `preferredFramesPerSecond`, and only if
+the delegate's `view(_:shouldRenderAtTime:)` agrees. A frame skipped is
+neither updated, drawn nor swapped, so the screen holds what it showed, and
+the next one's `delta` covers the gap. On Apple that method is an
+Objective-C optional requirement, and `FilmDrawTurns` asks it as
+`forwarded?.view?(view, shouldRenderAtTime: time)`; with no Objective-C,
+`SKViewDelegate` gives it a default and keeps that spelling with a property
+named `view` holding a callable value, so the game's line compiles as it is
+(`ViewTests` has a copy of `FilmDrawTurns`' shape).
+
+**Main-actor work.** `Task { @MainActor in … }` — how the loading screen
+hands back the scene it built — never ran on Android: the main actor's jobs
+go to libdispatch's main queue, which nothing on SDL's thread drained.
+`MainActorJobs` gives the main actor an executor of its own, a queue the
+shell runs at the top of every pass of its loop, on SDL's thread. The
+runtime is told through `swift_task_getMainExecutor_hook`, set in C
+(`switchlings_set_main_executor` in `CAndroidShell`), because its functions
+pass a two-word struct in Swift's calling convention; the enqueue hook beside
+it is never reached for the main actor since Swift 6.2, and SE-0469's
+`ExecutorFactory` is not public in the 6.4 Android SDK. The shell logs
+`main actor: jobs run on the frame thread` once it takes.
+`DispatchQueue.main.async` (`BuildGate`'s deferred light updates,
+`FilmDrawTurns` handing its turn back) is the share-film work's to drain.
+
+**Debug properties** for filming and checking scene changes on a device,
+each read once at start-up (`adb shell setprop …`, then relaunch):
+
+| property | effect |
+|---|---|
+| `debug.switchlings.autosolve 1` | each level plays its stored solution, then opens the next through the loading screen |
+| `debug.switchlings.transitionslowdown 25` | transitions only, 25 times slower (an emulator draws a few frames a second, so a 0.1 s fade shows no frames between) |
+| `debug.switchlings.slowdown 8` | every action and transition, as `-AnimationSlowdown` |
+
+logcat says when each scene arrives and when its transition lands
+(`scene LoadingScene at 13.462, transition playing`).

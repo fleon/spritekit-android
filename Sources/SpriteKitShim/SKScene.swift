@@ -21,6 +21,12 @@ open class SKScene: SKNode {
     open var anchorPoint: CGPoint = .zero
     open internal(set) weak var view: SKView?
 
+    /// The node the view draws the scene from, if it is in this scene's
+    /// tree: its position stands in the middle of the view, its scale and
+    /// rotation are undone, and its own children stay put on the screen
+    /// (see `SKCameraNode`).
+    open weak var camera: SKCameraNode?
+
     /// Touches in flight, by finger, each with the node that took it, so
     /// every phase after `began` reaches the same node (see Touches.swift).
     var activeTouches: [Int: ActiveTouch] = [:]
@@ -40,41 +46,6 @@ open class SKScene: SKNode {
 
     open override var contentFrame: CGRect {
         CGRect(origin: .zero, size: size)
-    }
-}
-
-/// The host surface. On Android this is backed by the GLES 3 context; the
-/// shim keeps only what the game reads from it.
-open class SKView {
-    public var bounds: CGRect
-    public private(set) var scene: SKScene?
-    public var preferredFramesPerSecond: Int = 60
-    public var isPaused: Bool = false
-
-    /// Points-to-pixels, as the display reports it.
-    public var contentScaleFactor: CGFloat = 3
-
-    public init(bounds: CGRect) {
-        self.bounds = bounds
-    }
-
-    open func presentScene(_ scene: SKScene?) {
-        if let current = self.scene {
-            current.willMove(from: self)
-            current.view = nil
-        }
-        self.scene = scene
-        guard let scene else { return }
-        scene.view = self
-        scene.didMove(to: self)
-    }
-
-    /// One frame: the scene's own update, then actions, then a draw list.
-    open func tick(currentTime: TimeInterval, delta: TimeInterval) -> DrawList {
-        guard let scene, !isPaused else { return DrawList() }
-        scene.update(currentTime)
-        scene.tickActions(delta)
-        return DrawList(scene: scene)
     }
 }
 

@@ -1,0 +1,337 @@
+#if SPRITEKIT_SHIM
+import Foundation
+
+/// Hears from the view before each frame it would draw.
+///
+/// The game has two: `FrameLog` (`-FrameLog`), which notes when every frame
+/// renders, and `FilmDrawTurns`, which takes the view's turn at SpriteKit
+/// while a share film renders on a thread of its own, and passes each frame
+/// on to whichever delegate the view had before it.
+///
+/// On Apple the method is an Objective-C optional requirement, and
+/// `FilmDrawTurns` asks it the way one asks those:
+///
+///     forwarded?.view?(view, shouldRenderAtTime: time)
+///
+/// There is no Objective-C on Android, so no optional requirements. The
+/// method is an ordinary requirement with a default that renders, and the
+/// optional spelling is kept by a property, also named `view`, holding a
+/// value that can be called with the method's own labels
+/// (`callAsFunction`). A delegate that implements the method is asked it; one
+/// that does not answers true, which is also what `?? true` makes of
+/// SpriteKit's nil. A conforming class's own `view` property, as
+/// `FilmDrawTurns` has, takes precedence over this one inside that class.
+public protocol SKViewDelegate: NSObjectProtocol {
+    /// Whether the view draws the frame at `time`. Returning false skips the
+    /// whole frame: no update, no actions, nothing drawn.
+    func view(_ view: SKView, shouldRenderAtTime time: TimeInterval) -> Bool
+}
+
+extension SKViewDelegate {
+    public func view(_ view: SKView, shouldRenderAtTime time: TimeInterval) -> Bool { true }
+
+    /// `delegate.view?(view, shouldRenderAtTime:)`: see the protocol.
+    public var view: SKViewDelegateQuery? { SKViewDelegateQuery(delegate: self) }
+}
+
+/// The delegate's method, held so it can be called as `view?(…)`.
+public struct SKViewDelegateQuery {
+    let delegate: any SKViewDelegate
+
+    public func callAsFunction(_ view: SKView, shouldRenderAtTime time: TimeInterval) -> Bool {
+        delegate.view(view, shouldRenderAtTime: time)
+    }
+}
+
+/// The host surface. On Android the shell's GLES 3 context stands behind it;
+/// the shim keeps what the game reads from a view, and turns a scene (or, in
+/// a transition, two) into one frame's `DrawList`.
+///
+/// `bounds` is in points, as UIKit's are, and `contentScaleFactor` is the
+/// pixels in each. The game sizes every scene from `bounds`
+/// (`DesignSystem.sceneSize(for:)`), so pixels there would make every scene
+/// three times too big.
+open class SKView: UIView {
+    open private(set) var scene: SKScene?
+
+    /// How often the view draws at most. The shell's frame loop asks
+    /// `shouldRender(atTime:)`, which keeps to it.
+    public var preferredFramesPerSecond: Int = 60
+
+    /// A paused view draws nothing new: what is on screen stays there, as
+    /// SpriteKit holds its last frame.
+    public var isPaused: Bool = false
+
+    /// Points-to-pixels, as the display reports it.
+    public var contentScaleFactor: CGFloat = 3
+
+    open weak var delegate: (any SKViewDelegate)?
+
+    /// How fast transitions play: the port's own, for filming a 0.1-second
+    /// fade on an emulator that draws a few frames a second
+    /// (`debug.switchlings.transitionslowdown`). Not SpriteKit API.
+    public var transitionSpeed: Double = 1
+
+    /// A transition under way: the scene leaving, still drawn and still in
+    /// the view until it ends, and how far through it is.
+    private final class Flight {
+        let outgoing: SKScene
+        let transition: SKTransition
+        var elapsed: TimeInterval = 0
+
+        init(outgoing: SKScene, transition: SKTransition) {
+            self.outgoing = outgoing
+            self.transition = transition
+        }
+
+        var progress: CGFloat {
+            transition.duration > 0 ? CGFloat(elapsed / transition.duration) : 1
+        }
+    }
+
+    private var flight: Flight?
+
+    /// When the frame rate last let a frame through, for
+    /// `preferredFramesPerSecond`.
+    private var lastFired: TimeInterval?
+
+    public init(bounds: CGRect) {
+        super.init(frame: bounds)
+        self.bounds = bounds
+    }
+
+    /// Whether a transition is playing.
+    public var isTransitioning: Bool { flight != nil }
+
+    // MARK: Presenting
+
+    /// Swaps scenes at once. The scene leaving hears `willMove(from:)` and
+    /// leaves the view before the new one hears `didMove(to:)`.
+    open func presentScene(_ scene: SKScene?) {
+        guard scene !== self.scene else { return }
+        land()
+        if let current = self.scene {
+            current.willMove(from: self)
+            current.view = nil
+        }
+        self.scene = scene
+        guard let scene else { return }
+        scene.view = self
+        scene.didMove(to: self)
+    }
+
+    /// Swaps scenes through `transition`.
+    ///
+    /// As in SpriteKit, the swap itself happens now: the scene leaving hears
+    /// `willMove(from:)`, `scene` becomes the view's scene and hears
+    /// `didMove(to:)`, all before this returns — which is why the game's
+    /// entrances wait out `sceneRevealDelay` before they play. The scene
+    /// leaving stays in the view, drawn and (unless the transition pauses
+    /// it) running, until the transition ends; then it leaves.
+    ///
+    /// A scene presented while a transition is still playing ends that one
+    /// where it stands: the scene it was taking away leaves, and the one it
+    /// was bringing in is the one this takes away.
+    open func presentScene(_ scene: SKScene, transition: SKTransition) {
+        guard scene !== self.scene else { return }
+        land()
+        let outgoing = self.scene
+        outgoing?.willMove(from: self)
+        self.scene = scene
+        scene.view = self
+        if let outgoing {
+            if transition.duration > 0 {
+                flight = Flight(outgoing: outgoing, transition: transition)
+            } else {
+                outgoing.view = nil
+            }
+        }
+        // Last, so a scene that presents another as it arrives finds this
+        // transition already under way and ends it properly.
+        scene.didMove(to: self)
+    }
+
+    /// Ends the transition under way, if any: its outgoing scene leaves.
+    private func land() {
+        guard let flight else { return }
+        self.flight = nil
+        if flight.outgoing !== scene { flight.outgoing.view = nil }
+    }
+
+    // MARK: Frames
+
+    /// Whether the frame at `time` should be drawn: not while paused, no
+    /// sooner than `preferredFramesPerSecond` allows, and only if the
+    /// delegate agrees. The shell asks before every frame, and skips the
+    /// frame — update, actions and drawing — when the answer is no.
+    ///
+    /// The frame rate is kept with a quarter of a frame's slack, so a 60 Hz
+    /// display's jitter never drops a frame at 60, and 30 lands on every
+    /// other one.
+    public func shouldRender(atTime time: TimeInterval) -> Bool {
+        guard !isPaused else { return false }
+        if preferredFramesPerSecond > 0, let last = lastFired {
+            let interval = 1 / TimeInterval(preferredFramesPerSecond)
+            guard time - last >= interval * 0.75 else { return false }
+        }
+        // A display link at the preferred rate fires whatever the delegate
+        // then says, so the rate counts from here.
+        lastFired = time
+        if let delegate, !delegate.view(self, shouldRenderAtTime: time) { return false }
+        return true
+    }
+
+    /// One frame: each running scene's own update, then its actions, then
+    /// one draw list of what the view shows, in the presented scene's
+    /// coordinates (the projection the renderer sets up from it).
+    open func tick(currentTime: TimeInterval, delta: TimeInterval) -> DrawList {
+        guard let scene, !isPaused else { return DrawList() }
+
+        if let flight {
+            flight.elapsed += delta * transitionSpeed
+            if flight.elapsed >= flight.transition.duration {
+                land()
+                advance(scene, currentTime: currentTime, delta: delta)
+            } else {
+                if !flight.transition.pausesOutgoingScene {
+                    advance(flight.outgoing, currentTime: currentTime, delta: delta)
+                }
+                if !flight.transition.pausesIncomingScene {
+                    advance(scene, currentTime: currentTime, delta: delta)
+                }
+            }
+        } else {
+            advance(scene, currentTime: currentTime, delta: delta)
+        }
+
+        // Either scene may have presented another meanwhile.
+        guard let shown = self.scene else { return DrawList() }
+        guard let flight else { return Self.picture(of: shown) }
+        return compose(flight, incoming: shown)
+    }
+
+    private func advance(_ scene: SKScene, currentTime: TimeInterval, delta: TimeInterval) {
+        scene.update(currentTime)
+        scene.tickActions(delta)
+    }
+
+    // MARK: Composing
+
+    /// A scene as the view shows it, in its own coordinates as they are
+    /// with no camera (`visibleFrame`'s): its background over the whole
+    /// view, then its contents through its camera.
+    static func picture(of scene: SKScene) -> DrawList {
+        var list = DrawList()
+        if scene.backgroundColor.alpha > 0 {
+            list.commands.append(.sprite(fill(scene.visibleFrame, colour: scene.backgroundColor, alpha: 1)))
+        }
+        list.commands += DrawList(scene: scene, transform: scene.cameraTransform).commands
+        return list
+    }
+
+    /// Both scenes, as `flight` draws them this far through, in the incoming
+    /// scene's coordinates.
+    private func compose(_ flight: Flight, incoming: SKScene) -> DrawList {
+        let frame = incoming.visibleFrame
+        let outgoingFrame = flight.outgoing.visibleFrame
+        // The outgoing scene's frame laid over the incoming one's: the same
+        // view, whatever size and anchor each scene has.
+        let across = CGAffineTransform(translationX: -outgoingFrame.minX, y: -outgoingFrame.minY)
+            .concatenating(CGAffineTransform(
+                scaleX: outgoingFrame.width > 0 ? frame.width / outgoingFrame.width : 1,
+                y: outgoingFrame.height > 0 ? frame.height / outgoingFrame.height : 1
+            ))
+            .concatenating(CGAffineTransform(translationX: frame.minX, y: frame.minY))
+
+        var list = DrawList()
+        for layer in flight.transition.frame(at: flight.progress).layers {
+            switch layer {
+            case let .outgoing(offset, alpha):
+                list.commands += Self.layer(
+                    Self.picture(of: flight.outgoing), of: flight.outgoing,
+                    placed: across, offset: offset, alpha: alpha, in: frame
+                )
+            case let .incoming(offset, alpha):
+                list.commands += Self.layer(
+                    Self.picture(of: incoming), of: incoming,
+                    placed: .identity, offset: offset, alpha: alpha, in: frame
+                )
+            case let .colour(colour, alpha):
+                guard alpha > 0 else { continue }
+                list.commands.append(.sprite(Self.fill(frame, colour: colour, alpha: alpha)))
+            }
+        }
+        return list
+    }
+
+    /// One scene's picture, moved into place and shifted by `offset` views,
+    /// and drawn as a single picture when it is translucent — so a scene's
+    /// overlapping nodes do not show through one another as it fades.
+    private static func layer(
+        _ picture: DrawList,
+        of scene: SKScene,
+        placed: CGAffineTransform,
+        offset: CGPoint,
+        alpha: CGFloat,
+        in frame: CGRect
+    ) -> [DrawList.Command] {
+        guard alpha > 0 else { return [] }
+        let moved = picture.transformed(by: placed.concatenating(
+            CGAffineTransform(translationX: offset.x * frame.width, y: offset.y * frame.height)
+        ))
+        guard alpha < 1 else { return moved.commands }
+        return [.effect(DrawList.Effect(
+            bounds: frame, transform: .identity, shader: nil, alpha: alpha,
+            blendMode: .alpha, shouldRasterize: false, owner: ObjectIdentifier(scene),
+            rasterGeneration: 0, contentsDigest: 0, contents: moved
+        ))]
+    }
+
+    /// A flat colour over `frame`.
+    private static func fill(_ frame: CGRect, colour: SKColor, alpha: CGFloat) -> DrawList.Sprite {
+        DrawList.Sprite(
+            transform: CGAffineTransform(translationX: frame.minX, y: frame.minY),
+            size: frame.size,
+            anchorPoint: .zero,
+            texture: nil,
+            textureRect: CGRect(x: 0, y: 0, width: 1, height: 1),
+            color: colour,
+            colorBlendFactor: 1,
+            alpha: alpha,
+            blendMode: .alpha,
+            shader: nil,
+            attributeValues: [:]
+        )
+    }
+}
+
+extension DrawList {
+    /// The same list drawn through `transform` as well: every top-level
+    /// command moves, and what nests inside an effect or crop moves with it.
+    func transformed(by transform: CGAffineTransform) -> DrawList {
+        guard transform != .identity else { return self }
+        var list = self
+        list.commands = commands.map { command in
+            switch command {
+            case var .sprite(sprite):
+                sprite.transform = sprite.transform.concatenating(transform)
+                return .sprite(sprite)
+            case var .shape(shape):
+                shape.transform = shape.transform.concatenating(transform)
+                return .shape(shape)
+            case var .label(label):
+                label.transform = label.transform.concatenating(transform)
+                return .label(label)
+            case var .effect(effect):
+                effect.transform = effect.transform.concatenating(transform)
+                return .effect(effect)
+            case var .crop(crop):
+                crop.transform = crop.transform.concatenating(transform)
+                return .crop(crop)
+            }
+        }
+        return list
+    }
+}
+
+#endif

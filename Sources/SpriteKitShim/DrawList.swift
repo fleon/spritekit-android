@@ -145,8 +145,14 @@ public struct DrawList {
     /// each composites its subtree as one picture, so it is one command at
     /// its own depth, with its contents ordered the same way inside it.
     public init(scene: SKNode) {
+        self.init(scene: scene, transform: .identity)
+    }
+
+    /// The same, drawn through `transform`: how the view puts a scene behind
+    /// its camera (`SKScene.cameraTransform`).
+    public init(scene: SKNode, transform: CGAffineTransform) {
         commands = DrawList.ordered(
-            DrawList.collect(scene, parentTransform: .identity, parentAlpha: 1, parentZ: 0)
+            DrawList.collect(scene, parentTransform: transform, parentAlpha: 1, parentZ: 0)
         )
     }
 

@@ -112,6 +112,17 @@ public enum AndroidLevels {
         PlayScene(levelID: levelID, size: size)
     }
 
+    /// Opens `levelID` (or the campaign's first level) in `view` the way the
+    /// game opens a level: `TransitionManager` fades to the loading screen,
+    /// which builds the level off the main thread and fades to it. False if
+    /// the catalog has no such level.
+    @discardableResult
+    public static func present(levelID: String? = nil, in view: SKView) -> Bool {
+        guard let entry = levelID.flatMap(LevelCatalog.level(withID:)) ?? LevelCatalog.levels.first else { return false }
+        TransitionManager.present(.play(entry), in: view)
+        return true
+    }
+
     /// `DesignSystem.sceneSize(for:)`: the scene's size in points for a view
     /// this big, so a design point is a point. The real table rather than a
     /// copy of its numbers.

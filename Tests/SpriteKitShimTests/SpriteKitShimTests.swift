@@ -418,7 +418,8 @@ struct FrameTests {
         }
         #expect(scene.updates == 40)
         #expect(abs(sprite.position.x - 50) < 0.0001)
-        #expect(list.commands.count == 1)
+        // The scene's background over the view, then the sprite.
+        #expect(list.commands.count == 2)
     }
 }
 

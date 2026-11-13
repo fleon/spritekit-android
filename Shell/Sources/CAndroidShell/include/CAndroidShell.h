@@ -46,4 +46,13 @@ static const SDL_AudioFormat SWITCHLINGS_AUDIO_FORMAT = SDL_AUDIO_S16;
 /// Debug-only plumbing: nothing in the game reads a property.
 int switchlings_property(const char *name, char *out, int capacity);
 
+/// Makes the serial executor whose reference is `identity` and
+/// `implementation` (an `UnownedSerialExecutor`'s two words) the main
+/// actor's, through the concurrency runtime's
+/// `swift_task_getMainExecutor_hook` — whose functions take and return a
+/// two-word struct in Swift's calling convention, which Swift itself cannot
+/// spell as a `@convention(c)` function. Returns 0 if the runtime has no
+/// such hook. See `MainActorJobs` in the shim.
+int switchlings_set_main_executor(const void *identity, uintptr_t implementation);
+
 #endif /* CANDROIDSHELL_H */

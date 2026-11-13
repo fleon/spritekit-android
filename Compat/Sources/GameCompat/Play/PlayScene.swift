@@ -7,16 +7,27 @@ import SpriteKitShim
 /// Deliberately bare. There is no HUD, no tip, no pause menu, no backdrop
 /// and no win card — those are screens of their own and later stages. A tap
 /// on a Switchling is the whole of the input, and a cleared level says so in
-/// the log and opens the next one.
-public final class PlayScene: SKScene {
+/// the log and opens the next one, through the game's own loading screen
+/// (`TransitionManager`) as every scene change in the game goes.
+public final class PlayScene: SKScene, LoadableScene {
     private var entry: LevelEntry
     private var board: PlayBoardNode?
     /// The boards behind the one on screen, so a move can be taken back.
     private var history: [GameState] = []
     private var isWon = false
+    /// The layout the loading screen built this for, while it has no view.
+    var plannedLayout: SceneLayout?
+    private var isLoaded = false
 
     /// How long a cleared level is left on screen before the next one.
     private static let winPause: TimeInterval = 1.6
+
+    /// Plays each level's stored solution by itself, a move at a time, so a
+    /// run on a device clears level after level through the loading screen
+    /// (`debug.switchlings.autosolve`, as the game's `-AutoSolve`).
+    public nonisolated(unsafe) static var autoSolves = false
+    /// The wait before each move it plays: the first also covers the fade in.
+    private static let autoSolvePause: TimeInterval = 0.6
 
     init(entry: LevelEntry, size: CGSize) {
         self.entry = entry
@@ -30,8 +41,28 @@ public final class PlayScene: SKScene {
         self.init(entry: entry, size: size)
     }
 
-    public override func didMove(to view: SKView) {
+    /// Builds the board, once: off the main thread when the loading screen
+    /// makes the scene, else as it shows.
+    func load() {
+        guard !isLoaded else { return }
+        isLoaded = true
         buildBoard()
+    }
+
+    public override func didMove(to view: SKView) {
+        load()
+        PlayLog.write("showing \(entry.id)")
+        autoSolve()
+    }
+
+    /// The next move of the stored solution, after a pause.
+    private func autoSolve() {
+        guard Self.autoSolves, !isWon, history.count < entry.level.solution.count else { return }
+        let step = entry.level.solution[history.count]
+        run(.sequence([
+            .wait(forDuration: Self.autoSolvePause),
+            .run { [weak self] in self?.move(step.id) },
+        ]))
     }
 
     public override func didChangeSize(_ oldSize: CGSize) {
@@ -127,6 +158,7 @@ public final class PlayScene: SKScene {
 
         board.play(previous: previous, next: next) { [weak self] in
             self?.finish(next, wasMove: isMove)
+            if isMove { self?.autoSolve() }
         }
     }
 
@@ -141,12 +173,18 @@ public final class PlayScene: SKScene {
     }
 
     /// Opens the next level in the world, then the next world's first; after
-    /// the last there is nowhere to go, so it plays again.
+    /// the last there is nowhere to go, so it plays again. It goes as the
+    /// game's Next does: through the loading screen, fading out and in.
     private func advance() {
         let levels = LevelCatalog.levels
         guard let index = levels.firstIndex(where: { $0.id == entry.id }) else { return }
-        entry = levels.indices.contains(index + 1) ? levels[index + 1] : levels[0]
-        buildBoard()
+        let next = levels.indices.contains(index + 1) ? levels[index + 1] : levels[0]
+        guard let view else {
+            entry = next
+            buildBoard()
+            return
+        }
+        TransitionManager.present(.play(next), in: view)
     }
 
     // MARK: - Undo and restart, for a driver rather than a HUD
@@ -168,6 +206,16 @@ public final class PlayScene: SKScene {
     public var moveCount: Int { history.count }
     public var isComplete: Bool { board?.state.isComplete ?? false }
     public var levelID: String { entry.id }
+}
+
+extension Destination {
+    /// A level, played by `PlayScene`. The game's own is `.level`, made in
+    /// `GameScene.swift` with the real `GameScene`, which is not here yet.
+    static func play(_ entry: LevelEntry) -> Destination {
+        Destination(index: .gameplay, theme: LevelCatalog.world(at: entry.worldIndex)?.theme ?? .garden) {
+            PlayScene(entry: entry, size: $0)
+        }
+    }
 }
 
 /// Where the gameplay ring says what happened. The shell points it at

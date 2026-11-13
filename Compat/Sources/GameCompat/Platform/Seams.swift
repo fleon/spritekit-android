@@ -31,6 +31,17 @@ enum LaunchArguments {
     /// Plays the Level Designer's feed. Off for good on Android — see
     /// `DesignerFeed` below.
     static var playsDesignerLevels: Bool { false }
+    /// `-HoldLoading`: the loading screen stays up. Off, as in a release build.
+    static var holdsLoading: Bool { false }
+}
+
+/// Real one is in `Source/GameViewController.swift`, which is the Apple
+/// app's own view controller and has no Android counterpart. The loading
+/// screen hands the scene it built whatever another device changed
+/// meanwhile; nothing syncs between devices on Android yet, so nothing calls
+/// it, but the protocol is the game's and must be the same.
+protocol SavedDataObserving: AnyObject {
+    func savedDataDidSync(_ keys: Set<String>)
 }
 
 /// Real one prints `[marker] …` lines for the recording tools
@@ -70,9 +81,10 @@ enum GameSession {
 ///
 /// `UIImage` was here too, for `localPlayer()`'s photo. It is the shim's
 /// own now (the rigs load their pages through it), and a second one
-/// declared in this module would shadow it everywhere in it.
+/// declared in this module would shadow it everywhere in it. `UIWindow`
+/// was too; it is the shim's now, beside `SKView`, because `SceneLayout`
+/// asks the view for its window.
 class UIViewController {}
-class UIWindow {}
 
 /// Real one is `Source/Game/Models/Achievement.swift`, which is portable
 /// rules code — it works out how far each achievement has come from the
