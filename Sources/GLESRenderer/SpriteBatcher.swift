@@ -137,6 +137,7 @@ public struct SpriteBatcher {
 
         if var last = batches.last,
            mergeable,
+           last.vertices.count / Self.floatsPerVertex + Self.vertexCount(of: sprite) <= Int(UInt16.max) + 1,
            last.attributeValues.isEmpty,
            sameTexture(last.texture, sprite.texture),
            last.shader === sprite.shader,
@@ -178,6 +179,10 @@ public struct SpriteBatcher {
     }
 
     private func addQuad(_ sprite: DrawList.Sprite, to batch: inout Batch) {
+        if let grid = sprite.warp {
+            addWarp(grid, sprite, to: &batch)
+            return
+        }
         let frame = CGRect(
             x: -sprite.size.width * sprite.anchorPoint.x,
             y: -sprite.size.height * sprite.anchorPoint.y,

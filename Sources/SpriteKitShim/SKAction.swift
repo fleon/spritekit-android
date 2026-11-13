@@ -38,6 +38,8 @@ public final class SKAction {
         case repeating(SKAction, Int?)              // nil count == forever
         case removeFromParent
         case hide(Bool)
+        case warpTo(SKWarpGeometry)                 // SKWarpGeometry.swift
+        case warps([SKWarpGeometry], [TimeInterval], Bool)
     }
 
     let kind: Kind
@@ -195,6 +197,7 @@ public final class SKAction {
             var xScale: CGFloat
             var yScale: CGFloat
             var zRotation: CGFloat
+            var warp: SKWarpGeometry?
         }
 
         init(action: SKAction) {
@@ -218,7 +221,8 @@ public final class SKAction {
                     alpha: node.alpha,
                     xScale: node.xScale,
                     yScale: node.yScale,
-                    zRotation: node.zRotation
+                    zRotation: node.zRotation,
+                    warp: (node as? SKWarpable)?.warpGeometry
                 )
             }
 
@@ -335,6 +339,13 @@ public final class SKAction {
                 } else {
                     sprite.texture = textures[step]
                 }
+
+            case let .warpTo(target):
+                SKAction.warp(node, from: from.warp, to: target, progress: t)
+
+            case let .warps(warps, times, restore):
+                SKAction.warp(node, from: from.warp, through: warps, times: times,
+                              at: TimeInterval(t) * action.duration, restore: restore)
 
             default:
                 break

@@ -36,6 +36,9 @@ public enum GLESBackend {
         /// `SeabedNode` sets it up: snow, motes, puffing vents, and a burst
         /// of bubbles wherever a tap lands.
         case particles
+        /// Lawn-kit pieces bent by the game's own `BackdropWarp` and
+        /// `BackdropTouch` (SKWarpGeometry).
+        case warp
     }
 
     public nonisolated(unsafe) static var scene: Scene = .level
@@ -64,6 +67,9 @@ public enum GLESBackend {
            let picked = Scene(rawValue: name) {
             scene = picked
         }
+        // Per launch, so it never changes the scene another app on a shared
+        // emulator picks up from the property.
+        if ShellArguments.has("-WarpProbe") { scene = .warp }
     }
 
     /// The renderer the shell draws with.
@@ -94,6 +100,8 @@ public enum GLESBackend {
             scene = SkyBackdropScene(size: size, drawsBackdrop: true, banded: false)
         case .particles:
             scene = EmitterPreviewScene(size: size)
+        case .warp:
+            scene = WarpProbeScene(size: size)
         }
         scene.scaleMode = .aspectFill
         Log.info("scene: \(Self.scene.rawValue), \(Int(size.width))x\(Int(size.height)) pt")

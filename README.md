@@ -134,7 +134,7 @@ cd ../Probe
 All of them pass. `TextProbe` is an executable rather than a library, so it
 is the one thing here that proves the Android archives actually **link**: it
 comes out as an ELF for both ABIs and needs no `libc++_shared.so`.
-`GameCompat` compiles **6,780 lines of real, unmodified game
+`GameCompat` compiles **7,066 lines of real, unmodified game
 source** for Android on both ABIs:
 
 | file | lines |
@@ -153,6 +153,8 @@ source** for Android on both ABIs:
 | `Source/Game/Components/Rig/RigMeshNode.swift` | 342 |
 | `Source/Game/Components/Rig/LedGlowNode.swift` | 95 |
 | `Source/Game/Models/WorldTheme.swift` | 173 |
+| `Source/Common/Components/BackdropWarp.swift` | 152 |
+| `Source/Common/Components/BackdropTouch.swift` | 134 |
 | `Source/Utils/AttributeShaders.swift` | 53 |
 | `Source/Common/Components/CharacterEyesNode.swift` | 71 |
 | `Source/Utils/CharacterFaces.swift` | 54 |
@@ -419,7 +421,9 @@ surfaces ring and it is not started.
   behaviour the game depends on is documented in its doc comment and must be
   reproduced by the renderer rather than inherited from whatever a
   render-target abstraction does by default.
-- **`SKWarpGeometry`** (9 uses: plants, wings, crowns) is not started.
+- **`SKWarpGeometry`** is done for sprites — see **Warps** below. An
+  effect node carries `warpGeometry` but does not bend its texture yet; the
+  game never warps one.
 - **The texture cache.** `SpriteHelpers.swift` is not compiled here yet: it
   reaches into `SceneLighting`, `LiveBackdrops` and `RigMeshNode`, which are
   the renderer. Its `ArtSlices` dependency is settled — see **Art** below —
@@ -661,3 +665,56 @@ easily. On an A14 iPad, where the shader is the bottleneck, it wins; the
 band count wants to follow the hardware rather than being 4 everywhere, and
 nothing short of a real Mali-G57 / Adreno 610 can say where the crossover
 sits.
+
+## Warps
+
+`SKWarpGeometryGrid`, `SKWarpable` (`warpGeometry`, `subdivisionLevels` on
+sprites and effect nodes) and the warp actions (`warp(to:duration:)`,
+`animate(withWarps:times:)` and its `restore:` form) are in
+`Sources/SpriteKitShim/SKWarpGeometry.swift`, with SpriteKit's signatures.
+`BackdropWarp.swift` and `BackdropTouch.swift` compile unchanged. A warped
+sprite's grid rides on `DrawList.Sprite.warp`, and `SpriteBatcher` draws it
+as `WarpMesh`'s triangles instead of one quad — the same vertex layout, so it
+still batches with plain sprites of its texture.
+
+How SpriteKit draws a grid was measured, not guessed: a sprite whose texture
+encodes its own texel in red and green, warped by SpriteKit on macOS and
+rendered through `SKRenderer`, then fitted against candidate meshes.
+
+- Each cell is cut into 2^`subdivisionLevels` × 2^`subdivisionLevels`
+  smaller cells whose corners are **bilinear** in the cell's four vertices,
+  source and destination alike. No smoothing spline: vertices stay put.
+- Levels past 3 draw exactly as 3. The default is 2, which the game never
+  changes.
+- Each small cell is two triangles, split bottom left to top right.
+- A grid whose destination is the untouched regular grid is not subdivided.
+
+`WarpGeometryTests` holds 199 of those measured pixels and checks the mesh
+lands within a texel of every one, at levels 1 and 2, with the source and
+the destination moved; the coarser mesh misses them by several texels, so the
+fixture tells levels apart. The actions were measured the same way, reading
+`warpGeometry` back from a scene ticked by `SKRenderer`: every vertex moves
+in a straight line, a keyframe list blends from the node's own warp to the
+first pose by the first time, and a node with no warp — or one of another
+shape — takes the first pose at once.
+
+Two gaps, both outside the warp code: `repeatForever` drops whatever part of
+a frame runs past a round's end (SpriteKit carries it on), so a looping sway
+loses up to a frame a round; and the shim's `easeIn` and `easeInEaseOut` are
+quadratic, while SpriteKit's measured warp curves are `2t² − t³` and
+smoothstep. The game sets no timing mode on a warp.
+
+Android's libm overlay has no `Float` overloads of `sin`, `sqrt` and the
+rest, which Darwin's has; `BackdropWarp` mixes them with `SIMD2<Float>`, and
+the type checker gave up on the expression. `FloatMath.swift` supplies them.
+
+The `warp` scene is `WarpProbeScene`: real lawn-kit pieces bent
+by the game's own `BackdropWarp` (a crown stirring, plants at the lawn's sway
+and at four times it, a butterfly's wings) and reacting through
+`BackdropTouch`, on their own every 1.4 s and to a tap.
+
+```bash
+adb shell setprop debug.switchlings.scene warp
+# or, for one launch, without touching a shared emulator's property:
+adb shell am start -n com.fleon.switchlings/.MainActivity --esa args "-WarpProbe"
+```

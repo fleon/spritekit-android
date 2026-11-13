@@ -15,6 +15,10 @@ open class SKSpriteNode: SKNode {
     /// Per-node shader attribute values (SKAttribute), keyed by name.
     open var attributeValues: [String: SKAttributeValue] = [:]
 
+    /// Bends the picture (SKWarpable, SKWarpGeometry.swift).
+    open var warpGeometry: SKWarpGeometry?
+    open var subdivisionLevels: Int = 2
+
     /// Backs `centerRect` (see NineSlice.swift), which 9-slices the texture.
     var sliceCenterRect = NineSlice.whole
 

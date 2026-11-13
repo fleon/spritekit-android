@@ -48,6 +48,11 @@ open class SKEffectNode: SKNode {
     open var effectBounds: CGRect {
         calculateAccumulatedFrame()
     }
+
+    /// SKWarpable's, carried for the API: the game warps sprites only, so
+    /// the renderer does not bend an effect's texture yet.
+    open var warpGeometry: SKWarpGeometry?
+    open var subdivisionLevels: Int = 2
 }
 
 /// Clips its children to `maskNode`'s shape. The collection's lists and the

@@ -58,6 +58,10 @@ public struct DrawList {
             self.shader = shader
             self.attributeValues = attributeValues
         }
+        /// The node's warp grid, if it bends its picture (SKWarpGeometry):
+        /// the renderer draws it as `WarpMesh` rather than one quad.
+        public var warp: SKWarpGeometryGrid? = nil
+        public var subdivisionLevels: Int = 2
     }
 
     public struct Shape {
@@ -212,8 +216,9 @@ public struct DrawList {
             // A 9-sliced sprite becomes nine ordinary sprite commands, each
             // with its own frame and sub-rect, so corners keep their size
             // while the edges and middle stretch (see NineSlice.swift).
-            for piece in slices(of: sprite) {
-                entries.append((z, .sprite(Sprite(
+            let pieces = slices(of: sprite)
+            for piece in pieces {
+                var command = Sprite(
                     transform: transform,
                     size: piece.size,
                     anchorPoint: piece.anchorPoint,
@@ -225,7 +230,12 @@ public struct DrawList {
                     blendMode: sprite.blendMode,
                     shader: sprite.shader,
                     attributeValues: sprite.attributeValues
-                ))))
+                )
+                if pieces.count == 1, let grid = sprite.warpGeometry as? SKWarpGeometryGrid {
+                    command.warp = grid
+                    command.subdivisionLevels = sprite.subdivisionLevels
+                }
+                entries.append((z, .sprite(command)))
             }
         } else if let shape = node as? SKShapeNode {
             entries.append((z, .shape(Shape(
@@ -353,6 +363,8 @@ public struct DrawList {
                 mix(sprite.colorBlendFactor); mix(sprite.alpha)
                 mix(UInt64(sprite.blendMode.rawValue))
                 mix(sprite.texture); mix(sprite.shader)
+                // A warp pose is a new grid each time it changes.
+                mix(sprite.warp); mix(UInt64(sprite.subdivisionLevels))
             case let .shape(shape):
                 mix(UInt64(2))
                 mix(shape.transform); mix(shape.fillColor); mix(shape.strokeColor)
