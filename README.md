@@ -49,7 +49,15 @@ Android/
     Sources/CoreText/
     Sources/CoreGraphics/
     Sources/GameCompat/  Symlinks into Source/ — real files, not copies.
+  Shell/                 Android-only. The app shell: SDL3, the GLES 3
+                         context and the frame loop.
+  App/                   The Gradle project — the installable APK.
+  Scripts/               Cross-compiling SDL and the shell.
 ```
+
+The app shell has a README of its own: **[App/README.md](App/README.md)** —
+how to build the APK, install it, read logcat, and which ABI goes with which
+emulator image.
 
 `Compat` is a separate package because a target named `CoreGraphics` cycles
 with the system module when built on macOS. Keeping it out means the shim
