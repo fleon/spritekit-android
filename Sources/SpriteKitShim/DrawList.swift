@@ -250,6 +250,9 @@ public struct DrawList {
                 alpha: alpha,
                 layout: label.layout
             ))))
+        } else if let emitter = node as? SKEmitterNode {
+            // Its particles, one sprite each, at its own depth.
+            entries.append(contentsOf: emitter.particleCommands(transform: transform, alpha: alpha, z: z))
         }
 
         // Each descendant keeps its own accumulated z. Re-keying a whole

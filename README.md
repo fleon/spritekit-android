@@ -30,6 +30,7 @@ The surface is also narrower than it looks. Across all of `Source`:
 | `SKAction` | 89, but only **16 distinct methods** |
 | `SKLabelNode` / `SKShapeNode` | 22 / 16 |
 | `SKCropNode` / `SKEffectNode` / `SKWarpGeometry` | 20 / 11 / 9 |
+| `SKEmitterNode` / `SKKeyframeSequence` | 5 / 7 — done, see **Particles** |
 
 And the game's own `SKAction` helpers (`animate`, `animateSteadily`,
 `pingPong`, `zoom` in `EasingFunctions.swift`) are built from just four
@@ -109,7 +110,7 @@ precisely because this package ships a module by that name.
 
 ```
 swift build                                             # shim, macOS
-swift test                                              # 150 tests, macOS
+swift test                                              # 213 tests, macOS
 swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple aarch64-unknown-linux-android23    # shim, Android
 
@@ -285,6 +286,55 @@ minimum leaves no headroom at all.
 uploader ignores it, so a minified rig aliases. Lighting is stood in for
 (`RigStubs.swift`), so every rig takes `RigMeshNode`'s unlit path — which is
 its own real code, not a lit shader with invented light in it.
+
+## Particles
+
+`SKEmitterNode` is simulated here, in Swift, and its particles reach
+`DrawList` as ordinary sprite commands — so the renderer needed nothing new.
+The game makes every emitter in code (no `.sks` files): Reef's marine snow,
+motes, vents and tap bursts in `SeabedNode`, and every other world's pollen,
+dust, bubbles, fireflies and twinkles in `BackdropNode`'s
+`AmbientParticlesNode`. The shim has what those set and what SpriteKit puts
+beside them: birth rate, `numParticlesToEmit`, lifetime, position, angle,
+speed and acceleration; alpha, scale, rotation and colour blend factor, each
+with a range and a speed; colour, colour blend factor, alpha and scale
+`SKKeyframeSequence`s (which override the value, its range and its speed, as
+the game's comment says);
+`particleAction`, `particleTexture`, `particleSize`, `particleBlendMode`,
+`shader` with attribute values, `particleZPosition`, `targetNode`,
+`advanceSimulationTime` and `resetSimulation`.
+
+- **Ranges** are SpriteKit's: a value's whole spread, `value ± range / 2`.
+- **Time** is the scene's: the emitter steps in `tickActions`, after its own
+  actions (so the vents' `run` blocks that switch the birth rate on and off
+  take effect that frame), scaled by `speed` and held while paused. Long
+  steps are cut into equal steps of at most 1/60 s, so
+  `advanceSimulationTime(12)` — how the ambient emitters start full — plays
+  out exactly as 720 frames would.
+- **Randomness** is a SplitMix64 per emitter, seeded in the order emitters
+  are made: the same scene built the same way plays the same particles.
+  `randomSeed` is the shim's own, for tests.
+- **Space.** Particles live in the emitter's space, or with `targetNode` in
+  the target's, born where the emitter stands at that moment and left there
+  as it moves on. Either way they draw at the emitter's accumulated depth
+  plus `particleZPosition`, ordered globally with everything else.
+- **`particleAction`** runs on a stand-in node per particle, added on top of
+  the particle's own motion: a `moveBy` measures from where it started, so
+  run on the particle itself it would pull it back against its velocity.
+
+`SKKeyframeSequence` is whole: numbers (however they arrive: `Int`,
+`CGFloat`, `NSNumber`) and colours, `linear`, `step` and `spline`
+(Catmull-Rom through the keyframes, the ends repeated), `clamp` and `loop`
+(over the span from the first keyframe's time to the last's), and editing
+that keeps keyframes in time order.
+
+`EmitterTests` pins birth counts, lifetimes, every range's bounds under a
+seed, `advanceSimulationTime` against ticked frames, pausing and speed,
+sequences, actions and both spaces; `KeyframeSequenceTests` each mode.
+`adb shell setprop debug.switchlings.scene particles` shows the
+reef's particles alone, set up exactly as `SeabedNode` sets them up
+(`Compat/Sources/GameCompat/Play/EmitterPreviewScene.swift`); tap for a
+burst. The seabed itself is the backdrop stage's.
 
 ## Design: a frame is a value
 

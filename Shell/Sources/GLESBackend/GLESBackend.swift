@@ -32,6 +32,10 @@ public enum GLESBackend {
         /// The sky drawn whole every frame instead of in bands, so the
         /// saving `BandedLayerNode` buys can be read off.
         case skyUnbanded
+        /// The reef's particles alone, each emitter set up exactly as
+        /// `SeabedNode` sets it up: snow, motes, puffing vents, and a burst
+        /// of bubbles wherever a tap lands.
+        case particles
     }
 
     public nonisolated(unsafe) static var scene: Scene = .level
@@ -88,6 +92,8 @@ public enum GLESBackend {
             scene = SkyBackdropScene(size: size, drawsBackdrop: false, banded: true)
         case .skyUnbanded:
             scene = SkyBackdropScene(size: size, drawsBackdrop: true, banded: false)
+        case .particles:
+            scene = EmitterPreviewScene(size: size)
         }
         scene.scaleMode = .aspectFill
         Log.info("scene: \(Self.scene.rawValue), \(Int(size.width))x\(Int(size.height)) pt")
