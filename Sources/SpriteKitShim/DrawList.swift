@@ -132,19 +132,24 @@ public struct DrawList {
         var entries: [(CGFloat, Command)] = []
 
         if let sprite = node as? SKSpriteNode, sprite.size != .zero {
-            entries.append((z, .sprite(Sprite(
-                transform: transform,
-                size: sprite.size,
-                anchorPoint: sprite.anchorPoint,
-                texture: sprite.texture,
-                textureRect: sprite.texture?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1),
-                color: sprite.color,
-                colorBlendFactor: sprite.colorBlendFactor,
-                alpha: alpha,
-                blendMode: sprite.blendMode,
-                shader: sprite.shader,
-                attributeValues: sprite.attributeValues
-            ))))
+            // A 9-sliced sprite becomes nine ordinary sprite commands, each
+            // with its own frame and sub-rect, so corners keep their size
+            // while the edges and middle stretch (see NineSlice.swift).
+            for piece in slices(of: sprite) {
+                entries.append((z, .sprite(Sprite(
+                    transform: transform,
+                    size: piece.size,
+                    anchorPoint: piece.anchorPoint,
+                    texture: sprite.texture,
+                    textureRect: piece.textureRect,
+                    color: sprite.color,
+                    colorBlendFactor: sprite.colorBlendFactor,
+                    alpha: alpha,
+                    blendMode: sprite.blendMode,
+                    shader: sprite.shader,
+                    attributeValues: sprite.attributeValues
+                ))))
+            }
         } else if let shape = node as? SKShapeNode {
             entries.append((z, .shape(Shape(
                 transform: transform,
@@ -184,6 +189,33 @@ public struct DrawList {
                     : lhs.element.0 < rhs.element.0
             }
             .map(\.element.1)
+    }
+
+    /// One sprite's quads: just itself, or the nine a sliced one draws as.
+    /// Each carries the anchor point that puts its own frame where the whole
+    /// sprite would have put that part of itself.
+    private static func slices(
+        of sprite: SKSpriteNode
+    ) -> [(size: CGSize, anchorPoint: CGPoint, textureRect: CGRect)] {
+        let textureRect = sprite.texture?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        guard sprite.isSliced, let art = sprite.texture?.size(), art.width > 0, art.height > 0 else {
+            return [(sprite.size, sprite.anchorPoint, textureRect)]
+        }
+        let frame = sprite.contentFrame
+        let patches = NineSlice.patches(frame: frame, textureSize: art, center: sprite.centerRect)
+        guard patches.count > 1 else { return [(sprite.size, sprite.anchorPoint, textureRect)] }
+        return patches.map { patch in
+            // The transform is the node's, so a patch is placed by giving it
+            // an anchor point that lands its own rect where the patch sits.
+            (
+                patch.frame.size,
+                CGPoint(
+                    x: patch.frame.width == 0 ? 0 : -patch.frame.minX / patch.frame.width,
+                    y: patch.frame.height == 0 ? 0 : -patch.frame.minY / patch.frame.height
+                ),
+                NineSlice.within(textureRect, patch.unit)
+            )
+        }
     }
 
     private static func children(

@@ -1,4 +1,5 @@
 import Foundation
+import GameCompat
 import GLESRenderer
 import ShellCore
 import SpriteKitShim
@@ -11,25 +12,26 @@ import SpriteKitShim
 /// nothing about sprites, textures or shaders.
 public enum GLESBackend {
 
-    /// Reads the packed art and the fonts out of the APK, and makes the
-    /// rigs reachable. Call before the first frame: with no asset index
-    /// every texture resolves to the white placeholder, with no fonts
-    /// registered every label measures zero and draws nothing, and with no
-    /// rig bundle no Switchling moves.
+    /// Reads the packed art, the fonts and the levels out of the APK, and
+    /// makes the rigs reachable. Call before the first frame: with no asset
+    /// index every texture resolves to the white placeholder, with no fonts
+    /// registered every label measures zero and draws nothing, with no rig
+    /// bundle no Switchling moves, and with no levels the board falls back
+    /// to the hand-laid preview.
     public static func prepare() {
         AssetBundle.installIndex()
         AssetBundle.installFonts()
         RigBundle.install()
+        LevelBundle.install()
     }
 
     /// The renderer the shell draws with.
     public static func makeRenderer(_ context: RenderContext) -> FrameRenderer {
-        // The scene is sized the way the game sizes its own — the view's
-        // size on a wide canvas, so a design point is a point. That is
-        // DesignSystem.sceneSize(for:), which cross-compiles unchanged;
-        // this mirrors it rather than re-deriving it, and stage 2 will call
-        // the real one once the game's own scenes are building.
-        let scene = BoardPreviewScene(size: sceneSize(for: context.size))
+        let size = sceneSize(for: context.size)
+        // A real level if the catalog loaded, else the hand-laid preview, so
+        // a missing or broken level file shows the pipeline still works
+        // rather than a blank screen.
+        let scene = AndroidLevels.scene(size: size) ?? BoardPreviewScene(size: size)
         scene.scaleMode = .aspectFill
         return SceneRenderer(
             scene: scene,
@@ -42,20 +44,12 @@ public enum GLESBackend {
     ///
     /// The drawable is physical pixels and the game thinks in points, so the
     /// density comes out of the asset index — the art is exported at one
-    /// scale and a design point is a point at that scale.
+    /// scale and a design point is a point at that scale. The sizing itself
+    /// is the game's own, now that DesignSystem compiles here.
     static func sceneSize(for drawable: CGSize) -> CGSize {
         let scale = AssetIndex.shared?.scale ?? 3
-        let points = CGSize(width: drawable.width / scale, height: drawable.height / scale)
-
-        let long = max(points.width, points.height)
-        let short = min(points.width, points.height)
-        let design = CGSize(width: 960, height: 540)
-        let canvasWidth: CGFloat = 1024
-
-        let fit = max(1, min(long / design.width, short / design.height))
-        return CGSize(
-            width: max(canvasWidth, points.width / fit),
-            height: points.height / fit
+        return AndroidLevels.sceneSize(
+            forViewSize: CGSize(width: drawable.width / scale, height: drawable.height / scale)
         )
     }
 }

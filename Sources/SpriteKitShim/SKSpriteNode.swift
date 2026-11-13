@@ -15,6 +15,9 @@ open class SKSpriteNode: SKNode {
     /// Per-node shader attribute values (SKAttribute), keyed by name.
     open var attributeValues: [String: SKAttributeValue] = [:]
 
+    /// Backs `centerRect` (see NineSlice.swift), which 9-slices the texture.
+    var sliceCenterRect = NineSlice.whole
+
     public init(texture: SKTexture?, size: CGSize) {
         self.texture = texture
         self.size = size
@@ -38,6 +41,12 @@ open class SKSpriteNode: SKNode {
         self.size = size
         colorBlendFactor = 1
         super.init()
+    }
+
+    /// An empty sprite, as SpriteKit's `SKSpriteNode()`: no texture, clear,
+    /// zero-sized. The game makes them to fill in later (`TileNode`'s dots).
+    public override convenience init() {
+        self.init(texture: nil, size: .zero)
     }
 
     public convenience init(imageNamed name: String) {

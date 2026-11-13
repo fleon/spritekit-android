@@ -4,10 +4,10 @@ plugins {
 
 val abis = listOf("arm64-v8a", "x86_64")
 
-// Two things are staged into the APK out of the repository's own `Assets`,
+// Three things are staged into the APK out of the repository's own `Assets`,
 // each under a prefix of its own so the packed art keeps the assets root.
 //
-// Both are plain paths rather than `Provider<Directory>`: AGP refuses a
+// All three are plain paths rather than `Provider<Directory>`: AGP refuses a
 // provider in `assets.srcDirs`, because it cannot tell generated output from
 // checked-in files and the task dependency would not carry — which is what
 // the `MergeSourceSetFolders` wiring at the foot of this file does by hand.
@@ -24,6 +24,15 @@ val stageAudio = tasks.register<Copy>("stageAudio") {
     into(layout.buildDirectory.dir("generatedAudio/audio"))
     from(rootProject.file("../../Assets/Music")) { into("Music") }
     from(rootProject.file("../../Assets/SFX")) { into("SFX") }
+}
+
+// The levels, under `assets/levels/`. They live in the repo at
+// Assets/Levels, beside the Apple build's own copy; a `levels/` folder of
+// their own keeps Worlds.json from landing next to the art's index.json.
+val levelAssets = "build/generated/levelAssets"
+val stageLevelAssets = tasks.register<Sync>("stageLevelAssets") {
+    from(rootProject.file("../../Assets/Levels")) { include("*.json") }
+    into(file("$levelAssets/levels"))
 }
 
 android {
@@ -51,11 +60,12 @@ android {
             // and about 100 MB, so it is referenced where it is built rather
             // than copied into the Gradle project.
             //
-            // Beside it, the fonts and the audio, each staged by a task
-            // below. Separate roots rather than one tree: the art's
-            // directory is a build output that `npm run art -- --android`
-            // rewrites wholesale, so nothing else may live inside it.
-            assets.srcDirs("../../Assets", stagedFonts, audioAssets)
+            // Beside it, the fonts, the audio and the levels, each staged
+            // by a task below. Separate roots rather than one tree: the
+            // art's directory is a build output that
+            // `npm run art -- --android` rewrites wholesale, so nothing
+            // else may live inside it.
+            assets.srcDirs("../../Assets", stagedFonts, audioAssets, levelAssets)
         }
     }
 
@@ -114,10 +124,10 @@ val stageFonts = tasks.register<Copy>("stageFonts") {
     into(layout.projectDirectory.dir(stagedFonts))
 }
 
-// Both staging tasks have to run before AGP merges the asset folders, and
+// Every staging task has to run before AGP merges the asset folders, and
 // AGP will not infer it from `assets.srcDirs` alone (see the note there).
 tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configureEach {
-    dependsOn(stageFonts, stageAudio)
+    dependsOn(stageFonts, stageAudio, stageLevelAssets)
 }
 
 // An APK with no Swift in it still installs and still launches — and then

@@ -121,6 +121,11 @@ public enum Shell {
                     foreground = true
                     previous = ShellClock.now
                     audio.resume()
+                case SDL_EVENT_FINGER_DOWN.rawValue,
+                     SDL_EVENT_FINGER_MOTION.rawValue,
+                     SDL_EVENT_FINGER_UP.rawValue,
+                     SDL_EVENT_FINGER_CANCELED.rawValue:
+                    renderer.receive(touchEvent(event.tfinger))
                 case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED.rawValue:
                     let updated = drawableSize(of: window)
                     if updated != size {
@@ -183,6 +188,25 @@ public enum Shell {
     static func glString(_ name: GLenum) -> String {
         guard let bytes = glGetString(name) else { return "(null)" }
         return String(cString: UnsafeRawPointer(bytes).assumingMemoryBound(to: CChar.self))
+    }
+
+    /// SDL's finger event as the renderer's seam wants it. SDL already
+    /// gives x and y normalised from the window's top left, which is what
+    /// `TouchEvent` carries, so nothing here needs the drawable size.
+    static func touchEvent(_ finger: SDL_TouchFingerEvent) -> TouchEvent {
+        let phase: TouchEvent.Phase
+        switch finger.type {
+        case SDL_EVENT_FINGER_DOWN: phase = .began
+        case SDL_EVENT_FINGER_MOTION: phase = .moved
+        case SDL_EVENT_FINGER_UP: phase = .ended
+        default: phase = .cancelled
+        }
+        return TouchEvent(
+            phase: phase,
+            location: CGPoint(x: CGFloat(finger.x), y: CGFloat(finger.y)),
+            finger: Int(bitPattern: UInt(finger.fingerID)),
+            time: TimeInterval(finger.timestamp) / 1_000_000_000
+        )
     }
 
     static func eventName(_ type: UInt32) -> String {

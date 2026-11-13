@@ -21,6 +21,10 @@ open class SKScene: SKNode {
     open var anchorPoint: CGPoint = .zero
     open internal(set) weak var view: SKView?
 
+    /// Touches in flight, by finger, each with the node that took it, so
+    /// every phase after `began` reaches the same node (see Touches.swift).
+    var activeTouches: [Int: ActiveTouch] = [:]
+
     public init(size: CGSize) {
         self.size = size
         super.init()

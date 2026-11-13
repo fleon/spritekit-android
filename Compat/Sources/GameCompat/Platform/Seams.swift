@@ -41,34 +41,20 @@ enum Markers {
     static func note(_ name: String, in scene: SKScene? = nil) {}
 }
 
-/// Real one is `Source/Game/Models/LevelCatalog.swift`. `GameCenterManager`
-/// asks it nothing; `PlaytestLog` takes a `Version`, which is why the type
-/// is named here at all.
-enum LevelCatalog {
-    struct Version: Equatable, Sendable {
-        var fingerprint: String?
-        var revision: String?
-    }
-}
-
-/// Real one is `Source/Game/Models/LevelCatalog.swift`. `StoreManager` reads
-/// two things off a world: where it sits, and whether it is one of the
-/// secret ones.
-struct World: Sendable {
-    var index: Int
-    var id: String
-    var isSecret: Bool
-}
+// `LevelCatalog` and `World` used to stand in here, for the one `Version`
+// `PlaytestLog` takes and the three fields `StoreManager` reads off a
+// world. The real `LevelCatalog.swift` is compiled now (the gameplay ring),
+// so both are the game's own.
 
 /// Real one is `Source/Game/Models/Progress.swift`.
 enum Progress {
     static func isAffected(by keys: Set<String>) -> Bool { false }
 }
 
-/// Real ones are the rules models. `GameCenterManager.played(from:to:)` and
-/// `PlaytestLog` take them without reading them here.
-struct GameState: Sendable {}
-
+/// Real one is `Source/Game/Models/GameSession.swift`, which reaches
+/// `Progress`. `GameCenterManager.played(from:to:)` and `PlaytestLog` take a
+/// `Move` without reading it. (`GameState` stood in beside it until the
+/// gameplay ring; the real one is compiled now.)
 enum GameSession {
     struct Move: Sendable {}
 }

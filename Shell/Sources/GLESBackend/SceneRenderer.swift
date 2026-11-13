@@ -143,12 +143,6 @@ public final class SceneRenderer: FrameRenderer {
         let list = view.tick(currentTime: frame.time, delta: frame.delta)
         let passes = batcher.passes(for: list)
 
-        let viewport = Viewport(
-            drawableSize: frame.size,
-            sceneSize: scene.size,
-            scaleMode: scene.scaleMode,
-            anchorPoint: scene.anchorPoint
-        )
         let projection = viewport.projection
         deviceScale = max(viewport.scale.x, viewport.scale.y)
         glyphSource.deviceScale = deviceScale
@@ -398,6 +392,39 @@ public final class SceneRenderer: FrameRenderer {
         )
 
         if batch.blendMode == .replace { glEnable(GLenum(GL_BLEND)) }
+    }
+
+    // MARK: Touches
+
+    /// Turns a touch into a point in the scene and hands it to the scene
+    /// graph. The projection is this renderer's, so undoing it is too: the
+    /// shell passes SDL's normalised window coordinates through untouched.
+    public func receive(_ touch: TouchEvent) {
+        let rect = viewport.visibleSceneRect
+        // SDL counts y down from the top of the window; a scene counts it up.
+        let point = CGPoint(
+            x: rect.minX + touch.location.x * rect.width,
+            y: rect.minY + (1 - touch.location.y) * rect.height
+        )
+        let phase: UITouchPhase
+        switch touch.phase {
+        case .began: phase = .began
+        case .moved: phase = .moved
+        case .ended: phase = .ended
+        case .cancelled: phase = .cancelled
+        }
+        scene.deliverTouch(phase: phase, at: point, identifier: touch.finger, timestamp: touch.time)
+    }
+
+    /// How scene points map onto the drawable, which is also what maps a
+    /// touch back the other way.
+    private var viewport: Viewport {
+        Viewport(
+            drawableSize: view.bounds.size,
+            sceneSize: scene.size,
+            scaleMode: scene.scaleMode,
+            anchorPoint: scene.anchorPoint
+        )
     }
 
     /// Pushes a shader's uniforms. `u_time` is the game's shader clock and

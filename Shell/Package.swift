@@ -18,8 +18,10 @@ import PackageDescription
 //     --swift-sdk swift-6.4.2-RELEASE_android \
 //     --triple aarch64-unknown-linux-android23 \
 //     -Xcc -I<sdl prefix>/include \
-//     -Xlinker -L<sdl prefix>/lib -Xlinker -lSDL3 \
-//     -Xlinker -lGLESv3 -Xlinker -llog
+//     -Xlinker -L<sdl prefix>/lib
+//
+// The libraries themselves are AndroidShell's `linkerSettings`, not flags:
+// a `-Xlinker -lSDL3` would reach the Macros plugin's own host link too.
 //
 // The targets, and why there are four:
 //
@@ -32,10 +34,12 @@ import PackageDescription
 //                  Its own target so the shell and the renderer can both
 //                  use it without depending on each other.
 //   GLESBackend    every GL call in the port, plus the asset loading and
-//                  PNG decoding that feed it. It links TextShaping, so a
-//                  shell build needs PKG_CONFIG_PATH pointing at the
-//                  Vendor prefix for the ABI — Scripts/build-shell.sh
-//                  sets it.
+//                  PNG decoding that feed it, and the scene it draws. It
+//                  links TextShaping, so a shell build needs
+//                  PKG_CONFIG_PATH pointing at the Vendor prefix for the
+//                  ABI — Scripts/build-shell.sh sets it — and it is the
+//                  one target that depends on Compat's GameCompat, the
+//                  game's own sources.
 //   AndroidShell   the window, the context, the lifecycle and the frame
 //                  loop. It depends on GLESBackend only to install it;
 //                  nothing in the shell knows what a sprite is.
@@ -55,8 +59,10 @@ let package = Package(
         // what it rasterises; nothing else in the shell knows about text.
         .package(path: "../Text"),
         // The game's own sources, compiled for Android (symlinks into
-        // Source/, never copies). The shell links it so the port can start
-        // drawing the real thing rather than stand-ins: the rigs first.
+        // Source/, never copies). The shell links it so the port draws the
+        // real thing rather than stand-ins: the rigs, and the levels and
+        // the board that play them. Only GLESBackend depends on it — the
+        // shell proper still knows nothing about any of it.
         .package(path: "../Compat"),
     ],
     targets: [

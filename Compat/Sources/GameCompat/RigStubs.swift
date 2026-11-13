@@ -53,6 +53,21 @@ enum SceneLighting {
     /// has a normal page, and `RigNode.light(theme:)` returns before this is
     /// reached anyway.
     static func light(_ sprite: SKSpriteNode, normal: SKTexture, key: String, theme: WorldTheme, pose: Pose = .floor) {}
+
+    /// The board's own spelling of it: the real one relights a painted piece
+    /// from its asset's normal map, and only ever within ±15% of the light it
+    /// was painted with (`DesignSystem.lightRelativeRange`). Left out, the
+    /// piece shows the light it was painted with, which is why the board
+    /// reads correctly unlit.
+    static func light(_ node: SKSpriteNode, asset: String, theme: WorldTheme) {}
+
+    /// Drops the lit shaders holding an asset's normal map. None is held.
+    static func forgetShaders(where forget: (String) -> Bool) {}
+}
+
+extension SKSpriteNode {
+    /// Real one hands the sprite the normal map `SceneLighting` lights it from.
+    func takesNormals(of asset: String) {}
 }
 
 /// A world's own light. The real one is an enum of seven, each with its own
@@ -62,6 +77,11 @@ enum WorldLight: Hashable {
     case unlit
 
     static func of(rig name: String) -> WorldLight? { nil }
+
+    /// By world, which is how the board asks. Nil means "no light of its
+    /// own" — the real answer for Sunny Garden and the other worlds whose
+    /// board takes the light it was painted with.
+    static func of(_ theme: WorldTheme) -> WorldLight? { nil }
 
     var function: String { SceneLighting.function }
 

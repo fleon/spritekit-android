@@ -41,12 +41,46 @@ public protocol FrameRenderer: AnyObject {
     /// The activity is going away. Delete GL objects here; the context is
     /// still current, and is destroyed as soon as this returns.
     func rendererWillStop()
+
+    /// A finger went down, moved, came up or was taken away. Called on the
+    /// frame thread between frames, never during one.
+    ///
+    /// The shell reads these from SDL and passes them straight on: where a
+    /// touch lands in a scene depends on the projection, and the projection
+    /// is the renderer's, so undoing it is the renderer's job too.
+    func receive(_ touch: TouchEvent)
 }
 
 public extension FrameRenderer {
     func rendererDidStart(_ context: RenderContext) {}
     func drawableSizeDidChange(to size: CGSize) {}
     func rendererWillStop() {}
+    func receive(_ touch: TouchEvent) {}
+}
+
+/// One finger, one moment.
+public struct TouchEvent: Sendable {
+    public enum Phase: Sendable {
+        case began, moved, ended, cancelled
+    }
+
+    public var phase: Phase
+    /// Where the finger is in the window, each axis from 0 to 1 with the
+    /// origin at the **top left** — SDL's own normalised coordinates, which
+    /// are the one thing about a touch that does not change with the
+    /// drawable size, the density or the rotation.
+    public var location: CGPoint
+    /// Which finger, for the length of one gesture.
+    public var finger: Int
+    /// `ShellClock.now` when it happened.
+    public var time: TimeInterval
+
+    public init(phase: Phase, location: CGPoint, finger: Int, time: TimeInterval) {
+        self.phase = phase
+        self.location = location
+        self.finger = finger
+        self.time = time
+    }
 }
 
 /// What the driver reports about itself, read once at startup and logged.

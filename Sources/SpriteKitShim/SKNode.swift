@@ -93,6 +93,17 @@ open class SKNode {
     open var speed: CGFloat = 1
     open var isPaused: Bool = false
 
+    // MARK: - Touches
+    //
+    // Declared here rather than in Touches.swift's extension because a
+    // method on an extension dispatches statically: the game's 13 overrides
+    // would compile and never be called. Delivery itself is in Touches.swift.
+
+    open func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    open func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    open func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    open func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {}
+
     open func setScale(_ scale: CGFloat) {
         xScale = scale
         yScale = scale
@@ -148,10 +159,28 @@ open class SKNode {
 
     private var runningActions: [RunningAction] = []
 
-    private struct RunningAction {
+    /// A running action, by reference rather than by value.
+    ///
+    /// It has to be a reference: an action's own block may start, replace or
+    /// stop actions on the very node it is running on — SpriteKit allows it
+    /// and the game leans on it everywhere (a looping glance schedules the
+    /// next one, a board cue starts the move it announces). Advancing a
+    /// struct in place would hold an exclusive access to `runningActions`
+    /// open across the block, and the second access from inside it aborts
+    /// the process with "Fatal access conflict detected".
+    private final class RunningAction {
         let key: String?
         var state: SKAction.State
         let completion: (() -> Void)?
+        /// Set when the action is taken off, so a tick already in flight
+        /// stops advancing it.
+        var isCancelled = false
+
+        init(key: String?, state: SKAction.State, completion: (() -> Void)?) {
+            self.key = key
+            self.state = state
+            self.completion = completion
+        }
     }
 
     open func run(_ action: SKAction) {
@@ -172,10 +201,12 @@ open class SKNode {
     }
 
     open func removeAction(forKey key: String) {
+        for running in runningActions where running.key == key { running.isCancelled = true }
         runningActions.removeAll { $0.key == key }
     }
 
     open func removeAllActions() {
+        for running in runningActions { running.isCancelled = true }
         runningActions.removeAll()
     }
 
@@ -197,18 +228,23 @@ open class SKNode {
     public func tickActions(_ delta: TimeInterval) {
         if !isEffectivelyPaused, !runningActions.isEmpty {
             let scaled = delta * TimeInterval(max(0, worldSpeed))
+            // A snapshot of the references, and nothing holding the list
+            // open: a block may add to it, take things off it or clear it
+            // while it runs. An action taken off meanwhile is cancelled, so
+            // this loop drops it rather than advancing it once more.
+            let ticking = runningActions
             var finished: [(() -> Void)] = []
-            for index in runningActions.indices.reversed() {
-                let done = runningActions[index].state.advance(by: scaled, on: self)
-                if done {
-                    if let completion = runningActions[index].completion { finished.append(completion) }
-                    runningActions.remove(at: index)
-                }
+            for running in ticking {
+                guard !running.isCancelled else { continue }
+                guard running.state.advance(by: scaled, on: self) else { continue }
+                running.isCancelled = true
+                runningActions.removeAll { $0 === running }
+                if let completion = running.completion { finished.append(completion) }
             }
             for completion in finished { completion() }
         }
         // A child may remove itself while ticking, so walk a snapshot.
-        for child in children { child.tickActions(delta) }
+        for child in Array(children) { child.tickActions(delta) }
     }
 }
 

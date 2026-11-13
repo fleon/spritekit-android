@@ -524,3 +524,35 @@ Swift 6.4.2 (open-source, via swiftly — Xcode's Swift cannot cross-compile),
 the `swift-6.4.2-RELEASE_android` SDK bundle, and Android NDK LTS r30 at
 `$ANDROID_NDK_HOME`. See
 <https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html>.
+
+## A level, playable
+
+Sunny Garden's first level loads from the game's own `LevelCatalog`, draws
+its board from the game's own component nodes, takes taps and plays each
+move through `Timeline`. `Android/Compat/Sources/GameCompat/Play/` holds the
+assembly; everything under it is real game source, symlinked and unmodified.
+
+The levels reach the device through the door the catalog already has.
+`LevelCatalog` reads `Bundle.main`, and a file inside an APK is not a path on
+disk, so `AndroidLevels.install(reading:)` hands the same files to
+`LevelCatalog.contents(from:revision:)` and `use(_:)` — the seam the Level
+Designer's feed uses. That door replays **every** level's stored solution
+through `GameEngine` before accepting the set, so starting the app is 330
+levels and ~4,500 moves of proof that the rules port. Gradle stages
+`Assets/Levels/*.json` into `assets/levels/`, beside the packed art rather
+than among it.
+
+Reused from `Source/`, unmodified: `BoardMetrics`, `BoardOutline`,
+`BoardFrameNode`, `TileNode`, `GoalNode`, `ArrowTileNode`, `ArrowBadgeNode`,
+`LiftControlNode`, `SpriteHelpers`, `Theme`, `ColorHelpers`,
+`CharacterEyesNode`, and the whole of `GameEngine`, `Timeline`, `GameState`,
+`Level`, `LevelCatalog`, `RouteSolver` and `WorldTheme`. Written here: the
+assembly (`PlayBoardNode`, `PlayScene`) and a stand-in for `ActorNode`, whose
+`rig` is a stored, non-optional `RigNode` and so waits on the rig runtime.
+
+Not drawn yet: every mechanic's own art — springs, whirlpools, gates,
+buttons, blocks, arrow banks, currents, ice, screens, ledges, thresholds,
+keys, locks, light pillars, turntables, platform switches and the
+Mainframe's three. The rules are whole, so a level with those pieces plays
+correctly over bare floor. There is no HUD, no backdrop and no landscape
+transposition.

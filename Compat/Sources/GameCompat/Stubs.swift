@@ -38,51 +38,43 @@ enum Localization {
     static let current = Script()
 }
 
-// SpriteHelpers.swift's own two entry points.
-//
-// The real file is not linked in here because its texture cache reaches
-// straight into the renderer — SceneLighting, LiveBackdrops, RigMeshNode,
-// ArtSlices. That is the next ring of the port (asset loading and the GL
-// texture cache), not this slice, so these stand in for it.
+// `sprite`, `tinted` and `sliced` used to stand in here. The real
+// SpriteHelpers.swift is compiled now (the gameplay ring); what it reaches
+// for beyond itself is in BoardStubs.swift.
 
-func sprite(_ imageName: String, size: CGSize? = nil) -> SKSpriteNode {
-    let texture = SKTexture(imageNamed: imageName)
-    return SKSpriteNode(texture: texture, size: size ?? texture.size())
-}
-
-func tinted(_ imageName: String, _ color: UIColor, size: CGSize? = nil) -> SKSpriteNode {
-    let node = sprite(imageName, size: size)
-    node.color = color
-    node.colorBlendFactor = 1
-    return node
-}
-
-// DesignSystem is a flat table of constants, but three of its ~3,900 lines
-// name types that live in the renderer or the rules. Rather than drag those
-// trees in — BoardGroundingArt, CircuitBoardNode, Timeline and everything
-// they reach — this slice declares just the shapes those constants need.
-// All three are ordinary portable Swift; they come in with their own rings.
+// DesignSystem is a flat table of constants, but a few of its ~3,900 lines
+// name types that live in the renderer. Rather than drag those trees in —
+// BoardGroundingArt, CircuitBoardNode and everything they reach — this
+// slice declares just the shapes those constants need. Both are ordinary
+// portable Swift; they come in with their own rings. (Timeline was a third
+// until the gameplay ring; the real one is compiled here now.)
 
 struct BoardGrounding: OptionSet {
     let rawValue: Int
     init(rawValue: Int) { self.rawValue = rawValue }
 
+    // The real set, member for member (BoardGroundingArt.swift): what each
+    // world shows round its board, which `GroundingLook` names for all ten.
     static let shadow = BoardGrounding(rawValue: 1 << 0)
-    static let light = BoardGrounding(rawValue: 1 << 1)
-    static let calm = BoardGrounding(rawValue: 1 << 2)
-    static let patch = BoardGrounding(rawValue: 1 << 3)
-    static let tufts = BoardGrounding(rawValue: 1 << 4)
+    static let patch = BoardGrounding(rawValue: 1 << 1)
+    static let light = BoardGrounding(rawValue: 1 << 2)
+    static let calm = BoardGrounding(rawValue: 1 << 3)
+    static let waterline = BoardGrounding(rawValue: 1 << 4)
+    static let tufts = BoardGrounding(rawValue: 1 << 5)
+    static let pins = BoardGrounding(rawValue: 1 << 6)
+}
+
+/// The pattern a world's shared light draws, named by `GroundingLook`.
+/// The real one is three cases in `SharedLightNode.swift`, whose node is
+/// the renderer's; the cases themselves are just data.
+enum SharedLightPattern {
+    case fireflies
+    case caustics
+    case starlight
 }
 
 enum CircuitKit {
     enum Kind {
         case capacitors, battery, chip, crystal, resistor, led, fan, heatSink
-    }
-}
-
-enum Timeline {
-    enum Duration {
-        /// Milliseconds, as the real one keeps them.
-        static let step: TimeInterval = 200
     }
 }
