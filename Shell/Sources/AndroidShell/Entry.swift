@@ -1,6 +1,7 @@
 import CAndroidShell
 import GLESBackend
 import ShellCore
+import SpriteKitShim
 
 /// The APK's way in.
 ///
@@ -18,9 +19,18 @@ public func SDL_main(
     _ argc: Int32,
     _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
+    // SDL runs this on a thread of its own, not the process's first one,
+    // and the game asserts it is on the main thread before it primes a
+    // shader. This is where that becomes true; it has to be the first thing
+    // the process does in Swift, before anything reads Thread.mainThread.
+    if !MainThread.claim() {
+        Log.error("could not claim the main thread — anything that primes a shader will trap")
+    }
+
     // What SDL was handed by MainActivity.getArguments(). The process's own
     // argv is the zygote's, so this is the only place they exist.
     ShellArguments.install(argc: argc, argv: argv)
+
     // Hands the shell a real renderer. If the art is missing from the APK
     // the index does not load and every texture resolves to the white
     // placeholder — tinted rectangles, visibly wrong rather than blank.

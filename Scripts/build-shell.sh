@@ -55,12 +55,14 @@ for abi in "${targets[@]}"; do
         -c "$CONFIG"
         -Xcc "-I$prefix/include"
         -Xlinker "-L$prefix/lib"
-        -Xlinker -lSDL3
-        -Xlinker -lGLESv3
-        -Xlinker -llog
-        # Android's own media stack, for decoding the soundtrack's AAC.
-        -Xlinker -lmediandk
     )
+    # -lSDL3, -lGLESv3, -llog and -lmediandk used to be passed here. They cannot
+    # be: `-Xlinker` reaches every link in the build, and since the shell
+    # started linking GameCompat the build also makes a *host* macro plugin
+    # (Macros, for @NSCodingUnsupported), whose macOS link then went looking
+    # for libGLESv3. The libraries are named in Shell/Package.swift instead,
+    # on the target that actually needs them. The search path above stays
+    # here, because it is per ABI and harmless anywhere else.
     swift build "${swiftpm[@]}"
 
     out="$(swift build "${swiftpm[@]}" --show-bin-path)/libAndroidShell.so"

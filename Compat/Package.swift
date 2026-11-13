@@ -26,10 +26,10 @@ let package = Package(
     targets: [
         // Each of these exists only to own a module name the game imports.
         .target(name: "SpriteKit",
-                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                dependencies: [.product(name: "SpriteKitShim", package: "Android"), "simd"],
                 path: "Sources/SpriteKit", swiftSettings: [v5, shimDefine]),
         .target(name: "UIKit",
-                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                dependencies: [.product(name: "SpriteKitShim", package: "Android"), "simd"],
                 path: "Sources/UIKit", swiftSettings: [v5, shimDefine]),
         .target(name: "CoreText",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
@@ -40,6 +40,9 @@ let package = Package(
         .target(name: "QuartzCore",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
                 path: "Sources/QuartzCore", swiftSettings: [v5, shimDefine]),
+        // Not a passthrough: Android has no Accelerate, so this one has the
+        // free-function spelling of the SIMD maths in it.
+        .target(name: "simd", path: "Sources/simd", swiftSettings: [v5, shimDefine]),
 
         .target(
             name: "GameCompat",
@@ -47,7 +50,7 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "Android"),
                 .product(name: "PlatformShim", package: "Android"),
                 .product(name: "Macros", package: "Macros"),
-                "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "QuartzCore",
+                "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "QuartzCore", "simd",
             ],
             path: "Sources/GameCompat",
             swiftSettings: [v5, shimDefine]

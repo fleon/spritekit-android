@@ -1,4 +1,5 @@
 import Foundation
+import GameCompat
 import GLESRenderer
 import SpriteKitShim
 import ShellCore
@@ -7,11 +8,14 @@ import ShellCore
 /// layer — scene graph, actions, batching, the translated default shader and
 /// the projection.
 ///
-/// Deliberately *not* the game's `BoardNode`. That needs `Timeline`, the rig
-/// runtime, world lighting and the live backdrops, which are stage 2 onward.
-/// This lays out the same board art by hand so the pipeline can be proved
-/// before any of that exists, and so a wrong atlas rect or a flipped UV is
-/// obvious at a glance rather than hidden inside the real board's maths.
+/// Deliberately *not* the game's `BoardNode`. That needs `Timeline`, world
+/// lighting and the live backdrops, which are stage 2 onward. This lays out
+/// the same board art by hand so the pipeline can be proved before any of
+/// that exists, and so a wrong atlas rect or a flipped UV is obvious at a
+/// glance rather than hidden inside the real board's maths.
+///
+/// The Switchlings standing on it, though, are the game's own: real
+/// `RigNode`s playing real animations (`addRigs`).
 public final class BoardPreviewScene: SKScene {
     private let cell: CGFloat = 50
     /// `DesignSystem.boardRowSpan`: the z a row takes, so the BoardDepth
@@ -92,6 +96,7 @@ public final class BoardPreviewScene: SKScene {
         glyph.position = CGPoint(x: 0, y: cell)
         board.addChild(glyph)
 
+        addRigs(on: board, originX: originX, originY: originY, rows: rows)
         addType()
 
         Log.info("preview scene: \(board.children.count) nodes, scene \(Int(size.width))x\(Int(size.height)) pt")
@@ -115,6 +120,54 @@ public final class BoardPreviewScene: SKScene {
     public override func didChangeSize(_ oldSize: CGSize) {
         guard !children.isEmpty else { return }
         build()
+    }
+
+    // MARK: Rigs
+
+    /// The visual bar for the rig runtime: `RigData`, `RigPose`, `RigNode`
+    /// and `RigMeshNode`, the game's own files, playing Sunny Garden's four
+    /// on the back row.
+    ///
+    /// Each mesh attachment draws as runs of four triangles on sprites whose
+    /// shader tests every pixel against them, carried there as twelve
+    /// per-node `SKAttribute` values — the one part of the renderer nothing
+    /// else here exercises. A triangle in the wrong place, or a sprite
+    /// merged into a batch it should not have been, is obvious at a glance.
+    ///
+    /// The faces come off the shared `RigFaces` sheet. `open` is the live
+    /// eyes, which a board puts on a Switchling's painting and this preview
+    /// has none of, so three of the four wear a painted one instead; `sleep`
+    /// also dims the rig, which is a second shader for the same meshes, and
+    /// the swap is worth exercising rather than only the first one built.
+    private func addRigs(on board: SKNode, originX: CGFloat, originY: CGFloat, rows: Int) {
+        // DesignSystem.rigPixelsPerUnit is 3.6 master pixels to an art unit,
+        // and the cast is drawn a cell wide, so this is a Switchling at the
+        // size a board shows it.
+        let unit = cell / (100 * 3.6)
+        let playing = [("GardenA", "hop-right", "open"), ("GardenB", "idle", "happy"),
+                       ("GardenC", "celebrate", "sleep"), ("GardenD", "slide-right", "dizzy")]
+
+        // They stand on the back row, which is row 0 — the one every other
+        // row's overhang draws over.
+        let row = 0
+        for (index, (name, animation, face)) in playing.enumerated() {
+            guard let rig = GameRigs.make(name, unit: unit) else {
+                Log.error("no rig for \(name) — is Android/Assets/rigs staged? (npm run art -- --android)")
+                continue
+            }
+            // A rig stands on its own feet, so this is where the feet go: a
+            // cell's middle, two thirds down, as `ActorNode` places them.
+            rig.position = CGPoint(x: originX + CGFloat(index + 1) * cell,
+                                   y: originY + cell * CGFloat(rows - 1 - row) - cell / 6)
+            // Inside its own row's band: over that row's bricks, under the
+            // next row's overhang, which is where `BoardDepth` puts what
+            // stands on a cell.
+            rig.zPosition = CGFloat(row) * Self.rowSpan + 1 + CGFloat(index)
+            board.addChild(rig)
+            GameRigs.play(rig, animation, loop: true)
+            GameRigs.expression(rig, face)
+            Log.info("\(name): \(GameRigs.animations(of: rig).count) animations, playing \(animation), face \(face)")
+        }
     }
 
     // MARK: Type and shapes

@@ -40,6 +40,12 @@ public final class SceneRenderer: FrameRenderer {
     /// exactly once rather than every frame.
     private var reportedFirstFrame = false
 
+    /// Where each per-node attribute sits in each program, looked up once.
+    /// A rig mesh sprite carries twelve of them and there are dozens of
+    /// sprites in a Switchling, so this is a few thousand `glGetAttribLocation`
+    /// calls a frame if it is not kept.
+    private var attributeLocations: [GLuint: [String: GLint]] = [:]
+
     public init(
         scene: SKScene,
         drawableSize: CGSize,
@@ -50,6 +56,7 @@ public final class SceneRenderer: FrameRenderer {
         cache = ResourceCache(device: device)
         view = SKView(bounds: CGRect(origin: .zero, size: drawableSize))
         cache.pageSource = pageLoader
+        cache.pixelSource = SceneRenderer.pixels(of:)
         view.presentScene(scene)
     }
 
@@ -57,6 +64,14 @@ public final class SceneRenderer: FrameRenderer {
 
     public func rendererDidStart(_ context: RenderContext) {
         Log.info("GLSL \(context.shadingLanguageVersion)")
+
+        // A rig mesh sprite carries four triangles as twelve vec4s, and the
+        // quad's own four attributes bring that to sixteen — exactly what
+        // GLES 3.0 guarantees. Worth saying out loud, because a driver at
+        // the minimum leaves no room and a rig shader would simply not link.
+        var maxAttributes: GLint = 0
+        glGetIntegerv(GLenum(GL_MAX_VERTEX_ATTRIBS), &maxAttributes)
+        Log.info("max vertex attributes \(maxAttributes) (rig meshes need 16)")
 
         glGenVertexArrays(1, &vao)
         glBindVertexArray(vao)
@@ -111,6 +126,9 @@ public final class SceneRenderer: FrameRenderer {
         shapeMasks.removeAll()
         glyphSource.flush()
         if coverageProgram != 0 { device.deleteProgram(coverageProgram) }
+        // A new context relinks every program, and GL reuses names, so a
+        // location learned for an old one must not be trusted again.
+        attributeLocations.removeAll()
         if defaultProgram != 0 { device.deleteProgram(defaultProgram) }
         glDeleteBuffers(1, &vbo)
         glDeleteBuffers(1, &ebo)
@@ -335,6 +353,7 @@ public final class SceneRenderer: FrameRenderer {
 
         if let shader = batch.shader {
             bind(shader, program: program, time: time)
+            bind(batch.attributeValues, program: program, shader: shader)
         }
 
         glActiveTexture(GLenum(GL_TEXTURE0))
@@ -408,6 +427,77 @@ public final class SceneRenderer: FrameRenderer {
                 glUniform1i(location, unit)
                 unit += 1
             }
+        }
+    }
+
+    /// Pushes a node's own `SKAttribute` values.
+    ///
+    /// These are per node, not per vertex: SpriteKit's are, and the batcher
+    /// honours that by never merging a sprite that carries them into another
+    /// sprite's batch. So each is a *generic* vertex attribute — the constant
+    /// GL hands every vertex when no array is enabled for that location —
+    /// which is one call per value per draw and no buffer traffic at all.
+    ///
+    /// The generated vertex shader declares them as `a_<name>` and passes
+    /// them straight through to a varying called `<name>`, which is what the
+    /// game's fragment source reads. Generic attribute values are context
+    /// state rather than VAO state, so nothing in the VAO has to change.
+    ///
+    /// Only what the node set is pushed. SpriteKit requires every attribute a
+    /// shader declares to be set on every node drawn with it, so a missing one
+    /// is a bug upstream rather than something to invent a value for.
+    private func bind(_ values: [String: SKAttributeValue], program: GLuint, shader: SKShader) {
+        guard !values.isEmpty else { return }
+        var locations = attributeLocations[program] ?? [:]
+        var learned = false
+        for attribute in shader.attributes {
+            guard let value = values[attribute.name] else { continue }
+            let location: GLint
+            if let known = locations[attribute.name] {
+                location = known
+            } else {
+                location = glGetAttribLocation(program, "a_" + attribute.name)
+                locations[attribute.name] = location
+                learned = true
+            }
+            guard location >= 0 else { continue }
+            let index = GLuint(location)
+            switch value.value {
+            case let .float(v):
+                glVertexAttrib1f(index, Float(v))
+            case let .vector2(v):
+                glVertexAttrib2f(index, v.x, v.y)
+            case let .vector3(v):
+                glVertexAttrib3f(index, v.x, v.y, v.z)
+            case let .vector4(v):
+                glVertexAttrib4f(index, v.x, v.y, v.z, v.w)
+            case .texture:
+                continue
+            }
+        }
+        if learned { attributeLocations[program] = locations }
+    }
+
+    /// Pixels for a texture the asset index does not back: one built from a
+    /// file's bytes (a rig's page, which lives outside the packed art) or
+    /// from a flat colour.
+    private static func pixels(of texture: SKTexture) -> (width: Int, height: Int, pixels: Data)? {
+        switch texture.source {
+        case let .data(data):
+            do {
+                let image = try PNGDecoder.decode(data)
+                return (image.width, image.height, image.pixels)
+            } catch {
+                Log.error("a texture's image would not decode: \(error)")
+                return nil
+            }
+        case let .color(colour, size):
+            let width = max(Int(size.width), 1), height = max(Int(size.height), 1)
+            let pixel: [UInt8] = [colour.red, colour.green, colour.blue, colour.alpha]
+                .map { UInt8(max(0, min(1, $0)) * 255) }
+            return (width, height, Data(Array(repeating: pixel, count: width * height).joined()))
+        case .named, .slice:
+            return nil
         }
     }
 

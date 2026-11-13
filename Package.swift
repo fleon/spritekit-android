@@ -63,6 +63,21 @@ let package = Package(
             path: "Tests/SpriteKitShimTests",
             swiftSettings: [v5, shimDefine]
         ),
+        // The rig runtime, run against the real rigs in Assets/Rigs.
+        //
+        // RigData.swift and RigPose.swift are symlinked in rather than
+        // depended on: they are pure Foundation and CoreGraphics, so on the
+        // host they compile against the system's own and need neither the
+        // shim nor a device. A test target is also the one place a game
+        // source can live in this package without the Android build trying
+        // to compile it — `swift build` does not build test targets, and
+        // `import CoreGraphics` has nothing to resolve to there. The real
+        // Android build of these two files is Compat/.
+        .testTarget(
+            name: "RigRuntimeTests",
+            path: "Tests/RigRuntimeTests",
+            swiftSettings: [v5, shimDefine]
+        ),
         .testTarget(
             name: "GLESRendererTests",
             dependencies: ["GLESRenderer"],

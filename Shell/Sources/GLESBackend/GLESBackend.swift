@@ -11,13 +11,15 @@ import SpriteKitShim
 /// nothing about sprites, textures or shaders.
 public enum GLESBackend {
 
-    /// Reads the packed art and the fonts out of the APK. Call before the
-    /// first frame: with no asset index every texture resolves to the white
-    /// placeholder, and with no fonts registered every label measures zero
-    /// and draws nothing.
+    /// Reads the packed art and the fonts out of the APK, and makes the
+    /// rigs reachable. Call before the first frame: with no asset index
+    /// every texture resolves to the white placeholder, with no fonts
+    /// registered every label measures zero and draws nothing, and with no
+    /// rig bundle no Switchling moves.
     public static func prepare() {
         AssetBundle.installIndex()
         AssetBundle.installFonts()
+        RigBundle.install()
     }
 
     /// The renderer the shell draws with.

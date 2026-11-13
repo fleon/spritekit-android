@@ -54,6 +54,10 @@ let package = Package(
         // The glyph atlas. Only GLESBackend links it, and only to upload
         // what it rasterises; nothing else in the shell knows about text.
         .package(path: "../Text"),
+        // The game's own sources, compiled for Android (symlinks into
+        // Source/, never copies). The shell links it so the port can start
+        // drawing the real thing rather than stand-ins: the rigs first.
+        .package(path: "../Compat"),
     ],
     targets: [
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
@@ -91,6 +95,7 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "Android"),
                 .product(name: "GLESRenderer", package: "Android"),
                 .product(name: "TextShaping", package: "Text"),
+                .product(name: "GameCompat", package: "Compat"),
             ],
             path: "Sources/GLESBackend",
             swiftSettings: [v5, shimDefine]
@@ -106,7 +111,18 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "Android"),
             ],
             path: "Sources/AndroidShell",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine],
+            // Named here rather than as `-Xlinker -l…` on the build's
+            // command line, which would reach the host macro plugin's link
+            // too — see Scripts/build-shell.sh. The search path for them is
+            // still a flag, since it is different per ABI.
+            linkerSettings: [
+                .linkedLibrary("SDL3"),
+                .linkedLibrary("GLESv3"),
+                .linkedLibrary("log"),
+                // Android's own media stack, for decoding the soundtrack's AAC.
+                .linkedLibrary("mediandk"),
+            ]
         ),
     ]
 )

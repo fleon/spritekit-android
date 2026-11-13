@@ -77,14 +77,16 @@ enum GameSession {
 ///
 /// `GameCenterManager.start(presentSignIn:)` takes a view controller
 /// because GameKit hands it a sign-in sheet; `showDashboard(over:)` takes
-/// the window GameKit's overlay would cover; `localPlayer()` hands back the
-/// player's photo. None of the three happens here, but the signatures are
-/// the game's and must stay, so the types have to exist. They belong to the
-/// UIKit shim proper, which has none of them yet — nothing in the port
-/// presents anything.
+/// the window GameKit's overlay would cover. Neither happens here, but the
+/// signatures are the game's and must stay, so the types have to exist.
+/// They belong to the UIKit shim proper, which has none of them yet —
+/// nothing in the port presents anything.
+///
+/// `UIImage` was here too, for `localPlayer()`'s photo. It is the shim's
+/// own now (the rigs load their pages through it), and a second one
+/// declared in this module would shadow it everywhere in it.
 class UIViewController {}
 class UIWindow {}
-class UIImage {}
 
 /// Real one is `Source/Game/Models/Achievement.swift`, which is portable
 /// rules code — it works out how far each achievement has come from the

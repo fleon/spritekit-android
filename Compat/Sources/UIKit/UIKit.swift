@@ -2,3 +2,6 @@
 // files import UIKit almost entirely for UIColor, which SpriteKitShim vends;
 // anything else they reach for will fail here, loudly, which is the point.
 @_exported import SpriteKitShim
+
+// As Apple's UIKit does.
+@_exported import simd

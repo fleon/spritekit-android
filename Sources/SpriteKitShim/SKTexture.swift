@@ -25,6 +25,9 @@ public final class SKTexture: @unchecked Sendable {
 
     public let source: Source
     public var filteringMode: SKTextureFilteringMode = .linear
+    /// Whether the renderer should build a mip chain for it. The rigs' pages
+    /// ask for one; a slice of an atlas page cannot have one.
+    public var usesMipmaps: Bool = false
 
     /// Set by the renderer once uploaded. 0 means "not resident".
     public var glName: UInt32 = 0

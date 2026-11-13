@@ -44,7 +44,9 @@ Android/
   Sources/PlatformShim/  The Android stand-ins for AVFoundation, iCloud's
                          key-value store, StoreKit and GameKit — the parts
                          with no device in them. 30 tests.
-  Tests/                 36 tests, no device or GL context needed.
+  Tests/                 Host tests, no device or GL context needed.
+                         RigRuntimeTests symlinks the game's RigData and
+                         RigPose in and runs them against Assets/Rigs.
   Assets/                The packed art. Generated, gitignored, 101 MB.
   Compat/                Android-only. Do not build on a Mac.
     Sources/SpriteKit/   Targets that exist only to own a module name,
@@ -107,7 +109,7 @@ precisely because this package ships a module by that name.
 
 ```
 swift build                                             # shim, macOS
-swift test                                              # 36 tests, macOS
+swift test                                              # 150 tests, macOS
 swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple aarch64-unknown-linux-android23    # shim, Android
 
@@ -131,7 +133,7 @@ cd ../Probe
 All of them pass. `TextProbe` is an executable rather than a library, so it
 is the one thing here that proves the Android archives actually **link**: it
 comes out as an ELF for both ABIs and needs no `libc++_shared.so`.
-`GameCompat` compiles **4,790 lines of real, unmodified game
+`GameCompat` compiles **6,780 lines of real, unmodified game
 source** for Android on both ABIs:
 
 | file | lines |
@@ -144,10 +146,23 @@ source** for Android on both ABIs:
 | `Source/Game/Components/Board/ArrowBadgeNode.swift` | 76 |
 | `Source/Game/Models/Direction.swift` | 61 |
 | `Source/Game/Components/Board/ArrowTileNode.swift` | 60 |
+| `Source/Game/Components/Rig/RigNode.swift` | 429 |
+| `Source/Game/Components/Rig/RigData.swift` | 407 |
+| `Source/Game/Components/Rig/RigPose.swift` | 366 |
+| `Source/Game/Components/Rig/RigMeshNode.swift` | 342 |
+| `Source/Game/Components/Rig/LedGlowNode.swift` | 95 |
+| `Source/Game/Models/WorldTheme.swift` | 173 |
+| `Source/Utils/AttributeShaders.swift` | 53 |
+| `Source/Common/Components/CharacterEyesNode.swift` | 71 |
+| `Source/Utils/CharacterFaces.swift` | 54 |
 
-plus the generated `Source/Utils/ArtSlices.swift`, against 76 lines of stubs
-in `Compat/Sources/GameCompat/Stubs.swift`, each one documented and each one a
-seam that belongs to a later ring.
+plus the generated `Source/Utils/ArtSlices.swift` and `CharacterFaces.swift`,
+against the documented stubs in `Compat/Sources/GameCompat/Stubs.swift` and
+`RigStubs.swift` — each one a seam that belongs to a later ring.
+
+The rigs are the second useful case, and the one that runs: `RigData`,
+`RigPose`, `RigNode`, `RigMeshNode` and `LedGlowNode` compile unchanged and
+**Switchlings animate on a device**. See **Rigs** below.
 
 `ArrowTileNode` is the useful case: a real `SKNode` subclass that runs a keyed
 `pingPong` action built from `customAction` + `sequence` + `repeatForever`,
@@ -217,6 +232,59 @@ no pixels: `url(ofPage:)` is what the renderer loads and caches on
 
 With no index set, a named texture behaves exactly as it did before one
 existed, so the other 34 tests need no art.
+
+## Rigs
+
+The whole rig runtime is here: `RigData` reads a packed Spine 4.2 skeleton,
+`RigPose` poses it the way Spine's runtime does (crossfades, physics step for
+step), `RigNode` draws it and `RigMeshNode` cuts each mesh attachment into
+runs of four triangles, one sprite each, whose shader tests every pixel
+against them. All five files compile for both ABIs unmodified.
+
+```
+npm run art -- --android      # stages Android/Assets/rigs as well
+npm run art:android:check     # 15 checks, two of them on the rigs
+swift test                    # RigRuntimeTests: 24, against the real rigs
+```
+
+**Where the rigs live.** They are not in the asset catalog and are not
+packed: `RigData` wants `Rig<Name>.json` and `RigNode` loads
+`Rig<Name>.png` whole. `android-art.js` copies them to `Android/Assets/rigs`
+as part of the same export, because that export clears its output directory
+and would otherwise take a separately staged copy with it.
+`Rig<Name>Normal.png` is deliberately left behind: a normal page is what
+tells `RigMeshNode` a rig is lit, and nothing on Android lights one yet.
+
+**How `Bundle.main` answers.** `RigData` asks
+`Bundle.main.url(forResource:withExtension:)` and reads the result with
+`Data(contentsOf:)`. Inside an APK there are no paths, and corelibs
+Foundation's main bundle is beside the executable, which for an SDL app is
+the system's `app_process`. `BundleResources` in the shim answers instead,
+through an overload that takes plain `String`s where Foundation's takes
+`String?` — so the game's own call, which passes plain strings, prefers it
+with no edit. `RigBundle` in the shell installs a provider that copies a rig
+out of the APK into the app's cache the first time it is asked for.
+
+**The main thread.** SDL runs `SDL_main` on a thread of its own, so
+`Thread.isMainThread` is false on the only thread the game has, and
+`RigMeshNode.prepare(in:)`'s `precondition` traps. `MainThread` in the shim
+takes over CoreFoundation's `_CFIsMainThread` and moves "main" to the thread
+that calls `claim()`; the shell calls it first thing in `SDL_main`. Any
+later ring that asserts the main thread needs this too.
+
+**The attributes.** A rig mesh sprite carries twelve `vec4`s — four
+triangles, three each — and the quad's own four bring that to sixteen, which
+is exactly what GLES 3.0 guarantees. They are *per node*, which is why
+`SpriteBatcher` never merges a sprite that carries them; `SceneRenderer`
+pushes each as a generic vertex attribute (`glVertexAttrib4f`), the constant
+GL hands every vertex when no array is enabled for that location. The
+renderer logs `GL_MAX_VERTEX_ATTRIBS` at start-up, because a driver at the
+minimum leaves no headroom at all.
+
+**What is not wired yet.** `SKTexture.usesMipmaps` is carried but the
+uploader ignores it, so a minified rig aliases. Lighting is stood in for
+(`RigStubs.swift`), so every rig takes `RigMeshNode`'s unlit path — which is
+its own real code, not a lit shader with invented light in it.
 
 ## Design: a frame is a value
 
