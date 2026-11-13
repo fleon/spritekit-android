@@ -154,18 +154,33 @@ undo it for buttons, so matching it matters more than being tidy. Horizontal
 alignment works on the pen's advance, so a centred line is centred on its
 advance and its ink box may sit a fraction off centre, as on Apple.
 
+## CoreText, and `TextHelpers.swift`
+
+`Source/Utils/TextHelpers.swift` compiles on Android **unchanged** and runs
+there. It is pure CoreText — `wrappedLines` runs a `CTTypesetter`,
+`capitalsOffset` reads a `CTLine`'s glyph-path bounds, `TextBlockNode`
+measures each line with `NSString.size(withAttributes:)` — and all of that
+now resolves:
+
+- `SpriteKitShim/Typesetting.swift` does the work, over
+  `TextMetrics.provider`, so it carries **no C dependency** and is
+  host-testable.
+- `SpriteKitShim/CoreTextCompat.swift` is the rename: `CTTypesetter`,
+  `CTLine`, the four functions, `CTLineBoundsOptions`,
+  `NSAttributedString.Key.font` and `NSString.size(withAttributes:)`. It is
+  Android-only, because on Apple the real ones are right there.
+
+That the file *compiles* a build proves. That it *works* it cannot: on
+Android its `NSAttributedString` is corelibs Foundation's holding a Swift
+`UIFont`, and its typesetter is the shim reading that back out. `../Probe`
+runs the real `wrappedLines`, `capitalsOffset` and `TextBlockNode` on a
+device and checks what they produce.
+
 ## Next
 
-- **`TextHelpers.swift` unchanged.** `wrappedLines`, `capitalsOffset` and
-  `TextBlockNode` are pure CoreText, and everything they need is already
-  here: `breakLines` is `CTTypesetterSuggestLineBreak`, and `measure`'s ink
-  box is `CTLineGetBoundsWithOptions(.useGlyphPathBounds)`. Because the shim
-  reaches text through `TextMetrics.provider`, that is a job for the
-  `CoreText` compat module with **no C dependency of its own** — which is
-  what the seam was for.
 - **`Compat/Sources/GameCompat/Stubs.swift`** still stubs `FontRegistry` and
-  `Localization.scriptFontName`. Both become one call to
-  `TextEngine.install` plus the language pick, and land with the
+  `Localization.scriptFontName` / `lineHeightRatio`. All three become one
+  call to `TextEngine.install` plus the language pick, and land with the
   localisation ring.
 - **Colour and bitmap strikes** are rejected rather than drawn. The game has
   no emoji in its own text, but a player-typed level name might.

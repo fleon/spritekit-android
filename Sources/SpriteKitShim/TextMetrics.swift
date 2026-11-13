@@ -120,6 +120,11 @@ public protocol TextProvider: AnyObject, Sendable {
     /// Breaks `text` into lines no wider than `maxWidth`, at the places the
     /// script allows — which for Thai, Chinese and Japanese is not at spaces.
     func breakLines(_ text: String, font: FontKey, maxWidth: CGFloat) -> [String]
+
+    /// Every place a line may start, as **UTF-16 offsets** into `text`,
+    /// ascending. `Typesetting` works in those because CoreText does, and
+    /// because the game slices the result with `NSString.substring(with:)`.
+    func breakOffsets(in text: String) -> [Int]
 }
 
 #endif

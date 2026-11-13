@@ -115,6 +115,10 @@ public final class TextEngine: TextProvider, @unchecked Sendable {
         }
     }
 
+    public func breakOffsets(in text: String) -> [Int] {
+        LineBreak.opportunities(in: text).map { $0.utf16Offset(in: text) }
+    }
+
     /// Drops the measurement cache. The atlas and the faces stay.
     public func flush() {
         lock.withLock { measured.removeAll() }

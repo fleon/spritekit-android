@@ -54,7 +54,9 @@ Android/
   App/                   The Gradle project — the installable APK.
   Scripts/               Cross-compiling SDL and the shell.
   Text/                  Shaping, metrics, rasterising, the glyph atlas.
-                         49 tests. Needs Vendor/ built first.
+                         60 tests. Needs Vendor/ built first.
+  Probe/                 Android-only. Runs the game's own text layout on
+                         a device: Probe/run-probe.sh.
   Vendor/                FreeType and HarfBuzz, fetched and built by a
                          script. Nothing binary is committed.
 ```
@@ -111,22 +113,26 @@ swift build --swift-sdk swift-6.4.2-RELEASE_android \
 
 Vendor/build.sh                                         # FreeType + HarfBuzz
 cd Text
-PKG_CONFIG_PATH=../Vendor/out/host/lib/pkgconfig swift test              # 49 tests
+PKG_CONFIG_PATH=../Vendor/out/host/lib/pkgconfig swift test              # 60 tests
 PKG_CONFIG_PATH=../Vendor/out/aarch64-linux-android/lib/pkgconfig \
 swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple aarch64-unknown-linux-android23 --product TextProbe
+
+cd ../Probe
+./run-probe.sh                                          # on a device
 ```
 
 All of them pass. `TextProbe` is an executable rather than a library, so it
 is the one thing here that proves the Android archives actually **link**: it
 comes out as an ELF for both ABIs and needs no `libc++_shared.so`.
-`GameCompat` compiles **4,711 lines of real, unmodified game
+`GameCompat` compiles **4,790 lines of real, unmodified game
 source** for Android on both ABIs:
 
 | file | lines |
 |---|---|
 | `Source/Utils/DesignSystem.swift` | 3,925 |
 | `Source/Utils/GeometryHelpers.swift` | 338 |
+| `Source/Utils/TextHelpers.swift` | 79 |
 | `Source/Utils/ArtSlices.swift` | 111 |
 | `Source/Utils/EasingFunctions.swift` | 140 |
 | `Source/Game/Components/Board/ArrowBadgeNode.swift` | 76 |
@@ -242,9 +248,16 @@ stacked at the pen. Each has a test against what `FT_Get_Char_Index` alone
 produces. Axmol, for the record, would not have helped here: it vendors
 FreeType and **no** HarfBuzz.
 
-What text still needs: `TextHelpers.swift` compiling unchanged, which is now
-a `CoreText` compat job with no C dependency of its own, because the shim
-reaches text through `TextMetrics.provider`.
+`Source/Utils/TextHelpers.swift` compiles here **unchanged** and runs on a
+device. It is pure CoreText, and the shim answers for it: `Typesetting.swift`
+does the work over `TextMetrics.provider` (no C dependency, host-testable)
+and `CoreTextCompat.swift` puts the `CTTypesetter` / `CTLine` names on it for
+Android. `Probe/run-probe.sh` runs the real `wrappedLines`, `capitalsOffset`
+and `TextBlockNode` on an emulator or device, because a build cannot show
+that corelibs Foundation's `NSAttributedString` really hands a `UIFont` back.
+
+What text still needs is the localisation ring: `FontRegistry` and
+`Localization.scriptFontName` are the last stubs in `GameCompat`.
 
 ## What is deliberately unfinished
 

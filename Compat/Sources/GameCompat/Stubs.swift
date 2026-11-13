@@ -6,11 +6,13 @@ import SpriteKitShim
 // symlinked from Source/ — the point of the target is that those compile
 // against the shim without being touched.
 //
-// Both of these are text infrastructure. The engine behind them is real now
-// (Android/Text: HarfBuzz and FreeType, with the glyph atlas), but it is a
-// package of its own so this one keeps building without a cmake run, and
-// wiring these up needs the language pick, which belongs to the
-// localisation ring.
+// Both of these are text infrastructure. The engine behind them is real
+// (Android/Text: HarfBuzz and FreeType, with the glyph atlas) and so is the
+// CoreText surface above them, which is why TextHelpers.swift compiles here
+// unchanged. These two stay stubs because they need the language pick, which
+// belongs to the localisation ring, and because wiring them would make this
+// package need Text — and with it a cmake run — for everyone building the
+// game's sources. Android/Probe is where the two meet.
 
 enum FontRegistry {
     /// Real one registers the bundled Chiron GoRound TC faces with CoreText.
@@ -26,6 +28,11 @@ enum Localization {
         /// Both faces are registered by then; all this needs is the language
         /// pick, so it lands with the localisation port.
         func scriptFontName(_ weight: UIFont.Weight) -> String? { nil }
+
+        /// Real one picks per script, out of the same DesignSystem
+        /// constants — which are compiled here, so this is the real value
+        /// for every language but the four with taller scripts.
+        var lineHeightRatio: CGFloat { DesignSystem.textLineHeight }
     }
 
     static let current = Script()
