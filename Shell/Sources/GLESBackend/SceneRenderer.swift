@@ -523,6 +523,11 @@ public final class SceneRenderer: FrameRenderer {
             let pixel: [UInt8] = [colour.red, colour.green, colour.blue, colour.alpha]
                 .map { UInt8(max(0, min(1, $0)) * 255) }
             return (width, height, Data(Array(repeating: pixel, count: width * height).joined()))
+        case .image:
+            // Drawn by the game through a `CGContext` — every chunky surface
+            // arrives this way, already RGBA8 premultiplied, so there is
+            // nothing to decode.
+            return texture.ownPixels
         case .named, .slice:
             return nil
         }

@@ -98,6 +98,7 @@ public final class BoardPreviewScene: SKScene {
 
         addRigs(on: board, originX: originX, originY: originY, rows: rows)
         addType()
+        addSurfaces()
 
         Log.info("preview scene: \(board.children.count) nodes, scene \(Int(size.width))x\(Int(size.height)) pt")
 
@@ -188,6 +189,73 @@ public final class BoardPreviewScene: SKScene {
     /// The first line also wraps, which is the other half of it: Thai breaks
     /// between grapheme clusters rather than at spaces, and never straight
     /// after a leading vowel.
+    // MARK: Chunky surfaces
+
+    /// The visual bar for the `CGContext` ring: the game's own
+    /// `ChunkyStyle` and `SurfaceTexture`, drawing real buttons.
+    ///
+    /// Nothing here draws anything. Every pixel comes out of
+    /// `Source/Utils/SurfaceTexture.swift`, compiled unmodified for Android
+    /// and reached through `GameSurfaces` — so what is on screen is a
+    /// gradient face, a lit rim, a hairline, a darker edge and a blurred
+    /// drop shadow, laid down by the file that lays them down on iOS.
+    ///
+    /// Four of them, because between them they use the whole context: the
+    /// primary and cream buttons are gradients clipped to a rounded path
+    /// with a stroked rim clipped to its own stroked outline; the socket is
+    /// an inner shadow, which is a shadow cast through an even-odd fill of
+    /// everything *around* the face; and the glow is a five-stop radial
+    /// gradient. The focus ring over the cream button is two stroked bands.
+    private func addSurfaces() {
+        let visible: CGFloat = 340
+        let row = SKNode()
+        row.zPosition = 600
+        row.position = CGPoint(x: size.width / 2, y: size.height / 2 + cell * 3.6)
+        addChild(row)
+
+        let glow = GameSurfaces.glow(red: 1, green: 0.85, blue: 0.45)
+        glow.position = CGPoint(x: -visible / 2 + 46, y: -4)
+        glow.zPosition = -1
+        row.addChild(glow)
+
+        let play = GameSurfaces.primaryButton(
+            size: CGSize(width: 150, height: 54), cornerRadius: 27
+        )
+        play.position = CGPoint(x: -visible / 2 + 86, y: 0)
+        row.addChild(play)
+
+        let icon = GameSurfaces.creamButton(
+            size: CGSize(width: 54, height: 54), cornerRadius: 27
+        )
+        icon.position = CGPoint(x: visible / 2 - 122, y: 0)
+        row.addChild(icon)
+
+        let ring = GameSurfaces.focusRing(
+            around: CGRect(x: visible / 2 - 149, y: -27, width: 54, height: 54),
+            cornerRadius: 27
+        )
+        row.addChild(ring)
+
+        let socket = GameSurfaces.socket(
+            size: CGSize(width: 54, height: 54), cornerRadius: 16
+        )
+        socket.position = CGPoint(x: visible / 2 - 46, y: 0)
+        row.addChild(socket)
+
+        let sparkle = GameSurfaces.sparkle(size: 22)
+        sparkle.position = CGPoint(x: visible / 2 - 46, y: 0)
+        sparkle.zPosition = 1
+        row.addChild(sparkle)
+
+        // The card the whole row stands on, so the shadows have something to
+        // fall across rather than the backdrop.
+        let card = GameSurfaces.insetCard(size: CGSize(width: visible, height: 86))
+        card.zPosition = -2
+        row.addChild(card)
+
+        Log.info("surfaces: \(row.children.count) nodes at \(UITraitCollection.current.displayScale)x")
+    }
+
     private func addType() {
         // The scene is a wide canvas shown with aspect fill, so only the
         // middle of its width is ever on screen. This is what a phone sees.

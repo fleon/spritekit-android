@@ -21,6 +21,9 @@ public final class SKTexture: @unchecked Sendable {
         case slice(SKTexture, CGRect)
         /// A solid colour, for stand-ins and tests.
         case color(SKColor, CGSize)
+        /// Pixels the game drew itself, through a `CGContext`: every chunky
+        /// surface `SurfaceTexture` makes arrives this way.
+        case image(RasterImage)
     }
 
     public let source: Source
@@ -65,6 +68,20 @@ public final class SKTexture: @unchecked Sendable {
         declaredSize = size
     }
 
+    /// A texture from an image, either kind `UIImage` can be.
+    ///
+    /// One the game **drew** (through `UIGraphicsImageRenderer`, as every
+    /// chunky surface is) carries its pixels as `.image`. One it **loaded**
+    /// from a file (a rig's page) carries the file's undecoded bytes as
+    /// `.data`, which the renderer decodes. Either way the image's scale is
+    /// what makes a 3x rendering measure as its own points, as
+    /// `SKTexture(image:)` does on Apple.
+    public init(image: UIImage) {
+        source = image.cgImage.map { Source.image($0) } ?? .data(image.data)
+        asset = nil
+        declaredSize = image.size
+    }
+
     /// The image's size in points, as SpriteKit reports it: for a named
     /// texture, the art's own size from the asset index.
     public func size() -> CGSize {
@@ -79,6 +96,8 @@ public final class SKTexture: @unchecked Sendable {
             // Zero while no index is loaded, or when it holds no such asset,
             // in which case a sprite falls back on its own explicit size.
             return asset?.size ?? .zero
+        case let .image(image):
+            return CGSize(width: CGFloat(image.width), height: CGFloat(image.height))
         case .data:
             return .zero
         }
@@ -100,7 +119,7 @@ public final class SKTexture: @unchecked Sendable {
             )
         case .named:
             return asset?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
-        case .data, .color:
+        case .data, .color, .image:
             return CGRect(x: 0, y: 0, width: 1, height: 1)
         }
     }
@@ -109,6 +128,13 @@ public final class SKTexture: @unchecked Sendable {
     public var root: SKTexture {
         if case let .slice(parent, _) = source { return parent.root }
         return self
+    }
+
+    /// The pixels this texture carries itself, if it was drawn rather than
+    /// packed — what the renderer uploads through `ResourceCache.pixelSource`.
+    public var ownPixels: (width: Int, height: Int, pixels: Data)? {
+        guard case let .image(image) = source else { return nil }
+        return (image.width, image.height, Data(image.pixels))
     }
 
     /// The packed page this texture's pixels are on, as an index into

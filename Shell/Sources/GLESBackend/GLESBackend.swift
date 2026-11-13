@@ -28,6 +28,14 @@ public enum GLESBackend {
     /// The renderer the shell draws with.
     public static func makeRenderer(_ context: RenderContext) -> FrameRenderer {
         let size = sceneSize(for: context.size)
+        // How many pixels a point is worth, which is what the game reads to
+        // decide the density of every texture it draws for itself
+        // (`SurfaceTexture.renderScale`). It has to be right *before* the
+        // scene builds, since that is when the surfaces are drawn.
+        UITraitCollection.current.displayScale = Viewport(
+            drawableSize: context.size, sceneSize: size, scaleMode: .aspectFill
+        ).scale.x
+
         // A real level if the catalog loaded, else the hand-laid preview, so
         // a missing or broken level file shows the pipeline still works
         // rather than a blank screen.

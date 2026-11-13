@@ -8,10 +8,6 @@ import SpriteKitShim
 //
 // None of them changes what the board *is*, only how it is shaded:
 //
-//   - `SurfaceTexture` rasterises CoreGraphics into a texture. `CGContext`
-//     records but does not fill yet (see Android/README.md), so this hands
-//     back nothing to draw. The only caller on this slice is `TileNode`'s
-//     height dots, which only a raised tile shows.
 //   - `LiveBackdrops` is named by `forgetTextures` alone, to drop the
 //     shaders that hold a backdrop's bake. With none held there is nothing
 //     to forget. (`SceneLighting`, `WorldLight` and `RigMeshNode` stood in
@@ -22,45 +18,11 @@ enum LiveBackdrops {
     static func forgetBakeShaders(where forget: (String) -> Bool) {}
 }
 
-/// The CoreGraphics drawing surface `SurfaceTexture` hands its callers.
-/// `CGPath` records in the shim and nothing fills or strokes it yet (see
-/// "What is deliberately unfinished" in Android/README.md), so this records
-/// nothing either — it exists so the drawing closures in the files compiled
-/// here are real code rather than something edited out. It covers only what
-/// those closures call, and goes when the rasteriser lands.
-final class CGContext {
-    func setFillColor(_ color: CGColor) {}
-    func fillEllipse(in rect: CGRect) {}
-}
-
-/// `UIColor.cgColor`'s type. Opaque: nothing on this slice reads it.
-final class CGColor {}
-
-extension UIColor {
-    var cgColor: CGColor { CGColor() }
-}
-
-enum SurfaceTexture {
-    static func texture(
-        size: CGSize,
-        padding: CGFloat = 0,
-        scale: CGFloat? = nil,
-        key: String? = nil,
-        data: Bool = false,
-        draw: (CGContext, CGRect) -> Void
-    ) -> SKTexture {
-        SKTexture(color: .clear, size: size)
-    }
-}
-
-extension UIColor {
-    /// Real one lives in SurfaceTexture.swift, where it keys the cache.
-    var cacheKey: String {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        return String(format: "%.3f-%.3f-%.3f-%.3f", Double(r), Double(g), Double(b), Double(a))
-    }
-}
+// `CGContext`, `CGColor`, `UIColor.cgColor`, `SurfaceTexture` and
+// `UIColor.cacheKey` stood in here until the CGContext ring brought real
+// ones: the first three are the shim's (`BitmapContext`,
+// `CoreGraphicsCompat.swift`), the last two are Source/Utils/SurfaceTexture.swift
+// itself. So `TileNode`'s height dots are drawn now, not handed back empty.
 
 /// A cracked brick. The real one is a shader that splits the brick into six
 /// pieces from a point struck near its middle and breaks them away one by

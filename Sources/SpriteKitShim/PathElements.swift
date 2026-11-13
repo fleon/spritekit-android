@@ -1,5 +1,4 @@
 import Foundation
-import SpriteKitShim
 
 #if canImport(CoreGraphics) && canImport(Darwin)
 import CoreGraphics

@@ -1,5 +1,4 @@
 import Foundation
-import SpriteKitShim
 
 /// Turns a recorded `CGPath` into 8-bit coverage.
 ///
@@ -517,16 +516,80 @@ public enum PathRasteriser {
 
         // Into device pixels, row 0 at the top: y grows down the mask while
         // it grows up the path.
+        let inPixels = polygons.map { polygon in
+            polygon.map {
+                CGPoint(x: ($0.x - bounds.minX) * scale, y: (bounds.maxY - $0.y) * scale)
+            }
+        }
+        let pixels = coverage(
+            inPixels, rule: rule,
+            in: PixelBox(x: 0, y: 0, width: width, height: height)
+        )
+        guard !pixels.isEmpty else { return nil }
+        return Mask(width: width, height: height, pixels: pixels, bounds: bounds, scale: scale)
+    }
+
+    /// A window on a pixel grid: where a run of coverage sits and how big it is.
+    public struct PixelBox: Equatable, Sendable {
+        public var x: Int, y: Int, width: Int, height: Int
+
+        public init(x: Int, y: Int, width: Int, height: Int) {
+            self.x = x; self.y = y; self.width = width; self.height = height
+        }
+
+        public var isEmpty: Bool { width <= 0 || height <= 0 }
+        public var count: Int { max(0, width) * max(0, height) }
+        public var maxX: Int { x + width }
+        public var maxY: Int { y + height }
+
+        public func intersection(_ other: PixelBox) -> PixelBox {
+            let left = max(x, other.x), top = max(y, other.y)
+            let right = min(maxX, other.maxX), bottom = min(maxY, other.maxY)
+            return PixelBox(x: left, y: top, width: max(0, right - left), height: max(0, bottom - top))
+        }
+
+        /// The whole-pixel box covering `rect`, which is in the same pixel
+        /// space: `floor` on the near edges, `ceil` on the far ones, so a
+        /// shape's partial pixels are inside it.
+        public static func covering(_ rect: CGRect) -> PixelBox {
+            guard rect.width.isFinite, rect.height.isFinite,
+                  rect.minX.isFinite, rect.minY.isFinite else { return PixelBox(x: 0, y: 0, width: 0, height: 0) }
+            let left = Int(rect.minX.rounded(.down)), top = Int(rect.minY.rounded(.down))
+            let right = Int(rect.maxX.rounded(.up)), bottom = Int(rect.maxY.rounded(.up))
+            return PixelBox(x: left, y: top, width: max(0, right - left), height: max(0, bottom - top))
+        }
+    }
+
+    /// Coverage for polygons **already in pixels**, y down, with (0, 0) the
+    /// top left of the grid they are measured against.
+    ///
+    /// This is the half of the rasteriser `CGContext` needs. A context owns
+    /// its bitmap, so it cannot accept whatever bounds a mask happens to
+    /// want: it has to ask for coverage over a window of pixels it chose —
+    /// the shape's bounds clipped to the clip and the canvas. `rasterise`
+    /// above is the other caller, which picks its own bounds and then asks
+    /// for all of them.
+    ///
+    /// Returns `box.width * box.height` bytes, row 0 being `box.y`, or an
+    /// empty array for an empty box.
+    public static func coverage(
+        _ polygons: [[CGPoint]],
+        rule: FillRule,
+        in box: PixelBox
+    ) -> [UInt8] {
+        guard !box.isEmpty, !polygons.isEmpty else { return [] }
+
+        // Edges in the box's own space, so the scanline walk counts rows
+        // from 0 however far down the bitmap the box sits.
         var edges: [Edge] = []
         edges.reserveCapacity(polygons.reduce(0) { $0 + $1.count })
         for polygon in polygons where polygon.count > 2 {
             for i in 0 ..< polygon.count {
                 let a = polygon[i]
                 let b = polygon[(i + 1) % polygon.count]
-                let ax = (a.x - bounds.minX) * scale
-                let ay = (bounds.maxY - a.y) * scale
-                let bx = (b.x - bounds.minX) * scale
-                let by = (bounds.maxY - b.y) * scale
+                guard a.x.isFinite, a.y.isFinite, b.x.isFinite, b.y.isFinite else { continue }
+                let ax = a.x - CGFloat(box.x), ay = a.y - CGFloat(box.y)
+                let bx = b.x - CGFloat(box.x), by = b.y - CGFloat(box.y)
                 guard ay != by else { continue }
                 edges.append(
                     ay < by
@@ -535,12 +598,13 @@ public enum PathRasteriser {
                 )
             }
         }
-        guard !edges.isEmpty else { return nil }
+        guard !edges.isEmpty else { return [] }
 
         // Edges sorted by their top, so each scanline only has to advance a
         // cursor rather than look at every edge in the path.
         edges.sort { $0.y0 < $1.y0 }
 
+        let width = box.width, height = box.height
         var pixels = [UInt8](repeating: 0, count: width * height)
         var row = [CGFloat](repeating: 0, count: width)
         var crossings: [(x: CGFloat, winding: Int)] = []
@@ -595,7 +659,7 @@ public enum PathRasteriser {
             }
         }
 
-        return Mask(width: width, height: height, pixels: pixels, bounds: bounds, scale: scale)
+        return pixels
     }
 
     private static func inside(_ winding: Int, _ rule: FillRule) -> Bool {
