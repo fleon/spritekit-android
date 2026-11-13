@@ -73,6 +73,26 @@ public enum GLESBackend {
         // Per launch, so it never changes the scene another app on a shared
         // emulator picks up from the property.
         if ShellArguments.has("-WarpProbe") { scene = .warp }
+        PNGFiles.install()
+        PlayScene.options = playOptions()
+    }
+
+    /// What a cleared level's Share films, from the launch arguments: the share
+    /// film's choices (the win card's form, until it's ported) and the
+    /// scripted runs that film one unattended.
+    ///
+    ///     --esa args "-StartLevel,garden-3,-AutoSolve,-AutoShare,-ShareFrameRate,30"
+    static func playOptions() -> PlayScene.Options {
+        var options = PlayScene.Options()
+        options.autoShare = ShellArguments.has("-AutoShare")
+        options.share.picture = ShellArguments.value(after: "-ShareFormat") == "image"
+        options.share.smooth = ShellArguments.value(after: "-ShareFrameRate") != "30"
+        options.share.landscape = ShellArguments.value(after: "-ShareOrientation") == "landscape"
+        options.share.includesLink = ShellArguments.value(after: "-ShareLink") != "NO"
+        if options.autoShare {
+            Log.info("share: \(options.share)")
+        }
+        return options
     }
 
     /// The renderer the shell draws with.

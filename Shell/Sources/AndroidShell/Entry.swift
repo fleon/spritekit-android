@@ -41,6 +41,8 @@ public func SDL_main(
     // What SDL was handed by MainActivity.getArguments(). The process's own
     // argv is the zygote's, so this is the only place they exist.
     ShellArguments.install(argc: argc, argv: argv)
+    FilmSetup.useCacheForTemporaryFiles()
+    FilmSetup.install()
 
     // Hands the shell a real renderer. If the art is missing from the APK
     // the index does not load and every texture resolves to the white

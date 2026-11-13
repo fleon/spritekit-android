@@ -37,16 +37,24 @@ public enum RigBundle {
         let directory = URL(fileURLWithPath: cache).appendingPathComponent(root)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
+        // The sound effects and the soundtrack too, which a share film mixes
+        // (`AudioManager.url(of:)`): staged under `assets/audio/` by Gradle.
+        let audio = URL(fileURLWithPath: cache).appendingPathComponent("audio")
+        try? FileManager.default.createDirectory(at: audio, withIntermediateDirectories: true)
         BundleResources.provider = { name, ext in
-            unpack("\(name).\(ext)", into: directory)
+            switch ext {
+            case "wav": unpack("\(name).\(ext)", from: "audio/SFX", into: audio)
+            case "m4a": unpack("\(name).\(ext)", from: "audio/Music", into: audio)
+            default: unpack("\(name).\(ext)", into: directory)
+            }
         }
     }
 
     /// The staged file, copied out of the APK if it is not out yet.
-    static func unpack(_ file: String, into directory: URL) -> URL? {
+    static func unpack(_ file: String, from folder: String = root, into directory: URL) -> URL? {
         let url = directory.appendingPathComponent(file)
         if FileManager.default.fileExists(atPath: url.path) { return url }
-        guard let data = AssetBundle.load("\(root)/\(file)") else { return nil }
+        guard let data = AssetBundle.load("\(folder)/\(file)") else { return nil }
         do {
             try data.write(to: url, options: .atomic)
             return url

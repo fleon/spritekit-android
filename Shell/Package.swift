@@ -68,6 +68,19 @@ let package = Package(
     targets: [
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
         .target(name: "CSwitchlingsAudio", path: "Sources/CSwitchlingsAudio"),
+        .target(name: "CSwitchlingsMedia", path: "Sources/CSwitchlingsMedia"),
+        // A share film's encoding, over MediaCodec and MediaMuxer: the
+        // device half of PlatformShim's AVFoundation stand-ins.
+        .target(
+            name: "FilmMedia",
+            dependencies: [
+                "CSwitchlingsAudio",
+                "CSwitchlingsMedia",
+                .product(name: "PlatformShim", package: "Android"),
+            ],
+            path: "Sources/FilmMedia",
+            swiftSettings: [v5, shimDefine]
+        ),
         .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
 
         .target(
@@ -114,6 +127,7 @@ let package = Package(
                 "ShellCore",
                 "GLESBackend",
                 "SDLAudio",
+                "FilmMedia",
                 .product(name: "SpriteKitShim", package: "Android"),
             ],
             path: "Sources/AndroidShell",
@@ -128,6 +142,9 @@ let package = Package(
                 .linkedLibrary("log", .when(platforms: [.android])),
                 // Android's own media stack, for decoding the soundtrack's AAC.
                 .linkedLibrary("mediandk", .when(platforms: [.android])),
+                // The main queue's drain, which the frame loop calls
+                // (`switchlings_drain_main_queue`).
+                .linkedLibrary("dispatch", .when(platforms: [.android])),
             ]
         ),
     ]

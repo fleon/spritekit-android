@@ -55,4 +55,19 @@ int switchlings_property(const char *name, char *out, int capacity);
 /// such hook. See `MainActorJobs` in the shim.
 int switchlings_set_main_executor(const void *identity, uintptr_t implementation);
 
+/// Whether libdispatch's main queue belongs to the calling thread: it binds
+/// the queue to whichever thread ran its constructor, so this says whether
+/// `libAndroidShell.so` (and with it libdispatch) first loaded on SDL's
+/// thread, as `MainActivity.loadLibraries` arranges.
+bool switchlings_owns_main_queue(void);
+
+/// Runs what `DispatchQueue.main` (and with it the main actor) has queued.
+/// Only on the thread that owns the queue: libdispatch traps otherwise.
+void switchlings_drain_main_queue(void);
+
+/// Opens Android's share sheet with a file under the app's cache directory,
+/// through `MainActivity.shareFile` (JNI, on SDL's activity). `text` may be
+/// NULL. False if the call could not be made.
+bool switchlings_share_file(const char *path, const char *mime, const char *text);
+
 #endif /* CANDROIDSHELL_H */

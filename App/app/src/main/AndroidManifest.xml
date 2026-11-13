@@ -28,5 +28,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Share films: the file the game wrote, read by the app the share
+             sheet's chosen, under the grant the share intent carries. -->
+        <provider
+            android:name=".FilmProvider"
+            android:authorities="${applicationId}.films"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

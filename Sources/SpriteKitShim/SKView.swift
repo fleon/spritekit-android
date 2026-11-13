@@ -67,6 +67,10 @@ open class SKView: UIView {
 
     open weak var delegate: (any SKViewDelegate)?
 
+    /// Carried: the GLES renderer always draws on the frame thread, so a
+    /// share film turning it off (`SolutionShare`) changes nothing.
+    public var isAsynchronous = true
+
     /// How fast transitions play: the port's own, for filming a 0.1-second
     /// fade on an emulator that draws a few frames a second
     /// (`debug.switchlings.transitionslowdown`). Not SpriteKit API.

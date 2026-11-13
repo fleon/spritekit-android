@@ -14,13 +14,35 @@ public final class PlayScene: SKScene, LoadableScene {
     private var board: PlayBoardNode?
     /// The boards behind the one on screen, so a move can be taken back.
     private var history: [GameState] = []
+    /// The moves behind `history`, which a share film replays.
+    private var moves: [GameSession.Move] = []
     private var isWon = false
     /// The layout the loading screen built this for, while it has no view.
     var plannedLayout: SceneLayout?
     private var isLoaded = false
+    /// The win card's Share, until the win card itself is ported.
+    private var shareButton: SKNode?
+    private var shareLabel: SKLabelNode?
+    private var isSharing = false
+
+    /// How a run is driven, from the launch arguments (`GLESBackend`).
+    public struct Options {
+        /// Presses Share as soon as the level is cleared.
+        public var autoShare = false
+        /// What Share films.
+        public var share = FilmShare.Choices()
+        /// Called with the file once the share sheet is open.
+        public var shared: ((URL?) -> Void)?
+
+        public init() {}
+    }
+
+    public nonisolated(unsafe) static var options = Options()
 
     /// How long a cleared level is left on screen before the next one.
     private static let winPause: TimeInterval = 1.6
+    /// The stand-in Share button's width, the win card's pill being the UI ring's.
+    private static let shareWidth: CGFloat = 180
 
     /// Plays each level's stored solution by itself, a move at a time, so a
     /// run on a device clears level after level through the loading screen
@@ -74,7 +96,10 @@ public final class PlayScene: SKScene, LoadableScene {
 
     private func buildBoard() {
         board?.removeFromParent()
+        shareButton?.removeFromParent()
+        shareButton = nil
         history = []
+        moves = []
         isWon = false
 
         guard let state = try? GameEngine.createState(entry.level) else {
@@ -121,7 +146,17 @@ public final class PlayScene: SKScene, LoadableScene {
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        tap(at: touch.location(in: self))
+        let point = touch.location(in: self)
+        if isWon {
+            guard !isSharing else { return }
+            if let shareButton, shareButton.contains(point) {
+                share()
+            } else {
+                advance()
+            }
+            return
+        }
+        tap(at: point)
     }
 
     /// A tap at `scenePoint`: the Switchling under it takes a step its arrow's
@@ -149,7 +184,10 @@ public final class PlayScene: SKScene, LoadableScene {
               let next = GameEngine.move(previous, id: id, direction: direction) else { return }
 
         let isMove = next.tick != previous.tick
-        if isMove { history.append(previous) }
+        if isMove {
+            history.append(previous)
+            moves.append(GameSession.Move(id: id, direction: direction))
+        }
         PlayLog.write(
             isMove
                 ? "move \(history.count): \(id) \(direction.rawValue)"
@@ -168,8 +206,46 @@ public final class PlayScene: SKScene, LoadableScene {
         PlayLog.write("\(entry.id) solved in \(history.count) moves — everyone home")
         run(.sequence([
             .wait(forDuration: Self.winPause),
-            .run { [weak self] in self?.advance() },
+            .run { [weak self] in self?.showShare() },
         ]))
+    }
+
+    // MARK: - Share
+
+    /// The win card's Share, standing in for the card: a primary button
+    /// under the board. A tap anywhere else goes on to the next level.
+    private func showShare() {
+        let size = sz(Self.shareWidth, DesignSystem.buttonMediumHeight)
+        let button = SKNode()
+        let face = SurfaceTexture.chunkyResting(size: size, style: .primary(cornerRadius: size.height / 2))
+        button.addChild(face)
+        let title = label(.font(.black, DesignSystem.buttonMediumFontSize), .text(LocalizedString.share.localized), .color(Theme.primaryText), .z(DesignSystem.zStep))
+        title.centerCapitals(on: .zero)
+        button.addChild(title)
+        let bottom = board.map { convert(CGPoint(x: 0, y: $0.calculateAccumulatedFrame().minY), from: $0).y } ?? size.height * 2
+        button.position = pt(self.size.width / 2, max(size.height * 2, bottom - size.height * 1.5))
+        button.zPosition = DesignSystem.hudZ
+        addChild(button)
+        shareButton = button
+        shareLabel = title
+        if Self.options.autoShare { share() }
+    }
+
+    private func share() {
+        guard let view, let shareButton, !isSharing else { return }
+        isSharing = true
+        let started = MediaTime.source()
+        PlayLog.write("filming \(entry.id): \(Self.options.share)")
+        FilmShare.share(entry: entry, moves: moves, choices: Self.options.share, view: view, from: shareButton, progress: { [weak self] fraction in
+            self?.shareLabel?.text = "\(Int((fraction * 100).rounded()))%"
+        }) { [weak self] url in
+            guard let self else { return }
+            self.isSharing = false
+            self.shareLabel?.text = LocalizedString.share.localized
+            let size = url.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int } ?? 0
+            PlayLog.write(url.map { "film ready in \(String(format: "%.1f", MediaTime.source() - started)) s: \($0.path), \(size / 1024) KB" } ?? "the film could not be made")
+            Self.options.shared?(url)
+        }
     }
 
     /// Opens the next level in the world, then the next world's first; after

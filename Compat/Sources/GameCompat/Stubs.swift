@@ -20,23 +20,15 @@ enum FontRegistry {
     /// the same files from Assets/Fonts — including the variable font's
     /// named instances, which is how "ChironGoRoundTC-Black" resolves.
     static func registerChiron() {}
+    /// The same for KoHo, Thai's face (`AppLanguage.scriptFontName`); the
+    /// shell registers it with the rest.
+    static func registerKoHo() {}
 }
 
-enum Localization {
-    struct Script {
-        /// Real one returns KoHo for Thai and Chiron for everything else.
-        /// Both faces are registered by then; all this needs is the language
-        /// pick, so it lands with the localisation port.
-        func scriptFontName(_ weight: UIFont.Weight) -> String? { nil }
-
-        /// Real one picks per script, out of the same DesignSystem
-        /// constants — which are compiled here, so this is the real value
-        /// for every language but the four with taller scripts.
-        var lineHeightRatio: CGFloat { DesignSystem.textLineHeight }
-    }
-
-    static let current = Script()
-}
+// `Localization` stood in here until the share film ring: the real
+// `Localization.swift` and `LocalizedString.swift` are compiled now. With no
+// `.lproj` in the APK yet, `Bundle.main` answers every string with its
+// English fallback, which is the localisation ring's to change.
 
 // `sprite`, `tinted` and `sliced` used to stand in here. The real
 // SpriteHelpers.swift is compiled now (the gameplay ring); what it reaches

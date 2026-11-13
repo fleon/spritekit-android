@@ -43,10 +43,21 @@ public final class UIImage: @unchecked Sendable {
         size = pixels
     }
 
+    /// A loose PNG the bundle answers for, else an image set from the
+    /// packed art (`UIImage.packed`), as the asset catalog answers on Apple:
+    /// a share's avatar is one.
     public convenience init?(named name: String) {
-        guard let url = BundleResources.url(forResource: name, withExtension: "png") else { return nil }
-        self.init(contentsOfFile: url.path)
+        if let url = BundleResources.url(forResource: name, withExtension: "png") {
+            self.init(contentsOfFile: url.path)
+        } else if let scale = AssetIndex.shared?.scale, let pixels = UIImage.packed?(name) {
+            self.init(cgImage: pixels, scale: scale)
+        } else {
+            return nil
+        }
     }
+
+    /// An image set's pixels, cut from its atlas page; the shell installs it.
+    public nonisolated(unsafe) static var packed: ((String) -> RasterImage?)?
 
     /// A drawn image. UIKit's carries its scale so a 3x rendering still
     /// measures as its points, and the game relies on that: `SurfaceTexture`
@@ -73,6 +84,38 @@ public final class UIImage: @unchecked Sendable {
 
     /// The width and height out of a PNG's IHDR, which is always the first
     /// chunk: 8 bytes of signature, then length, type, width, height.
+    /// The renderers' contexts, innermost last (UIKit's context stack). One
+    /// thread draws images at a time in the game: the main one, or a build
+    /// off it holding the build gate.
+    nonisolated(unsafe) static var contexts: [BitmapContext] = []
+
+    /// Decodes a PNG's bytes, which the shim can't inflate on its own; the
+    /// shell installs its decoder. Without it, an image read from a file
+    /// draws nothing.
+    public nonisolated(unsafe) static var decoder: ((Data) -> RasterImage?)?
+
+    /// Encodes pixels as a PNG; the shell installs one that compresses.
+    /// Without it, `PNGEncoder`'s stored (uncompressed) deflate.
+    public nonisolated(unsafe) static var encoder: ((RasterImage) -> Data?)?
+
+    /// Its pixels, decoded from its file if it came from one.
+    public var pixels: RasterImage? {
+        cgImage ?? (data.isEmpty ? nil : UIImage.decoder?(data))
+    }
+
+    /// Draws it, stretched to `rect`, into the context being drawn.
+    public func draw(in rect: CGRect) {
+        guard let context = UIImage.contexts.last, let pixels else { return }
+        context.draw(pixels, in: rect)
+    }
+
+    /// The image as a PNG file.
+    public func pngData() -> Data? {
+        if cgImage == nil, !data.isEmpty, UIImage.pngSize(data) != nil { return data }
+        guard let pixels else { return nil }
+        return UIImage.encoder?(pixels) ?? PNGEncoder.encode(pixels)
+    }
+
     static func pngSize(_ data: Data) -> CGSize? {
         let bytes = [UInt8](data.prefix(24))
         guard bytes.count == 24,
@@ -164,7 +207,11 @@ public final class UIGraphicsImageRenderer: @unchecked Sendable {
             width: width, height: height, scale: scale, opaque: format.opaque
         )
         if origin != .zero { context.translateBy(x: -origin.x, y: -origin.y) }
+        // UIKit's drawing calls (`UIImage.draw(in:)`) draw into this while
+        // the actions run, and into what was current before once they end.
+        UIImage.contexts.append(context)
         actions(UIGraphicsImageRendererContext(cgContext: context, format: format))
+        UIImage.contexts.removeLast()
 
         guard let image = context.makeImage() else { return UIImage(size: size, scale: scale) }
         return UIImage(cgImage: image, scale: scale)

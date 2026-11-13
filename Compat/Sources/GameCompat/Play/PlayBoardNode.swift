@@ -26,7 +26,9 @@ final class PlayBoardNode: SKNode {
     let metrics: BoardMetrics
     let level: Level
     private let theme: WorldTheme
-    private let outline: BoardOutline
+    let outline: BoardOutline
+    /// The kerbs, which a share film's stage measures and its intro drops in.
+    private(set) var frameNode: BoardFrameNode?
     /// Walls outside the board's outline, which keep their authored height
     /// out of what is drawn (`BoardNode.height`).
     private let authoredWalls: Set<GridPoint>
@@ -43,6 +45,8 @@ final class PlayBoardNode: SKNode {
 
     private enum ActionKey {
         static let track = "board.track"
+        static let intro = "board.intro"
+        static let dance = "board.dance"
     }
 
     private enum Layer {
@@ -114,6 +118,7 @@ final class PlayBoardNode: SKNode {
 
         let frame = BoardFrameNode(outline: outline, metrics: metrics, theme: theme)
         gridLayer.addChild(frame)
+        frameNode = frame
 
         for (order, switchling) in state.switchlings.enumerated() {
             castOrder[switchling.id] = order
@@ -200,20 +205,29 @@ final class PlayBoardNode: SKNode {
     /// snapped to `next` when the last of them lands.
     ///
     /// `speed` plays a move faster (undo runs at `rewindSpeedup`).
+    ///
+    /// `pace` carries each Switchling as its rig steps (`ActorNode.pace`),
+    /// and `sounds` hears what the move sounds like as it plays (a share
+    /// film's soundtrack). Returns how long it runs.
+    @discardableResult
     func play(
         previous: GameState,
         next: GameState,
         speed: Double = 1,
+        pace: ((String) -> Timeline.Pace)? = nil,
+        sounds: ((AudioManager.Sound) -> Void)? = nil,
         completion: @escaping () -> Void
-    ) {
-        let timeline = Timeline(previous: previous, next: next)
+    ) -> TimeInterval {
+        finishIntro()
+        let timeline = pace.map { Timeline(previous: previous, next: next, pace: $0) } ?? Timeline(previous: previous, next: next)
         let duration = timeline.total / 1000 / speed
 
         guard duration > 0 else {
             show(next)
             completion()
-            return
+            return 0
         }
+        if let sounds { cueSounds(timeline, previous: previous, next: next, speed: speed, into: sounds) }
 
         // Heights only change when a platform switch moves one, and the
         // platform settles at `mechanismAt`; before that the board is as it
@@ -263,6 +277,139 @@ final class PlayBoardNode: SKNode {
                 completion()
             },
         ]), withKey: ActionKey.track)
+        return duration
+    }
+
+    /// The sounds `BoardNode.animate` makes for a move's cues, each once at
+    /// its time, and the homecoming as the move ends — the cues the board
+    /// shows today; the mechanics' own sounds come with their art.
+    private func cueSounds(_ timeline: Timeline, previous: GameState, next: GameState, speed: Double, into sink: @escaping (AudioManager.Sound) -> Void) {
+        var sounded = Set<String>()
+        func once(_ sound: AudioManager.Sound, _ t: Double) {
+            let slot = "\(sound.rawValue)@\((t / DesignSystem.soundDedupeWindow).rounded())"
+            guard sounded.insert(slot).inserted else { return }
+            run(.sequence([.wait(forDuration: t / 1000 / speed), .run { sink(sound) }]))
+        }
+        for cue in timeline.cues {
+            switch cue.kind {
+            case .step: once(.step, cue.t)
+            case .ledge: once(.ledge, cue.t)
+            case .conveyor, .iceSlide: once(.whoosh, cue.t)
+            case .jump, .rebound: once(.boing, cue.t)
+            case .thud, .push, .lever, .polarity: once(.bump, cue.t)
+            case .portal, .padSwap: once(.warp, cue.t)
+            case .bump, .bankSwap, .wireless: once(.swap, cue.t)
+            case .wake: once(.wake, cue.t)
+            case .crumble: once(.crumble, cue.t)
+            case .seal: once(.seal, cue.t)
+            case .bonk: once(.bonk, cue.t)
+            case let .signpost(_, _, _, turns): once(turns ? .bump : .bonk, cue.t)
+            default: break
+            }
+        }
+        let comesHome = next.switchlings.contains { switchling in
+            guard let was = previous.switchling(switchling.id), switchling.isHome else { return false }
+            return !(was.isHome && was.position == switchling.position)
+        }
+        if comesHome { once(.home, timeline.total) }
+    }
+
+    // MARK: - The intro and the dance, for a share film
+
+    /// Whatever the intro moved, back where it rests.
+    private var introRests: (() -> Void)?
+
+    /// `BoardNode.playIntro`, on this board's pieces and on its clock: each
+    /// cell's brick and home rise into place as they fade in, in a random
+    /// order; the arrows pop in and each Switchling grows out of its arrow
+    /// down onto its cell; the kerbs drop in one by one. Its timings are
+    /// `BoardNode`'s, constant for constant, so a share film's moves start on
+    /// the frames they do on iOS. Returns how long it runs.
+    @discardableResult
+    func playIntro(delay: TimeInterval, slowdown: Double) -> TimeInterval {
+        finishIntro()
+        var pieces: [GridPoint: [SKNode]] = [:]
+        for (cell, tile) in tiles { pieces[cell, default: []].append(tile) }
+        for switchling in state.switchlings {
+            if let goal = goals[switchling.id] { pieces[switchling.goal.position, default: []].append(goal) }
+        }
+        let spread = DesignSystem.boardIntroBrickSpread * slowdown
+        let pop = DesignSystem.boardIntroBrickDuration * slowdown
+        let cells = pieces.keys.shuffled()
+        let step = cells.count > 1 ? spread / Double(cells.count - 1) : 0
+        let groups = cells.enumerated().map { index, cell in
+            ((pieces[cell] ?? []).map { ($0, $0.position) }, start: delay + step * Double(index))
+        }
+        let slide = metrics.cell * DesignSystem.boardIntroSlideRatio
+
+        let arrowsAt = delay + spread + DesignSystem.boardIntroArrowLag * slowdown
+        let arrowStagger = DesignSystem.boardIntroArrowStagger * slowdown
+        let arrowPop = DesignSystem.boardIntroArrowDuration * slowdown
+        let emergeLag = DesignSystem.boardIntroEmergeLag * slowdown
+        let emerge = DesignSystem.boardIntroEmergeDuration * slowdown
+        let cast = state.switchlings.enumerated().map { index, switchling in
+            (arrow: arrows[switchling.id], actor: actors[switchling.id], start: arrowsAt + arrowStagger * Double(index))
+        }
+        let rests = cast.map { $0.actor?.position ?? .zero }
+        let arrowMiddle = metrics.cell * DesignSystem.arrowFloatOffsetRatio
+        let bodyMiddle = metrics.cell * (DesignSystem.actorArtScale / 2 - DesignSystem.actorFeetDrop)
+        let frame = frameNode
+        var drops: [(CGFloat, CGFloat) -> Void] = (0 ..< (frame?.kerbCount ?? 0)).map { index in
+            { lift, alpha in frame?.showKerb(index, lift: lift, alpha: alpha) }
+        }
+        drops.shuffle()
+        let kerbsAt = arrowsAt + emergeLag
+        let kerbStep = drops.count > 1 ? DesignSystem.boardIntroKerbSpread * slowdown / Double(drops.count - 1) : 0
+        let kerbPop = DesignSystem.boardIntroKerbDuration * slowdown
+        let lastLanding = arrowsAt + arrowStagger * Double(max(0, cast.count - 1)) + emergeLag + emerge
+        let lastDrop = kerbsAt + kerbStep * Double(max(0, drops.count - 1)) + kerbPop
+        let total = max(lastLanding, lastDrop, delay + spread + pop)
+
+        let show = { (t: TimeInterval) in
+            func progress(from start: TimeInterval, over length: TimeInterval) -> CGFloat {
+                CGFloat(length > 0 ? (t - start) / length : (t < start ? 0 : 1)).clamp(0, 1)
+            }
+            for group in groups {
+                let risen = progress(from: group.start, over: pop)
+                for (node, rest) in group.0 {
+                    node.position = rest.offset(0, (TimingCurve.backOut(risen) - 1) * slide)
+                    node.alpha = TimingCurve.easeOut(risen)
+                }
+            }
+            for (member, rest) in zip(cast, rests) {
+                member.arrow?.showPop(progress(from: member.start, over: arrowPop))
+                let grown = progress(from: member.start + emergeLag, over: emerge)
+                let scale = TimingCurve.backOut(grown)
+                let middle = TimingCurve.easeOut(grown).lerp(arrowMiddle, bodyMiddle)
+                member.actor?.setScale(scale)
+                member.actor?.position = rest.offset(0, middle - bodyMiddle * scale)
+            }
+            for (index, drop) in drops.enumerated() {
+                let dropped = progress(from: kerbsAt + kerbStep * Double(index), over: kerbPop)
+                drop((1 - TimingCurve.backOut(dropped)) * slide, TimingCurve.easeOut(dropped))
+            }
+        }
+        introRests = { show(.infinity) }
+        show(0)
+        run(.sequence([
+            .animateSteadily(duration: total) { _, progress in show(TimeInterval(progress) * total) },
+            .run { [weak self] in self?.finishIntro() },
+        ]), withKey: ActionKey.intro)
+        return total
+    }
+
+    private func finishIntro() {
+        guard let introRests else { return }
+        self.introRests = nil
+        removeAction(forKey: ActionKey.intro)
+        introRests()
+    }
+
+    /// Everyone dances, one after another (`BoardNode.celebrate`).
+    func celebrate() {
+        for (index, switchling) in state.switchlings.enumerated() {
+            actors[switchling.id]?.dance(delay: DesignSystem.danceStagger * Double(index))
+        }
     }
 
     /// Whether a move is still playing.

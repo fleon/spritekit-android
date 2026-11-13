@@ -52,7 +52,27 @@ final class PlaySwitchlingNode: SKNode {
     func setHome(_ home: Bool) {
         guard home != isHome else { return }
         isHome = home
-        art.texture = txtr(theme.characterAsset(castID, home ? .happy : .open))
-        eyes?.isHidden = home
+        // The happy face is the rigs' now (`RigFaces`), so the painting
+        // keeps its open face, eyes and all, where none is packed.
+        let happy = theme.characterAsset(castID, .happy)
+        let painted = home && AssetIndex.shared?[happy] != nil
+        art.texture = txtr(painted ? happy : theme.characterAsset(castID, .open))
+        eyes?.isHidden = painted
+    }
+
+    /// How high and how often the stand-in dance hops (the rigs' own
+    /// `celebrate` replaces it, and these with it).
+    private static let danceRise: CGFloat = 0.15
+    private static let danceBeat: TimeInterval = 0.36
+
+    /// A hop on the spot, over and over, after `delay`: the painting's
+    /// stand-in for its rig's `celebrate`, which `ActorNode.dance` plays.
+    func dance(delay: TimeInterval) {
+        let rise = cell * Self.danceRise
+        let up = SKAction.moveBy(x: 0, y: rise, duration: Self.danceBeat / 2)
+        up.timingMode = .easeOut
+        let down = SKAction.moveBy(x: 0, y: -rise, duration: Self.danceBeat / 2)
+        down.timingMode = .easeIn
+        feetNode.run(.sequence([.wait(forDuration: delay), .repeatForever(.sequence([up, down]))]), withKey: "dance")
     }
 }

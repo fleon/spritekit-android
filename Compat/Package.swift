@@ -40,6 +40,19 @@ let package = Package(
         .target(name: "QuartzCore",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
                 path: "Sources/QuartzCore", swiftSettings: [v5, shimDefine]),
+        // The share film's three (`SolutionFilm`, `FilmSoundtrack`).
+        .target(name: "Metal",
+                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                path: "Sources/Metal", swiftSettings: [v5, shimDefine]),
+        .target(name: "CoreVideo",
+                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                path: "Sources/CoreVideo", swiftSettings: [v5, shimDefine]),
+        .target(name: "AVFoundation",
+                dependencies: [
+                    .product(name: "SpriteKitShim", package: "Android"),
+                    .product(name: "PlatformShim", package: "Android"),
+                ],
+                path: "Sources/AVFoundation", swiftSettings: [v5, shimDefine]),
         .target(name: "os",
                 path: "Sources/os", swiftSettings: [v5, shimDefine]),
         // Not a passthrough: Android has no Accelerate, so this one has the
@@ -56,6 +69,7 @@ let package = Package(
                 .product(name: "PlatformShim", package: "Android"),
                 .product(name: "Macros", package: "Macros"),
                 "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "QuartzCore", "os", "simd",
+                "Metal", "CoreVideo", "AVFoundation",
             ],
             path: "Sources/GameCompat",
             swiftSettings: [v5, shimDefine]

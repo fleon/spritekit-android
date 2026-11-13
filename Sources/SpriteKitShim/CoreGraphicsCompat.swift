@@ -115,6 +115,7 @@ public extension BitmapContext {
         } else {
             self.init(width: width, height: height)
         }
+        storesBGRA = BitmapContext.isBGRA(bitmapInfo: bitmapInfo)
     }
 
     func setFillColor(_ color: CGColor) { setFill(color) }

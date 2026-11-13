@@ -33,6 +33,8 @@ enum LaunchArguments {
     static var playsDesignerLevels: Bool { false }
     /// `-HoldLoading`: the loading screen stays up. Off, as in a release build.
     static var holdsLoading: Bool { false }
+    /// The title's wordmark keeps pulsing (`TitleLogoNode`), as in a release build.
+    static var stillWordmark: Bool { false }
 }
 
 /// Real one is in `Source/GameViewController.swift`, which is the Apple
@@ -67,7 +69,11 @@ enum Progress {
 /// `Move` without reading it. (`GameState` stood in beside it until the
 /// gameplay ring; the real one is compiled now.)
 enum GameSession {
-    struct Move: Sendable {}
+    /// The real one's fields: a share film plays its moves (`SolutionFilm`).
+    struct Move: Sendable, Equatable {
+        let id: String
+        let direction: Direction
+    }
 }
 
 /// UIKit types the managers name but never use on Android.

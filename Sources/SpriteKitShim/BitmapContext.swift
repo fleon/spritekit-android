@@ -704,9 +704,29 @@ public final class BitmapContext {
                 let source = storage + y * bytesPerRow
                 let destination = out.baseAddress! + y * width * 4
                 destination.update(from: source, count: width * 4)
+                guard storesBGRA else { continue }
+                for x in stride(from: 0, to: width * 4, by: 4) {
+                    let blue = destination[x]
+                    destination[x] = destination[x + 2]
+                    destination[x + 2] = blue
+                }
             }
         }
         return RasterImage(width: width, height: height, pixels: pixels)
+    }
+
+    /// Whether the pixels it wraps are BGRA (CoreGraphics' premultiplied
+    /// first, 32-bit little-endian: a video frame's pixel buffer), which
+    /// `makeImage` hands back as RGBA. Only reading such a buffer is
+    /// answered for: drawing into one would draw RGBA.
+    public var storesBGRA = false
+
+    /// Whether CoreGraphics' `bitmapInfo` lays 32-bit pixels out as BGRA:
+    /// alpha first (premultiplied, or skipped) in little-endian words.
+    public static func isBGRA(bitmapInfo: UInt32) -> Bool {
+        let alpha = bitmapInfo & 0x1F
+        let little = bitmapInfo & (1 << 13) != 0
+        return little && (alpha == 2 || alpha == 6)
     }
 
     // MARK: Transparency layers

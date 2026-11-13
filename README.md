@@ -799,3 +799,98 @@ each read once at start-up (`adb shell setprop …`, then relaunch):
 
 logcat says when each scene arrives and when its transition lands
 (`scene LoadingScene at 13.462, transition playing`).
+
+## Share films
+
+A cleared level's Share films its solution as iOS does: `SolutionFilm`
+builds a stage off the main thread, renders each frame off screen through
+`SKRenderer`, encodes it as it goes, mixes the soundtrack and opens the
+share sheet with the file. **`SolutionFilm.swift`, `FilmSoundtrack.swift`
+and `MediaClock.swift` compile here unchanged**, and so do the wordmark over
+the board (`TitleLogoNode`, `WordmarkLayout`, `WordmarkLayouts`), the
+credit and code under it (`CreditNode`, `LevelCodeNode`, `ShadowLabelNode`)
+and, with them, the real `Localization.swift` and `LocalizedString.swift`
+(every string its English fallback until the APK carries the `.lproj`s).
+
+```bash
+adb shell am start -n com.fleon.switchlings.film/com.fleon.switchlings.MainActivity \
+    --esa args "-StartLevel,garden-1,-AutoSolve,-AutoShare,-ShareFrameRate,60"
+```
+
+`-ShareFormat image`, `-ShareFrameRate 30`, `-ShareOrientation landscape`
+and `-ShareLink NO` are the form's other choices. Without `-AutoShare` a
+cleared level shows a Share button (a tap elsewhere goes on).
+
+### The Apple surface, and what stands in for it
+
+| the film calls | on Android |
+|---|---|
+| `SKRenderer` `update(atTime:)`, `render(withViewport:commandBuffer:renderPassDescriptor:)` | `Sources/SpriteKitShim/SKRenderer.swift`: the view's own update (the scene's `update`, then its actions by the time since the last), then the scene flattened into a `DrawList` value, recorded into the command buffer |
+| `MTLDevice`, queue, command buffer, render pass, textures, `waitUntilCompleted` | `Metal.swift`: a command buffer is the passes recorded into it; `commit` hands it to `MetalExecution.executor`, `waitUntilCompleted` blocks on it |
+| `CVPixelBuffer`, its pool, `CVMetalTextureCache` | `CoreVideo.swift`: CPU memory in the format it says (32-bit BGRA); a texture made over one is where a render lands |
+| `AVAssetWriter` + H.264 input + pixel buffer adaptor | `Sources/PlatformShim/Media`: each frame converted to BT.709 video-range YUV (`YUVConversion`) and encoded with MediaCodec into an MP4 (`Shell/Sources/CSwitchlingsMedia`) |
+| `AVAudioFile`, `AVAudioPCMBuffer`, `AVAudioFormat` | WAV read in Swift (`WAVFile`); AAC read through the soundtrack's own MediaCodec decoder, positioned by presentation time as the game's player is; AAC written through MediaCodec into an M4A, closed when the file goes |
+| `AVMutableComposition` + passthrough `AVAssetExportSession` | MediaExtractor copying each track into one MediaMuxer, interleaved by time |
+| `UIActivityViewController` (`ShareSheet.swift`) | `Compat/.../Platform/ShareSheet.swift`, the platform part: JNI into `MainActivity.shareFile`, `ACTION_SEND` with a `content://` URI from `FilmProvider` (androidx's `FileProvider` contract for the cache directory, without the dependency) |
+| `UIImage.pngData()`, `draw(in:)`, `UIImage(named:)` | the shim's; the shell installs zlib for the PNG and cuts an image set from its atlas page |
+| `UIApplication` active/inactive | `UIApplication.swift`, posted by the shell from SDL's background and foreground events |
+
+The game's own module names resolve as `SpriteKit` and `UIKit` do: `Metal`,
+`CoreVideo` and `AVFoundation` are targets in `Compat` that re-export these.
+
+### Drawing on the view's context
+
+There is one GL context and one thread that draws. A committed command
+buffer waits in `FilmPasses` until the top of `SceneRenderer`'s next frame,
+which draws each pass into a framebuffer with a stencil (#396's render
+targets), through the same batcher, programs and texture cache as the
+screen, then `glReadPixels` into the pixel buffer, turning the rows over and
+swapping red and blue. No shared EGL context, no second upload of the art,
+no second set of programs.
+
+The film updates and records between the view's frames, holding
+`FilmDrawTurns`' lock, which the view's delegate takes as each frame starts
+(`SceneRenderer.shouldDraw` asks `SKView.shouldRender(atTime:)`, #404) and
+gives back through the main queue. Committed film frames are drawn at the
+top of `shouldDraw`, before the view takes its turn, and while a film is
+being made the renderer waits up to 12 ms there for its next buffer, so the
+film gets a turn every frame rather than losing the lock race every time. A
+film therefore renders at most one frame per display frame: real time at
+60 Hz, slower on a slow GPU (frames are timed by the film's clock, never the
+wall's, so nothing in the film itself changes).
+
+### `DispatchQueue.main` runs on the game's thread
+
+Found on the way, and true of every ring: until this, nothing the game
+queued on `DispatchQueue.main` ever ran on Android (#404 hooks the main
+actor's own jobs, `MainActorJobs`; this is the queue itself, which
+`FilmDrawTurns`, the film's progress and `ICloudSyncManager` use). libdispatch binds its main
+queue to whichever thread runs its constructor, which was Android's UI
+thread (`System.loadLibrary`), and nothing drained it. `MainActivity` now
+leaves `libAndroidShell.so` to SDL's own `dlopen` on `SDLThread`, so the
+queue is bound there, and `Shell.run` drains it once a frame
+(`switchlings_drain_main_queue`). The shell logs "the main queue runs on
+the game's thread" when it took.
+
+### What the stage shows, and what it can't yet
+
+`SolutionStage` lays out what the real one lays out — wordmark, board and
+footer spaced down the frame, the board drawn upright or turned — but four
+of its pieces are seams (`Compat/.../Film/FilmStubs.swift`), each deleted
+when its ring lands:
+
+- **`BoardNode`** is the gameplay ring's `PlayBoardNode` (paintings, no
+  mechanics' art), carried by the same `Timeline` at each Switchling's
+  *rig* pace (`ActorNode.pace`, worked out from its `RigData`), with
+  `BoardNode.playIntro`'s timings and its cue → sound table, so a film's
+  moves start and end on the frames they do on iOS.
+- **`BackdropNode`** draws the world's gradient, which the real one shows
+  under its live scenery.
+- **The lights** (`SceneLightNode`, `WorldLightNode`, `SharedLightNode`)
+  do nothing: a film here is lit as painted.
+- **The win card**, its dropdown and form are the UI ring's;
+  `PlayScene`'s Share button runs `SolutionShare`'s steps
+  (`Play/FilmShare.swift`) and links Google Play rather than the App Store.
+
+Android has no Game Center, so a film credits "A Switchlings player" with
+one of the world's Switchlings, as iOS does signed out.

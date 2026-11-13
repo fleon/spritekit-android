@@ -33,6 +33,18 @@ public enum Shell {
         makeRenderer factory: ((RenderContext) -> FrameRenderer)? = nil
     ) -> Int32 {
         Log.info("Switchlings Android shell starting (SDL \(sdlVersion))")
+        // `DispatchQueue.main` and the main actor run on this thread, drained
+        // once a frame below — but only if libdispatch bound its main queue
+        // here, which it does to whichever thread loaded it first. That is
+        // this one because `MainActivity.loadLibraries` leaves
+        // libAndroidShell.so to SDL's own dlopen. Without it every
+        // `DispatchQueue.main.async` in the game waits for ever.
+        let ownsMainQueue = switchlings_owns_main_queue()
+        if ownsMainQueue {
+            DispatchQueue.main.async { Log.info("the main queue runs on the game's thread") }
+        } else {
+            Log.error("libdispatch's main queue belongs to another thread — DispatchQueue.main and the main actor will never run")
+        }
         // One clock. The shim answers `CACurrentMediaTime()` out of this, so
         // the action system, `u_time` and the frame loop cannot drift apart.
         MediaTime.source = { ShellClock.now }
@@ -106,6 +118,10 @@ public enum Shell {
         var lastReport = previous
 
         while running {
+            // What the game queued for the main thread since the last
+            // frame: a film's progress and its finish, a sync's catch-up.
+            if ownsMainQueue { switchlings_drain_main_queue() }
+
             var event = SDL_Event()
             while SDL_PollEvent(&event) {
                 switch event.type {
@@ -117,10 +133,13 @@ public enum Shell {
                     // The soundtrack stops with the game, as it does on
                     // Apple: nothing plays over the launcher.
                     audio.suspend()
+                    // A share film waits meanwhile, as nothing draws for it.
+                    UIApplication.shared.resignActive()
                 case SDL_EVENT_DID_ENTER_FOREGROUND.rawValue:
                     foreground = true
                     previous = ShellClock.now
                     audio.resume()
+                    UIApplication.shared.becomeActive()
                 case SDL_EVENT_FINGER_DOWN.rawValue,
                      SDL_EVENT_FINGER_MOTION.rawValue,
                      SDL_EVENT_FINGER_UP.rawValue,
