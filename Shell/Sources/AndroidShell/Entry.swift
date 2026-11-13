@@ -45,6 +45,9 @@ nonisolated public func SDL_main(
         // argv is the zygote's, so this is the only place they exist.
         ShellArguments.install(argc: argc, argv: argv)
         GameEnvironment.install()
+        // Play Billing, Play Games and the device, before the game's
+        // managers start and pick their backends.
+        PlatformBridge.install()
         FilmSetup.useCacheForTemporaryFiles()
         FilmSetup.install()
 

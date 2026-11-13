@@ -88,19 +88,28 @@ public final class UIImage: @unchecked Sendable {
     /// shell installs it.
     public nonisolated(unsafe) static var packed: ((String) -> RasterImage?)?
 
-    /// A PNG's bytes, decoded as a file's are (`decoder`). The only images
-    /// the game makes from bytes are a shared level's maker photos, which
-    /// iOS sends as JPEG; with no JPEG decoder here those come back nil, and
-    /// `CreditNode` shows the maker's initial instead, as it does for a maker
-    /// with no photo.
+    /// JPEG to PNG and back, which the platform services do with Android's
+    /// own codecs (`BitmapFactory`, `Bitmap.compress`). Unset (a host test),
+    /// JPEG reads as nil and writes nothing.
+    public nonisolated(unsafe) static var jpegToPNG: ((Data) -> Data?)?
+    public nonisolated(unsafe) static var pngToJPEG: ((Data, CGFloat) -> Data?)?
+
+    /// A PNG's bytes, decoded as a file's are (`decoder`), or a JPEG's, by
+    /// way of `jpegToPNG`: a shared level's maker photo, which iOS sends as
+    /// JPEG. One that won't decode comes back nil, and `CreditNode` shows
+    /// the maker's initial instead, as it does for a maker with no photo.
     public convenience init?(data: Data) {
-        guard UIImage.pngSize(data) != nil, let pixels = UIImage.decoder?(data) else { return nil }
+        let png = UIImage.pngSize(data) != nil ? data : UIImage.jpegToPNG?(data)
+        guard let png, UIImage.pngSize(png) != nil, let pixels = UIImage.decoder?(png) else { return nil }
         self.init(cgImage: pixels, scale: 1)
     }
 
-    /// No JPEG encoder here: a level shared from Android carries no maker
-    /// photo (a settled decision: no Game Center, so no credit).
-    public func jpegData(compressionQuality: CGFloat) -> Data? { nil }
+    /// The image as a JPEG, by way of `pngToJPEG`: what a shared level's
+    /// maker photo is sent as.
+    public func jpegData(compressionQuality: CGFloat) -> Data? {
+        guard let png = pngData() else { return nil }
+        return UIImage.pngToJPEG?(png, compressionQuality)
+    }
 
     /// A drawn image. UIKit's carries its scale so a 3x rendering still
     /// measures as its points, and the game relies on that: `SurfaceTexture`

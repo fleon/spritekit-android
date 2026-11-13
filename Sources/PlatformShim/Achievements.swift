@@ -3,27 +3,13 @@ import Foundation
 /// Reporting achievements, with GameKit taken out from under
 /// `GameCenterManager`.
 ///
-/// ## What is real here and what is not
-///
-/// Real: what the player has earned. Board firsts are already kept in the
-/// game's own saved data (a synced set), and how far each achievement has
-/// come is worked out from them by `Achievement`, which is portable rules
-/// code. So on Android the progress is right, it survives a launch, and it
-/// is readable — `LocalAchievements` is a genuine store, not a hole.
-///
-/// Not real: Play Games Services. It needs a Play Console game with its
-/// achievements created and an OAuth client tied to the app's signing
-/// certificate, none of which exists yet — the app has a package name and a
-/// store listing and nothing else (`Tools/Play/PLAY-CONSOLE-SETUP.md`). So
-/// nothing is sent anywhere, there is no sign-in, and
-/// `PlayGamesAchievements` is a name for the gap.
-///
-/// Two consequences that are decisions rather than gaps, both settled:
-///   - There is no player name or photo on Android, so a shared level
-///     carries no maker credit. `localPlayer()` returns nil for good, not
-///     until something lands.
-///   - Nothing here reaches the network, which is what keeps the Android
-///     build's Data Safety answer as short as it is.
+/// What the player has earned is the game's own saved data (board firsts are
+/// a synced set; levels cleared are `Progress`), and `Achievement` works out
+/// each achievement's percentage from it, as on Apple. A backend only keeps
+/// or sends those percentages: `PlayGamesAchievements` (Play Games Services,
+/// mapping each to Play's IDs as an unlock or steps) when the build carries
+/// Play Games' IDs, `LocalAchievements` otherwise, which keeps them on the
+/// device and sends them nowhere.
 public protocol AchievementsBackend: AnyObject {
     var isSignedIn: Bool { get }
     /// Signs in if the service has one. `answered` runs once it has said
@@ -41,9 +27,8 @@ public protocol AchievementsBackend: AnyObject {
     func localPlayer() async -> (name: String, photo: Data?)?
 }
 
-/// Keeps achievement progress on the device and sends it nowhere.
-///
-/// This is what an Android build reports to today. It behaves like a service
+/// Keeps achievement progress on the device and sends it nowhere: an
+/// Android build without Play Games, and the host tests. It behaves like a service
 /// that is always reachable and always agrees: `load()` hands back what was
 /// last reported, so the "only send what has moved" logic in
 /// `GameCenterManager` runs exactly as it does on Apple and can be tested.

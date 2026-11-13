@@ -52,10 +52,9 @@ public final class UIDevice {
 }
 
 public extension ProcessInfo {
-    /// Android's battery saver is `PowerManager.isPowerSaveMode`, which SDL
-    /// does not wrap; until the shell passes it in, never on, so the frame
-    /// rate follows the player's pick alone.
-    var isLowPowerModeEnabled: Bool { false }
+    /// Android's battery saver (`PowerManager.isPowerSaveMode`), as the
+    /// platform services last reported it (`SystemServices.lowPowerMode`).
+    var isLowPowerModeEnabled: Bool { SystemServices.lowPowerMode }
 }
 
 public extension Notification.Name {
@@ -70,6 +69,12 @@ public enum SystemServices {
     nonisolated(unsafe) public static var clipboard: (get: () -> String?, set: (String?) -> Void) = ({ nil }, { _ in })
     /// Keeps the screen on while true (`SDL_DisableScreenSaver`).
     nonisolated(unsafe) public static var keepAwake: (Bool) -> Void = { _ in }
+    /// Plays one of the feedback generators' kinds on the phone's vibrator:
+    /// `light`, `medium`, `soft`, `selection`, `success` or `warning`.
+    nonisolated(unsafe) public static var haptic: (String) -> Void = { _ in }
+    /// Battery saver is on. Whoever sets it posts
+    /// `NSProcessInfoPowerStateDidChange`, as iOS does.
+    nonisolated(unsafe) public static var lowPowerMode = false
 }
 
 public extension UIApplication {
@@ -110,9 +115,9 @@ public final class UIPasteboard {
     private init() {}
 }
 
-/// Haptics. Android's vibrator is a system service SDL does not wrap for
-/// the phone itself (only gamepads' rumble), so these do nothing yet —
-/// listed in the README as a stand-in.
+/// Haptics, played on the phone's vibrator by the platform services
+/// (`DeviceServices.java`): each generator names its kind and
+/// `SystemServices.haptic` does the rest. `prepare()` has nothing to warm.
 @MainActor
 open class UIFeedbackGenerator {
     public init() {}
@@ -122,19 +127,31 @@ open class UIFeedbackGenerator {
 @MainActor
 public final class UIImpactFeedbackGenerator: UIFeedbackGenerator {
     public enum FeedbackStyle: Int, Sendable { case light, medium, heavy, soft, rigid }
-    public init(style: FeedbackStyle) { super.init() }
-    public func impactOccurred() {}
-    public func impactOccurred(intensity: CGFloat) {}
+    private let style: FeedbackStyle
+    public init(style: FeedbackStyle) {
+        self.style = style
+        super.init()
+    }
+    public func impactOccurred() {
+        switch style {
+        case .light: SystemServices.haptic("light")
+        case .soft: SystemServices.haptic("soft")
+        case .medium, .heavy, .rigid: SystemServices.haptic("medium")
+        }
+    }
+    public func impactOccurred(intensity: CGFloat) { impactOccurred() }
 }
 
 @MainActor
 public final class UINotificationFeedbackGenerator: UIFeedbackGenerator {
     public enum FeedbackType: Int, Sendable { case success, warning, error }
-    public func notificationOccurred(_ notificationType: FeedbackType) {}
+    public func notificationOccurred(_ notificationType: FeedbackType) {
+        SystemServices.haptic(notificationType == .success ? "success" : "warning")
+    }
 }
 
 @MainActor
 public final class UISelectionFeedbackGenerator: UIFeedbackGenerator {
-    public func selectionChanged() {}
+    public func selectionChanged() { SystemServices.haptic("selection") }
 }
 #endif

@@ -20,19 +20,10 @@ import Foundation
 /// conflict callback can merge both sides with the same `reconcile` pass
 /// that runs here and never has to ask the player which device was right.
 ///
-/// So one snapshot holding `[key: record]` as JSON gives this protocol
-/// exactly, and that is the shape the Android implementation should take
-/// when it lands:
-///
-///   - `dictionary(forKey:)` reads the key out of the decoded snapshot;
-///   - `set(_:forKey:)` writes it back and marks the snapshot dirty;
-///   - `synchronize()` commits the snapshot (`SnapshotsClient.commitAndClose`);
-///   - `externalChanges` fires after an open that brought another device's
-///     bytes in.
-///
-/// It is **not** implemented yet, and nothing here pretends otherwise:
-/// `LocalOnlyCloud` is what the port runs on, which means saved data is kept
-/// on the device and does not follow the player to another one.
+/// So one snapshot holding `[key: record]` gives this protocol exactly:
+/// `PlaySavedGamesCloud` is that store. `LocalOnlyCloud` is what runs without
+/// Play Games (a build without its IDs, `-ICloudOff`, a host test), keeping
+/// saved data on the device.
 public protocol CloudKeyValueStore: AnyObject {
     func dictionary(forKey key: String) -> [String: Any]?
     func set(_ dictionary: [String: Any], forKey key: String)
@@ -45,8 +36,8 @@ public protocol CloudKeyValueStore: AnyObject {
 /// No cloud at all: every read is empty and every write goes nowhere, so the
 /// merge engine above degrades to "this device's values, kept locally".
 ///
-/// This is what the Android build uses today. It is the same path the Apple
-/// build takes under `-ICloudOff`, which is why the semantics the game
+/// What an Android build without Play Games uses, and the same path the
+/// Apple build takes under `-ICloudOff`, which is why the semantics the game
 /// depends on — latest wins, sets pool, a reset empties — are not a separate
 /// code path that could drift: they are the merge engine running with
 /// nothing on the other side.

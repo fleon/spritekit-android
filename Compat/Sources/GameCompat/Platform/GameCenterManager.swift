@@ -2,26 +2,20 @@ import Foundation
 import PlatformShim
 import UIKit
 
-/// `Source/Utils/GameCenterManager.swift` on Android.
+/// `Source/Utils/GameCenterManager.swift` on Android: the same API for the
+/// same callers, with Play Games Services v2 where GameKit was.
 ///
-/// **What is real.** The bookkeeping. Board firsts are kept in the game's own
-/// saved data as a synced set, exactly as on Apple; what the service already
-/// holds is loaded, compared and only the achievements that have moved are
-/// sent. That logic is the Apple file's, and it runs here against
-/// `LocalAchievements`, which keeps the percentages on the device.
+/// The bookkeeping is the Apple file's: board firsts are kept in the game's
+/// own saved data as a synced set, what the service holds is loaded,
+/// compared, and only the achievements that have moved are sent. Behind it,
+/// `PlayGamesAchievements` (installed by `AndroidPlatformServices` when the
+/// build carries Play Games' IDs) maps each achievement to Play's, as an
+/// unlock or as steps, or `LocalAchievements` keeps the percentages on the
+/// device when it doesn't.
 ///
-/// **What is not.** Play Games Services. It needs a Play Console game with
-/// its achievements created and an OAuth client tied to the app's signing
-/// certificate; the app has a package name and a store listing and nothing
-/// else. So `isSignedIn` is false, the dashboard does not open, and nothing
-/// reaches the network — which is half of why the Android build's Data
-/// Safety answer is as short as it is.
-///
-/// **And one thing that is a decision, not a gap.** `localPlayer()` returns
-/// nil for good. There is no Game Center on Android and the user chose not
-/// to add a Play Games identity, so a level shared from Android carries no
-/// maker name or photo: the whole Name/Photos half of the iOS Data Safety
-/// answer drops away rather than carrying across.
+/// Sign-in is Play Games v2's own, silent: there is no sheet to present, and
+/// play never waits on it. The signed-in player's Play Games name and
+/// picture credit a Level Designer level they share, as Game Center's do.
 final class GameCenterManager {
     static let shared = GameCenterManager()
 
@@ -32,8 +26,7 @@ final class GameCenterManager {
     /// What the player's devices keep the same.
     static let syncedKeys: [String: ICloudSyncManager.Merge] = [Key.moments: .union]
 
-    /// Where achievements go. Installing a Play Games backend is the whole
-    /// of what reporting on Android would take.
+    /// Where achievements go (see above).
     static var service: AchievementsBackend = LocalAchievements()
 
     /// Board firsts the player has had, kept for a later sign-in to report.
@@ -57,7 +50,7 @@ final class GameCenterManager {
     /// needs — it holds for this before building the first scene.
     ///
     /// `presentSignIn` is kept in the signature because `AppDelegate` passes
-    /// it. Nothing calls it: there is no sheet to present.
+    /// it. Nothing calls it: Play Games signs in without a sheet.
     func start(presentSignIn: @escaping (UIViewController) -> Void, answered: (() -> Void)? = nil) {
         if let answered {
             if hasAnswered { answered() } else { answerHandlers.append(answered) }
@@ -69,22 +62,33 @@ final class GameCenterManager {
         }
     }
 
-    /// Whether the player is signed in. False without a service, which every
-    /// caller already handles: the game is built to stay playable signed out.
+    /// Whether the player is signed in to Play Games. Every caller handles
+    /// false: the game is built to stay playable signed out.
     var isSignedIn: Bool { Self.service.isSignedIn }
 
-    /// Whether a Level Designer picture can credit the player. False on
-    /// Android by decision, not by omission.
-    var canCredit: Bool { isSignedIn || LaunchArguments.sharePlayerName != nil }
+    /// Whether a Level Designer picture can credit the player. Off on
+    /// Android by decision (2026-11-13: no maker name or photo leaves an
+    /// Android device), whoever is signed in; `creditsPlayer` is the switch.
+    var canCredit: Bool { (Self.creditsPlayer && isSignedIn) || LaunchArguments.sharePlayerName != nil }
 
-    /// The signed-in player's name and photo. Always nil here.
+    /// Whether a signed-in player's Play Games name and picture credit a
+    /// level they share, as Game Center's do on iOS. Built, and off: turning
+    /// it on adds Name and Photos to the Data safety answers
+    /// (`Tools/Play/PLAY-CONSOLE-SETUP.md` §4).
+    static let creditsPlayer = false
+
+    /// The signed-in player's Play Games name and picture, while
+    /// `creditsPlayer` allows it.
     func localPlayer() async -> (name: String, photo: UIImage?)? {
         if let name = LaunchArguments.sharePlayerName { return (name, nil) }
-        return nil
+        guard Self.creditsPlayer, let player = await Self.service.localPlayer() else { return nil }
+        return (player.name, player.photo.flatMap(UIImage.init(data:)))
     }
 
-    /// Opens the service's dashboard. There is none.
-    func showDashboard(over window: UIWindow?) {}
+    /// Opens Play Games' achievements.
+    func showDashboard(over window: UIWindow?) {
+        Self.service.showDashboard()
+    }
 
     /// Reports the board firsts in a move the player just made.
     func played(from previous: GameState, to next: GameState) {

@@ -131,6 +131,8 @@ public enum Shell {
             // What the game queued for the main thread since the last
             // frame: a film's progress and its finish, a sync's catch-up.
             if ownsMainQueue { switchlings_drain_main_queue() }
+            // Play's and the device's news: a purchase, a sign-in, a saved game.
+            PlatformBridge.deliverPendingEvents()
 
             var event = SDL_Event()
             while SDL_PollEvent(&event) {

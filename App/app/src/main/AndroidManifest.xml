@@ -9,6 +9,9 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
+    <!-- Haptics (DeviceServices). A normal permission: granted at install. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
@@ -28,6 +31,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Play Games Services' project (empty in a build without one;
+             PlayGamesServices then never initializes the SDK). -->
+        <meta-data
+            android:name="com.google.android.gms.games.APP_ID"
+            android:value="@string/game_services_project_id" />
 
         <!-- Share films: the file the game wrote, read by the app the share
              sheet's chosen, under the grant the share intent carries. -->

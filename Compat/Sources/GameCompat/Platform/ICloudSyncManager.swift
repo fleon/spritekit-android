@@ -10,18 +10,16 @@ import PlatformShim
 /// `AudioManager`, `Localization` and `GameCenterManager` all lean on those
 /// semantics and none of them changes.
 ///
-/// **What is honestly different: nothing syncs yet.** There is no iCloud on
-/// Android and no Play Saved Games here either, so a player's levels cleared
-/// stay on the device they cleared them on. That is a gap, not a design —
-/// `CloudKeyValueStore` in `PlatformShim` says in detail how Play Games
-/// Saved Games fits the shape, and why its conflict callback has nothing to
-/// resolve given records that merge commutatively.
-///
-/// What makes that honest rather than hand-waving is that the merge is not
-/// bypassed: `SyncEngine` is the Apple file's reconcile logic, moved so it
-/// could be tested, and it runs here against `LocalOnlyCloud`. That is the
-/// same path the Apple build takes under `-ICloudOff`. When a cloud arrives
-/// it is one object, not a rewrite.
+/// The cloud is Play Games **Saved Games** (`PlaySavedGamesCloud`, installed
+/// by `AndroidPlatformServices` when the build carries Play Games' IDs): one
+/// snapshot holding every key's record, opened, merged by `SyncEngine` — the
+/// Apple file's reconcile logic, moved so it could be tested — and committed.
+/// Records merge commutatively (latest wins, sets pool, a reset empties), so a
+/// Saved Games conflict has nothing to resolve. Signed out of Play Games, or
+/// in a build without it, the merge runs against `LocalOnlyCloud`, the path
+/// the Apple build takes under `-ICloudOff`, and saved data stays on the
+/// device. Either way `didUpdateLocalData` fires for what another device
+/// changed, so `SavedDataObserving` screens catch up as on Apple.
 nonisolated final class ICloudSyncManager: @unchecked Sendable {
     /// How a key merges with its copies on other devices.
     enum Merge {
@@ -35,8 +33,7 @@ nonisolated final class ICloudSyncManager: @unchecked Sendable {
     static let didUpdateLocalData = Notification.Name("ICloudSyncManager.didUpdateLocalData")
     static let updatedKeysUserInfoKey = "updatedKeys"
 
-    /// The cloud this manager talks to. Swapping this for a Saved Games
-    /// store is the whole of what syncing on Android would take.
+    /// The cloud this manager talks to (see above).
     static var cloud: CloudKeyValueStore = LocalOnlyCloud()
 
     private lazy var engine = SyncEngine(cloud: Self.cloud) { keys in

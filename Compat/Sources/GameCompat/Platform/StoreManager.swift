@@ -1,28 +1,22 @@
 import Foundation
 import PlatformShim
 
-/// `Source/Utils/StoreManager.swift` on Android.
+/// `Source/Utils/StoreManager.swift` on Android: the same API for the same
+/// 15 calling files, with Google Play Billing where StoreKit was.
 ///
-/// **What is real.** Everything above the store. The entitlement — whether
-/// the full game is owned — is kept on the device and read before anything
-/// asks a service, so `isUnlocked(_:)`, `shows(_:)`, `isFullGameUnlocked`
-/// and `keepsSecretWorlds` all answer correctly and every lock, padlock,
-/// offer and launch-event rule in the 15 calling files behaves as it does on
-/// Apple. The launch event's end is the same instant on both platforms, so a
-/// player who bought in time keeps the secret worlds wherever they play.
+/// The entitlement — whether the full game is owned — is kept on the device
+/// (`Entitlements`) and read before anything asks Play, so `isUnlocked(_:)`,
+/// `shows(_:)`, `isFullGameUnlocked` and `keepsSecretWorlds` are right at
+/// launch and offline, and every lock, padlock, offer and launch-event rule
+/// behaves as on Apple. The launch event's end is the same instant on both
+/// platforms, and Play's `purchaseTime` stands in for StoreKit's
+/// `originalPurchaseDate`, so a player who bought in time keeps the secret
+/// worlds on a new phone too.
 ///
-/// **What is not.** There is no Play Billing. `com.fleon.switchlings.fullgame`
-/// has not been created in the Play Console, so there is no product to
-/// query, no price to show and nothing to buy — and `Tools/Store/
-/// apply_iap_prices.py` does not carry across either, because Play has its
-/// own territories and price points. §6 of `Tools/Play/PLAY-CONSOLE-SETUP.md`
-/// is what has to happen before any of this can be more than it is.
-///
-/// So `purchaseFullGame()` fails rather than quietly succeeding, unless the
-/// build is running on `SimulatedBilling` — the Android side of the Apple
-/// build's `-SimulatePurchases`, which grants the unlock locally and keeps
-/// it across launches. Untested JNI pretending to be a purchase flow would
-/// be worth less than this and far easier to mistake for working.
+/// The backend is `PlayBilling` once the shell has a `PlatformChannel`
+/// (`installPlatformServices`), `SimulatedBilling` under
+/// `-SimulatePurchases` (as on Apple: granted locally, no money moves), and
+/// `NoBilling` otherwise — a host test, where a purchase fails honestly.
 final class StoreManager {
     static let shared = StoreManager()
     /// Posted whenever prices or purchases change.
@@ -44,10 +38,7 @@ final class StoreManager {
         }
     }
 
-    /// Where purchases come from. The app installs `SimulatedBilling` when
-    /// it wants the unlock flow walked through; left alone nothing is owned
-    /// and nothing can be bought, which is the truth of an Android build
-    /// today.
+    /// Where purchases come from (see above).
     static var billing: BillingBackend = NoBilling()
 
     private static let fullGameID = Entitlements.fullGameID
@@ -100,9 +91,9 @@ final class StoreManager {
         LaunchArguments.unlocksAllWorlds || ownsFullGame
     }
 
-    /// The full game's localized price, once the store has loaded it. Nil
-    /// with no store, which is what callers already handle — the Apple build
-    /// shows no price until StoreKit answers.
+    /// The full game's price in the player's currency, once Play has
+    /// answered. Nil until then, as the Apple build shows no price until
+    /// StoreKit answers.
     var fullGamePrice: String? {
         Self.billing.displayPrice ?? LaunchArguments.previewPrice
     }
@@ -110,7 +101,7 @@ final class StoreManager {
     func purchaseFullGame() async -> PurchaseResult {
         let result = await Self.billing.purchase(Self.fullGameID)
         if case .purchased = result {
-            entitlements.noteBought(at: Date())
+            entitlements.noteBought(at: Self.billing.purchaseDates[Self.fullGameID] ?? Date())
             backendChanged()
         }
         return PurchaseResult(result)
@@ -141,6 +132,8 @@ final class StoreManager {
             entitlements.owned = reported
             entitlements.free = reportedFree
         }
+        // A purchase restored on a new device keeps the day it was bought.
+        if let date = Self.billing.purchaseDates[Self.fullGameID] { entitlements.noteBought(at: date) }
         entitlements.noteOwnedDuringEvent(owns: ownsFullGame, eventRunning: isLaunchEventRunning)
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }

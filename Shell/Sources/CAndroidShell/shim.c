@@ -3,6 +3,8 @@
 #include <sys/system_properties.h>
 #include <string.h>
 #include <jni.h>
+#include <stdatomic.h>
+#include <stdlib.h>
 
 void switchlings_log(int priority, const char *tag, const char *message) {
     __android_log_write(priority, tag, message);
@@ -87,4 +89,97 @@ bool switchlings_share_file(const char *path, const char *mime, const char *text
     (*env)->DeleteLocalRef(env, cls);
     (*env)->DeleteLocalRef(env, activity);
     return ok;
+}
+
+static atomic_int switchlings_platform_pending;
+
+static void JNICALL switchlings_platform_events_ready(JNIEnv *env, jclass cls) {
+    (void)env;
+    (void)cls;
+    atomic_store(&switchlings_platform_pending, 1);
+}
+
+bool switchlings_platform_install(void) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
+    if (env == NULL || activity == NULL) return false;
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    JNINativeMethod methods[] = {
+        { "nativePlatformEventsReady", "()V", (void *)switchlings_platform_events_ready },
+    };
+    bool ok = (*env)->RegisterNatives(env, cls, methods, 1) == JNI_OK;
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        ok = false;
+    }
+    if (ok) {
+        jfieldID registered = (*env)->GetStaticFieldID(env, cls, "nativePlatformRegistered", "Z");
+        if (registered != NULL) (*env)->SetStaticBooleanField(env, cls, registered, JNI_TRUE);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    // Whatever Java queued before the method existed is drained now.
+    atomic_store(&switchlings_platform_pending, 1);
+    return ok;
+}
+
+bool switchlings_platform_take_pending(void) {
+    return atomic_exchange(&switchlings_platform_pending, 0) != 0;
+}
+
+/* Copies a Java byte[] into a malloc'd buffer, or NULL. Frees the local ref. */
+static unsigned char *switchlings_copy_bytes(JNIEnv *env, jbyteArray array, int *out_length) {
+    *out_length = 0;
+    if (array == NULL) return NULL;
+    jsize length = (*env)->GetArrayLength(env, array);
+    unsigned char *buffer = malloc((size_t)length + 1);
+    if (buffer != NULL) {
+        (*env)->GetByteArrayRegion(env, array, 0, length, (jbyte *)buffer);
+        buffer[length] = 0;
+        *out_length = (int)length;
+    }
+    (*env)->DeleteLocalRef(env, array);
+    return buffer;
+}
+
+static unsigned char *switchlings_platform_invoke(const char *method, const char *signature, const char *name,
+                                                  const unsigned char *args, int length, int *out_length) {
+    *out_length = 0;
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
+    if (env == NULL || activity == NULL) return NULL;
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    jmethodID id = (*env)->GetMethodID(env, cls, method, signature);
+    unsigned char *result = NULL;
+    if (id != NULL) {
+        jbyteArray answer;
+        if (name != NULL) {
+            jstring jname = (*env)->NewStringUTF(env, name);
+            jbyteArray jargs = (*env)->NewByteArray(env, length);
+            if (jargs != NULL && length > 0) (*env)->SetByteArrayRegion(env, jargs, 0, length, (const jbyte *)args);
+            answer = (jbyteArray)(*env)->CallObjectMethod(env, activity, id, jname, jargs);
+            if (jargs != NULL) (*env)->DeleteLocalRef(env, jargs);
+            (*env)->DeleteLocalRef(env, jname);
+        } else {
+            answer = (jbyteArray)(*env)->CallObjectMethod(env, activity, id);
+        }
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+            answer = NULL;
+        }
+        result = switchlings_copy_bytes(env, answer, out_length);
+    }
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    return result;
+}
+
+unsigned char *switchlings_platform_call(const char *name, const unsigned char *args, int length, int *out_length) {
+    return switchlings_platform_invoke("platformCall", "(Ljava/lang/String;[B)[B", name, args, length, out_length);
+}
+
+unsigned char *switchlings_platform_drain(int *out_length) {
+    return switchlings_platform_invoke("platformDrain", "()[B", NULL, NULL, 0, out_length);
 }

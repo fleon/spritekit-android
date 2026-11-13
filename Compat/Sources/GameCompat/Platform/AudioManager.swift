@@ -109,12 +109,29 @@ final class AudioManager {
 
     private init() {}
 
+    /// Another app's music is playing (Android's audio focus, as
+    /// `DeviceServices.java` reads it): the soundtrack steps aside, as the
+    /// Apple build's does for `secondaryAudioShouldBeSilencedHint`, while
+    /// the sounds still mix in.
+    private var otherAudioPlaying = false
+    /// A call or an alarm took the audio: everything waits.
+    private var isInterrupted = false
+
+    /// What audio focus says, from the platform services.
+    static func audioFocusDidChange(otherAudio: Bool, interrupted: Bool) {
+        if interrupted != shared.isInterrupted {
+            shared.isInterrupted = interrupted
+            if interrupted { backend.suspend() } else if !shared.isInBackground { backend.resume() }
+        }
+        shared.otherAudioPlaying = otherAudio
+        shared.updateMusic()
+    }
+
     /// Called once at launch: loads every sound into the backend.
     ///
-    /// There is no audio session to configure. Android's equivalent — asking
-    /// for audio focus so the player's own music is respected — is a Java
-    /// API; SDL opens the device without it, which is the "mix with others"
-    /// behaviour the Apple build asks for anyway.
+    /// There is no audio session to configure: SDL's stream mixes with other
+    /// apps, the Apple build's ambient session, and audio focus (above) has
+    /// the soundtrack step aside for the player's own music.
     static func loadSettings() {
         shared.preload()
     }
@@ -152,7 +169,7 @@ final class AudioManager {
     }
 
     private func updateMusic() {
-        let wanted = Self.isMusicEnabled && !isInBackground ? requestedMusic : nil
+        let wanted = Self.isMusicEnabled && !isInBackground && !otherAudioPlaying ? requestedMusic : nil
         guard wanted != playingMusic else { return }
         playingMusic = wanted
         Self.backend.playMusic(

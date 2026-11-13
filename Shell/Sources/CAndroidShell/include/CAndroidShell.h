@@ -70,4 +70,24 @@ void switchlings_drain_main_queue(void);
 /// NULL. False if the call could not be made.
 bool switchlings_share_file(const char *path, const char *mime, const char *text);
 
+/// Google Play and the device, through `PlatformServices` on the Java side
+/// (`MainActivity.platformCall` / `platformDrain`). Both directions carry
+/// JSON as UTF-8 bytes.
+///
+/// `switchlings_platform_install` registers
+/// `MainActivity.nativePlatformEventsReady`, which Java calls (on any thread)
+/// when it queues events: it only sets a flag, which
+/// `switchlings_platform_take_pending` reads and clears once a frame, so no
+/// Swift ever runs on a Java thread.
+bool switchlings_platform_install(void);
+bool switchlings_platform_take_pending(void);
+
+/// Calls `name` with `args` (`length` bytes of JSON). Returns the answer's
+/// bytes in a buffer the caller frees with `free`, or NULL, with its length
+/// in `*out_length`.
+unsigned char *switchlings_platform_call(const char *name, const unsigned char *args, int length, int *out_length);
+
+/// The events Java has queued, as a JSON array: freed by the caller, or NULL.
+unsigned char *switchlings_platform_drain(int *out_length);
+
 #endif /* CANDROIDSHELL_H */

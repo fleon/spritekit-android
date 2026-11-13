@@ -37,6 +37,7 @@ public final class AndroidGameController {
     /// the link the game was opened with, if any (SceneDelegate's
     /// `connectionOptions.urlContexts`).
     public static func launch(link: URL?) {
+        AndroidPlatformServices.install()
         ICloudSyncManager.shared.start(syncing: [
             Progress.syncedKeys,
             Localization.syncedKeys,

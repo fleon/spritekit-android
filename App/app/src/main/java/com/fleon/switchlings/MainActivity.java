@@ -141,6 +141,7 @@ public class MainActivity extends SDLActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        services = new PlatformServices(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             OnBackInvokedCallback callback = () -> {
                 SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_BACK);
@@ -154,6 +155,49 @@ public class MainActivity extends SDLActivity {
 
     /** Kept so the dispatcher's callback lives as long as the activity. */
     private Object backCallback;
+
+    /** Play Billing, Play Games and the device, for the game (see {@link PlatformServices}). */
+    private PlatformServices services;
+
+    /**
+     * Tells the frame loop that platform events are waiting. Registered by
+     * the shell ({@code switchlings_platform_install}, RegisterNatives) as
+     * it starts: SDL dlopens libAndroidShell.so, so the JVM would never find
+     * the symbol by name.
+     */
+    static native void nativePlatformEventsReady();
+
+    /** Set by the shell once it has registered the method above. */
+    static volatile boolean nativePlatformRegistered;
+
+    /** A platform call from Swift, on SDL's thread. */
+    public byte[] platformCall(String name, byte[] args) {
+        return services == null ? null : services.call(name, args);
+    }
+
+    /** The events waiting for Swift, as a JSON array, or null. */
+    public byte[] platformDrain() {
+        return services == null ? null : services.drainEvents();
+    }
+
+    @Override
+    protected void onResume() {
+        // Before SDL resumes the game, so audio focus is settled first.
+        if (services != null) services.onResume();
+        super.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (services != null) services.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (services != null) services.onDestroy();
+        super.onDestroy();
+    }
 
     /**
      * What the game asks for when nothing took the back button

@@ -2,26 +2,13 @@ import Foundation
 
 /// Buying the full game, with StoreKit taken out from under `StoreManager`.
 ///
-/// ## What is real here and what is not
-///
-/// Real: the entitlement — whether the full game is owned — is kept on the
-/// device, read before anything asks a service, and settable. That is what
-/// the rest of the game reads through `StoreManager.isUnlocked(_:)`, so
-/// every lock, padlock, offer and secret-world rule behaves correctly.
-///
-/// Not real: there is no Play Billing. `com.fleon.switchlings.fullgame` has
-/// not been created in the Play Console, so there is no product to query, no
-/// price to show and nothing to buy. `Tools/Store/apply_iap_prices.py` does
-/// not carry across either — Play has its own territories and price points.
-/// `PlayBilling` is therefore a name for the gap, not an implementation:
-/// `Tools/Play/PLAY-CONSOLE-SETUP.md` §6 is what has to happen first.
-///
-/// What ships meanwhile is `SimulatedBilling`, which is the Apple build's own
-/// `-SimulatePurchases` path: a purchase succeeds at once, locally, at a
-/// stated price. That is far more useful than untested JNI — the whole
-/// unlock flow, both offers and the launch-event rule can be walked through
-/// on a device — and it cannot be mistaken for a real purchase, because no
-/// money moves and nothing leaves the device.
+/// The entitlement — whether the full game is owned — is kept on the device
+/// (`Entitlements`), read before anything asks a service, so every lock,
+/// padlock, offer and secret-world rule is right offline and at launch.
+/// Behind it sits one of three backends: `PlayBilling` (Google Play, through
+/// `PlatformChannel`), `SimulatedBilling` (the Apple build's
+/// `-SimulatePurchases`: granted locally, no money moves) or `NoBilling`
+/// (no store at all, as on a host test).
 public protocol BillingBackend: AnyObject {
     /// The product's price in the player's currency, once it is known.
     var displayPrice: String? { get }
@@ -34,6 +21,13 @@ public protocol BillingBackend: AnyObject {
     func purchase(_ productID: String) async -> BillingResult
     /// Asks the service to hand back what the player already owns.
     func restore() async -> Bool
+    /// When each owned product was first bought, where the service says:
+    /// what the launch event's rule reads, in place of `Date()`.
+    var purchaseDates: [String: Date] { get }
+}
+
+public extension BillingBackend {
+    var purchaseDates: [String: Date] { [:] }
 }
 
 public enum BillingResult: Sendable {
