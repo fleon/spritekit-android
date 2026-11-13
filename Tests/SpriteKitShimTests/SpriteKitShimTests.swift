@@ -83,8 +83,8 @@ struct SceneGraphTests {
         #expect(frame.maxX == 25)
     }
 
-    @Test("A hidden child is left out of the accumulated frame")
-    func hiddenLeftOut() {
+    @Test("A hidden child counts in the accumulated frame, as SpriteKit's, but not in what is hit")
+    func hiddenCounts() {
         let root = SKNode()
         let shown = SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10))
         let hidden = SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10))
@@ -92,7 +92,8 @@ struct SceneGraphTests {
         hidden.isHidden = true
         root.addChild(shown)
         root.addChild(hidden)
-        #expect(root.calculateAccumulatedFrame().maxX == 5)
+        #expect(root.calculateAccumulatedFrame().maxX == 105)
+        #expect(!root.contains(CGPoint(x: 100, y: 0)))
     }
 }
 

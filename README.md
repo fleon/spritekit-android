@@ -789,6 +789,14 @@ default scope limit, so `GameCompat` passes `-solver-scope-threshold`.
 Each with host tests (`SceneSupportTests`, `BlendModeTests`), checked
 against Apple's own where Apple's runs on the Mac:
 
+- `calculateAccumulatedFrame()` is SpriteKit's: in the parent's space, hidden
+  and transparent descendants included (measured on the Mac). Dropdowns find
+  their anchor and samples their icon through it.
+- A 9-sliced sprite keeps its caps when scaled, as SpriteKit's does: the
+  borders are fitted to the sprite's own size, then kept while its scale
+  stretches the middle. The meter's fill at a small fraction is a pill, and
+  so is the world list's current page dot (an 8-point dot from a 16-point
+  texture, stretched 3× across).
 - `SKSpriteNode`'s designated initialiser is `init(texture:color:size:)`, as
   SpriteKit's (`GlowNode`, `ConveyorNode` call it); an untextured sprite
   draws its own colour, its alpha included (a clear one draws nothing).
@@ -829,19 +837,33 @@ so where they are declared:
 | `CTFontManagerRegisterFontsForURL` | `CoreTextCompat.swift` | true: the shell registered the fonts already |
 | `SKShapeNode.strokeShader`, `SKSpriteNode.normalTexture` | shim | carried, not drawn: the game sets neither in a way that shows |
 
-Known differences from iOS, beyond the stand-ins: the title's version line
-reads "Version ()". `Bundle.main` is `/system/bin` (the process is
-`app_process`), which has no Info.plist, and the game reads the version
-from `infoDictionary`, which an overload can't stand in for. Pointing
-CoreFoundation elsewhere through `CFProcessPath` was tried and is ignored
-in an app process. The emulator draws a few frames a second under load,
-which is the host's, not the game's.
+**The version line** reads the APK's own: `MainActivity` puts its
+`versionName` and `versionCode` in the environment before the Swift
+libraries load, and the shim's `Bundle.infoDictionary` answers with them
+under Apple's keys (`BundleInfo.swift`). It shadows Foundation's member,
+which a module may do for a module it imports, so the game's
+`Bundle.main.infoDictionary` reaches it unchanged. (`Bundle.main` itself is
+`/system/bin`, the process being `app_process`, and CoreFoundation ignores
+`CFProcessPath` in an app process.)
+
+The emulator draws a few frames a second when the host is loaded, which is
+the host's, not the game's.
 
 **A point is a dp.** The view's points are the display's density-independent
 pixels (`SDL_GetWindowDisplayScale`, dpi / 160), as an iOS point is its
 screen's: a 420 dpi Pixel 6 is 411 × 914 points beside the iPhone 17 Pro's
 402 × 874, so every popup, sheet and button takes the same share of the
-screen as on iOS. The art's export scale (3x) has no say in it; its textures
+screen as on iOS.
+
+**The safe area is iOS's.** `MainActivity`'s surface reports the system bars
+and the display cutout, and at the bottom the gesture-navigation handle (as
+iOS counts its home indicator); SDL's own adds the back-gesture edges, about
+30 dp a side, which made every screen 60 points narrower. With a bottom
+inset, the game's own corner fallback (`displayCornerRadiusFallback`) applies
+to an Android phone, as to an unlisted iPhone, so the corner buttons stand
+where they do on iOS. Android's real corner radius is often much tighter —
+the Pixel 6 emulator reports 28 px (11 dp) — so they stand further in than
+the screen strictly needs, as on an iPhone. The art's export scale (3x) has no say in it; its textures
 are drawn at 2.625 pixels a point, and glyphs, surfaces and effect textures
 are rendered at the screen's density.
 

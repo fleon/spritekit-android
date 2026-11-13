@@ -46,7 +46,7 @@ open class SKEffectNode: SKNode {
     /// The bounds the offscreen texture must cover: the whole subtree,
     /// including children outside the viewport.
     open var effectBounds: CGRect {
-        calculateAccumulatedFrame()
+        accumulatedContents(includingHidden: false)
     }
 
     /// SKWarpable's, carried for the API: the game warps sprites only, so

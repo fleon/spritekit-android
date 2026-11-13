@@ -55,6 +55,7 @@ public class MainActivity extends SDLActivity {
      */
     @Override
     public void loadLibraries() {
+        exportVersion();
         String[] libraries = getLibraries();
         for (int i = 0; i < libraries.length - 1; i++) {
             System.loadLibrary(libraries[i]);
@@ -216,11 +217,14 @@ public class MainActivity extends SDLActivity {
 
     /**
      * SDL's surface, with the safe area iOS would give: the system bars and
-     * the display cutout. SDL's own adds the back-gesture edges (about 30 dp
-     * each side), which an iPhone's safe area has no counterpart for, so
-     * every screen came out 60 points narrower than the same screen on iOS.
-     * SDL's listener still runs first, for the keyboard; the insets it
-     * reports are then replaced.
+     * the display cutout, and at the bottom the gesture-navigation handle,
+     * as iOS counts the home indicator. SDL's own adds the back-gesture
+     * edges (about 30 dp each side), which an iPhone's safe area has no
+     * counterpart for, so every screen came out 60 points narrower than the
+     * same screen on iOS; and with the bars hidden (full screen) the bottom
+     * read 0, so the game took a phone with a home handle for one without
+     * rounded corners. SDL's listener still runs first, for the keyboard;
+     * the insets it reports are then replaced.
      */
     static final class GameSurface extends SDLSurface {
         GameSurface(Context context) {
@@ -233,9 +237,32 @@ public class MainActivity extends SDLActivity {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets safe = insets.getInsets(
                     WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                SDLActivity.onNativeInsetsChanged(safe.left, safe.right, safe.top, safe.bottom);
+                android.graphics.Insets handle = insets.getInsets(WindowInsets.Type.mandatorySystemGestures());
+                int bottom = Math.max(safe.bottom, handle.bottom);
+                SDLActivity.onNativeInsetsChanged(safe.left, safe.right, safe.top, bottom);
+                if (Build.VERSION.SDK_INT >= 31) {
+                    android.view.RoundedCorner corner = insets.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT);
+                    Log.i("Switchlings", "insets: safe " + safe + ", handle " + handle.bottom
+                        + " px, corner radius " + (corner == null ? "none" : corner.getRadius() + " px"));
+                }
             }
             return result;
+        }
+    }
+
+    /**
+     * The APK's {@code versionName} and {@code versionCode}, in the
+     * environment for the shim's {@code Bundle.infoDictionary} (the title's
+     * version line), set before the Swift libraries load.
+     */
+    private void exportVersion() {
+        try {
+            android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            long code = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? info.getLongVersionCode() : info.versionCode;
+            android.system.Os.setenv("SWITCHLINGS_VERSION_NAME", info.versionName == null ? "" : info.versionName, true);
+            android.system.Os.setenv("SWITCHLINGS_VERSION_CODE", String.valueOf(code), true);
+        } catch (Exception e) {
+            Log.w("Switchlings", "no version for Bundle.main: " + e);
         }
     }
 }

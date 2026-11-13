@@ -256,3 +256,69 @@ struct PointScaleTests {
         #expect(view.bounds.size == CGSize(width: 500, height: 1000))
     }
 }
+
+@Suite("Scenes: frames")
+struct AccumulatedFrameTests {
+    /// SpriteKit on the Mac: a node at (10, 5), scaled 2, holding a 10-point
+    /// sprite at (3, 0), then a hidden one at (100, 0), then a transparent
+    /// one at (-100, 0).
+    @Test("The accumulated frame is in the parent's space, hidden and transparent children in it")
+    func matchesSpriteKit() {
+        let root = SKNode()
+        root.position = CGPoint(x: 10, y: 5)
+        root.setScale(2)
+        let sprite = SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10))
+        sprite.position = CGPoint(x: 3, y: 0)
+        root.addChild(sprite)
+        #expect(root.calculateAccumulatedFrame() == CGRect(x: 6, y: -5, width: 20, height: 20))
+        let hidden = SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10))
+        hidden.position = CGPoint(x: 100, y: 0)
+        hidden.isHidden = true
+        root.addChild(hidden)
+        #expect(root.calculateAccumulatedFrame() == CGRect(x: 6, y: -5, width: 214, height: 20))
+        let clear = SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10))
+        clear.position = CGPoint(x: -100, y: 0)
+        clear.alpha = 0
+        root.addChild(clear)
+        #expect(root.calculateAccumulatedFrame() == CGRect(x: -200, y: -5, width: 420, height: 20))
+    }
+}
+
+@Suite("Scenes: slicing")
+struct ScaledSliceTests {
+    @Test("A 9-sliced sprite scaled to a sliver keeps its caps, as SpriteKit's does")
+    func capsKeepTheirSize() {
+        let scene = SKScene(size: CGSize(width: 200, height: 200))
+        let fill = SKSpriteNode(texture: SKTexture(color: .white, size: CGSize(width: 100, height: 20)), size: CGSize(width: 100, height: 20))
+        fill.centerRect = CGRect(x: 0.1, y: 0, width: 0.8, height: 1)
+        fill.anchorPoint = CGPoint(x: 0, y: 0.5)
+        fill.xScale = 0.2
+        scene.addChild(fill)
+        let widths = DrawList(scene: scene).commands.compactMap { command -> CGFloat? in
+            guard case let .sprite(s) = command else { return nil }
+            return s.size.width * abs(s.transform.a)
+        }
+        // Two 10-point caps and nothing between, 20 points in all: a pill,
+        // where scaling the whole would have squeezed each cap to 2 points.
+        #expect(abs(widths.reduce(0, +) - 20) < 0.001)
+        #expect(widths.filter { $0 > 0.001 }.allSatisfy { abs($0 - 10) < 0.001 })
+    }
+
+    @Test("A page dot stretched across is a pill: its caps fitted to the dot, not the texture")
+    func pageDotPill() {
+        // `PageDotsNode`: an 8-point dot from a 16-point texture, sliced at
+        // 0.45…0.55 across, stretched to 24 points by its scale.
+        let scene = SKScene(size: CGSize(width: 100, height: 100))
+        let dot = SKSpriteNode(texture: SKTexture(color: .white, size: CGSize(width: 16, height: 16)), size: CGSize(width: 8, height: 8))
+        dot.centerRect = CGRect(x: 0.45, y: 0, width: 0.1, height: 1)
+        dot.xScale = 3
+        scene.addChild(dot)
+        let widths = DrawList(scene: scene).commands.compactMap { command -> CGFloat? in
+            guard case let .sprite(s) = command else { return nil }
+            return s.size.width * abs(s.transform.a)
+        }
+        // Caps of 4 (half the dot's height: round ends), 16 between.
+        #expect(widths.count == 3)
+        #expect(abs(widths[0] - 4) < 0.001 && abs(widths[1] - 16) < 0.001 && abs(widths[2] - 4) < 0.001)
+    }
+}

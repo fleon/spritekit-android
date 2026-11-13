@@ -728,7 +728,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // as SpriteKit's is: the edge shade bakes a canvas scaled down
         // by `edgeShadeMapScale`, which a frame in the node's own space
         // would leave as a small patch in a texture too big for it.
-        let bounds = crop ?? node.calculateAccumulatedFrame().applying(node.localTransform)
+        let bounds = crop ?? node.calculateAccumulatedFrame()
         guard bounds.width > 0, bounds.height > 0 else { return nil }
 
         let density = target.visible.height > 0

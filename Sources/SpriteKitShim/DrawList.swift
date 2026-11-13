@@ -226,10 +226,21 @@ public struct DrawList {
             // A 9-sliced sprite becomes nine ordinary sprite commands, each
             // with its own frame and sub-rect, so corners keep their size
             // while the edges and middle stretch (see NineSlice.swift).
-            let pieces = slices(of: sprite)
+            // SpriteKit slices for the node's scale too: a 9-sliced fill
+            // scaled down to a sliver keeps its round caps (`MeterNode`'s
+            // small fractions). So the node's own scale goes into the
+            // patches' sizes rather than the transform (unrotated nodes; a
+            // rotated one keeps its scale in the transform).
+            let foldsScale = sprite.isSliced && sprite.zRotation == 0 && (sprite.xScale != 1 || sprite.yScale != 1)
+            let pieces = slices(of: sprite, scale: foldsScale ? CGSize(width: abs(sprite.xScale), height: abs(sprite.yScale)) : CGSize(width: 1, height: 1))
+            let pieceTransform = foldsScale
+                ? CGAffineTransform(scaleX: sprite.xScale < 0 ? -1 : 1, y: sprite.yScale < 0 ? -1 : 1)
+                    .concatenating(CGAffineTransform(translationX: sprite.position.x, y: sprite.position.y))
+                    .concatenating(parentTransform)
+                : transform
             for piece in pieces {
                 var command = Sprite(
-                    transform: transform,
+                    transform: pieceTransform,
                     size: piece.size,
                     anchorPoint: piece.anchorPoint,
                     texture: sprite.texture,
@@ -293,14 +304,17 @@ public struct DrawList {
     /// Each carries the anchor point that puts its own frame where the whole
     /// sprite would have put that part of itself.
     @MainActor private static func slices(
-        of sprite: SKSpriteNode
+        of sprite: SKSpriteNode,
+        scale: CGSize = CGSize(width: 1, height: 1)
     ) -> [(size: CGSize, anchorPoint: CGPoint, textureRect: CGRect)] {
         let textureRect = sprite.texture?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
         guard sprite.isSliced, let art = sprite.texture?.size(), art.width > 0, art.height > 0 else {
             return [(sprite.size, sprite.anchorPoint, textureRect)]
         }
-        let frame = sprite.contentFrame
-        let patches = NineSlice.patches(frame: frame, textureSize: art, center: sprite.centerRect)
+        let own = sprite.contentFrame
+        let frame = CGRect(x: own.minX * scale.width, y: own.minY * scale.height,
+                           width: own.width * scale.width, height: own.height * scale.height)
+        let patches = NineSlice.patches(frame: frame, textureSize: art, center: sprite.centerRect, base: own.size)
         guard patches.count > 1 else { return [(sprite.size, sprite.anchorPoint, textureRect)] }
         return patches.map { patch in
             // The transform is the node's, so a patch is placed by giving it

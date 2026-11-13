@@ -109,7 +109,7 @@ public extension SKNode {
     /// point is in the parent's space and not the node's.
     func contains(_ point: CGPoint) -> Bool {
         guard !isHidden else { return false }
-        return calculateAccumulatedFrame()
+        return accumulatedContents(includingHidden: false)
             .applying(localTransform)
             .contains(point)
     }
@@ -159,7 +159,7 @@ public extension SKNode {
             let depth = z + node.zPosition
             counter += 1
             if node.isUserInteractionEnabled, node !== self,
-               node.calculateAccumulatedFrame().contains(point) {
+               node.accumulatedContents(includingHidden: false).contains(point) {
                 if best == nil || depth > best!.z || (depth == best!.z && counter > best!.order) {
                     best = (node, depth, counter)
                 }

@@ -149,12 +149,24 @@ open class SKNode {
     /// This node's frame in its parent's coordinates.
     open var frame: CGRect { contentFrame.applying(localTransform) }
 
-    /// The union of this node's and its descendants' frames, in the parent's
-    /// coordinates. Hidden nodes are left out, as SpriteKit leaves them out.
+    /// The union of this node's and its descendants' frames, in the
+    /// **parent's** coordinates (the node's own transform applied), hidden
+    /// and transparent descendants included — SpriteKit's, as measured on the
+    /// Mac (`SceneSupportTests`). The game leans on both: a dropdown finds
+    /// its anchor by subtracting the anchor's position, and a sample is
+    /// fitted by its icon's frame with the icon's scale in it.
     open func calculateAccumulatedFrame() -> CGRect {
+        accumulatedContents(includingHidden: true).applying(localTransform)
+    }
+
+    /// What this node and its descendants draw, in its **own** coordinates:
+    /// the box an effect node's texture covers, and the box a touch is hit
+    /// against (with what is hidden left out, as nothing hidden is drawn or
+    /// touched).
+    func accumulatedContents(includingHidden: Bool) -> CGRect {
         var total: CGRect? = contentFrame == .zero ? nil : contentFrame
-        for child in children where !child.isHidden {
-            let childFrame = child.calculateAccumulatedFrame().applying(child.localTransform)
+        for child in children where includingHidden || !child.isHidden {
+            let childFrame = child.accumulatedContents(includingHidden: includingHidden).applying(child.localTransform)
             guard childFrame != .zero else { continue }
             total = total.map { $0.union(childFrame) } ?? childFrame
         }

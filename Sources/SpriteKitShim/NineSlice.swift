@@ -52,15 +52,26 @@ enum NineSlice {
     /// When the frame is narrower (or shorter) than its two fixed borders,
     /// the borders are scaled down together to fit rather than overlapping,
     /// which is what SpriteKit does and keeps a shrunk kerb from inverting.
-    static func patches(frame: CGRect, textureSize: CGSize, center: CGRect) -> [Patch] {
+    ///
+    /// `base` is the sprite's own size before its scale: the borders are
+    /// first fitted to it, then kept as they are while the scale stretches
+    /// the middle (and fitted again only if the scaled frame is smaller
+    /// still). That is SpriteKit's: an 8-point dot drawn from a 16-point
+    /// texture and stretched 3× across is a pill with round ends, the caps
+    /// fitted to the dot, not to the texture.
+    static func patches(frame: CGRect, textureSize: CGSize, center: CGRect, base: CGSize? = nil) -> [Patch] {
         guard textureSize.width > 0, textureSize.height > 0 else { return [] }
 
-        let fixed = (
+        var fixed = (
             left: center.minX * textureSize.width,
             right: (1 - center.maxX) * textureSize.width,
             bottom: center.minY * textureSize.height,
             top: (1 - center.maxY) * textureSize.height
         )
+        if let base {
+            (fixed.left, fixed.right) = borders(fixed.left, fixed.right, within: base.width)
+            (fixed.bottom, fixed.top) = borders(fixed.bottom, fixed.top, within: base.height)
+        }
         let horizontal = borders(fixed.left, fixed.right, within: frame.width)
         let vertical = borders(fixed.bottom, fixed.top, within: frame.height)
 
