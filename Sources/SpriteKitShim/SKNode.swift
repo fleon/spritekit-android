@@ -6,6 +6,7 @@ import Foundation
 /// Open rather than final, so the game's 104 SpriteKit subclasses compile
 /// against it unchanged — the reason this layer is Swift-native rather than a
 /// wrapper over a C++ engine, which Swift cannot subclass.
+@preconcurrency @MainActor
 open class SKNode {
     // MARK: Tree
 

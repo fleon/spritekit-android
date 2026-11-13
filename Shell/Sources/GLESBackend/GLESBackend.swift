@@ -39,7 +39,14 @@ public enum GLESBackend {
         /// Lawn-kit pieces bent by the game's own `BackdropWarp` and
         /// `BackdropTouch` (SKWarpGeometry).
         case warp
+        /// A level over its world's live backdrop, lit, with the edge blur:
+        /// `world:reef-1` (or `world` with `-StartLevel`), the game's own
+        /// `BackdropNode` in `WorldPreviewScene`.
+        case world
     }
+
+    /// The level `world` shows: `debug.switchlings.scene world:<id>`.
+    public nonisolated(unsafe) static var worldLevel: String?
 
     public nonisolated(unsafe) static var scene: Scene = .level
 
@@ -66,13 +73,19 @@ public enum GLESBackend {
         PlayScene.autoSolves = DebugProperty.string("debug.switchlings.autosolve") == "1"
             || ShellArguments.has("-AutoSolve")
 
-        if let name = DebugProperty.string("debug.switchlings.scene"),
-           let picked = Scene(rawValue: name) {
-            scene = picked
+        if let name = DebugProperty.string("debug.switchlings.scene") {
+            let parts = name.split(separator: ":", maxSplits: 1).map(String.init)
+            if let picked = parts.first.flatMap(Scene.init(rawValue:)) {
+                scene = picked
+                if parts.count > 1 { worldLevel = parts[1] }
+            }
         }
         // Per launch, so it never changes the scene another app on a shared
         // emulator picks up from the property.
         if ShellArguments.has("-WarpProbe") { scene = .warp }
+        if let hide = ShellArguments.value(after: "-WorldHide") {
+            WorldPreviewScene.hidden = Set(hide.split(whereSeparator: { $0 == "," || $0 == "+" }).map(String.init))
+        }
         PNGFiles.install()
         PlayScene.options = playOptions()
     }
@@ -132,6 +145,13 @@ public enum GLESBackend {
                 view.presentScene(aspectFill(EmitterPreviewScene(size: size)))
             case .warp:
                 view.presentScene(aspectFill(WarpProbeScene(size: size)))
+            case .world:
+                let id = Self.worldLevel ?? ShellArguments.value(after: "-StartLevel")
+                if let scene = WorldPreviewScene(levelID: id, size: size) {
+                    view.presentScene(aspectFill(scene))
+                } else {
+                    view.presentScene(aspectFill(BoardPreviewScene(size: size)))
+                }
             }
         }
         renderer.reportLabel = Self.scene.rawValue

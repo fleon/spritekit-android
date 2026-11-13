@@ -42,12 +42,16 @@ public struct RenderTargetHandle: Equatable {
 ///     GLES counts up from the bottom left, so every lit shader and the edge
 ///     blur would be mirrored. The flip is `(0, height, 1, -1)`.
 ///
-///  2. **Whose pixels.** Inside an `SKEffectNode` the coordinate counts the
-///     *effect texture's* pixels, not the screen's — which is why AGENTS.md
-///     warns that a crop node round an effect node moves the blur band, and
-///     why `SceneLighting.screen` exists at all. A composite therefore draws
-///     with the mapping that lands in the texture it came from, not the one
-///     belonging to the framebuffer it is being drawn into.
+///  2. **Whose pixels.** A draw counts the pixels of the target it draws
+///     into. For what an `SKEffectNode` holds, that is the effect texture —
+///     which is why `SceneLighting.screen` exists, as a lit floor drawn
+///     inside the edge blur cannot find the screen from `gl_FragCoord`. The
+///     effect's *own* shader runs as its texture is composited, into
+///     whatever target holds the effect node, and counts that target's
+///     pixels: the screen's for the backdrop, the crop's own texture inside
+///     a crop node — which is why AGENTS.md warns that a crop node round an
+///     effect node moves the blur band, and why `EdgeShade.Blur` finds its
+///     band from `gl_FragCoord` at all.
 ///
 /// Both are one affine map per draw, pushed as `u_sk_frag`:
 ///
@@ -93,8 +97,9 @@ public struct FragCoordSpace: Equatable {
 ///    view's pixels per scene point, so magnifying inside the node (which is
 ///    exactly what `BandedLayerNode` does — a band is scaled up by
 ///    `pointsPerUnit` inside a cache scaled back down) does not resample.
-///  - **`gl_FragCoord` is the texture's.** `composite(into:)` hands the
-///    compositing draw a mapping into this texture's pixels.
+///  - **`gl_FragCoord` is the texture's** for what the node holds, as its
+///    contents draw into it (`contentsSpace`). Its own shader, run as it is
+///    composited, counts the pixels of the target it lands in.
 public struct EffectTexture: Equatable {
     /// The subtree's frame, in the effect node's own coordinates.
     public let bounds: CGRect
@@ -142,80 +147,6 @@ public struct EffectTexture: Equatable {
         .target(heightInPixels: heightInPixels)
     }
 
-    /// The mapping the compositing draw uses, so that the effect's own shader
-    /// sees this texture's pixels although it is drawing into `parent`.
-    ///
-    /// SpriteKit gets this by running the filter pass into a second target
-    /// the size of the texture and then blitting the result. Doing the same
-    /// would cost a second full-texture fill and two more target switches per
-    /// effect node per frame, which on a tiler is the expensive part. The
-    /// composite is instead drawn straight into the parent with the
-    /// coordinate remapped, which gives the same fragment values whenever the
-    /// node-to-parent transform is a translation and a scale.
-    ///
-    /// **Where it diverges from SpriteKit**, and this is the honest list:
-    ///
-    ///  - A *rotated or skewed* effect node cannot be expressed by this
-    ///    diagonal map. `supports(_:)` says so, and the renderer falls back
-    ///    to the parent's own space with a log rather than drawing something
-    ///    plausible but wrong. No effect node in this game rotates.
-    ///  - A *magnified* effect node is shaded once per screen pixel here and
-    ///    once per texel on SpriteKit, so it comes out sharper rather than
-    ///    resampled. `BandedLayerNode` scales its cache back to 1:1, so every
-    ///    effect node in this game composites at 1:1 and the two agree.
-    ///
-    /// - Parameters:
-    ///   - transform: the effect node's transform into scene coordinates.
-    ///   - visible: the scene rect the parent target shows.
-    ///   - parentHeight: the parent target's height in pixels.
-    public func composite(
-        transform: CGAffineTransform,
-        visible: CGRect,
-        parentHeightInPixels: Int
-    ) -> FragCoordSpace? {
-        guard Self.supports(transform) else { return nil }
-        guard visible.width > 0, visible.height > 0, parentHeightInPixels > 0 else { return nil }
-
-        let scaleX = transform.a
-        let scaleY = transform.d
-        guard scaleX != 0, scaleY != 0 else { return nil }
-
-        // gl_FragCoord in the parent -> scene point -> node point -> texel:
-        //   sceneX = visible.minX + glx / perPoint
-        //   nodeX  = (sceneX - transform.tx) / transform.a
-        //   texelX = (nodeX - bounds.minX) * density
-        //
-        // The viewport keeps one scale for both axes in every mode but
-        // `.fill`, which no scene here uses, so the height ratio is exact and
-        // taking x from the same number means a non-square parent cannot
-        // silently skew it.
-        let perPoint = CGFloat(parentHeightInPixels) / visible.height
-
-        let texelPerParentX = density / (scaleX * perPoint)
-        let texelPerParentY = density / (scaleY * perPoint)
-
-        let nodeOriginX = (visible.minX - transform.tx) / scaleX
-        let nodeOriginY = (visible.minY - transform.ty) / scaleY
-
-        let offsetX = Float((nodeOriginX - bounds.minX) * density)
-        // The texture's own y runs down from its top, so the parent's y (up)
-        // is negated on top of the offset.
-        let originTexelY = (nodeOriginY - bounds.minY) * density
-        let offsetY = Float(CGFloat(heightInPixels) - originTexelY)
-
-        return FragCoordSpace(
-            offsetX: offsetX,
-            offsetY: offsetY,
-            scaleX: Float(texelPerParentX),
-            scaleY: Float(-texelPerParentY)
-        )
-    }
-
-    /// Whether a transform is a translation and an axis-aligned scale, which
-    /// is what `composite(transform:visible:parentHeightInPixels:)` can map.
-    public static func supports(_ transform: CGAffineTransform) -> Bool {
-        abs(transform.b) < 1e-6 && abs(transform.c) < 1e-6
-    }
 }
 
 /// Keeps offscreen targets alive between frames.

@@ -667,10 +667,24 @@ public final class BitmapContext {
 
     /// Draws `image` into `rect` in user space, sampled bilinearly unless the
     /// interpolation quality says otherwise.
+    ///
+    /// As CoreGraphics does, the image's top row lands on the rect's
+    /// **maxY** edge in user space. A raw bitmap context is y-up (see
+    /// `CGContext(data:...)`), so an image drawn over the whole of one fills
+    /// it the right way up; a renderer's context is y-down, as UIKit's is,
+    /// so an image drawn straight into one comes out upside down — the
+    /// CoreGraphics gotcha the game's own code flips for
+    /// (`BoardGroundingArt`, `CircuitBoardNode`).
     public func draw(_ image: RasterImage, in rect: CGRect) {
+        draw(image, in: rect, byTiling: false)
+    }
+
+    /// With `byTiling`, the image repeats from `rect` across everything the
+    /// clip leaves, as CoreGraphics' `draw(_:in:byTiling:)` does.
+    public func draw(_ image: RasterImage, in rect: CGRect, byTiling: Bool) {
         guard image.width > 0, image.height > 0, rect.width != 0, rect.height != 0 else { return }
         let device = rect.applying(state.ctm)
-        let box = PathRasteriser.PixelBox.covering(device)
+        let box = (byTiling ? canvasBox : PathRasteriser.PixelBox.covering(device))
             .intersection(canvasBox)
             .intersection(state.clip?.box ?? canvasBox)
         guard !box.isEmpty else { return }
@@ -681,13 +695,17 @@ public final class BitmapContext {
         let inverse = state.ctm.inverted()
         let smooth = state.interpolation != .none
         let alpha = state.alpha
-        let coverage = rectangleClip(device)
+        let coverage = byTiling ? rectangleClip(CGRect(x: 0, y: 0, width: width, height: height)) : rectangleClip(device)
 
         composite(box: box, coverage: coverage.alpha, coverageBox: coverage.box) { x, y in
             let user = CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5).applying(inverse)
-            let u = (user.x - rect.minX) / rect.width
-            // The image's row 0 is its top, and so is the rect's minY.
-            let v = (user.y - rect.minY) / rect.height
+            var u = (user.x - rect.minX) / rect.width
+            // The image's row 0 is its top, which lands on the rect's maxY.
+            var v = (rect.maxY - user.y) / rect.height
+            if byTiling {
+                u -= u.rounded(.down)
+                v -= v.rounded(.down)
+            }
             guard u >= 0, u <= 1, v >= 0, v <= 1,
                   var sample = image.sample(u: u, v: v, smooth: smooth) else { return nil }
             sample.r *= alpha; sample.g *= alpha; sample.b *= alpha; sample.a *= alpha

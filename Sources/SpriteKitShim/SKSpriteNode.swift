@@ -34,9 +34,15 @@ open class SKSpriteNode: SKNode {
         self.init(texture: texture, size: size)
     }
 
-    public convenience init(texture: SKTexture?, color: SKColor, size: CGSize) {
-        self.init(texture: texture, size: size)
+    /// SpriteKit's designated initialiser, which the game's own sprite
+    /// subclasses call as `super.init(texture:color:size:)` (`SharedLightNode`,
+    /// `GlowNode`, `CrumbleNode`, `ConveyorNode`). As a convenience
+    /// initialiser it compiled but left those calls unlinkable.
+    public init(texture: SKTexture?, color: SKColor, size: CGSize) {
+        self.texture = texture
+        self.size = size
         self.color = color
+        super.init()
     }
 
     public init(color: SKColor, size: CGSize) {

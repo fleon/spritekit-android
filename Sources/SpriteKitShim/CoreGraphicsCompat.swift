@@ -116,6 +116,10 @@ public extension BitmapContext {
             self.init(width: width, height: height)
         }
         storesBGRA = BitmapContext.isBGRA(bitmapInfo: bitmapInfo)
+        // CoreGraphics' own space: y up from the bottom row. Memory's first
+        // row is still the image's top, as it is on Apple.
+        translateBy(x: 0, y: CGFloat(height))
+        scaleBy(x: 1, y: -1)
     }
 
     func setFillColor(_ color: CGColor) { setFill(color) }
@@ -367,4 +371,10 @@ extension PathElement {
     }
 }
 
+#endif
+
+#if SPRITEKIT_SHIM
+/// CoreFoundation's name for a span of seconds, which corelibs Foundation
+/// leaves out on Android.
+public typealias CFTimeInterval = Double
 #endif

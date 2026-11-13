@@ -33,6 +33,12 @@ enum LaunchArguments {
     static var playsDesignerLevels: Bool { false }
     /// `-HoldLoading`: the loading screen stays up. Off, as in a release build.
     static var holdsLoading: Bool { false }
+    /// `-BlurBackdrop`, `-KeyBackdrop`, `-ShowKeepClear`, `-CircuitCheck`:
+    /// the backdrops' capture and debug switches, off as in a release build.
+    static var blursBackdrop: Bool { false }
+    static var keysBackdrop: Bool { false }
+    static var showsKeepClear: Bool { false }
+    static var checksCircuits: Bool { false }
     /// The title's wordmark keeps pulsing (`TitleLogoNode`), as in a release build.
     static var stillWordmark: Bool { false }
 }

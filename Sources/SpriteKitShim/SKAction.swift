@@ -31,6 +31,8 @@ public final class SKAction {
         case scaleTo(CGFloat?, CGFloat?, CGFloat?)  // uniform, x only, y only
         case scaleBy(CGFloat)
         case rotateTo(CGFloat)
+        case rotateToShortest(CGFloat)              // the shortest way round
+        case follow([CGPoint], Bool, Bool)          // flattened path, as offset, orient
         case rotateBy(CGFloat)
         case animate([SKTexture], TimeInterval, Bool)
         case sequence([SKAction])
@@ -148,6 +150,20 @@ public final class SKAction {
         SKAction(kind: .rotateTo(angle), duration: duration)
     }
 
+    /// SpriteKit's `follow(_:asOffset:orientToPath:duration:)`: along the
+    /// path at an even speed, from its start (or from where the node
+    /// stands, `asOffset`), turned along it with `orientToPath` (SpriteKit
+    /// turns the node's x axis along the path).
+    public static func follow(_ path: CGPath, asOffset: Bool, orientToPath: Bool, duration: TimeInterval) -> SKAction {
+        let points = PathRasteriser.flatten(path, scale: 1).flatMap(\.points)
+        return SKAction(kind: .follow(points, asOffset, orientToPath), duration: duration)
+    }
+
+    /// With `shortestUnitArc`, it turns whichever way round is shorter.
+    public static func rotate(toAngle angle: CGFloat, duration: TimeInterval, shortestUnitArc: Bool) -> SKAction {
+        SKAction(kind: shortestUnitArc ? .rotateToShortest(angle) : .rotateTo(angle), duration: duration)
+    }
+
     public static func rotate(byAngle angle: CGFloat, duration: TimeInterval) -> SKAction {
         SKAction(kind: .rotateBy(angle), duration: duration)
     }
@@ -170,6 +186,32 @@ public final class SKAction {
 
     public static func hide() -> SKAction { SKAction(kind: .hide(true), duration: 0) }
     public static func unhide() -> SKAction { SKAction(kind: .hide(false), duration: 0) }
+
+    /// SpriteKit's reverse: relative actions undo themselves, sequences run
+    /// backwards, and actions with nothing to reverse (an absolute move, a
+    /// block) come back as they are, as SpriteKit's do. The timing mode is
+    /// mirrored, so an ease-in reversed eases out.
+    public func reversed() -> SKAction {
+        let kind: Kind
+        switch self.kind {
+        case let .moveBy(delta): kind = .moveBy(CGVector(dx: -delta.dx, dy: -delta.dy))
+        case let .fadeBy(delta): kind = .fadeBy(-delta)
+        case let .scaleBy(factor): kind = .scaleBy(factor == 0 ? 0 : 1 / factor)
+        case let .rotateBy(angle): kind = .rotateBy(-angle)
+        case let .sequence(actions): kind = .sequence(actions.reversed().map { $0.reversed() })
+        case let .group(actions): kind = .group(actions.map { $0.reversed() })
+        case let .repeating(action, count): kind = .repeating(action.reversed(), count)
+        default: kind = self.kind
+        }
+        let reversed = SKAction(kind: kind, duration: duration)
+        reversed.speed = speed
+        switch timingMode {
+        case .easeIn: reversed.timingMode = .easeOut
+        case .easeOut: reversed.timingMode = .easeIn
+        default: reversed.timingMode = timingMode
+        }
+        return reversed
+    }
 
     var totalDuration: TimeInterval {
         speed > 0 ? duration / TimeInterval(speed) : duration
@@ -327,6 +369,31 @@ public final class SKAction {
 
             case let .rotateTo(angle):
                 node.zRotation = from.zRotation + (angle - from.zRotation) * t
+
+            case let .follow(points, asOffset, orient):
+                guard let first = points.first else { break }
+                var lengths: [CGFloat] = [0]
+                for i in 1..<max(points.count, 1) {
+                    lengths.append(lengths[i - 1] + hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y))
+                }
+                let target = (lengths.last ?? 0) * min(max(t, 0), 1)
+                var at = first, angle: CGFloat?
+                if points.count > 1 {
+                    var i = 1
+                    while i < points.count - 1, lengths[i] < target { i += 1 }
+                    let span = lengths[i] - lengths[i - 1]
+                    let f = span > 0 ? (target - lengths[i - 1]) / span : 0
+                    let a = points[i - 1], b = points[i]
+                    at = CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)
+                    angle = atan2(b.y - a.y, b.x - a.x)
+                }
+                node.position = asOffset ? CGPoint(x: from.position.x + at.x - first.x, y: from.position.y + at.y - first.y) : at
+                if orient, let angle { node.zRotation = angle }
+
+            case let .rotateToShortest(angle):
+                var turn = (angle - from.zRotation).truncatingRemainder(dividingBy: 2 * .pi)
+                if turn > .pi { turn -= 2 * .pi } else if turn < -.pi { turn += 2 * .pi }
+                node.zRotation = from.zRotation + turn * t
 
             case let .rotateBy(angle):
                 node.zRotation = from.zRotation + angle * t

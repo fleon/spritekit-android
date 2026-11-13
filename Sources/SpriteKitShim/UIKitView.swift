@@ -28,6 +28,12 @@ public enum UIInterfaceOrientation: Int, Sendable {
     public var isPortrait: Bool { self == .portrait || self == .portraitUpsideDown }
 }
 
+/// The device, as `HapticsManager` asks after it: a phone.
+public final class UIDevice: @unchecked Sendable {
+    public static let current = UIDevice()
+    public var userInterfaceIdiom: UIUserInterfaceIdiom { .phone }
+}
+
 extension UITraitCollection {
     /// A phone: the Android port's only idiom so far.
     public var userInterfaceIdiom: UIUserInterfaceIdiom { .phone }
@@ -84,8 +90,15 @@ open class UIWindow {
 
 /// SpriteKit's view is a UIKit one, and the game reads it as one: its
 /// bounds, safe area, traits and window. `SKView` builds on this.
+@preconcurrency @MainActor
 open class UIView {
     public var bounds: CGRect
+
+    /// The layer the view draws into. On Apple an `SKView`'s is a
+    /// `CAMetalLayer`, which `EdgeShade` asks for its drawable size; here
+    /// there is no layer tree, so it is a plain one and the game falls back
+    /// to `bounds` times `contentScaleFactor`, the same number.
+    public let layer = CALayer()
 
     /// What system bars and cutouts cover, in points. The shell sets it.
     public var safeAreaInsets: UIEdgeInsets = .zero
@@ -108,4 +121,16 @@ open class UIView {
     }
 }
 
+#endif
+
+#if SPRITEKIT_SHIM
+/// Core Animation's layer, as far as the game asks after one.
+open class CALayer {
+    public init() {}
+}
+
+/// Named by `EdgeShade`'s `view.layer as? CAMetalLayer`; nothing is one here.
+public final class CAMetalLayer: CALayer {
+    public var drawableSize = CGSize.zero
+}
 #endif

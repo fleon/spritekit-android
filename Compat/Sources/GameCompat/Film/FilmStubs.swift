@@ -13,12 +13,11 @@ import SpriteKitShim
 //     ring's `PlayBoardNode` stands in, carried by the same `Timeline` at
 //     each Switchling's rig pace, with `BoardNode`'s intro timings, so a
 //     film's moves start on the frames they start on iOS.
-//   - `BackdropNode` is the eight live backdrops; this draws the world's
-//     gradient, which the real one shows under them till they bake.
-//   - The lights (`SceneLightNode`, `WorldLightNode`, `SharedLightNode`,
-//     `LightCanvas`) are the lighting ring's; a film here is lit as painted.
-//   - `ShareFormNode`, `SolutionShare` and `EdgeButtons` are the UI ring's,
-//     and only their shapes are here.
+//   - `ShareFormNode` and `SolutionShare` are the UI ring's, and only
+//     their shapes are here.
+//
+// The backdrop, its edge blur and every light are the game's own files now
+// (`Backdrops/`), so a film draws on its world's live backdrop, lit.
 
 // MARK: - The share form's choices (`ShareFormNode`'s own enums, verbatim)
 
@@ -67,6 +66,8 @@ enum SolutionShare {
 /// outline and kerbs.
 final class BoardNode: SKNode {
     let metrics: BoardMetrics
+    /// The world it shows, which the lights ask after (`WorldLightNode`).
+    let world: WorldTheme
     let frameRect: CGRect
     var isSilent = false
     var soundSink: ((AudioManager.Sound) -> Void)?
@@ -76,6 +77,7 @@ final class BoardNode: SKNode {
 
     init(level: Level, state: GameState, theme: WorldTheme, isTransposed: Bool) {
         board = PlayBoardNode(level: level, theme: theme, state: state)
+        world = theme
         metrics = board.metrics
         let outer = board.frameNode?.outerRect ?? .zero
         let arrowTop = metrics.point(GridPoint(metrics.originX, metrics.originY)).y
@@ -90,6 +92,23 @@ final class BoardNode: SKNode {
         super.init()
         addChild(board)
     }
+
+    // What the lights read off a board (`WorldLightNode`, `CircuitLight`,
+    // `RoomLight`). The port's board draws no glowing mechanism and no
+    // electric current yet, so it hands them none.
+
+    /// A cell's width, in the board's own units.
+    var cellSize: CGFloat { metrics.cell }
+
+    /// `BoardNode.glows(into:in:world:)`: none yet.
+    func glows(into glows: inout [WorldLight.Glow], in scene: SKScene, world: WorldTheme? = nil) {}
+
+    /// `BoardNode.currentChargeColor`: the current's charge, cyan
+    /// (`Theme.currentCharge`) until a polarity switch can turn it.
+    var currentChargeColor: SIMD3<Float> { WorldLight.rgb(Theme.currentCharge) }
+
+    /// `BoardNode.currentLines(in:_:)`: none yet.
+    func currentLines(in scene: SKScene, _ body: (CGPoint, CGPoint) -> Void) {}
 
     /// `BoardNode.placement(in:maxScale:)`.
     func placement(in area: CGRect, maxScale: CGFloat) -> (scale: CGFloat, position: CGPoint) {
@@ -163,81 +182,4 @@ final class BoardNode: SKNode {
             swapPad: Double(DesignSystem.rigWarp) * 1000
         )
     }
-}
-
-// MARK: - The backdrop
-
-/// The world's backdrop behind a film's board: its gradient, top to
-/// bottom (`WorldPalette.backgroundTop`, `backgroundBottom`), as the real
-/// one shows wherever its live scenery isn't drawn.
-final class BackdropNode: SKNode {
-    private let theme: WorldTheme
-    private let gradient = SKSpriteNode()
-    /// Rows in the gradient's texture, stretched over the frame.
-    private static let gradientSteps: CGFloat = 256
-
-    init(theme: WorldTheme) {
-        self.theme = theme
-        super.init()
-        addChild(gradient)
-    }
-
-    func layout(_ layout: SceneLayout, keepClear: [CGRect], edges: EdgeButtons) {
-        let visible = layout.visibleRect
-        let palette = theme.palette
-        let image = UIGraphicsImageRenderer(size: sz(1, Self.gradientSteps)).image { context in
-            let colours = [palette.backgroundTop.cgColor, palette.backgroundBottom.cgColor] as CFArray
-            if let fill = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours, locations: [0, 1]) {
-                context.cgContext.drawLinearGradient(fill, start: .zero, end: pt(0, Self.gradientSteps), options: [])
-            }
-        }
-        gradient.texture = SKTexture(image: image)
-        gradient.size = visible.size
-        gradient.position = pt(visible.midX, visible.midY)
-    }
-
-    func outlineBoard(_ silhouette: [CGRect]) {}
-    func focus(on board: CGRect) {}
-    func planScenery() {}
-    func host(in view: SKView, pointsPerUnit: CGFloat) {}
-    func bakeNow() {}
-}
-
-// MARK: - Lights
-
-/// Where an off-screen scene's lights fall (`SceneLighting.swift`).
-enum LightCanvas {
-    case view(SKView)
-    case render(visible: CGRect, pixelsPerPoint: CGFloat)
-}
-
-final class SceneLightNode: SKNode {
-    var offscreen: LightCanvas?
-    init(_ cellSize: @escaping () -> CGFloat) { super.init() }
-    func start() {}
-}
-
-final class WorldLightNode: SKNode {
-    var offscreen: LightCanvas?
-    init(boards: @escaping () -> [BoardNode], backdrops: @escaping () -> [BackdropNode]) { super.init() }
-    func start() {}
-}
-
-final class SharedLightNode: SKNode {
-    init(look: GroundingLook, pattern: SharedLightPattern) { super.init() }
-    func layout(_ layout: SceneLayout, board: CGRect) {}
-}
-
-extension BoardGrounding {
-    /// What a world shows round its board (`BoardGroundingArt.swift`): none
-    /// of it is drawn here yet.
-    static func shown(in theme: WorldTheme) -> BoardGrounding { [] }
-}
-
-// MARK: - Layout, as far as the stage names it
-
-/// The round buttons' frames along each edge (`EdgeShade.swift`).
-struct EdgeButtons: Equatable {
-    var top: [CGRect] = []
-    var bottom: [CGRect] = []
 }

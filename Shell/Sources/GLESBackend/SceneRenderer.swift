@@ -91,7 +91,6 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Set once per build, so a mask carrying its own shader is reported
     /// rather than quietly clipped to the wrong shape.
     private var warnedShadedMask = false
-    private var warnedRotatedEffect = false
     private var clampedEffects: Set<ObjectIdentifier> = []
     /// Textures handed to the game by `texture(from:)`, by the node they
     /// were baked from. A backdrop bakes its floor again on every layout, so
@@ -130,7 +129,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         drawableSize: CGSize,
         pointScale: CGFloat,
         pageLoader: @escaping (Int) -> (width: Int, height: Int, pixels: Data)?,
-        start: (SKView) -> Void
+        start: @escaping (SKView) -> Void
     ) {
         self.pageLoader = pageLoader
         self.drawableSize = drawableSize
@@ -146,8 +145,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // something plausible rather than nothing — a flat sky with no
         // nebula, which is how this was found.
         cache.pixelSource = Self.pixels(of:)
-        start(view)
+        self.start = start
     }
+
+    /// What presents the first scene, run once the GL state and the bake
+    /// hook (`SKView.snapshot`) exist, at the end of `rendererDidStart`: a
+    /// scene that bakes as it joins the view (`BackdropNode` bakes its live
+    /// backdrop's floor and its edge shades in `didMove`) would otherwise
+    /// bake into nothing and keep that.
+    private var start: ((SKView) -> Void)?
 
     private static func points(_ pixels: CGSize, scale: CGFloat) -> CGSize {
         scale > 0 ? CGSize(width: pixels.width / scale, height: pixels.height / scale) : pixels
@@ -226,6 +232,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         MetalExecution.executor = self
 
         Log.info("max texture side \(device.maximumTextureSide)")
+        if let start {
+            self.start = nil
+            start(view)
+        }
     }
 
     public func drawableSizeDidChange(to size: CGSize) {
@@ -488,22 +498,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             effectsCached += 1
         }
 
-        // The composite. `gl_FragCoord` must land in the texture just drawn,
-        // not in the framebuffer being drawn into.
-        var space = target.fragSpace
-        if let mapped = texture.composite(
-            transform: transform,
-            visible: target.visible,
-            parentHeightInPixels: target.heightInPixels
-        ) {
-            space = mapped
-        } else if shader != nil, !warnedRotatedEffect {
-            warnedRotatedEffect = true
-            Log.error(
-                "an effect node's transform is rotated or skewed; its shader's gl_FragCoord "
-                + "falls back to the target's own pixels, which is not what SpriteKit reports"
-            )
-        }
+        // The composite: the effect's shader counts the pixels of the target
+        // it lands in, as SpriteKit's does (`EdgeShade.Blur` finds its band
+        // on the screen from `gl_FragCoord`).
+        let space = target.fragSpace
 
         let quad = compositeQuad(
             bounds: bounds, transform: transform, alpha: alpha,
@@ -685,7 +683,13 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// `SKView.texture(from:)`: a subtree rendered to a texture the game then
     /// samples. Every live backdrop bakes its floor this way once per layout.
     private func bake(_ node: SKNode, crop: CGRect?) -> SKTexture? {
-        let bounds = crop ?? node.calculateAccumulatedFrame()
+        // The subtree draws with the node's own transform (a crop is given
+        // in that space too: the lawn bakes a root scaled by its floor's
+        // scale, cropped to the scaled rect), so its frame is measured there,
+        // as SpriteKit's is: the edge shade bakes a canvas scaled down
+        // by `edgeShadeMapScale`, which a frame in the node's own space
+        // would leave as a small patch in a texture too big for it.
+        let bounds = crop ?? node.calculateAccumulatedFrame().applying(node.localTransform)
         guard bounds.width > 0, bounds.height > 0 else { return nil }
 
         let density = target.visible.height > 0
@@ -996,13 +1000,26 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let sampler = glGetUniformLocation(program, "u_texture")
         if sampler >= 0 { glUniform1i(sampler, 0) }
 
+        // SpriteKit's blend modes over premultiplied colour. Toy Box's room
+        // light is a `.multiplyX2` pass over the rug (`TownRugNode`), so a
+        // grey of 0.5 leaves it as painted.
+        glEnable(GLenum(GL_BLEND))
+        glBlendEquation(GLenum(GL_FUNC_ADD))
         switch batch.blendMode {
         case .add:
             glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE))
+        case .subtract:
+            glBlendEquation(GLenum(GL_FUNC_REVERSE_SUBTRACT))
+            glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE))
+        case .multiply:
+            glBlendFunc(GLenum(GL_DST_COLOR), GLenum(GL_ONE_MINUS_SRC_ALPHA))
+        case .multiplyX2:
+            glBlendFunc(GLenum(GL_DST_COLOR), GLenum(GL_SRC_COLOR))
+        case .screen:
+            glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_COLOR))
         case .replace:
             glDisable(GLenum(GL_BLEND))
-        default:
-            glEnable(GLenum(GL_BLEND))
+        case .alpha, .multiplyAlpha:
             glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
         }
 
@@ -1086,7 +1103,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             case let .texture(t):
                 guard let t else { continue }
                 glActiveTexture(GLenum(GL_TEXTURE0) + GLenum(unit))
-                glBindTexture(GLenum(GL_TEXTURE_2D), cache.name(for: t))
+                glBindTexture(GLenum(GL_TEXTURE_2D), cache.samplerName(for: t))
                 glUniform1i(location, unit)
                 unit += 1
             }

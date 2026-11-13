@@ -54,10 +54,11 @@ public enum ShaderTranslator {
     ///    `EdgeShade.Blur` writes `vec2(gl_FragCoord.x, -gl_FragCoord.y)` for
     ///    the same reason. Left alone, every lit world and the blur band
     ///    would be mirrored top to bottom.
-    ///  - Inside an `SKEffectNode` it counts that texture's pixels rather
-    ///    than the screen's. The renderer sets `u_sk_frag` from
-    ///    `EffectTexture.composite(...)` for that draw and from the bound
-    ///    target otherwise, so one uniform covers both.
+    ///  - It counts the pixels of the target being drawn into: an
+    ///    `SKEffectNode`'s texture for what the node holds, the screen (or
+    ///    an enclosing effect's texture) for the effect's own shader as it
+    ///    composites. The renderer sets `u_sk_frag` from the bound target,
+    ///    so one uniform covers both.
     ///
     /// ES 3.0 will not let a macro or a variable be named `gl_…`, so the
     /// identifier is rewritten to a function instead.

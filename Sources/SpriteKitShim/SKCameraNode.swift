@@ -163,4 +163,17 @@ extension SKScene {
     }
 }
 
+public extension SKView {
+    /// SpriteKit's `SKView.convert(_:from:)`: a point in `scene` to the
+    /// view's points (y down), as `LightCanvas.pixels` asks.
+    func convert(_ point: CGPoint, from scene: SKScene) -> CGPoint {
+        scene.convertPoint(toView: point)
+    }
+
+    /// SpriteKit's `SKView.convert(_:to:)`: a point in the view to `scene`.
+    func convert(_ point: CGPoint, to scene: SKScene) -> CGPoint {
+        scene.convertPoint(fromView: point)
+    }
+}
+
 #endif

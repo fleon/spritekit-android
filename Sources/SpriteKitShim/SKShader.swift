@@ -230,6 +230,16 @@ public final class SKAttributeValue: @unchecked Sendable {
         set { value = .float(CGFloat(newValue)) }
     }
 
+    public var vectorFloat2Value: SIMD2<Float> {
+        get { if case let .vector2(v) = value { return v } else { return .zero } }
+        set { value = .vector2(newValue) }
+    }
+
+    public var vectorFloat3Value: SIMD3<Float> {
+        get { if case let .vector3(v) = value { return v } else { return .zero } }
+        set { value = .vector3(newValue) }
+    }
+
     public var vectorFloat4Value: SIMD4<Float> {
         get { if case let .vector4(v) = value { return v } else { return .zero } }
         set { value = .vector4(newValue) }

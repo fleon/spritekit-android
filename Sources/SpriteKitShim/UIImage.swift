@@ -24,9 +24,25 @@ public final class UIImage: @unchecked Sendable {
     /// The file's bytes, undecoded, for an image loaded from a file. Empty
     /// for one that was drawn.
     public let data: Data
-    /// The pixels, for an image that was drawn. Nil for one loaded from a
-    /// file, whose bytes the renderer decodes itself.
-    public let cgImage: RasterImage?
+    /// The pixels, for an image that was drawn, or for one of the packed
+    /// art's images (`UIImage(named:)`), decoded on first ask through
+    /// `packed`. Nil for one loaded from a file, whose bytes the
+    /// renderer decodes itself.
+    public var cgImage: RasterImage? {
+        if let drawn { return drawn }
+        guard let asset else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        if let decoded { return decoded }
+        decoded = UIImage.packed?(asset.name)
+        return decoded
+    }
+    private let drawn: RasterImage?
+    /// The packed art's image this is, for `UIImage(named:)`.
+    public let asset: AssetIndex.Entry?
+    private var decoded: RasterImage?
+    private let lock = NSLock()
+
     /// In points: the pixel size over `scale`.
     public let size: CGSize
     /// Pixels per point.
@@ -36,27 +52,40 @@ public final class UIImage: @unchecked Sendable {
         guard let data = FileManager.default.contents(atPath: path),
               let pixels = UIImage.pngSize(data) else { return nil }
         self.data = data
-        cgImage = nil
+        drawn = nil
+        asset = nil
         // The rig pages are 1x files, as `RigNode` says: their sizes are in
         // pixels, and the rig's own maths scales them.
         scale = 1
         size = pixels
     }
 
-    /// A loose PNG the bundle answers for, else an image set from the
-    /// packed art (`UIImage.packed`), as the asset catalog answers on Apple:
-    /// a share's avatar is one.
+    /// A loose PNG the bundle answers for (a rig's page), else an image set
+    /// from the packed art, as the asset catalog answers on Apple: measured
+    /// in its points, its pixels cut from its page only when somebody asks
+    /// for them (`cgImage`, through `packed`). `SceneLighting` asks this some
+    /// five hundred times just to learn whether an asset has normals, so it
+    /// must answer without decoding anything.
     public convenience init?(named name: String) {
         if let url = BundleResources.url(forResource: name, withExtension: "png") {
             self.init(contentsOfFile: url.path)
-        } else if let scale = AssetIndex.shared?.scale, let pixels = UIImage.packed?(name) {
-            self.init(cgImage: pixels, scale: scale)
+        } else if let entry = AssetIndex.shared?.entry(name) {
+            self.init(asset: entry, scale: AssetIndex.shared?.scale ?? 1)
         } else {
             return nil
         }
     }
 
-    /// An image set's pixels, cut from its atlas page; the shell installs it.
+    private init(asset entry: AssetIndex.Entry, scale: CGFloat) {
+        data = Data()
+        drawn = nil
+        asset = entry
+        self.scale = scale > 0 ? scale : 1
+        size = entry.size
+    }
+
+    /// An image set's pixels, premultiplied, cut from its atlas page; the
+    /// shell installs it.
     public nonisolated(unsafe) static var packed: ((String) -> RasterImage?)?
 
     /// A drawn image. UIKit's carries its scale so a 3x rendering still
@@ -65,7 +94,8 @@ public final class UIImage: @unchecked Sendable {
     /// not a 360-point one.
     public init(cgImage: RasterImage, scale: CGFloat = 1) {
         data = Data()
-        self.cgImage = cgImage
+        drawn = cgImage
+        asset = nil
         self.scale = scale > 0 ? scale : 1
         size = CGSize(
             width: CGFloat(cgImage.width) / self.scale,
@@ -77,7 +107,8 @@ public final class UIImage: @unchecked Sendable {
     /// nothing to put in it.
     init(size: CGSize, scale: CGFloat) {
         data = Data()
-        cgImage = nil
+        drawn = nil
+        asset = nil
         self.scale = scale > 0 ? scale : 1
         self.size = size
     }
@@ -106,7 +137,13 @@ public final class UIImage: @unchecked Sendable {
     /// Draws it, stretched to `rect`, into the context being drawn.
     public func draw(in rect: CGRect) {
         guard let context = UIImage.contexts.last, let pixels else { return }
+        // UIKit draws an image the right way up in its own y-down space;
+        // CoreGraphics' `draw` puts the image's top on the rect's maxY.
+        context.saveGState()
+        context.translateBy(x: 0, y: rect.minY + rect.maxY)
+        context.scaleBy(x: 1, y: -1)
         context.draw(pixels, in: rect)
+        context.restoreGState()
     }
 
     /// The image as a PNG file.

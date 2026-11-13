@@ -93,6 +93,37 @@ public final class GLDevice: RenderDevice {
     /// Switches a page to repeat wrapping. The asset index marks the pages
     /// that hold one whole tiling image; an atlas page must never be set this
     /// way or its neighbours bleed in.
+    public func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32 {
+        guard width > 0, height > 0 else { return 0 }
+        let copy = createTexture(width: width, height: height, pixels: nil)
+        guard copy != 0 else { return 0 }
+        var bound: GLint = 0
+        glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &bound)
+        var framebuffers: [GLuint] = [0, 0]
+        glGenFramebuffers(2, &framebuffers)
+        glBindFramebuffer(GLenum(GL_READ_FRAMEBUFFER), framebuffers[0])
+        glFramebufferTexture2D(GLenum(GL_READ_FRAMEBUFFER), GLenum(GL_COLOR_ATTACHMENT0), GLenum(GL_TEXTURE_2D), source, 0)
+        glBindFramebuffer(GLenum(GL_DRAW_FRAMEBUFFER), framebuffers[1])
+        glFramebufferTexture2D(GLenum(GL_DRAW_FRAMEBUFFER), GLenum(GL_COLOR_ATTACHMENT0), GLenum(GL_TEXTURE_2D), copy, 0)
+        let complete = glCheckFramebufferStatus(GLenum(GL_READ_FRAMEBUFFER)) == GLenum(GL_FRAMEBUFFER_COMPLETE)
+            && glCheckFramebufferStatus(GLenum(GL_DRAW_FRAMEBUFFER)) == GLenum(GL_FRAMEBUFFER_COMPLETE)
+        if complete {
+            glBlitFramebuffer(
+                GLint(x), GLint(y), GLint(x + width), GLint(y + height),
+                0, 0, GLint(width), GLint(height),
+                GLbitfield(GL_COLOR_BUFFER_BIT), GLenum(GL_NEAREST)
+            )
+        }
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(bound))
+        glDeleteFramebuffers(2, &framebuffers)
+        guard complete else {
+            Log.error("copying a texture's region: framebuffer incomplete")
+            deleteTexture(copy)
+            return 0
+        }
+        return copy
+    }
+
     public func setRepeats(_ name: UInt32) {
         glBindTexture(GLenum(GL_TEXTURE_2D), name)
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_REPEAT)

@@ -42,6 +42,8 @@ final class PlayBoardNode: SKNode {
     private var castOrder: [String: Int] = [:]
 
     private(set) var state: GameState
+    /// Castle's cushion, which follows the sea (`PlayBoardGrounding.swift`).
+    var cushion: CloudCushion?
 
     private enum ActionKey {
         static let track = "board.track"
@@ -119,6 +121,9 @@ final class PlayBoardNode: SKNode {
         let frame = BoardFrameNode(outline: outline, metrics: metrics, theme: theme)
         gridLayer.addChild(frame)
         frameNode = frame
+        // What the world shows round its board (`BoardNode.init`), hung on
+        // the kerbs: `PlayBoardGrounding.swift`.
+        ground(frame, theme: theme)
 
         for (order, switchling) in state.switchlings.enumerated() {
             castOrder[switchling.id] = order

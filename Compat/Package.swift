@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 // Android-only. Do not build this package on a Mac: it declares targets named
@@ -37,6 +37,9 @@ let package = Package(
         .target(name: "CoreGraphics",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
                 path: "Sources/CoreGraphics", swiftSettings: [v5, shimDefine]),
+        .target(name: "CoreImage",
+                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                path: "Sources/CoreImage", swiftSettings: [v5, shimDefine]),
         .target(name: "QuartzCore",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
                 path: "Sources/QuartzCore", swiftSettings: [v5, shimDefine]),
@@ -68,11 +71,17 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "Android"),
                 .product(name: "PlatformShim", package: "Android"),
                 .product(name: "Macros", package: "Macros"),
-                "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "QuartzCore", "os", "simd",
+                "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "CoreImage", "QuartzCore", "os", "simd",
                 "Metal", "CoreVideo", "AVFoundation",
             ],
             path: "Sources/GameCompat",
-            swiftSettings: [v5, shimDefine]
+            // As the Xcode project builds the game (SWIFT_DEFAULT_ACTOR_ISOLATION
+            // = MainActor): `WorldLight.apply` calls the main actor's
+            // `BuildGate.unlessBuilding` from code that is main-actor only
+            // by that default. The shim's `SKNode` and `UIView` are
+            // `@preconcurrency @MainActor`, as SpriteKit's and UIKit's are,
+            // so the game's overrides agree with what they override.
+            swiftSettings: [v5, shimDefine, .defaultIsolation(MainActor.self)]
         ),
     ]
 )

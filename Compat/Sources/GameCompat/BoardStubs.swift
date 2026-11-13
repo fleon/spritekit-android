@@ -14,10 +14,6 @@ import SpriteKitShim
 //     here too until the rig ring brought real ones; the board's spellings
 //     of the first two are folded into `RigStubs.swift` now.)
 
-enum LiveBackdrops {
-    static func forgetBakeShaders(where forget: (String) -> Bool) {}
-}
-
 // `CGContext`, `CGColor`, `UIColor.cgColor`, `SurfaceTexture` and
 // `UIColor.cacheKey` stood in here until the CGContext ring brought real
 // ones: the first three are the shim's (`BitmapContext`,

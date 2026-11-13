@@ -630,13 +630,14 @@ Three things in the renderer are decided rather than inherited:
   `ShaderTranslator` rewrites the identifier to a call over one uniform, so
   every lit world and the edge blur are the right way up without touching
   the 31 files that read it.
-- **An effect's shader sees the effect texture's pixels**, not the
-  framebuffer's — which is why a crop node round an effect node moves the
-  blur band on iOS, and now here. `EffectTexture.composite` maps the
-  coordinate back, so the composite needs one pass rather than SpriteKit's
-  two. It is exact for a translated and scaled effect node (every one in
-  this game) and refuses a rotated one rather than drawing something
-  plausible.
+- **A draw counts the pixels of the target it draws into.** What an effect
+  node holds draws into its texture and counts that texture's pixels (why
+  `SceneLighting.screen` exists); the effect's *own* shader runs as it is
+  composited and counts the pixels of the target it lands in — the screen
+  for the backdrop's edge blur, the crop's texture inside a crop node,
+  which is why a crop node round an effect node moves the blur band. (This
+  ring corrected the composite, which first counted the effect texture's
+  pixels and so shifted the band by the backdrop's overscan.)
 - **`shouldRasterize` keeps its pixels.** `BandedLayerNode` redraws one band
   a frame by toggling it, so the shim bumps a generation on every write and
   the draw list carries a digest of what the subtree draws — transforms and
@@ -875,7 +876,7 @@ the game's thread" when it took.
 ### What the stage shows, and what it can't yet
 
 `SolutionStage` lays out what the real one lays out — wordmark, board and
-footer spaced down the frame, the board drawn upright or turned — but four
+footer spaced down the frame, the board drawn upright or turned — but two
 of its pieces are seams (`Compat/.../Film/FilmStubs.swift`), each deleted
 when its ring lands:
 
@@ -884,13 +885,119 @@ when its ring lands:
   *rig* pace (`ActorNode.pace`, worked out from its `RigData`), with
   `BoardNode.playIntro`'s timings and its cue → sound table, so a film's
   moves start and end on the frames they do on iOS.
-- **`BackdropNode`** draws the world's gradient, which the real one shows
-  under its live scenery.
-- **The lights** (`SceneLightNode`, `WorldLightNode`, `SharedLightNode`)
-  do nothing: a film here is lit as painted.
+- **The backdrop and the lights** are the game's own (see **Every world's
+  backdrop**), so a film draws on its world's live backdrop, lit.
 - **The win card**, its dropdown and form are the UI ring's;
   `PlayScene`'s Share button runs `SolutionShare`'s steps
   (`Play/FilmShare.swift`) and links Google Play rather than the App Store.
 
 Android has no Game Center, so a film credits "A Switchlings player" with
 one of the world's Switchlings, as iOS does signed out.
+
+## Every world's backdrop
+
+Every world's live backdrop draws behind its levels, lit by its own light,
+with the live edge blur behind the round buttons: the game's own
+`BackdropNode`, `EdgeShade`, `LiveBackdrop` and all eight live backdrops
+(`LawnNode` for Garden, Farm, Bug Woods and Glass, `SeabedNode`,
+`TeaTableNode`, `TemplePoolNode`, `TownRugNode`, `CloudSeaNode`,
+`CircuitBoardNode`, and Sky's `NightSkyNode` from before), their kits and
+plans (`ScatterPlan`, `Arrangement`, `StreetPlan`, `CircuitPlan`,
+`CircuitFill`), the critter, swim and tail rigs, `BackdropTouch`, the
+board's grounding (`BoardGroundingArt`, `CloudCushion`, `WaterlineArt`,
+`TuftArt`, `PinArt`) and every light (`SceneLighting`, `WorldLight`,
+`LawnLight`, `DuskLight`, `RoomLight`, `CircuitLight`, `WindowLight`,
+`CloudShadows`, `Fireflies`, `Canopy`, `SharedLightNode`). That is 42 files,
+about 14,800 lines, symlinked into `Compat/Sources/GameCompat/Backdrops`
+and compiled unmodified. `BackdropStubs.swift` and `RigStubs.swift` are
+gone, and so are the film's stand-ins for the backdrop and the lights.
+
+```bash
+adb shell "setprop debug.switchlings.scene world:reef-1; am start -n com.fleon.switchlings.worlds/com.fleon.switchlings.MainActivity; sleep 3; setprop debug.switchlings.scene ''"
+```
+
+`WorldPreviewScene` stands in for `GameScene` until the scenes ring brings
+it: the port's board over the backdrop, set up in `GameScene`'s order, the
+round buttons the blur shades behind given as rects where `GameScene` puts
+them. A tap on a Switchling plays its move; anywhere else the scenery
+reacts. `--esa args -WorldHide,live+blur+lights+ambient+board` leaves parts
+out, to see what each costs. `PlayBoardGrounding.swift` hangs the grounding
+on the port's board as `BoardNode.init` does.
+
+### The game builds main-actor by default here too
+
+The Xcode project builds the game with `SWIFT_DEFAULT_ACTOR_ISOLATION =
+MainActor`, and `WorldLight.apply` leans on it: it calls the main actor's
+`BuildGate.unlessBuilding` from code that is main-actor only by that
+default. So `GameCompat` builds with `.defaultIsolation(MainActor.self)`
+(tools 6.2), and the shim's `SKNode` and `UIView` are `@preconcurrency
+@MainActor`, as SpriteKit's and UIKit's are, so the game's overrides agree
+with what they override.
+
+### What the shim and the renderer gained
+
+- **Core Image** (`CoreImageCompat.swift`, a `CoreImage` module in
+  `Compat`): the lawn's clearing round the board and the board's shadow and
+  glow are a mask blurred with `clampedToExtent().applyingGaussianBlur`.
+  Three box blurs a direction, on the CPU.
+- **CoreGraphics' image orientation.** `draw(_:in:)` puts an image's top on
+  the rect's maxY, as CoreGraphics does, and a raw `CGContext(data:…)` is y
+  up; a renderer's context stays y-down, as UIKit's is. The game flips for
+  this itself (`BoardGroundingArt`, `CircuitBoardNode`), and a shim that
+  drew images the UIKit way round turned those upside down. Tiled draws
+  (`draw(_:in:byTiling:)`) lay the Mainframe's solder mask.
+- **`UIImage(named:)`** answers for the packed art, measured in its points,
+  its pixels cut from the page only when asked (`CircuitBoardNode` draws its
+  kit's paintings into the floor it bakes). `SceneLighting` asks it some
+  five hundred times just to learn whether an asset has normals.
+- **Actions**: `reversed()`, `follow(_:asOffset:orientToPath:duration:)`
+  (the circuit's pulses), `rotate(toAngle:duration:shortestUnitArc:)`.
+- **`SKSpriteNode.init(texture:color:size:)` is designated**, as SpriteKit's
+  is. As a convenience initialiser the game's sprite subclasses compiled
+  their `super.init(texture:color:size:)` and then failed to link.
+- **The first scene is presented once GL is set up** (`rendererDidStart`),
+  so a backdrop that bakes its floor and edge shades in `didMove` gets
+  pixels rather than nil.
+- **Uncropped bakes measure the subtree in the node's parent space**, as
+  SpriteKit's do: the edge shade bakes a canvas scaled down by
+  `edgeShadeMapScale`, which otherwise came back as a small patch.
+- **SpriteKit's blend modes**: Toy Box's room light is a `.multiplyX2`
+  pass over the rug.
+- **A shader's uniform textures get their own pixels.** A packed image a
+  shader samples (Kitchen's gingham, the grounds, the clearing's stones) is
+  cut out of its atlas page once into a texture of its own that wraps; the
+  page itself would show the whole atlas.
+
+### Frame times, and what they can't say
+
+On a pool emulator (`emulators.sh`, host GPU: `Android Emulator OpenGL ES
+Translator (Apple M4 Max)`, GLES 3.0 over Metal), 1080×2400, each world's
+first level, 300 frames after a 60-frame warm-up. The host was busy with
+other sessions' builds and emulators, so a run was repeated when the
+board-only baseline drifted. The scene graph's own CPU time ("scene") is
+the number that carries to a phone; the rest is the translator.
+
+| world | frame p50 | draw calls | target binds | scene |
+|---|---|---|---|---|
+| board alone (Garden, no backdrop, lights, blur or motes) | 33 ms | 85 | 1 | 0.3 ms |
+| Sunny Garden | 41 ms | 106 | 3 | 0.4 ms |
+| Happy Farm | 39 ms | 104 | 3 | 0.4 ms |
+| Bug Woods | 38 ms | 109 | 7 | 0.7 ms |
+| Glass Garden | 60 ms | 142 | 3 | 0.4 ms |
+| Coral Reef | 25 ms | 71 | 9 | 0.4 ms |
+| Cozy Kitchen | 23 ms | 65 | 3 | 0.2 ms |
+| Flooded Ruins | 34 ms | 116 | 5 | 0.4 ms |
+| Toy Box | 23 ms | 69 | 3 | 0.3 ms |
+| Cloud Castle | 253 ms | 85 | 5 | 1.7 ms |
+| Starry Sky | 289 ms (28 ms with its lights stopped) | 87 | 5 | 1.5 ms |
+| The Mainframe | 43 ms | 92 | 3 | 0.4 ms |
+
+Every backdrop costs a few milliseconds over the board alone, except two.
+Starry Sky and Cloud Castle drop to under 30 ms with the light nodes not
+started (`-WorldHide lights`): their lit shaders loop over a handful of
+lights held in `mat4`s, indexed per pixel, which the emulator's GL-to-Metal
+translator runs badly. Only a real mid-range device (Mali-G57 / Adreno 610)
+can say whether that is the translator or the shader, and the same goes for
+whether `BandedLayerNode` pays (Reef, Bug Woods and Ruins band; #396 found
+bands a loss on the emulator). Reef also shows a faint seam where two of its
+caustic bands meet, which wants the same device to tell timing from a bug.

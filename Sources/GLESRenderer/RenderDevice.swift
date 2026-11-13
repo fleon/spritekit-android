@@ -25,6 +25,11 @@ public protocol RenderDevice: AnyObject {
     func createRenderTarget(width: Int, height: Int, stencil: Bool) -> RenderTargetHandle?
     func deleteRenderTarget(_ target: RenderTargetHandle)
 
+    /// A new texture holding `region` (in pixels, counted as GL counts a
+    /// texture's own, from its first row) of the texture `source`, copied
+    /// on the GPU; 0 if it cannot. The current framebuffer stays bound.
+    func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32
+
     /// The longest side a texture may have. GLES 3.0 guarantees 2048; real
     /// devices give more, and an effect node covering a big screen's whole
     /// backdrop needs it.
@@ -34,6 +39,7 @@ public protocol RenderDevice: AnyObject {
 public extension RenderDevice {
     var maximumTextureSide: Int { 2048 }
     func setRepeats(_ name: UInt32) {}
+    func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32 { 0 }
 }
 
 /// Keeps GL handles for the shim's textures and shaders.
@@ -47,6 +53,10 @@ public final class ResourceCache {
     private var ownedPrograms: Set<UInt32> = []
     /// GL names for packed pages, keyed by their index in `AssetIndex.pages`.
     private var pageNames: [Int: UInt32] = [:]
+    /// Packed images cut out of their pages for shaders that sample them
+    /// as uniforms (`samplerName(for:)`), by asset name.
+    private var sliceNames: [String: UInt32] = [:]
+    private var lastPage: (number: Int, image: (width: Int, height: Int, pixels: Data))?
 
     /// Pixels for one packed page, which the asset index names. Hundreds of
     /// assets share a page, so this is called once per page, not per asset.
@@ -88,6 +98,63 @@ public final class ResourceCache {
         if root.glName != 0 { return root.glName }
         let name = upload(pixelSource?(root))
         root.glName = name
+        return name
+    }
+
+    /// The texture a shader samples as a **uniform** (`SKUniform(name:texture:)`).
+    ///
+    /// SpriteKit hands such a shader the image alone: a shader that tiles
+    /// it with `fract` (Kitchen's gingham, the lawns' and the seabed's
+    /// grounds, the cracks' bricks) reads only its own pixels. A packed
+    /// image is a slice of an atlas page, and the shader samples the page
+    /// with the image's 0…1, so it would show the whole atlas. A slice is
+    /// therefore cut out of its page once, into a texture of its own that
+    /// wraps, the first time a shader asks for it. Whole pages, and textures
+    /// the index does not back, are what `name(for:)` gives.
+    public func samplerName(for texture: SKTexture) -> UInt32 {
+        guard texture === texture.root, let entry = texture.asset, let index = AssetIndex.shared,
+              index.pages.indices.contains(entry.page) else { return name(for: texture) }
+        let page = index.pages[entry.page]
+        if entry.rect.width >= page.size.width - 0.5, entry.rect.height >= page.size.height - 0.5 {
+            return name(for: texture)
+        }
+        if let existing = sliceNames[entry.name] { return existing }
+        // Copied out of the page already uploaded, on the GPU, where the
+        // device can: decoding a page again costs a second or more on a
+        // phone, and a backdrop asks for several slices off several pages.
+        let pageName = name(for: texture)
+        let unit = entry.textureRect
+        let copied = device.copyRegion(
+            of: pageName,
+            x: Int((unit.minX * page.size.width).rounded()), y: Int((unit.minY * page.size.height).rounded()),
+            width: Int((unit.width * page.size.width).rounded()), height: Int((unit.height * page.size.height).rounded())
+        )
+        if copied != 0 {
+            ownedTextures.insert(copied)
+            device.setRepeats(copied)
+            sliceNames[entry.name] = copied
+            return copied
+        }
+        // A page decodes once for the slices cut from it in a row.
+        if lastPage?.number != entry.page { lastPage = pageSource?(entry.page).map { (entry.page, $0) } }
+        guard let source = lastPage?.image else { return name(for: texture) }
+        let x0 = max(0, Int(entry.rect.minX.rounded())), y0 = max(0, Int(entry.rect.minY.rounded()))
+        let width = min(Int(entry.rect.width.rounded()), source.width - x0)
+        let height = min(Int(entry.rect.height.rounded()), source.height - y0)
+        guard width > 0, height > 0 else { return name(for: texture) }
+        var pixels = Data(count: width * height * 4)
+        pixels.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
+            source.pixels.withUnsafeBytes { (from: UnsafeRawBufferPointer) in
+                for row in 0..<height {
+                    let start = ((y0 + row) * source.width + x0) * 4
+                    out.baseAddress!.advanced(by: row * width * 4)
+                        .copyMemory(from: from.baseAddress!.advanced(by: start), byteCount: width * 4)
+                }
+            }
+        }
+        let name = upload((width, height, pixels))
+        if name != 0 { device.setRepeats(name) }
+        sliceNames[entry.name] = name
         return name
     }
 
@@ -137,6 +204,8 @@ public final class ResourceCache {
         ownedTextures.removeAll()
         ownedPrograms.removeAll()
         pageNames.removeAll()
+        sliceNames.removeAll()
+        lastPage = nil
         for texture in textures { texture.root.glName = 0 }
         for shader in shaders { shader.glProgram = 0 }
     }

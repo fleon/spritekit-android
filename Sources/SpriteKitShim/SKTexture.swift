@@ -106,10 +106,29 @@ public final class SKTexture: @unchecked Sendable {
     /// SpriteKit's raw RGBA and what `Starlight.noise` hands over. Either way
     /// the image's scale is what makes a 3x rendering measure as its own
     /// points, as `SKTexture(image:)` does on Apple.
-    public init(image: UIImage) {
+    public convenience init(image: UIImage) {
+        // One of the packed art's own images draws from its page, as
+        // `SKTexture(imageNamed:)` would, rather than decoded and uploaded again.
+        if let asset = image.asset {
+            self.init(imageNamed: asset.name)
+            return
+        }
+        self.init(drawnOrLoaded: image)
+    }
+
+    private init(drawnOrLoaded image: UIImage) {
         source = image.cgImage.map { Source.image($0) } ?? .encoded(image.data)
         asset = nil
         declaredSize = image.size
+    }
+
+    /// SpriteKit's `SKTexture(cgImage:)`: a bitmap the game drew or blurred
+    /// (`LawnNode`'s clearing, the board's grounding), a point a pixel, as
+    /// SpriteKit measures one.
+    public init(cgImage: RasterImage) {
+        source = .image(cgImage)
+        asset = nil
+        declaredSize = nil
     }
 
     /// The image's size in points, as SpriteKit reports it: for a named
