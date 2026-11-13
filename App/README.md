@@ -117,6 +117,39 @@ clearing to rgba(0.85, 0.11, 0.55, 1.0)
 
 and the screen is solid magenta.
 
+## Emulators: a pool of four
+
+Several sessions work on the port at once, and one emulator serves one of
+them at a time: installs, `debug.switchlings.*` system properties and the
+screen are all shared. So emulators come from a pool of four slots
+(`Android/Scripts/emulators.sh`), each an AVD of its own on its own port:
+
+```bash
+eval "$(Android/Scripts/emulators.sh acquire <your-session-name>)"
+```
+
+That takes a free slot (or renews yours), boots it on the host GPU if it's
+down (about 15 seconds), waits for it, and exports `ANDROID_SERIAL`, so
+`adb`, `./gradlew installDebug` and everything else after it reach your slot
+alone. With more than one emulator up, a bare `adb` refuses to guess, so
+never skip it. Acquire again before each emulator step: a slot is lent for
+an hour at a time (`acquire <name> <minutes>` for longer), every acquire
+renews it, and a lapsed lease goes to the next session that needs a slot.
+If all four are held, `acquire` exits 2 and lists who holds them.
+
+```bash
+Android/Scripts/emulators.sh release <your-session-name>
+```
+
+```bash
+Android/Scripts/emulators.sh status
+```
+
+Release when done: it shuts the emulator down, so idle slots hold no memory
+(each takes about 4 GB while up). Slots never share data, so install your
+APK after acquiring. Slots boot with `-gpu host`: an emulator left to choose
+once fell back to SwiftShader at about two frames a second.
+
 ## Which ABI, which emulator
 
 | ABI | runs on |
