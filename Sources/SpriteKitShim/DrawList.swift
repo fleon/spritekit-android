@@ -79,23 +79,50 @@ public struct DrawList {
 
     public init() {}
 
-    /// Flattens a subtree in SpriteKit's draw order.
+    /// Flattens a subtree in SpriteKit's draw order, as the game's view sets
+    /// it: `ignoresSiblingOrder = true`.
     ///
-    /// SpriteKit (with the default `ignoresSiblingOrder`) orders purely by
-    /// accumulated zPosition and leaves ties nondeterministic — which is why
-    /// the game sets explicit zPosition for overlapping siblings. This sorts
-    /// stably, so ties fall in tree order: strictly more deterministic than
-    /// SpriteKit, and never less.
+    /// That orders **every** node in the scene by its accumulated zPosition,
+    /// globally — a grandchild can draw between two of a cousin's
+    /// descendants. The board depends on it: kerbs live in `BoardFrameNode`
+    /// and tiles in the grid layer, both at z 0, and only their own
+    /// row-based z (`BoardMetrics.z(row:_:)`) puts a front kerb over the tiles
+    /// behind it. Sorting each subtree as a block would draw every kerb under
+    /// every tile.
+    ///
+    /// Ties are nondeterministic in SpriteKit, which is why the game sets
+    /// explicit z for overlapping siblings. This sorts stably, so ties fall
+    /// in tree order: strictly more deterministic than SpriteKit, never less.
+    ///
+    /// Effect and crop nodes are the exception, as they are in SpriteKit:
+    /// each composites its subtree as one picture, so it is one command at
+    /// its own depth, with its contents ordered the same way inside it.
     public init(scene: SKNode) {
-        commands = DrawList.flatten(scene, parentTransform: .identity, parentAlpha: 1, parentZ: 0)
+        commands = DrawList.ordered(
+            DrawList.collect(scene, parentTransform: .identity, parentAlpha: 1, parentZ: 0)
+        )
     }
 
-    private static func flatten(
+    /// Stable sort by accumulated z: ties keep tree order.
+    private static func ordered(_ entries: [(CGFloat, Command)]) -> [Command] {
+        entries
+            .enumerated()
+            .sorted { lhs, rhs in
+                lhs.element.0 == rhs.element.0
+                    ? lhs.offset < rhs.offset
+                    : lhs.element.0 < rhs.element.0
+            }
+            .map(\.element.1)
+    }
+
+    /// Every command under `node`, each with its **own** accumulated z, in
+    /// tree order and unsorted — sorting happens once, over the whole list.
+    private static func collect(
         _ node: SKNode,
         parentTransform: CGAffineTransform,
         parentAlpha: CGFloat,
         parentZ: CGFloat
-    ) -> [Command] {
+    ) -> [(CGFloat, Command)] {
         guard !node.isHidden, node.alpha > 0 else { return [] }
 
         let transform = node.localTransform.concatenating(parentTransform)
@@ -111,22 +138,22 @@ public struct DrawList {
                 transform: transform,
                 shader: effect.shader,
                 alpha: alpha,
-                contents: wrap(contents)
-            )))].map(\.1)
+                contents: wrap(ordered(contents))
+            )))]
         }
 
         if let crop = node as? SKCropNode {
-            // The mask node itself draws the shape, so flatten it, not just
+            // The mask node itself draws the shape, so collect it, not just
             // its children — a solid sprite mask has none.
             let mask = crop.maskNode.map {
-                flatten($0, parentTransform: .identity, parentAlpha: 1, parentZ: 0)
+                collect($0, parentTransform: .identity, parentAlpha: 1, parentZ: 0)
             } ?? []
             let contents = children(of: node, transform: .identity, alpha: 1, z: 0)
-            return [Command.crop(Crop(
+            return [(z, Command.crop(Crop(
                 transform: transform,
-                mask: wrap(mask),
-                contents: wrap(contents)
-            ))]
+                mask: wrap(ordered(mask)),
+                contents: wrap(ordered(contents))
+            )))]
         }
 
         var entries: [(CGFloat, Command)] = []
@@ -175,20 +202,14 @@ public struct DrawList {
             ))))
         }
 
+        // Each descendant keeps its own accumulated z. Re-keying a whole
+        // subtree by the child's z here is what used to keep it in one block.
         for child in node.children {
-            let sub = flatten(child, parentTransform: transform, parentAlpha: alpha, parentZ: z)
-            let childZ = z + child.zPosition
-            entries.append(contentsOf: sub.map { (childZ, $0) })
+            entries.append(contentsOf: collect(
+                child, parentTransform: transform, parentAlpha: alpha, parentZ: z
+            ))
         }
-
         return entries
-            .enumerated()
-            .sorted { lhs, rhs in
-                lhs.element.0 == rhs.element.0
-                    ? lhs.offset < rhs.offset       // stable: ties keep tree order
-                    : lhs.element.0 < rhs.element.0
-            }
-            .map(\.element.1)
     }
 
     /// One sprite's quads: just itself, or the nine a sliced one draws as.
@@ -223,9 +244,9 @@ public struct DrawList {
         transform: CGAffineTransform,
         alpha: CGFloat,
         z: CGFloat
-    ) -> [Command] {
+    ) -> [(CGFloat, Command)] {
         node.children.flatMap {
-            flatten($0, parentTransform: transform, parentAlpha: alpha, parentZ: z)
+            collect($0, parentTransform: transform, parentAlpha: alpha, parentZ: z)
         }
     }
 

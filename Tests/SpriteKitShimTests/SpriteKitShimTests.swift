@@ -233,6 +233,64 @@ struct DrawListTests {
         }
     }
 
+    /// The board's shape, and the bug the user saw: kerbs in one layer and
+    /// tiles in another, both at z 0, each piece carrying its own row-based
+    /// z. With `ignoresSiblingOrder` they interleave across the two layers;
+    /// sorting each layer as a block drew every kerb under every tile.
+    @Test("Descendants of sibling layers interleave by their own z")
+    func siblingLayersInterleave() {
+        let scene = SKScene(size: CGSize(width: 100, height: 100))
+        let frame = SKNode()        // BoardFrameNode: the kerbs
+        let grid = SKNode()         // the grid layer: the tiles
+        scene.addChild(frame)
+        scene.addChild(grid)
+
+        // Each piece is told apart in the draw list by its red channel.
+        func piece(_ id: CGFloat, z: CGFloat, in layer: SKNode) {
+            let node = SKSpriteNode(
+                color: SKColor(red: id / 10, green: 0, blue: 0, alpha: 1),
+                size: CGSize(width: 1, height: 1)
+            )
+            node.zPosition = z
+            layer.addChild(node)
+        }
+        // Row 0 at the back, row 1 nearer: z = row * 10 + depth, with
+        // tile = 1 and frontKerb = 7, as BoardMetrics.z(row:_:) gives.
+        piece(1, z: 7, in: frame)     // kerb, row 0
+        piece(2, z: 17, in: frame)    // kerb, row 1
+        piece(3, z: 1, in: grid)      // tile, row 0
+        piece(4, z: 11, in: grid)     // tile, row 1
+
+        let drawn = DrawList(scene: scene).commands.compactMap { command -> Int? in
+            guard case let .sprite(s) = command else { return nil }
+            return Int((s.color.red * 10).rounded())
+        }
+        // tile0, kerb0, tile1, kerb1 — not both kerbs then both tiles.
+        #expect(drawn == [3, 1, 4, 2])
+    }
+
+    @Test("A front kerb draws over the tile of the row behind it")
+    func frontKerbOverTileBehind() {
+        let scene = SKScene(size: CGSize(width: 100, height: 100))
+        let frame = SKNode(), grid = SKNode()
+        scene.addChild(frame)
+        scene.addChild(grid)
+        let kerb = SKSpriteNode(color: .blue, size: CGSize(width: 1, height: 1))
+        kerb.zPosition = 17          // row 1, frontKerb
+        frame.addChild(kerb)         // added FIRST, in the layer drawn first
+        let tile = SKSpriteNode(color: .red, size: CGSize(width: 1, height: 1))
+        tile.zPosition = 11          // row 1, tile
+        grid.addChild(tile)
+
+        let colours = DrawList(scene: scene).commands.compactMap { command -> CGFloat? in
+            guard case let .sprite(s) = command else { return nil }
+            return s.color.blue
+        }
+        // Tile (red, blue 0) first, kerb (blue 1) over it — although the
+        // kerb's layer comes first in the tree.
+        #expect(colours == [0, 1])
+    }
+
     @Test("A parent's zPosition accumulates into its children's")
     func zAccumulates() {
         let scene = SKScene(size: CGSize(width: 100, height: 100))
