@@ -14,6 +14,26 @@ public protocol RenderDevice: AnyObject {
     /// Compiles and links a program. Returns 0 on failure, having logged it.
     func createProgram(vertex: String, fragment: String) -> UInt32
     func deleteProgram(_ name: UInt32)
+
+    /// Switches a page to repeat wrapping. The asset index marks the pages
+    /// that hold one whole tiling image; an atlas page must never be set
+    /// this way or its neighbours bleed in.
+    func setRepeats(_ name: UInt32)
+
+    /// An offscreen colour target with an optional stencil attachment.
+    /// Returns nil on failure, having logged it.
+    func createRenderTarget(width: Int, height: Int, stencil: Bool) -> RenderTargetHandle?
+    func deleteRenderTarget(_ target: RenderTargetHandle)
+
+    /// The longest side a texture may have. GLES 3.0 guarantees 2048; real
+    /// devices give more, and an effect node covering a big screen's whole
+    /// backdrop needs it.
+    var maximumTextureSide: Int { get }
+}
+
+public extension RenderDevice {
+    var maximumTextureSide: Int { 2048 }
+    func setRepeats(_ name: UInt32) {}
 }
 
 /// Keeps GL handles for the shim's textures and shaders.
@@ -51,6 +71,13 @@ public final class ResourceCache {
         if let page = texture.page {
             if let existing = pageNames[page] { return existing }
             let name = upload(pageSource?(page))
+            // A page the index marks as one whole tiling image may wrap.
+            // Sky's planet maps need it: the shader reads them as a sphere's
+            // surface and wraps longitude with `fract`, so a clamped map
+            // smears its last column round the back of every planet.
+            if name != 0, AssetIndex.shared.map { page < $0.pages.count && $0.pages[page].repeats } == true {
+                device.setRepeats(name)
+            }
             pageNames[page] = name
             return name
         }
@@ -125,6 +152,9 @@ public final class ResourceCache {
         case .vector2: return "vec2"
         case .vector3: return "vec3"
         case .vector4: return "vec4"
+        case .matrix2: return "mat2"
+        case .matrix3: return "mat3"
+        case .matrix4: return "mat4"
         case .texture: return "sampler2D"
         }
     }

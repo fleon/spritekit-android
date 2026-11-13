@@ -639,3 +639,38 @@ struct StagedAssetsTests {
         }
     }
 }
+
+// MARK: Raw pixels and encoded images are different sources
+
+@Test("SKTexture(data:size:) is raw pixels, as SpriteKit defines it")
+func dataInitIsRawPixels() {
+    // `Starlight.noise` builds RGBA bytes and hands them over this way. If it
+    // were taken for a PNG it would fail to decode, upload as one white pixel,
+    // and the sky would draw flat with no nebula — which happened once.
+    let texture = SKTexture(data: Data(repeating: 255, count: 4 * 4 * 4), size: CGSize(width: 4, height: 4))
+    guard case .data = texture.source else {
+        Issue.record("raw pixel data must stay `.data`"); return
+    }
+}
+
+@Test("SKTexture(image:) carries the file's bytes as an encoded image")
+func imageInitIsEncoded() throws {
+    // The smallest thing UIImage accepts: a PNG signature and an IHDR saying
+    // 3x2. It never decodes it; the renderer does, on upload.
+    var png: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]
+    png += Array("IHDR".utf8)
+    png += [0, 0, 0, 3, 0, 0, 0, 2]
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("encoded-\(UUID().uuidString).png")
+    try Data(png).write(to: url)
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let image = try #require(UIImage(contentsOfFile: url.path))
+    let texture = SKTexture(image: image)
+    guard case .encoded = texture.source else {
+        // Sharing `.data` with raw pixels means one of the two is always
+        // misread: the rig pages as RGBA, or the sky's noise as a PNG.
+        Issue.record("an image's bytes must be `.encoded`, not raw `.data`"); return
+    }
+    #expect(texture.size() == CGSize(width: 3, height: 2))
+}

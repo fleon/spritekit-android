@@ -54,11 +54,35 @@ public final class SKUniform: @unchecked Sendable {
         case vector2(SIMD2<Float>)
         case vector3(SIMD3<Float>)
         case vector4(SIMD4<Float>)
+        /// Column-major, as GL and simd both keep them. Metal gives a shader
+        /// 31 buffers and every uniform takes one, so the game packs sets of
+        /// colours into a matrix a column each (`NightSkyNode`'s nebula and
+        /// fold tints, the planets' places, poses and rings) — which makes
+        /// these load-bearing rather than exotic.
+        case matrix2([Float])
+        case matrix3([Float])
+        case matrix4([Float])
         case texture(SKTexture?)
     }
 
     public let name: String
     public var value: Value
+
+    /// What kind of value this holds, as SpriteKit reports it. The game
+    /// switches over it in `BandedLayerNode`, which copies a uniform per
+    /// band so a cached band keeps the values it was drawn with.
+    public var uniformType: SKUniformType {
+        switch value {
+        case .float: return .float
+        case .vector2: return .floatVector2
+        case .vector3: return .floatVector3
+        case .vector4: return .floatVector4
+        case .matrix2: return .floatMatrix2
+        case .matrix3: return .floatMatrix3
+        case .matrix4: return .floatMatrix4
+        case .texture: return .texture
+        }
+    }
 
     /// Bumped on every write, so the renderer can skip uniforms that have not
     /// changed since the last frame.
@@ -89,6 +113,21 @@ public final class SKUniform: @unchecked Sendable {
         value = .vector4(vector)
     }
 
+    public init(name: String, matrixFloat2x2 matrix: simd_float2x2) {
+        self.name = name
+        value = .matrix2(matrix.flattened)
+    }
+
+    public init(name: String, matrixFloat3x3 matrix: simd_float3x3) {
+        self.name = name
+        value = .matrix3(matrix.flattened)
+    }
+
+    public init(name: String, matrixFloat4x4 matrix: simd_float4x4) {
+        self.name = name
+        value = .matrix4(matrix.flattened)
+    }
+
     public init(name: String, texture: SKTexture?) {
         self.name = name
         value = .texture(texture)
@@ -114,10 +153,51 @@ public final class SKUniform: @unchecked Sendable {
         set { value = .vector4(newValue); generation &+= 1 }
     }
 
+    public var matrixFloat2x2Value: simd_float2x2 {
+        get {
+            guard case let .matrix2(v) = value, v.count == 4 else { return simd_float2x2() }
+            return simd_float2x2(SIMD2(v[0], v[1]), SIMD2(v[2], v[3]))
+        }
+        set { value = .matrix2(newValue.flattened); generation &+= 1 }
+    }
+
+    public var matrixFloat3x3Value: simd_float3x3 {
+        get {
+            guard case let .matrix3(v) = value, v.count == 9 else { return simd_float3x3() }
+            return simd_float3x3(SIMD3(v[0], v[1], v[2]), SIMD3(v[3], v[4], v[5]), SIMD3(v[6], v[7], v[8]))
+        }
+        set { value = .matrix3(newValue.flattened); generation &+= 1 }
+    }
+
+    public var matrixFloat4x4Value: simd_float4x4 {
+        get {
+            guard case let .matrix4(v) = value, v.count == 16 else { return simd_float4x4() }
+            return simd_float4x4(
+                SIMD4(v[0], v[1], v[2], v[3]), SIMD4(v[4], v[5], v[6], v[7]),
+                SIMD4(v[8], v[9], v[10], v[11]), SIMD4(v[12], v[13], v[14], v[15])
+            )
+        }
+        set { value = .matrix4(newValue.flattened); generation &+= 1 }
+    }
+
     public var textureValue: SKTexture? {
         get { if case let .texture(v) = value { return v } else { return nil } }
         set { value = .texture(newValue); generation &+= 1 }
     }
+}
+
+/// What kind of value an `SKUniform` holds, with SpriteKit's own spelling —
+/// `BandedLayerNode` switches over every case to copy a uniform per band.
+public enum SKUniformType: Int, Sendable {
+    case none
+    case float
+    case floatVector2
+    case floatVector3
+    case floatVector4
+    case floatMatrix2
+    case floatMatrix3
+    case floatMatrix4
+    case texture
 }
 
 public enum SKAttributeType: Int, Sendable {

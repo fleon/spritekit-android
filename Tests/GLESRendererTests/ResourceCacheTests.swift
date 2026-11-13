@@ -37,6 +37,30 @@ final class RecordingDevice: RenderDevice {
     }
 
     func deleteProgram(_ name: UInt32) { deletedPrograms.append(name) }
+
+    // MARK: Render targets
+
+    private(set) var createdTargets: [RenderTargetHandle] = []
+    private(set) var deletedTargets: [RenderTargetHandle] = []
+    var maximumTextureSide: Int = 4096
+    /// Set to make a target fail, as a driver out of memory would.
+    var failsToMakeTargets = false
+
+    func createRenderTarget(width: Int, height: Int, stencil: Bool) -> RenderTargetHandle? {
+        guard !failsToMakeTargets else { return nil }
+        nextName += 3
+        let handle = RenderTargetHandle(
+            framebuffer: nextName, texture: nextName - 1,
+            stencil: stencil ? nextName - 2 : 0,
+            width: width, height: height
+        )
+        createdTargets.append(handle)
+        return handle
+    }
+
+    func deleteRenderTarget(_ target: RenderTargetHandle) {
+        deletedTargets.append(target)
+    }
 }
 
 @Suite("Texture uploads")

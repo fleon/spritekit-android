@@ -35,6 +35,45 @@ public enum ShaderTranslator {
     /// GLSL, so this is a name the game's own shaders will not collide with.
     static let fragColor = "sk_fragColor"
 
+    /// What `gl_FragCoord` becomes: a call, so a swizzle still reads
+    /// (`sk_fragCoord().xy`) and nothing has to be hoisted into `main`.
+    static let fragCoord = "sk_fragCoord"
+
+    /// The uniform carrying the fragment-coordinate map, set per draw.
+    public static let fragCoordUniform = "u_sk_frag"
+
+    /// The two divergences between SpriteKit's fragment coordinate and
+    /// GLES's, both fixed here rather than in the 31 files that read it.
+    ///
+    ///  - SpriteKit runs on Metal, where the coordinate counts **down from
+    ///    the top left**; GLES counts up from the bottom left. The game
+    ///    depends on Metal's: `SceneLighting` hands shaders
+    ///    `(visible.minX, visible.maxY, pixelsPerPoint, 0)` and every lit
+    ///    shader recovers a scene point as `u_fragment.xy + gl_FragCoord.xy *
+    ///    u_fragment.zw`, which only lands on the board if y runs down.
+    ///    `EdgeShade.Blur` writes `vec2(gl_FragCoord.x, -gl_FragCoord.y)` for
+    ///    the same reason. Left alone, every lit world and the blur band
+    ///    would be mirrored top to bottom.
+    ///  - Inside an `SKEffectNode` it counts that texture's pixels rather
+    ///    than the screen's. The renderer sets `u_sk_frag` from
+    ///    `EffectTexture.composite(...)` for that draw and from the bound
+    ///    target otherwise, so one uniform covers both.
+    ///
+    /// ES 3.0 will not let a macro or a variable be named `gl_…`, so the
+    /// identifier is rewritten to a function instead.
+    private static let fragCoordFunction = """
+    uniform vec4 \(fragCoordUniform);
+
+    vec4 \(fragCoord)() {
+        return vec4(
+            \(fragCoordUniform).x + gl_FragCoord.x * \(fragCoordUniform).z,
+            \(fragCoordUniform).y + gl_FragCoord.y * \(fragCoordUniform).w,
+            gl_FragCoord.z,
+            gl_FragCoord.w
+        );
+    }
+    """
+
     /// SpriteKit's built-in varyings and uniforms, always available.
     private static let builtinVaryings = [
         ("v_tex_coord", "vec2"),
@@ -71,6 +110,14 @@ public enum ShaderTranslator {
 
         // gl_FragColor is not a thing in ES 3.0; it becomes a declared out.
         body = replacingIdentifier("gl_FragColor", with: fragColor, in: body)
+
+        // gl_FragCoord means something different here than it does on Metal
+        // — see `fragCoordFunction`. Rewriting it to a call keeps every
+        // swizzle the game writes working unchanged.
+        let readsFragCoord = usesIdentifier("gl_FragCoord", in: body)
+        if readsFragCoord {
+            body = replacingIdentifier("gl_FragCoord", with: "\(fragCoord)()", in: body)
+        }
 
         // ES 1.0 varying/attribute spellings, in case a composed snippet uses
         // them. In a fragment shader both become `in`.
@@ -113,6 +160,11 @@ public enum ShaderTranslator {
 
         lines.append("out vec4 \(fragColor);")
         lines.append("")
+
+        if readsFragCoord {
+            lines.append(fragCoordFunction)
+            lines.append("")
+        }
 
         // SpriteKit's helper: the sprite's own texture sampled at this pixel,
         // tinted as the node asks. Declared only when the shader uses it.
@@ -224,6 +276,42 @@ public enum ShaderTranslator {
     void main() {
         float coverage = texture(u_texture, v_tex_coord).r * v_color_mix.a;
         \(fragColor) = vec4(v_color_mix.rgb * coverage, coverage);
+    }
+    """
+
+    /// What an `SKCropNode`'s mask is drawn with while the stencil is being
+    /// written.
+    ///
+    /// Not the coverage shader above, although both are about a mask: that
+    /// one reads an 8-bit page a glyph or a rasterised path was drawn into,
+    /// and this one reads the mask node's own art, which is ordinary rgba.
+    /// SpriteKit clips by that art's alpha, so a fragment the mask does not
+    /// cover must leave the stencil alone rather than write it — hence the
+    /// discard. Colour writes are off for this pass, so the output value
+    /// never reaches the framebuffer; it is here only because ES 3.0 wants
+    /// a fragment output declared.
+    ///
+    /// The mask's own shader, if it has one, is deliberately not run: a
+    /// shader that moved alpha around would change the mask's shape, and
+    /// nothing in this game masks with one. The renderer logs it if it ever
+    /// meets one rather than silently clipping to the wrong shape.
+    public static let maskFragmentShader = """
+    #version 300 es
+
+    precision highp float;
+
+    in vec2 v_tex_coord;
+    in vec4 v_color_mix;
+    in float v_blend;
+
+    uniform sampler2D u_texture;
+
+    out vec4 \(fragColor);
+
+    void main() {
+        float coverage = texture(u_texture, v_tex_coord).a * v_color_mix.a;
+        if (coverage < 0.05) { discard; }
+        \(fragColor) = vec4(1.0);
     }
     """
 

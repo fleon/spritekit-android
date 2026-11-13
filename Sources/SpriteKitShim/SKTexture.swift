@@ -16,7 +16,17 @@ import Foundation
 public final class SKTexture: @unchecked Sendable {
     public enum Source {
         case named(String)
+        /// Raw RGBA8 pixels, rows bottom first — exactly what SpriteKit's
+        /// `SKTexture(data:size:)` takes. The game builds these itself:
+        /// `Starlight.noise`, the lattice the sky's nebula, clouds and
+        /// mottled blue all sample, is one.
         case data(Data)
+        /// An image file's bytes, still encoded: what `SKTexture(image:)`
+        /// carries, since the shim's `UIImage` keeps a PNG undecoded and lets
+        /// the renderer decode it once. A case of its own because sharing
+        /// `.data` with raw pixels means one of them is always misread —
+        /// either the rig pages as raw RGBA or the sky's noise as a PNG.
+        case encoded(Data)
         /// A sub-rectangle of another texture, in unit coordinates.
         case slice(SKTexture, CGRect)
         /// A solid colour, for stand-ins and tests.
@@ -41,9 +51,28 @@ public final class SKTexture: @unchecked Sendable {
     /// made from an asset name and the index holds it.
     public let asset: AssetIndex.Entry?
 
-    public init(imageNamed name: String) {
+    public convenience init(imageNamed name: String) {
+        self.init(imageNamed: name, in: AssetIndex.shared)
+    }
+
+    /// A named texture resolved against `index` rather than the app's.
+    ///
+    /// For tests. `AssetIndex.shared` is process-wide and Swift Testing runs
+    /// suites in parallel, so a test that swaps the global to get textures
+    /// with pages changes what every other suite's `imageNamed:` resolves
+    /// to, mid-run: one that did made `SpriteBatcherTests`' "A" and "B" land
+    /// on one page and merge, and failed it about one run in three.
+    public init(imageNamed name: String, in index: AssetIndex?) {
         source = .named(name)
-        asset = AssetIndex.shared?.entry(name)
+        asset = index?.entry(name)
+    }
+
+    /// An encoded image file (a PNG), decoded by the renderer on upload.
+    /// `size` is in points.
+    public init(encoded data: Data, size: CGSize) {
+        source = .encoded(data)
+        asset = nil
+        declaredSize = size
     }
 
     public init(data: Data, size: CGSize) {
@@ -73,11 +102,12 @@ public final class SKTexture: @unchecked Sendable {
     /// One the game **drew** (through `UIGraphicsImageRenderer`, as every
     /// chunky surface is) carries its pixels as `.image`. One it **loaded**
     /// from a file (a rig's page) carries the file's undecoded bytes as
-    /// `.data`, which the renderer decodes. Either way the image's scale is
-    /// what makes a 3x rendering measure as its own points, as
-    /// `SKTexture(image:)` does on Apple.
+    /// `.encoded`, which the renderer decodes — not `.data`, which is
+    /// SpriteKit's raw RGBA and what `Starlight.noise` hands over. Either way
+    /// the image's scale is what makes a 3x rendering measure as its own
+    /// points, as `SKTexture(image:)` does on Apple.
     public init(image: UIImage) {
-        source = image.cgImage.map { Source.image($0) } ?? .data(image.data)
+        source = image.cgImage.map { Source.image($0) } ?? .encoded(image.data)
         asset = nil
         declaredSize = image.size
     }
@@ -98,7 +128,7 @@ public final class SKTexture: @unchecked Sendable {
             return asset?.size ?? .zero
         case let .image(image):
             return CGSize(width: CGFloat(image.width), height: CGFloat(image.height))
-        case .data:
+        case .data, .encoded:
             return .zero
         }
     }
@@ -119,7 +149,7 @@ public final class SKTexture: @unchecked Sendable {
             )
         case .named:
             return asset?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
-        case .data, .color, .image:
+        case .data, .encoded, .color, .image:
             return CGRect(x: 0, y: 0, width: 1, height: 1)
         }
     }

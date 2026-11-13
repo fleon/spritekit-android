@@ -32,6 +32,32 @@ public struct DrawList {
         public var blendMode: SKBlendMode
         public var shader: SKShader?
         public var attributeValues: [String: SKAttributeValue]
+
+        public init(
+            transform: CGAffineTransform,
+            size: CGSize,
+            anchorPoint: CGPoint,
+            texture: SKTexture?,
+            textureRect: CGRect,
+            color: SKColor,
+            colorBlendFactor: CGFloat,
+            alpha: CGFloat,
+            blendMode: SKBlendMode,
+            shader: SKShader?,
+            attributeValues: [String: SKAttributeValue]
+        ) {
+            self.transform = transform
+            self.size = size
+            self.anchorPoint = anchorPoint
+            self.texture = texture
+            self.textureRect = textureRect
+            self.color = color
+            self.colorBlendFactor = colorBlendFactor
+            self.alpha = alpha
+            self.blendMode = blendMode
+            self.shader = shader
+            self.attributeValues = attributeValues
+        }
     }
 
     public struct Shape {
@@ -66,6 +92,23 @@ public struct DrawList {
         public var transform: CGAffineTransform
         public var shader: SKShader?
         public var alpha: CGFloat
+        public var blendMode: SKBlendMode
+        /// The node keeps its rendered pixels until something invalidates
+        /// them. `BandedLayerNode` is built on it: twelve bands, one redrawn
+        /// a frame, so a frame pays for a twelfth of the shader.
+        public var shouldRasterize: Bool
+        /// Which node this is, so the renderer can hold a kept target
+        /// against it across frames. Identity, never a strong reference.
+        public var owner: ObjectIdentifier
+        /// Bumped whenever `shouldRasterize` is written — which is exactly
+        /// how `BandedLayerNode` asks for a redraw (`false` then `true`).
+        public var rasterGeneration: UInt64
+        /// A digest of what the subtree draws this frame: transforms, sizes,
+        /// colours, alphas, texture and shader identity. A rasterized node
+        /// whose children moved redraws; one whose shader uniforms merely
+        /// changed does not, which is what keeps a band cached while
+        /// `u_time` runs on.
+        public var contentsDigest: UInt64
         public var contents: DrawList
     }
 
@@ -132,13 +175,20 @@ public struct DrawList {
         // An effect or crop node composites its whole subtree, so it is one
         // command at its own depth rather than a set of siblings.
         if let effect = node as? SKEffectNode, effect.shouldEnableEffects {
-            let contents = children(of: node, transform: .identity, alpha: 1, z: 0)
+            // Ordered before it is digested: draw order is part of what a
+            // rasterized node's cached pixels depend on.
+            let contents = wrap(ordered(children(of: node, transform: .identity, alpha: 1, z: 0)))
             return [(z, Command.effect(Effect(
                 bounds: effect.effectBounds,
                 transform: transform,
                 shader: effect.shader,
                 alpha: alpha,
-                contents: wrap(ordered(contents))
+                blendMode: effect.blendMode,
+                shouldRasterize: effect.shouldRasterize,
+                owner: ObjectIdentifier(effect),
+                rasterGeneration: effect.rasterGeneration,
+                contentsDigest: effect.shouldRasterize ? contents.digest : 0,
+                contents: contents
             )))]
         }
 
@@ -254,6 +304,107 @@ public struct DrawList {
         var list = DrawList()
         list.commands = commands
         return list
+    }
+
+    /// A digest of everything in this list that changes what it draws.
+    ///
+    /// Used for one thing only: deciding whether a rasterizing
+    /// `SKEffectNode` may keep last frame's pixels. So it covers what the
+    /// renderer would put in a vertex buffer — transforms, sizes, anchors,
+    /// colours, alphas, blend modes, which texture and which shader — and
+    /// deliberately **not** shader uniform values. A band of
+    /// `BandedLayerNode` must survive `u_time` running on and the light
+    /// moving, or the cache would never hold for a single frame and the
+    /// whole mechanism would be a loss rather than a saving. The game asks
+    /// for those redraws explicitly, by toggling `shouldRasterize`.
+    public var digest: UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        func mix(_ value: UInt64) {
+            hash = (hash ^ value) &* 0x100_0000_01b3
+        }
+        func mix(_ value: CGFloat) {
+            // Quantised to a thousandth of a point: finer than any motion
+            // that would show, and immune to the last bit of a float.
+            mix(UInt64(bitPattern: Int64((value * 1000).rounded())))
+        }
+        func mix(_ value: CGPoint) { mix(value.x); mix(value.y) }
+        func mix(_ value: CGSize) { mix(value.width); mix(value.height) }
+        func mix(_ value: CGRect) { mix(value.origin); mix(value.size) }
+        func mix(_ value: CGAffineTransform) {
+            mix(value.a); mix(value.b); mix(value.c)
+            mix(value.d); mix(value.tx); mix(value.ty)
+        }
+        func mix(_ value: SKColor) {
+            mix(value.red); mix(value.green); mix(value.blue); mix(value.alpha)
+        }
+        func mix(_ object: AnyObject?) {
+            mix(UInt64(UInt(bitPattern: object.map { ObjectIdentifier($0).hashValue } ?? 0)))
+        }
+
+        for command in commands {
+            switch command {
+            case let .sprite(sprite):
+                mix(UInt64(1))
+                mix(sprite.transform); mix(sprite.size); mix(sprite.anchorPoint)
+                mix(sprite.textureRect); mix(sprite.color)
+                mix(sprite.colorBlendFactor); mix(sprite.alpha)
+                mix(UInt64(sprite.blendMode.rawValue))
+                mix(sprite.texture); mix(sprite.shader)
+            case let .shape(shape):
+                mix(UInt64(2))
+                mix(shape.transform); mix(shape.fillColor); mix(shape.strokeColor)
+                mix(shape.lineWidth); mix(shape.alpha)
+                mix(UInt64(shape.lineCap.rawValue)); mix(UInt64(shape.lineJoin.rawValue))
+                // The outline itself, element by element: a path can be added
+                // to in place, so its identity alone would keep a cached
+                // node's pixels after its shape had changed.
+                #if canImport(Darwin)
+                // CoreGraphics' own path, on the host the tests run on.
+                shape.path?.applyWithBlock { element in
+                    let e = element.pointee
+                    mix(UInt64(10 + Int(e.type.rawValue)))
+                    let count: Int
+                    switch e.type {
+                    case .moveToPoint, .addLineToPoint: count = 1
+                    case .addQuadCurveToPoint: count = 2
+                    case .addCurveToPoint: count = 3
+                    default: count = 0
+                    }
+                    for i in 0 ..< count { mix(e.points[i]) }
+                }
+                #else
+                for element in shape.path?.elements ?? [] {
+                    switch element {
+                    case let .move(p): mix(UInt64(10)); mix(p)
+                    case let .line(p): mix(UInt64(11)); mix(p)
+                    case let .quadCurve(to, control): mix(UInt64(12)); mix(to); mix(control)
+                    case let .curve(to, c1, c2): mix(UInt64(13)); mix(to); mix(c1); mix(c2)
+                    case let .arc(centre, radius, start, end, clockwise):
+                        mix(UInt64(14)); mix(centre); mix(radius); mix(start); mix(end)
+                        mix(UInt64(clockwise ? 1 : 0))
+                    case .close: mix(UInt64(15))
+                    }
+                }
+                #endif
+            case let .label(label):
+                mix(UInt64(3))
+                mix(label.transform); mix(label.color); mix(label.alpha)
+                mix(label.fontSize)
+                mix(UInt64(truncatingIfNeeded: label.text.hashValue))
+                mix(UInt64(truncatingIfNeeded: (label.fontName ?? "").hashValue))
+            case let .effect(effect):
+                mix(UInt64(4))
+                mix(effect.transform); mix(effect.bounds); mix(effect.alpha)
+                mix(effect.rasterGeneration)
+                mix(effect.contents.digest)
+            case let .crop(crop):
+                mix(UInt64(5))
+                mix(crop.transform)
+                mix(crop.mask.digest)
+                mix(crop.contents.digest)
+            }
+        }
+        return hash
     }
 
     /// Sprite commands anywhere in the list, nested ones included.

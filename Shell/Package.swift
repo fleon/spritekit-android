@@ -60,9 +60,9 @@ let package = Package(
         .package(path: "../Text"),
         // The game's own sources, compiled for Android (symlinks into
         // Source/, never copies). The shell links it so the port draws the
-        // real thing rather than stand-ins: the rigs, and the levels and
-        // the board that play them. Only GLESBackend depends on it — the
-        // shell proper still knows nothing about any of it.
+        // real thing rather than stand-ins: the rigs, the levels and the
+        // board that play them, and Starry Sky's backdrop. Only GLESBackend
+        // depends on it — the shell proper still knows nothing about any of it.
         .package(path: "../Compat"),
     ],
     targets: [
@@ -123,11 +123,11 @@ let package = Package(
             // too — see Scripts/build-shell.sh. The search path for them is
             // still a flag, since it is different per ABI.
             linkerSettings: [
-                .linkedLibrary("SDL3"),
-                .linkedLibrary("GLESv3"),
-                .linkedLibrary("log"),
+                .linkedLibrary("SDL3", .when(platforms: [.android])),
+                .linkedLibrary("GLESv3", .when(platforms: [.android])),
+                .linkedLibrary("log", .when(platforms: [.android])),
                 // Android's own media stack, for decoding the soundtrack's AAC.
-                .linkedLibrary("mediandk"),
+                .linkedLibrary("mediandk", .when(platforms: [.android])),
             ]
         ),
     ]

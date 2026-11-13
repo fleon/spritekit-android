@@ -105,6 +105,97 @@ public final class GLDevice: RenderDevice {
         glDeleteTextures(1, &name)
     }
 
+    // MARK: Render targets
+
+    /// Read once: GLES 3.0 guarantees 2048, and an effect node covering a
+    /// tablet's whole backdrop wants more than that.
+    public lazy var maximumTextureSide: Int = {
+        var value: GLint = 0
+        glGetIntegerv(GLenum(GL_MAX_TEXTURE_SIZE), &value)
+        return value > 0 ? Int(value) : 2048
+    }()
+
+    public func createRenderTarget(width: Int, height: Int, stencil: Bool) -> RenderTargetHandle? {
+        guard width > 0, height > 0 else { return nil }
+
+        var texture: GLuint = 0
+        glGenTextures(1, &texture)
+        guard texture != 0 else {
+            Log.error("render target: glGenTextures gave 0")
+            return nil
+        }
+        glBindTexture(GLenum(GL_TEXTURE_2D), texture)
+        // Linear, because an effect's texture is sampled by the composite and
+        // by whatever the game points at it; clamped, because sampling past
+        // the edge of an effect's own bounds must fade out rather than wrap
+        // the far side in.
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE)
+        glTexImage2D(
+            GLenum(GL_TEXTURE_2D), 0, GL_RGBA8,
+            GLsizei(width), GLsizei(height), 0,
+            GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), nil
+        )
+        glBindTexture(GLenum(GL_TEXTURE_2D), 0)
+
+        var framebuffer: GLuint = 0
+        glGenFramebuffers(1, &framebuffer)
+        guard framebuffer != 0 else {
+            Log.error("render target: glGenFramebuffers gave 0")
+            glDeleteTextures(1, &texture)
+            return nil
+        }
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), framebuffer)
+        glFramebufferTexture2D(
+            GLenum(GL_FRAMEBUFFER), GLenum(GL_COLOR_ATTACHMENT0),
+            GLenum(GL_TEXTURE_2D), texture, 0
+        )
+
+        var stencilBuffer: GLuint = 0
+        if stencil {
+            glGenRenderbuffers(1, &stencilBuffer)
+            glBindRenderbuffer(GLenum(GL_RENDERBUFFER), stencilBuffer)
+            // GL_STENCIL_INDEX8 is the only stencil-only format ES 3.0 makes
+            // renderable; depth-stencil would cost a depth buffer the whole
+            // port has no use for (the draw order is the z order).
+            glRenderbufferStorage(
+                GLenum(GL_RENDERBUFFER), GLenum(GL_STENCIL_INDEX8),
+                GLsizei(width), GLsizei(height)
+            )
+            glFramebufferRenderbuffer(
+                GLenum(GL_FRAMEBUFFER), GLenum(GL_STENCIL_ATTACHMENT),
+                GLenum(GL_RENDERBUFFER), stencilBuffer
+            )
+            glBindRenderbuffer(GLenum(GL_RENDERBUFFER), 0)
+        }
+
+        let status = glCheckFramebufferStatus(GLenum(GL_FRAMEBUFFER))
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), 0)
+        guard status == GLenum(GL_FRAMEBUFFER_COMPLETE) else {
+            Log.error("render target \(width)x\(height) incomplete: 0x\(String(status, radix: 16))")
+            glDeleteFramebuffers(1, &framebuffer)
+            glDeleteTextures(1, &texture)
+            if stencilBuffer != 0 { glDeleteRenderbuffers(1, &stencilBuffer) }
+            return nil
+        }
+
+        return RenderTargetHandle(
+            framebuffer: framebuffer, texture: texture, stencil: stencilBuffer,
+            width: width, height: height
+        )
+    }
+
+    public func deleteRenderTarget(_ target: RenderTargetHandle) {
+        var framebuffer = target.framebuffer
+        var texture = target.texture
+        var stencil = target.stencil
+        if framebuffer != 0 { glDeleteFramebuffers(1, &framebuffer) }
+        if texture != 0 { glDeleteTextures(1, &texture) }
+        if stencil != 0 { glDeleteRenderbuffers(1, &stencil) }
+    }
+
     // MARK: Programs
 
     public func createProgram(vertex: String, fragment: String) -> UInt32 {

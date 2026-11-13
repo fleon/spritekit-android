@@ -7,7 +7,15 @@
 // Deliberately not here: `simd_quatf`. It is BlockNode's alone (Starry Sky's
 // tumbling planet) and wants a real quaternion type, which belongs with the
 // board ring that will exercise it rather than with a rig that will not.
+//
+// The matrix types (`matrix_float4x4` and its kin) are not here either: they
+// live in the shim, because `SKUniform(name:matrixFloat4x4:)` takes one and
+// the shim cannot depend on this package. They are re-exported below, so a
+// file that writes `import simd` gets them as it would on Apple.
+// `NightSkyNode` needs them — it packs its nebula tints and its planets'
+// places, poses and rings into four 4x4 matrices.
 import Foundation
+@_exported import SpriteKitShim
 
 @inlinable public func simd_min<T: SIMD>(_ x: T, _ y: T) -> T where T.Scalar: Comparable {
     var out = x

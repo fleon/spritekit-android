@@ -220,7 +220,7 @@ struct NestedPassTests {
         }
         let passes = SpriteBatcher().passes(for: list)
         #expect(passes.count == 2)
-        guard case let .effect(_, _, shader, _, contents) = passes[1] else {
+        guard case let .effect(_, _, shader, _, _, _, _, _, _, contents) = passes[1] else {
             Issue.record("expected an effect"); return
         }
         #expect(shader != nil)

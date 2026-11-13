@@ -97,7 +97,7 @@ public struct Viewport: Equatable {
         )
     }
 
-    static let identity: [Float] = [
+    public static let identity: [Float] = [
         1, 0, 0, 0,
         0, 1, 0, 0,
         0, 0, 1, 0,

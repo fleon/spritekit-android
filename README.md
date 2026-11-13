@@ -556,3 +556,58 @@ keys, locks, light pillars, turntables, platform switches and the
 Mainframe's three. The rules are whole, so a level with those pieces plays
 correctly over bare floor. There is no HUD, no backdrop and no landscape
 transposition.
+
+## Render-to-texture, and one backdrop
+
+`SKEffectNode` and `SKCropNode` composite for real, and Starry Sky's
+backdrop draws on a device — `Source/Common/Components/NightSkyNode.swift`
+(972 lines) and `BandedLayerNode.swift`, symlinked into `Compat` and
+compiled unmodified, with `Theme.swift`, `WorldTheme.swift` and
+`ColorHelpers.swift` beside them.
+
+Three things in the renderer are decided rather than inherited:
+
+- **`gl_FragCoord` counts down from the top left.** SpriteKit runs on Metal,
+  where it does; GLES counts up from the bottom. The game depends on Metal's
+  — `SceneLighting` hands every lit shader `(visible.minX, visible.maxY,
+  pixelsPerPoint, 0)` and recovers a scene point as `u_fragment.xy +
+  gl_FragCoord.xy * u_fragment.zw`, which only lands on the board if y runs
+  down, and `EdgeShade.Blur` writes `vec2(gl_FragCoord.x, -gl_FragCoord.y)`.
+  `ShaderTranslator` rewrites the identifier to a call over one uniform, so
+  every lit world and the edge blur are the right way up without touching
+  the 31 files that read it.
+- **An effect's shader sees the effect texture's pixels**, not the
+  framebuffer's — which is why a crop node round an effect node moves the
+  blur band on iOS, and now here. `EffectTexture.composite` maps the
+  coordinate back, so the composite needs one pass rather than SpriteKit's
+  two. It is exact for a translated and scaled effect node (every one in
+  this game) and refuses a rotated one rather than drawing something
+  plausible.
+- **`shouldRasterize` keeps its pixels.** `BandedLayerNode` redraws one band
+  a frame by toggling it, so the shim bumps a generation on every write and
+  the draw list carries a digest of what the subtree draws — transforms and
+  textures, deliberately *not* shader uniform values, or a band would redraw
+  every frame as `u_time` moved and the cache would be a loss.
+
+### What the emulator says, and what it does not
+
+Measured on the shared `switchlings_shell` AVD, which reports
+`Android Emulator OpenGL ES Translator (Apple M4 Max)` — it passes through to
+the host GPU, so **the frame times flatter a phone and the draw-call and
+render-target counts do not**. 1080×2400, a six-by-five board of Sky's
+bricks, 300-frame windows after a 60-frame warm-up:
+
+| scene | frame p50 | in `drawFrame` | scene graph | draw calls | target binds |
+|---|---|---|---|---|---|
+| board only, no backdrop | 16.9 ms (59 fps) | 7.3 ms | 0.53 ms | 15 | 1 |
+| sky, banded (4 bands) | 21.5 ms (47 fps) | 14.4 ms | 0.87 ms | 21 | 3 |
+| sky, whole every frame | 18.1 ms (55 fps) | 11.8 ms | 0.77 ms | 17 | 1 |
+
+Read these as: the port's own CPU cost is **under a millisecond** and is not
+the problem; the sky's shader is the whole of it. And `BandedLayerNode` is a
+**loss** here — four bands cost 4 extra draw calls, 2 extra target binds and
+a composite each, to save three quarters of a shader that this GPU runs
+easily. On an A14 iPad, where the shader is the bottleneck, it wins; the
+band count wants to follow the hardware rather than being 4 everywhere, and
+nothing short of a real Mali-G57 / Adreno 610 can say where the crossover
+sits.

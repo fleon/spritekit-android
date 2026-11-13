@@ -43,8 +43,11 @@ let package = Package(
         .target(name: "os",
                 path: "Sources/os", swiftSettings: [v5, shimDefine]),
         // Not a passthrough: Android has no Accelerate, so this one has the
-        // free-function spelling of the SIMD maths in it.
-        .target(name: "simd", path: "Sources/simd", swiftSettings: [v5, shimDefine]),
+        // free-function spelling of the SIMD maths in it. It also re-exports
+        // the shim, whose matrix types `SKUniform` takes.
+        .target(name: "simd",
+                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                path: "Sources/simd", swiftSettings: [v5, shimDefine]),
 
         .target(
             name: "GameCompat",

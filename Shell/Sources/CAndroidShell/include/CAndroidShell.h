@@ -37,4 +37,13 @@ static const SDL_AudioDeviceID SWITCHLINGS_DEFAULT_PLAYBACK = SDL_AUDIO_DEVICE_D
 /// what the sound effects' WAVs already are, so nothing is converted twice.
 static const SDL_AudioFormat SWITCHLINGS_AUDIO_FORMAT = SDL_AUDIO_S16;
 
+/// Reads an Android system property into `out`, returning its length.
+/// `__system_property_get` lives behind a header Swift's importer will not
+/// take, and it is how a run is configured without a rebuild:
+///
+///     adb shell setprop debug.switchlings.scene sky
+///
+/// Debug-only plumbing: nothing in the game reads a property.
+int switchlings_property(const char *name, char *out, int capacity);
+
 #endif /* CANDROIDSHELL_H */

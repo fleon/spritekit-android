@@ -20,7 +20,21 @@ import Foundation
 /// abstraction does by default.
 open class SKEffectNode: SKNode {
     open var shader: SKShader?
-    open var shouldRasterize: Bool = false
+
+    /// Keeps the rendered texture instead of drawing the subtree again.
+    ///
+    /// `BandedLayerNode` redraws one band a frame by writing `false` and
+    /// then `true` here, so every write counts as "those pixels are stale"
+    /// whichever way it goes — which is why the generation moves on a set
+    /// rather than on a change.
+    open var shouldRasterize: Bool = false {
+        didSet { rasterGeneration &+= 1 }
+    }
+
+    /// Bumped on every write to `shouldRasterize`. The renderer holds a kept
+    /// render target against the node and redraws it when this moves.
+    public private(set) var rasterGeneration: UInt64 = 0
+
     open var shouldEnableEffects: Bool = true
     open var shouldCenterFilter: Bool = true
     open var blendMode: SKBlendMode = .alpha
