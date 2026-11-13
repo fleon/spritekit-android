@@ -14,6 +14,9 @@ import ShellCore
 /// obvious at a glance rather than hidden inside the real board's maths.
 public final class BoardPreviewScene: SKScene {
     private let cell: CGFloat = 50
+    /// `DesignSystem.boardRowSpan`: the z a row takes, so the BoardDepth
+    /// order within a row fits between two rows.
+    private static let rowSpan: CGFloat = 10
 
     public override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.08, green: 0.09, blue: 0.14, alpha: 1)
@@ -36,14 +39,34 @@ public final class BoardPreviewScene: SKScene {
         for row in 0 ..< rows {
             for column in 0 ..< columns {
                 let name = "BrickGarden\((row * columns + column) % 4 + 1)"
-                let brick = SKSpriteNode(texture: SKTexture(imageNamed: name),
-                                         size: CGSize(width: cell, height: cell))
+                let texture = SKTexture(imageNamed: name)
+
+                // A brick is not a square. Its top face fills the cell and
+                // its front face hangs below it, so the sprite is a cell wide
+                // and as tall as the art's own aspect makes it — the same
+                // `cell * painted.height / painted.width` TileNode uses. Drawn
+                // square, as this was, nothing overhangs, so the rows cannot
+                // overlap and the board reads flat.
+                let art = texture.size()
+                let height = art.width > 0 ? cell * art.height / art.width : cell
+                let brick = SKSpriteNode(texture: texture,
+                                         size: CGSize(width: cell, height: height))
+
+                // The top face sits on the cell; the overhang falls below it.
+                let cellY = originY + CGFloat(rows - 1 - row) * cell
                 brick.position = CGPoint(
                     x: originX + CGFloat(column) * cell,
-                    y: originY + CGFloat(rows - 1 - row) * cell
+                    y: cellY + cell / 2 - height / 2
                 )
-                // Nearer rows draw over farther ones, as BoardDepth orders them.
-                brick.zPosition = CGFloat(row)
+
+                // Rows draw back to front: `row` counts toward the viewer, so
+                // a nearer row's overhang covers the row behind it. Spaced by
+                // `DesignSystem.boardRowSpan`, which leaves room for the
+                // BoardDepth order within a row — written out rather than
+                // imported, because GLESBackend does not depend on the game's
+                // own targets and this scene is a placeholder for the real
+                // board.
+                brick.zPosition = CGFloat(row) * Self.rowSpan
                 board.addChild(brick)
             }
         }
