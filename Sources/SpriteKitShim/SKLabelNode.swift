@@ -203,6 +203,8 @@ open class SKShapeNode: SKNode {
     open var blendMode: SKBlendMode = .alpha
     open var fillTexture: SKTexture?
     open var fillShader: SKShader?
+    /// Carried, not drawn: the game sets none, and only `ShaderPrimer` reads it.
+    open var strokeShader: SKShader?
 
     public override init() {
         super.init()

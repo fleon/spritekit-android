@@ -34,4 +34,13 @@ import Glibc
 @_transparent public func round(_ x: Float) -> Float { x.rounded() }
 @_transparent public func trunc(_ x: Float) -> Float { x.rounded(.towardZero) }
 
+// corelibs Foundation gives `CGFloat` the transcendental functions but not
+// the rounding ones, which Darwin's CoreGraphics overlay does. Without them a
+// `ceil(optionalLabel?.frame.width ?? 0)` takes the `Double` overload and
+// cannot convert the optional (`SelectButtonNode`).
+@_transparent public func floor(_ x: CGFloat) -> CGFloat { x.rounded(.down) }
+@_transparent public func ceil(_ x: CGFloat) -> CGFloat { x.rounded(.up) }
+@_transparent public func round(_ x: CGFloat) -> CGFloat { x.rounded() }
+@_transparent public func trunc(_ x: CGFloat) -> CGFloat { x.rounded(.towardZero) }
+
 #endif

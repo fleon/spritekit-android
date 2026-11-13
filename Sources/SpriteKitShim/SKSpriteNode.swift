@@ -10,6 +10,10 @@ open class SKSpriteNode: SKNode {
     open var blendMode: SKBlendMode = .alpha
     open var anchorPoint = CGPoint(x: 0.5, y: 0.5)
     open var shader: SKShader?
+    /// Carried for the lit worlds' pieces, whose lighting reads normals from
+    /// their own shaders' uniforms; SpriteKit's own lighting, which this
+    /// feeds, is never on (the game adds no `SKLightNode`).
+    open var normalTexture: SKTexture?
     open var size: CGSize
 
     /// Per-node shader attribute values (SKAttribute), keyed by name.
@@ -22,11 +26,18 @@ open class SKSpriteNode: SKNode {
     /// Backs `centerRect` (see NineSlice.swift), which 9-slices the texture.
     var sliceCenterRect = NineSlice.whole
 
-    public init(texture: SKTexture?, size: CGSize) {
+    /// SpriteKit's designated initialiser; the others are convenience ones,
+    /// so a subclass calls this one, as the game's `GlowNode` and
+    /// `ConveyorNode` do.
+    public init(texture: SKTexture?, color: SKColor, size: CGSize) {
         self.texture = texture
+        self.color = color
         self.size = size
-        color = .clear
         super.init()
+    }
+
+    public convenience init(texture: SKTexture?, size: CGSize) {
+        self.init(texture: texture, color: .white, size: size)
     }
 
     public convenience init(texture: SKTexture?) {
@@ -34,23 +45,9 @@ open class SKSpriteNode: SKNode {
         self.init(texture: texture, size: size)
     }
 
-    /// SpriteKit's designated initialiser, which the game's own sprite
-    /// subclasses call as `super.init(texture:color:size:)` (`SharedLightNode`,
-    /// `GlowNode`, `CrumbleNode`, `ConveyorNode`). As a convenience
-    /// initialiser it compiled but left those calls unlinkable.
-    public init(texture: SKTexture?, color: SKColor, size: CGSize) {
-        self.texture = texture
-        self.size = size
-        self.color = color
-        super.init()
-    }
-
-    public init(color: SKColor, size: CGSize) {
-        texture = nil
-        self.color = color
-        self.size = size
+    public convenience init(color: SKColor, size: CGSize) {
+        self.init(texture: nil, color: color, size: size)
         colorBlendFactor = 1
-        super.init()
     }
 
     /// An empty sprite, as SpriteKit's `SKSpriteNode()`: no texture, clear,

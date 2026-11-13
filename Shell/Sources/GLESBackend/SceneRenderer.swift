@@ -38,6 +38,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var coverageProgram: GLuint = 0
     /// An `SKCropNode`'s mask, written into the stencil.
     private var maskProgram: GLuint = 0
+    /// A shape as a crop's mask: its coverage, cut at half.
+    private var shapeMaskProgram: GLuint = 0
 
     private let glyphPages = GlyphPages(atlas: TextEngine.shared.atlas)
     private let glyphSource = EngineGlyphSource(engine: TextEngine.shared)
@@ -212,6 +214,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         if maskProgram == 0 { Log.error("the crop mask program did not link") }
 
+        shapeMaskProgram = device.createProgram(
+            vertex: ShaderTranslator.spriteVertexShader(),
+            fragment: ShaderTranslator.coverageMaskFragmentShader
+        )
+        if shapeMaskProgram == 0 { Log.error("the shape mask program did not link") }
+
         // The art is premultiplied, so this is the blend for it.
         glEnable(GLenum(GL_BLEND))
         glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
@@ -223,6 +231,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // the renderer can answer, since only it has a framebuffer. The hook
         // is `SKViewSnapshot.swift`'s, which also explains why the priming
         // calls that throw the texture away need no pixels here.
+        SKTexture.readBack = { [weak self] texture in self?.readBack(texture) }
         SKView.snapshot = { [weak self] _, node, crop in
             self?.bake(node, crop: crop)
         }
@@ -247,6 +256,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     public func rendererWillStop() {
         SKView.snapshot = nil
+        SKTexture.readBack = nil
         if MetalExecution.executor === self { MetalExecution.executor = nil }
         films.failAll()
         if let filmTarget { device.deleteRenderTarget(filmTarget) }
@@ -260,6 +270,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         glyphSource.flush()
         if coverageProgram != 0 { device.deleteProgram(coverageProgram) }
         if maskProgram != 0 { device.deleteProgram(maskProgram) }
+        if shapeMaskProgram != 0 { device.deleteProgram(shapeMaskProgram) }
         // A new context relinks every program, and GL reuses names, so a
         // location learned for an old one must not be trusted again.
         attributeLocations.removeAll()
@@ -285,6 +296,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // scene's.
         let started = MediaTime.source()
         let list = view.tick(currentTime: frame.time, delta: frame.delta / max(slowdown, 1))
+        SceneDump.check(view, at: frame.time)
         noteSceneChange(at: frame.time)
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
@@ -421,7 +433,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // nothing. This is the common case: `BackdropNode` wraps its scenery
         // in one and only turns the shader on behind the round buttons.
         guard shader != nil || rasterize || alpha < 0.999 else {
-            draw(contents, projection: projection, time: time)
+            // The contents are in the effect node's own space (`DrawList`),
+            // so they are carried by its transform, as the composite would.
+            draw(contents, projection: Self.concatenate(projection, transform), time: time)
             return
         }
         guard bounds.width > 0, bounds.height > 0 else { return }
@@ -519,6 +533,27 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// region, and the pass is balanced — it increments on the way in and
     /// decrements on the way out — so the buffer is back to zero afterwards
     /// and sibling crops do not inherit one another's shapes.
+    /// `projection` after `transform`: a column-major 4×4 times the affine
+    /// transform lifted to one.
+    static func concatenate(_ projection: [Float], _ transform: CGAffineTransform) -> [Float] {
+        guard projection.count == 16, !transform.isIdentity else { return projection }
+        let m: [Float] = [
+            Float(transform.a), Float(transform.b), 0, 0,
+            Float(transform.c), Float(transform.d), 0, 0,
+            0, 0, 1, 0,
+            Float(transform.tx), Float(transform.ty), 0, 1,
+        ]
+        var out = [Float](repeating: 0, count: 16)
+        for column in 0 ..< 4 {
+            for row in 0 ..< 4 {
+                var sum: Float = 0
+                for k in 0 ..< 4 { sum += projection[k * 4 + row] * m[column * 4 + k] }
+                out[column * 4 + row] = sum
+            }
+        }
+        return out
+    }
+
     private func drawCrop(
         mask: [SpriteBatcher.Pass],
         contents: [SpriteBatcher.Pass],
@@ -585,7 +620,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 drawMask(contents, projection: projection, time: time)
             case let .crop(_, _, contents):
                 drawMask(contents, projection: projection, time: time)
-            case .label, .shape:
+            case let .shape(shape):
+                // A shape mask (the scroll areas' rounded clips) cuts by
+                // where its fill and stroke reach.
+                draw(shape, projection: projection, program: shapeMaskProgram)
+            case .label:
                 break
             }
         }
@@ -747,7 +786,35 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let key = ObjectIdentifier(node)
         if let previous = bakedTextures[key] { device.deleteTexture(previous) }
         bakedTextures[key] = handle.texture
+        bakedSizes[handle.texture] = (handle.width, handle.height)
         return baked
+    }
+
+    /// Each baked texture's size in pixels, for reading it back.
+    private var bakedSizes: [GLuint: (width: Int, height: Int)] = [:]
+
+    /// A baked texture's pixels, premultiplied, row 0 the top: what the
+    /// game's `cgImage()` asks of a snapshot (`MechanicSampleNode` fits a
+    /// sample by what it draws).
+    private func readBack(_ texture: SKTexture) -> RasterImage? {
+        guard let size = bakedSizes[texture.glName], size.width > 0, size.height > 0 else { return nil }
+        var framebuffer: GLuint = 0
+        var previous: GLint = 0
+        glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &previous)
+        glGenFramebuffers(1, &framebuffer)
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), framebuffer)
+        glFramebufferTexture2D(GLenum(GL_FRAMEBUFFER), GLenum(GL_COLOR_ATTACHMENT0), GLenum(GL_TEXTURE_2D), texture.glName, 0)
+        var rows = [UInt8](repeating: 0, count: size.width * size.height * 4)
+        glReadPixels(0, 0, GLsizei(size.width), GLsizei(size.height), GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), &rows)
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(previous))
+        glDeleteFramebuffers(1, &framebuffer)
+        // GL's rows run up from the bottom; a bitmap's down from the top.
+        let stride = size.width * 4
+        var flipped = [UInt8](repeating: 0, count: rows.count)
+        for row in 0 ..< size.height {
+            flipped.replaceSubrange(row * stride ..< (row + 1) * stride, with: rows[(size.height - 1 - row) * stride ..< (size.height - row) * stride])
+        }
+        return RasterImage(width: size.width, height: size.height, pixels: flipped)
     }
 
     private func bindTarget() {
@@ -853,8 +920,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// density it will be drawn at, then drawn as one quad through the
     /// node's transform — so a rotated or animated shape costs one mask, not
     /// one per angle.
-    private func draw(_ shape: DrawList.Shape, projection: [Float]) {
-        guard coverageProgram != 0, let path = shape.path else { return }
+    private func draw(_ shape: DrawList.Shape, projection: [Float], program: GLuint? = nil) {
+        let program = program ?? coverageProgram
+        guard program != 0, let path = shape.path else { return }
 
         let scale = deviceScale * transformScale(shape.transform)
         guard scale > 0 else { return }
@@ -867,7 +935,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     colour: shape.fillColor, alpha: shape.alpha
                 ),
                 texture: mask.name,
-                projection: projection
+                projection: projection,
+                program: program
             )
         }
 
@@ -882,7 +951,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     colour: shape.strokeColor, alpha: shape.alpha
                 ),
                 texture: mask.name,
-                projection: projection
+                projection: projection,
+                program: program
             )
         }
     }
@@ -903,20 +973,22 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private func drawCoverage(
         _ run: CoverageGeometry.Run,
         texture: GLuint,
-        projection: [Float]
+        projection: [Float],
+        program: GLuint? = nil
     ) {
         guard !run.indices.isEmpty else { return }
 
-        glUseProgram(coverageProgram)
+        let program = program ?? coverageProgram
+        glUseProgram(program)
         var projection = projection
-        let location = glGetUniformLocation(coverageProgram, "u_projection")
+        let location = glGetUniformLocation(program, "u_projection")
         if location >= 0 {
             glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &projection)
         }
 
         glActiveTexture(GLenum(GL_TEXTURE0))
         glBindTexture(GLenum(GL_TEXTURE_2D), texture)
-        let sampler = glGetUniformLocation(coverageProgram, "u_texture")
+        let sampler = glGetUniformLocation(program, "u_texture")
         if sampler >= 0 { glUniform1i(sampler, 0) }
 
         glEnable(GLenum(GL_BLEND))
@@ -1041,6 +1113,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// shell passes SDL's normalised window coordinates through untouched.
     public func receive(_ touch: TouchEvent) {
         guard let scene = view.scene else { return }
+        // One finger at a time, as the game asks of its view on iOS
+        // (`isMultipleTouchEnabled = false`): a second finger is ignored
+        // until the first lifts.
+        if touch.phase == .began {
+            guard primaryFinger == nil else { return }
+            primaryFinger = touch.finger
+        }
+        guard touch.finger == primaryFinger else { return }
+        if touch.phase == .ended || touch.phase == .cancelled { primaryFinger = nil }
         // SDL's location is a share of the window from its top left, which
         // is UIKit's way round; the scene maps it on through its camera.
         let point = scene.convertPoint(fromView: CGPoint(
@@ -1055,6 +1136,45 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         case .cancelled: phase = .cancelled
         }
         scene.deliverTouch(phase: phase, at: point, identifier: touch.finger, timestamp: touch.time)
+    }
+
+    /// The finger the scene is following, if one is down.
+    private var primaryFinger: Int?
+
+    /// Input other than touches, for whoever drives the scene (the game's
+    /// controller). Unset, nothing takes it.
+    public var onInput: ((InputEvent) -> Bool)?
+    /// The window's metrics, with the view already resized to the drawable.
+    public var onMetrics: ((WindowMetrics, SKView) -> Void)?
+    /// Called once, after the first metrics have been handed on.
+    public var onAppear: (() -> Void)?
+    private var appeared = false
+
+    public func receive(_ input: InputEvent) -> Bool {
+        onInput?(input) ?? false
+    }
+
+    public func windowMetricsDidChange(_ metrics: WindowMetrics) {
+        // The density can change (another display, a fold): points follow it.
+        view.resize(drawable: drawableSize, displayScale: metrics.displayScale)
+        let scale = view.contentScaleFactor
+        view.safeAreaInsets = UIEdgeInsets(
+            top: metrics.safeArea.top / scale, left: metrics.safeArea.left / scale,
+            bottom: metrics.safeArea.bottom / scale, right: metrics.safeArea.right / scale
+        )
+        onMetrics?(metrics, view)
+        if !appeared {
+            appeared = true
+            onAppear?()
+        }
+    }
+
+    /// The shell tells `UIApplication` itself; a touch in flight as the
+    /// game leaves is cancelled, so no button stays pressed.
+    public func applicationStateDidChange(active: Bool) {
+        guard !active else { return }
+        view.scene?.cancelTouches(timestamp: MediaTime.source())
+        primaryFinger = nil
     }
 
     /// How the presented scene's points map onto the drawable. In a

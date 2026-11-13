@@ -134,8 +134,9 @@ cd ../Probe
 All of them pass. `TextProbe` is an executable rather than a library, so it
 is the one thing here that proves the Android archives actually **link**: it
 comes out as an ELF for both ABIs and needs no `libc++_shared.so`.
-`GameCompat` compiles **7,066 lines of real, unmodified game
-source** for Android on both ABIs:
+`GameCompat` compiles **220 of the game's 235 source files**, unmodified,
+for Android on both ABIs (see **The game's own scenes** for the fifteen it
+leaves out and why). The table below is the first slice that compiled:
 
 | file | lines |
 |---|---|
@@ -579,37 +580,175 @@ the `swift-6.4.2-RELEASE_android` SDK bundle, and Android NDK LTS r30 at
 `$ANDROID_NDK_HOME`. See
 <https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html>.
 
-## A level, playable
+## The game's own scenes
 
-Sunny Garden's first level loads from the game's own `LevelCatalog`, draws
-its board from the game's own component nodes, takes taps and plays each
-move through `Timeline`. `Android/Compat/Sources/GameCompat/Play/` holds the
-assembly; everything under it is real game source, symlinked and unmodified.
+The app plays as the iOS game does, from launch: Fleon Labs' splash, the
+loading screen, the title (its wordmark, drawer, showcase and banner), the
+world list (its pages, sheet, level strip and previews), a level with its
+whole HUD (back, settings, the level code, the tip, undo, restart, hint and
+help), the win card with its Next, Level Select, Replay and Share, and the
+settings with their tabs. **220 of the game's 235 files** compile into
+`GameCompat` unchanged, symlinked at the same paths they have under
+`Source/` (`Title/TitleScene.swift`, `Game/GameScene.swift`, …).
 
-The levels reach the device through the door the catalog already has.
-`LevelCatalog` reads `Bundle.main`, and a file inside an APK is not a path on
-disk, so `AndroidLevels.install(reading:)` hands the same files to
-`LevelCatalog.contents(from:revision:)` and `use(_:)` — the seam the Level
-Designer's feed uses. That door replays **every** level's stored solution
-through `GameEngine` before accepting the set, so starting the app is 330
-levels and ~4,500 moves of proof that the rules port. Gradle stages
-`Assets/Levels/*.json` into `assets/levels/`, beside the packed art rather
-than among it.
+Left out, each for a reason of its own:
 
-Reused from `Source/`, unmodified: `BoardMetrics`, `BoardOutline`,
-`BoardFrameNode`, `TileNode`, `GoalNode`, `ArrowTileNode`, `ArrowBadgeNode`,
-`LiftControlNode`, `SpriteHelpers`, `Theme`, `ColorHelpers`,
-`CharacterEyesNode`, and the whole of `GameEngine`, `Timeline`, `GameState`,
-`Level`, `LevelCatalog`, `RouteSolver` and `WorldTheme`. Written here: the
-assembly (`PlayBoardNode`, `PlayScene`) and a stand-in for `ActorNode`, whose
-`rig` is a stored, non-optional `RigNode` and so waits on the rig runtime.
+| `Source/` file | why | what stands in |
+|---|---|---|
+| `AppDelegate`, `SceneDelegate`, `GameViewController` | the Apple app's own entry, window and controller | `Android/AndroidGameController.swift`, `GameViewControllerProtocols.swift` (below) |
+| `Utils/GamepadInput.swift` | observes `GCController` through `#selector`, which needs the Objective-C runtime | `Android/GamepadInput.swift`: the same `Action`s, mapping, thresholds and repeat, fed by SDL's gamepads |
+| `Utils/ShareSheet.swift` | `UIActivityViewController` | `Platform/ShareSheet.swift` (Android's chooser, from the share films) |
+| `AudioManager`, `StoreManager`, `GameCenterManager`, `ICloudSyncManager`, `PlaytestLog`, `DesignerFeed` | AVFoundation, StoreKit, GameKit, iCloud, the beta's reporting | `Platform/` (the platform ring) |
+| `HeaderVideo/*`, `EventVideo/*` | the Mac's filming tools, debug only | nothing |
 
-Not drawn yet: every mechanic's own art — springs, whirlpools, gates,
-buttons, blocks, arrow banks, currents, ice, screens, ledges, thresholds,
-keys, locks, light pillars, turntables, platform switches and the
-Mainframe's three. The rules are whole, so a level with those pieces plays
-correctly over bare floor. There is no HUD, no backdrop and no landscape
-transposition.
+### The controller
+
+`AndroidGameController` is what `GameViewController` is on Apple, and keeps
+its decisions where they are game logic: `launch(link:)` starts what
+`AppDelegate` starts, in its order; the first layout presents the splash,
+whose `onReady` goes through `TransitionManager` to `initialDestination`
+(launch arguments, a world link or a friend's level, else `ResumeScreen`),
+copied with `resumedDestination` from the Apple file. `layout(…)` is
+`viewDidLayoutSubviews`: the view's size in points, the safe area from SDL
+(`SDL_GetWindowSafeArea`), which way up, the idiom (a tablet by Android's
+own rule, a smallest width of 600 dp) and the display's refresh rate, which
+caps the frame rates on offer (`DisplaySettings.screenMaximum`). The view
+has a window now, the game's own `TouchOriginWindow`, so panels zoom out of
+the last touch, and `SceneLayout` takes its windowed path: Android's corner
+radii are not in `DesignSystem.displayCornerRadii` (Apple's screens), so a
+phone with a gesture bar gets the game's own fallback radius, as an
+unlisted iPhone does.
+
+Input, as the Apple controller routes it:
+
+- **Touches** reach the scene through the window (`UIWindow.sendEvent`, then
+  `SKScene.deliverTouch`), one finger at a time as the game asks of its view
+  on iOS (`isMultipleTouchEnabled = false`). A touch hides gamepad focus.
+- **Back** (button or gesture) is Escape, as Apple TV's remote Back is: it
+  closes a popup or goes back, and leaves the game only from the title or
+  the splash (to the background, as back from a launcher app's first
+  screen). Android 16 no longer sends a back key to an app that targets it
+  (predictive back), so `MainActivity` registers an `OnBackInvokedCallback`
+  that hands SDL the key; older versions send it themselves, and SDL's trap
+  hint keeps them from finishing the activity.
+- **A hardware keyboard** reaches `KeyboardControllable` by HID usage (SDL's
+  scancodes are that table), so the digits tap Switchlings and U undoes.
+- **Gamepads**: SDL's gamepad events become `GamepadEvent`s (`GamepadBridge`
+  in the shell), which `GamepadInput` turns into focus moves and presses
+  through the game's own `FocusNavigator`.
+- **Typing** (the Level Designer's friend code) goes to a `UITextField`
+  stand-in over SDL's text input; the field's delegate sees each insertion,
+  backspace and Return as UIKit hands them over.
+
+### What the shell gives the game
+
+- **Its resources through `Bundle.main`** (`ResourceBundle`): rigs, levels,
+  fonts and each language's `.lproj` (staged by Gradle under `lproj/`) are
+  copied out of the APK into the cache the first time each is asked for in
+  a run. `LevelCatalog` loads the bundled levels as on Apple, without the
+  replay of every solution the old `AndroidLevels` door made.
+- **The device's language** (`SDL_GetPreferredLocales` → `AppleLanguages`),
+  matched as Apple matches it: corelibs' `Bundle.preferredLocalizations`
+  picked Indonesian for `en-US`, so the shim has an overload the game's call
+  prefers (`LocalizationMatch`, checked against Apple's for twenty locales).
+- **Saved data that lasts.** corelibs keeps `UserDefaults` in memory only on
+  Android (the process is `app_process`, with no bundle identifier), so the
+  shell writes the game's values to `defaults.plist` in internal storage
+  every five seconds and whenever the app goes to the background, and reads
+  them back at launch (`GameEnvironment`). Progress, settings and
+  `ResumeScreen` survive a relaunch.
+- **Launch arguments** from the intent's `args` extra in the argument
+  domain, where `LaunchArguments` reads them (debug builds only, as on
+  Apple). `-settings.musicEnabled,<false/>` works in any build.
+- **Leaving the game**: `UIApplication.open` (`SDL_OpenURL`), the clipboard,
+  keeping the screen on (`SDL_DisableScreenSaver`).
+
+### The concurrency settings are the app's
+
+`GameCompat` builds as the Xcode target does: Swift 5, main-actor isolation
+by default and Approachable Concurrency (`Compat/Package.swift`). The game
+depends on it — `TitleScene` calls the explicitly `@MainActor` `SettingsFlow`
+from its own methods. So the shim's `SKNode`, `UIView`, `UIWindow`,
+`UIScreen`, `UIViewController`, `UITouch` and `UIEvent` are main-actor
+isolated, as Apple's are (they descend from `UIResponder`), and so are the
+shell's frame loop, renderer and controller, which share SDL's thread with
+the game. `SDL_main` enters with `MainActor.assumeIsolated`, which holds
+there because the main actor's executor is the frame loop's
+(`MainActorJobs`). Where SpriteKit runs scene code off the main thread
+unchecked (a share film's `SKRenderer`), the shim says so explicitly
+(`mainActorUnchecked`).
+
+One more flag: on x86_64 corelibs' `CGFloat` has a `Float80` initialiser,
+and `MechanicSampleNode.opaqueBounds` then takes the type checker past its
+default scope limit, so `GameCompat` passes `-solver-scope-threshold`.
+
+### What the scenes needed from the shim
+
+Each with host tests (`SceneSupportTests`, `BlendModeTests`), checked
+against Apple's own where Apple's runs on the Mac:
+
+- `SKSpriteNode`'s designated initialiser is `init(texture:color:size:)`, as
+  SpriteKit's (`GlowNode`, `ConveyorNode` call it); an untextured sprite
+  draws its own colour, its alpha included (a clear one draws nothing).
+- Crops draw their mask and contents where the crop stands, and a shape can
+  be a mask (the scroll areas' rounded clips, through an alpha-cut coverage
+  program); an effect drawn in place carries its transform. Without these
+  the level strip, the banner's text and the rigs in it were missing or
+  misplaced.
+- Actions: `rotate(toAngle:duration:shortestUnitArc:)`, `colorize`,
+  `setTexture`, `reversed()`; timing modes on **SpriteKit's measured
+  curves** (ease in `2t² − t³`, ease out `t + t² − t³`, both smoothstep, read
+  back from `SKRenderer` on the Mac), and a repeat carries what a frame runs
+  past a round's end into the next, as SpriteKit's does.
+- Paths: `addArc(tangent1End:tangent2End:radius:)`,
+  `copy(dashingWithPhase:lengths:)` and `currentPoint`, checked against
+  CoreGraphics. The software context has every CoreGraphics blend mode, the
+  four non-separable ones and the two plus modes included (and soft light
+  is CoreGraphics' formula, not the PDF's).
+- `SKTexture.cgImage()`, a snapshot's pixels read back from the GPU, and
+  alpha-only bitmaps: the collection and the tips fit each sample by what it
+  draws.
+- `SKShapeNode`'s shape initialisers, `simd_quatf` (Starry Sky's planet
+  block), `NSHashTable`, `SHA256` (a Level Designer board's fingerprint, the
+  same bytes as CryptoKit's), CGFloat rounding, `UIImage(data:)` and
+  `draw(in:)`.
+
+### Stand-ins, every one
+
+Things with no Android meaning, or none yet, keep the game's shapes and say
+so where they are declared:
+
+| stand-in | where | what it does |
+|---|---|---|
+| `Storefront.current` | `Compat/Sources/StoreKit` | nil: no App Store storefront, so a share's link falls back to the region's App Store page (a Play link is a follow-up; `SolutionShare` is the game's own) |
+| haptics (`UIImpactFeedbackGenerator`, …) | `UIKitInput.swift` | nothing: SDL wraps no phone vibrator |
+| `ProcessInfo.isLowPowerModeEnabled` | `UIKitInput.swift` | false: Battery Saver is not read yet |
+| `UIDevice.batteryLevel` | `UIKitInput.swift` | unknown, as a simulator reports |
+| `UIApplication.connectedScenes` | `UIKitInput.swift` | empty |
+| keyboard notifications, `cgRectValue` | `UIKitText.swift` | never posted: the code prompt stays centred over the keyboard rather than rising clear of it |
+| `CTFontManagerRegisterFontsForURL` | `CoreTextCompat.swift` | true: the shell registered the fonts already |
+| `UIImage.jpegData`, JPEG `UIImage(data:)` | `UIImage.swift` | nil: no maker photo goes out from Android, and one from iOS shows the maker's initial |
+| `SKShapeNode.strokeShader`, `SKSpriteNode.normalTexture` | shim | carried, not drawn: the game sets neither in a way that shows |
+
+Known differences from iOS, beyond the stand-ins: the title's version line
+reads "Version ()". `Bundle.main` is `/system/bin` (the process is
+`app_process`), which has no Info.plist, and the game reads the version
+from `infoDictionary`, which an overload can't stand in for. Pointing
+CoreFoundation elsewhere through `CFProcessPath` was tried and is ignored
+in an app process. The emulator draws a few frames a second under load,
+which is the host's, not the game's.
+
+**A point is a dp.** The view's points are the display's density-independent
+pixels (`SDL_GetWindowDisplayScale`, dpi / 160), as an iOS point is its
+screen's: a 420 dpi Pixel 6 is 411 × 914 points beside the iPhone 17 Pro's
+402 × 874, so every popup, sheet and button takes the same share of the
+screen as on iOS. The art's export scale (3x) has no say in it; its textures
+are drawn at 2.625 pixels a point, and glyphs, surfaces and effect textures
+are rendered at the screen's density.
+
+The scene graph can be dumped on a device to find what draws where:
+`adb shell setprop debug.switchlings.dump <a new value>`, then
+`adb shell run-as com.fleon.switchlings.scenes cat cache/scene-dump.txt`.
 
 ## Render-to-texture, and one backdrop
 
@@ -699,11 +838,9 @@ in a straight line, a keyframe list blends from the node's own warp to the
 first pose by the first time, and a node with no warp — or one of another
 shape — takes the first pose at once.
 
-Two gaps, both outside the warp code: `repeatForever` drops whatever part of
-a frame runs past a round's end (SpriteKit carries it on), so a looping sway
-loses up to a frame a round; and the shim's `easeIn` and `easeInEaseOut` are
-quadratic, while SpriteKit's measured warp curves are `2t² − t³` and
-smoothstep. The game sets no timing mode on a warp.
+The two gaps outside the warp code that this found are closed: a repeat
+carries what a frame runs past a round's end into the next, and every timing
+mode runs on SpriteKit's measured curve (see **The game's own scenes**).
 
 Android's libm overlay has no `Float` overloads of `sin`, `sqrt` and the
 rest, which Darwin's has; `BackdropWarp` mixes them with `SIMD2<Float>`, and
@@ -873,23 +1010,14 @@ queue is bound there, and `Shell.run` drains it once a frame
 (`switchlings_drain_main_queue`). The shell logs "the main queue runs on
 the game's thread" when it took.
 
-### What the stage shows, and what it can't yet
+### What the stage shows
 
-`SolutionStage` lays out what the real one lays out — wordmark, board and
-footer spaced down the frame, the board drawn upright or turned — but two
-of its pieces are seams (`Compat/.../Film/FilmStubs.swift`), each deleted
-when its ring lands:
-
-- **`BoardNode`** is the gameplay ring's `PlayBoardNode` (paintings, no
-  mechanics' art), carried by the same `Timeline` at each Switchling's
-  *rig* pace (`ActorNode.pace`, worked out from its `RigData`), with
-  `BoardNode.playIntro`'s timings and its cue → sound table, so a film's
-  moves start and end on the frames they do on iOS.
-- **The backdrop and the lights** are the game's own (see **Every world's
-  backdrop**), so a film draws on its world's live backdrop, lit.
-- **The win card**, its dropdown and form are the UI ring's;
-  `PlayScene`'s Share button runs `SolutionShare`'s steps
-  (`Play/FilmShare.swift`) and links Google Play rather than the App Store.
+`SolutionStage` is the game's own, and everything on it is too now: the
+real `BoardNode` with every mechanic's art, the world's live backdrop and
+light, and the real win card, whose Share opens the game's own form
+(`ShareFormNode`, picture or video, frame rate, orientation, link) and
+films through it into Android's share sheet. `FilmStubs.swift` and the
+stand-in Share button are gone.
 
 Android has no Game Center, so a film credits "A Switchlings player" with
 one of the world's Switchlings, as iOS does signed out.

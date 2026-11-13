@@ -34,8 +34,11 @@ open class SKRenderer {
         let delta = lastUpdate.map { max(0, currentTime - $0) } ?? 0
         lastUpdate = currentTime
         time = currentTime
-        scene.update(currentTime)
-        scene.tickActions(delta)
+        // On the film's own thread, as SpriteKit's renderer runs there.
+        mainActorUnchecked {
+            scene.update(currentTime)
+            scene.tickActions(delta)
+        }
     }
 
     /// Records drawing the scene as it stands into the pass's colour
@@ -43,12 +46,13 @@ open class SKRenderer {
     open func render(withViewport viewport: CGRect, commandBuffer: MTLCommandBuffer, renderPassDescriptor: MTLRenderPassDescriptor) {
         guard let scene else { return }
         let color = renderPassDescriptor.colorAttachments[0]
+        let (list, size, anchor, mode) = mainActorUnchecked { (DrawList(scene: scene), scene.size, scene.anchorPoint, scene.scaleMode) }
         commandBuffer.record(RecordedRenderPass(
-            list: DrawList(scene: scene),
+            list: list,
             viewport: viewport,
-            sceneSize: scene.size,
-            anchorPoint: scene.anchorPoint,
-            scaleMode: scene.scaleMode,
+            sceneSize: size,
+            anchorPoint: anchor,
+            scaleMode: mode,
             time: time,
             color: color?.texture,
             loadAction: color?.loadAction ?? .dontCare,

@@ -33,6 +33,7 @@ public enum UITouchPhase: Int, Sendable {
 
 /// Stands in for UIKit's `UITouch`. The game reads `location(in:)`,
 /// `previousLocation(in:)` and `timestamp` from it and nothing else.
+@MainActor
 public final class UITouch: Hashable {
     /// Which finger this is, for the length of one gesture.
     public let identifier: Int
@@ -59,6 +60,14 @@ public final class UITouch: Hashable {
         return node.convert(sceneLocation, from: scene)
     }
 
+    /// Where the touch is in `view`'s points, or the window's for nil: the
+    /// view fills the window on Android, so both are the scene's view
+    /// points. `TouchOriginWindow` notes each touch this way.
+    public func location(in view: UIView?) -> CGPoint {
+        guard let scene else { return sceneLocation }
+        return scene.convertPoint(toView: sceneLocation)
+    }
+
     public func previousLocation(in node: SKNode) -> CGPoint {
         guard let scene, node !== scene else { return previousSceneLocation }
         return node.convert(previousSceneLocation, from: scene)
@@ -71,14 +80,25 @@ public final class UITouch: Hashable {
         self.timestamp = timestamp
     }
 
-    public static func == (lhs: UITouch, rhs: UITouch) -> Bool { lhs === rhs }
-    public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
+    // By identity, which needs no isolation.
+    nonisolated public static func == (lhs: UITouch, rhs: UITouch) -> Bool { lhs === rhs }
+    nonisolated public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 }
 
-/// Stands in for UIKit's `UIEvent`. Every one of the game's handlers takes it
-/// and none of them reads it, so it carries nothing.
+/// Stands in for UIKit's `UIEvent`: a touch event and its touches, which
+/// the window sees before the scene does (`TouchOriginWindow` notes where
+/// the player touched; the scenes' handlers never read it).
+@MainActor
 public final class UIEvent {
-    init() {}
+    public enum EventType: Int, Sendable { case touches, motion, remoteControl, presses }
+
+    public let type: EventType
+    public let allTouches: Set<UITouch>?
+
+    init(touches: Set<UITouch> = []) {
+        type = .touches
+        allTouches = touches
+    }
 }
 
 // MARK: - Hit testing
@@ -170,13 +190,15 @@ public extension SKScene {
         identifier: Int = 0,
         timestamp: TimeInterval
     ) -> SKNode? {
-        let event = UIEvent()
         switch phase {
         case .began:
             let touch = UITouch(
                 identifier: identifier, phase: .began,
                 sceneLocation: location, timestamp: timestamp, scene: self
             )
+            let event = UIEvent(touches: [touch])
+            // As UIKit does, the window sees the event before anything in it.
+            view?.window?.sendEvent(event)
             let target = interactiveNode(at: location) ?? self
             activeTouches[identifier] = ActiveTouch(touch: touch, target: target)
             target.touchesBegan([touch], with: event)
@@ -185,6 +207,8 @@ public extension SKScene {
         case .moved, .ended, .cancelled:
             guard let active = activeTouches[identifier] else { return nil }
             active.touch.move(to: location, phase: phase, timestamp: timestamp)
+            let event = UIEvent(touches: [active.touch])
+            view?.window?.sendEvent(event)
             switch phase {
             case .moved:
                 active.target.touchesMoved([active.touch], with: event)

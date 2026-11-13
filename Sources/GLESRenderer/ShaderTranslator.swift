@@ -316,6 +316,30 @@ public enum ShaderTranslator {
     }
     """
 
+    /// What a shape mask (`SKShapeNode` as an `SKCropNode`'s mask, as the
+    /// game's scroll areas clip with) is drawn with while the stencil is
+    /// written: its rasterised coverage, which is single-channel like the
+    /// coverage shader's, cut where the shape does not reach.
+    public static let coverageMaskFragmentShader = """
+    #version 300 es
+
+    precision highp float;
+
+    in vec2 v_tex_coord;
+    in vec4 v_color_mix;
+    in float v_blend;
+
+    uniform sampler2D u_texture;
+
+    out vec4 \(fragColor);
+
+    void main() {
+        float coverage = texture(u_texture, v_tex_coord).r * v_color_mix.a;
+        if (coverage < 0.5) { discard; }
+        \(fragColor) = vec4(1.0);
+    }
+    """
+
     // MARK: Word-boundary text work
     //
     // Done by hand rather than with NSRegularExpression: this runs for every

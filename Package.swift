@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 // The Android port's SpriteKit compatibility layer.
@@ -15,6 +15,10 @@ import PackageDescription
 // the system module when the package is built on a Mac.
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
+// SpriteKit's nodes and UIKit's views are main-actor isolated, as on Apple
+// (they descend from `UIResponder`), so the tests that build scenes run on
+// the main actor too.
+let testIsolation = SwiftSetting.defaultIsolation(MainActor.self)
 
 let package = Package(
     name: "SwitchlingsAndroid",
@@ -58,13 +62,13 @@ let package = Package(
             name: "PlatformShimTests",
             dependencies: ["PlatformShim", "SpriteKitShim"],
             path: "Tests/PlatformShimTests",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine, testIsolation]
         ),
         .testTarget(
             name: "SpriteKitShimTests",
             dependencies: ["SpriteKitShim"],
             path: "Tests/SpriteKitShimTests",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine, testIsolation]
         ),
         // The rig runtime, run against the real rigs in Assets/Rigs.
         //
@@ -79,13 +83,13 @@ let package = Package(
         .testTarget(
             name: "RigRuntimeTests",
             path: "Tests/RigRuntimeTests",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine, testIsolation]
         ),
         .testTarget(
             name: "GLESRendererTests",
             dependencies: ["GLESRenderer"],
             path: "Tests/GLESRendererTests",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine, testIsolation]
         ),
     ]
 )

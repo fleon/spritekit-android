@@ -14,6 +14,27 @@ import PackageDescription
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 
+// The app target's own concurrency settings (Switchlings.xcodeproj): Swift 5,
+// main-actor isolation by default and Approachable Concurrency. The game's
+// files are written against these — a scene calls `SettingsFlow` (explicitly
+// `@MainActor`) from its own methods, which only holds if the scene is
+// main-actor isolated too — so they compile here under the same ones. The
+// app's member import visibility is left out: it only adds strictness, and
+// here Foundation's members (`isLowPowerModeEnabled`) come from the shim.
+let gameSettings: [SwiftSetting] = [
+    v5, shimDefine,
+    .defaultIsolation(MainActor.self),
+    .enableUpcomingFeature("DisableOutwardActorInference"),
+    .enableUpcomingFeature("GlobalActorIsolatedTypesUsability"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
+    .enableUpcomingFeature("InferSendableFromCaptures"),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    // On x86_64, corelibs' `CGFloat` takes a `Float80` too, and one of the
+    // game's longer `CGFloat` expressions (`MechanicSampleNode.opaqueBounds`)
+    // then runs past the type checker's default scope limit. arm64 is fine.
+    .unsafeFlags(["-Xfrontend", "-solver-scope-threshold=10000000"]),
+]
+
 let package = Package(
     name: "SwitchlingsCompat",
     products: [
@@ -43,6 +64,12 @@ let package = Package(
         .target(name: "QuartzCore",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
                 path: "Sources/QuartzCore", swiftSettings: [v5, shimDefine]),
+        .target(name: "StoreKit",
+                dependencies: [.product(name: "SpriteKitShim", package: "Android"), .product(name: "PlatformShim", package: "Android")],
+                path: "Sources/StoreKit", swiftSettings: [v5, shimDefine]),
+        .target(name: "CryptoKit",
+                dependencies: [.product(name: "PlatformShim", package: "Android")],
+                path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
         // The share film's three (`SolutionFilm`, `FilmSoundtrack`).
         .target(name: "Metal",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
@@ -72,16 +99,10 @@ let package = Package(
                 .product(name: "PlatformShim", package: "Android"),
                 .product(name: "Macros", package: "Macros"),
                 "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "CoreImage", "QuartzCore", "os", "simd",
-                "Metal", "CoreVideo", "AVFoundation",
+                "Metal", "CoreVideo", "AVFoundation", "StoreKit", "CryptoKit",
             ],
             path: "Sources/GameCompat",
-            // As the Xcode project builds the game (SWIFT_DEFAULT_ACTOR_ISOLATION
-            // = MainActor): `WorldLight.apply` calls the main actor's
-            // `BuildGate.unlessBuilding` from code that is main-actor only
-            // by that default. The shim's `SKNode` and `UIView` are
-            // `@preconcurrency @MainActor`, as SpriteKit's and UIKit's are,
-            // so the game's overrides agree with what they override.
-            swiftSettings: [v5, shimDefine, .defaultIsolation(MainActor.self)]
+            swiftSettings: gameSettings
         ),
     ]
 )

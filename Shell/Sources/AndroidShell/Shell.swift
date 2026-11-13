@@ -49,6 +49,10 @@ public enum Shell {
         // the action system, `u_time` and the frame loop cannot drift apart.
         MediaTime.source = { ShellClock.now }
 
+        // The back button comes to the game, which decides whether it goes
+        // back or leaves (`SDL_SendAndroidBackButton` when it leaves).
+        SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1")
+
         guard SDL_Init(SWITCHLINGS_INIT_FLAGS) else {
             Log.error("SDL_Init failed: \(sdlError)")
             return 1
@@ -93,7 +97,7 @@ public enum Shell {
         SDL_GL_SetSwapInterval(1)
 
         var size = drawableSize(of: window)
-        let info = RenderContext(
+        var info = RenderContext(
             vendor: glString(GLenum(GL_VENDOR)),
             renderer: glString(GLenum(GL_RENDERER)),
             version: glString(GLenum(GL_VERSION)),
@@ -105,11 +109,17 @@ public enum Shell {
         Log.info("GL_VERSION  \(info.version)")
         Log.info("GL_SHADING_LANGUAGE_VERSION \(info.shadingLanguageVersion)")
         Log.info("drawable \(Int(size.width)) x \(Int(size.height)) px")
+        info.displayScale = CGFloat(SDL_GetWindowDisplayScale(window))
+        Log.info("display scale \(info.displayScale) px a point")
 
+        SystemBridge.install(window: window)
         let renderer = (factory ?? makeRenderer ?? { ClearScreenRenderer(context: $0) })(info)
         renderer.rendererDidStart(info)
         renderer.drawableSizeDidChange(to: size)
+        var metrics = windowMetrics(of: window)
+        renderer.windowMetricsDidChange(metrics)
         defer { renderer.rendererWillStop() }
+        let gamepads = GamepadBridge()
 
         var running = true
         var foreground = true
@@ -126,6 +136,7 @@ public enum Shell {
             while SDL_PollEvent(&event) {
                 switch event.type {
                 case SDL_EVENT_QUIT.rawValue, SDL_EVENT_TERMINATING.rawValue:
+                    GameEnvironment.save()
                     Log.info("shutting down on \(eventName(event.type))")
                     running = false
                 case SDL_EVENT_WILL_ENTER_BACKGROUND.rawValue:
@@ -135,11 +146,41 @@ public enum Shell {
                     audio.suspend()
                     // A share film waits meanwhile, as nothing draws for it.
                     UIApplication.shared.resignActive()
+                    // Android may end a backgrounded app without a word:
+                    // what the game saved goes to disk now.
+                    GameEnvironment.save()
+                    renderer.applicationStateDidChange(active: false)
                 case SDL_EVENT_DID_ENTER_FOREGROUND.rawValue:
                     foreground = true
                     previous = ShellClock.now
                     audio.resume()
                     UIApplication.shared.becomeActive()
+                    renderer.applicationStateDidChange(active: true)
+                case SDL_EVENT_KEY_DOWN.rawValue:
+                    let key = event.key
+                    if key.scancode == SDL_SCANCODE_AC_BACK {
+                        // Nothing took it on the title: Android's own back,
+                        // which leaves the game.
+                        if !renderer.receive(.back) { SDL_SendAndroidBackButton() }
+                    } else if !key.repeat {
+                        _ = renderer.receive(.key(usage: Int(key.scancode.rawValue), modifiers: modifierFlags(key.mod)))
+                    }
+                case SDL_EVENT_TEXT_INPUT.rawValue:
+                    if let text = event.text.text { _ = renderer.receive(.text(String(cString: text))) }
+                case SDL_EVENT_GAMEPAD_ADDED.rawValue,
+                     SDL_EVENT_GAMEPAD_REMOVED.rawValue,
+                     SDL_EVENT_GAMEPAD_BUTTON_DOWN.rawValue,
+                     SDL_EVENT_GAMEPAD_BUTTON_UP.rawValue,
+                     SDL_EVENT_GAMEPAD_AXIS_MOTION.rawValue:
+                    for input in gamepads.translate(event) { _ = renderer.receive(.gamepad(input)) }
+                case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED.rawValue,
+                     SDL_EVENT_DISPLAY_ORIENTATION.rawValue,
+                     SDL_EVENT_WINDOW_DISPLAY_CHANGED.rawValue:
+                    let updated = windowMetrics(of: window)
+                    if updated != metrics {
+                        metrics = updated
+                        renderer.windowMetricsDidChange(metrics)
+                    }
                 case SDL_EVENT_FINGER_DOWN.rawValue,
                      SDL_EVENT_FINGER_MOTION.rawValue,
                      SDL_EVENT_FINGER_UP.rawValue,
@@ -151,6 +192,8 @@ public enum Shell {
                         size = updated
                         Log.info("drawable \(Int(size.width)) x \(Int(size.height)) px")
                         renderer.drawableSizeDidChange(to: size)
+                        metrics = windowMetrics(of: window)
+                        renderer.windowMetricsDidChange(metrics)
                     }
                 default:
                     break
@@ -188,8 +231,11 @@ public enum Shell {
             SDL_GL_SwapWindow(window)
             index += 1
 
-            // Proof the loop is live, not one frame stuck on screen.
+            // Proof the loop is live, not one frame stuck on screen. Saved
+            // data goes to disk on the same beat, as Apple's user defaults
+            // write themselves out a moment after each change.
             if now - lastReport >= 5 {
+                GameEnvironment.save()
                 Log.info("\(index) frames, \(String(format: "%.1f", Double(index) / now)) fps average")
                 lastReport = now
             }
@@ -207,6 +253,40 @@ public enum Shell {
     static let skippedFrameWait: UInt32 = 2
 
     static var sdlError: String { String(cString: SDL_GetError()) }
+
+    /// The safe area, which way up, the refresh rate and the density.
+    static func windowMetrics(of window: OpaquePointer) -> WindowMetrics {
+        var safe = SDL_Rect()
+        var w: Int32 = 0, h: Int32 = 0
+        SDL_GetWindowSize(window, &w, &h)
+        let scale = CGFloat(SDL_GetWindowPixelDensity(window))
+        _ = SDL_GetWindowSafeArea(window, &safe)
+        let display = SDL_GetDisplayForWindow(window)
+        let refresh = SDL_GetCurrentDisplayMode(display).map { Int($0.pointee.refresh_rate.rounded()) } ?? 60
+        // The safe area is in window coordinates; the drawable is in pixels.
+        return WindowMetrics(
+            safeArea: (
+                top: CGFloat(safe.y) * scale,
+                left: CGFloat(safe.x) * scale,
+                bottom: CGFloat(h - safe.y - safe.h) * scale,
+                right: CGFloat(w - safe.x - safe.w) * scale
+            ),
+            orientation: Int(SDL_GetCurrentDisplayOrientation(display).rawValue),
+            refreshRate: max(refresh, 1),
+            displayScale: CGFloat(SDL_GetWindowDisplayScale(window))
+        )
+    }
+
+    /// SDL's modifier bits as UIKit's `UIKeyModifierFlags` raw values.
+    static func modifierFlags(_ mod: SDL_Keymod) -> Int {
+        var flags = 0
+        if mod & SDL_Keymod(SDL_KMOD_CAPS) != 0 { flags |= 1 << 16 }
+        if mod & SDL_Keymod(SDL_KMOD_SHIFT) != 0 { flags |= 1 << 17 }
+        if mod & SDL_Keymod(SDL_KMOD_CTRL) != 0 { flags |= 1 << 18 }
+        if mod & SDL_Keymod(SDL_KMOD_ALT) != 0 { flags |= 1 << 19 }
+        if mod & SDL_Keymod(SDL_KMOD_GUI) != 0 { flags |= 1 << 20 }
+        return flags
+    }
 
     static var sdlVersion: String {
         "\(SDL_MAJOR_VERSION).\(SDL_MINOR_VERSION).\(SDL_MICRO_VERSION)"

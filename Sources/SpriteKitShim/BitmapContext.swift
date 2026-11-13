@@ -31,10 +31,10 @@ public final class BitmapContext {
     /// How a drawing operation combines with what is already there.
     ///
     /// Spelled as CoreGraphics spells it so `CGBlendMode` can be an alias.
-    /// The separable blends and the Porter-Duff set are here; the four
-    /// non-separable ones (hue, saturation, color, luminosity) and the two
-    /// plus modes fall back to `normal`, because nothing in the game uses
-    /// them and guessing at them would be worse than not having them.
+    /// Every one CoreGraphics has: the separable blends, the four
+    /// non-separable ones (hue, saturation, color, luminosity), the two plus
+    /// modes and the Porter-Duff set (`BlendModeTests` checks each against
+    /// CoreGraphics on the Mac).
     public enum BlendMode: Int, Sendable {
         case normal, multiply, screen, overlay, darken, lighten
         case colorDodge, colorBurn, softLight, hardLight, difference, exclusion
@@ -156,7 +156,22 @@ public final class BitmapContext {
 
     /// What `CGContext.data` hands back — the live pixels, premultiplied
     /// RGBA8. `MechanicSampleNode` reads a context's bytes this way.
-    public var data: UnsafeMutableRawPointer? { UnsafeMutableRawPointer(storage) }
+    public var data: UnsafeMutableRawPointer? {
+        guard exposesAlphaOnly else { return UnsafeMutableRawPointer(storage) }
+        // An alpha-only bitmap's bytes: one a pixel, its coverage, read off
+        // the RGBA it is drawn into as it stands now.
+        let plane = alphaPlane ?? UnsafeMutablePointer<UInt8>.allocate(capacity: width * height)
+        alphaPlane = plane
+        for row in 0 ..< height {
+            for column in 0 ..< width { plane[row * width + column] = storage[row * bytesPerRow + column * 4 + 3] }
+        }
+        return UnsafeMutableRawPointer(plane)
+    }
+
+    /// Set for a context made alpha-only (`CGImageAlphaInfo.alphaOnly`):
+    /// it draws as RGBA, and `data` hands back the coverage alone.
+    public var exposesAlphaOnly = false
+    private var alphaPlane: UnsafeMutablePointer<UInt8>?
 
     private var state: State
     private var stack: [State] = []
@@ -229,6 +244,7 @@ public final class BitmapContext {
     deinit {
         for layer in layers where layer.ownsStorage { layer.storage.deallocate() }
         if ownsStorage { storage.deallocate() }
+        alphaPlane?.deallocate()
     }
 
     // MARK: Graphics state
@@ -1094,11 +1110,68 @@ public final class BitmapContext {
              .colorDodge, .colorBurn, .hardLight, .softLight,
              .difference, .exclusion:
             return separable(mode, src: src, dst: dst)
+        case .hue, .saturation, .color, .luminosity:
+            return nonSeparable(mode, src: src, dst: dst)
+        case .plusLighter:
+            return Premultiplied(r: min(1, src.r + dst.r), g: min(1, src.g + dst.g), b: min(1, src.b + dst.b), a: min(1, src.a + dst.a))
+        case .plusDarker:
+            // CoreGraphics': R = max(0, 1 − ((1 − D) + (1 − S))), on premultiplied values.
+            let a = min(1, src.a + dst.a)
+            func channel(_ s: CGFloat, _ d: CGFloat) -> CGFloat { max(0, a - ((src.a - s) + (dst.a - d))) }
+            return Premultiplied(r: channel(src.r, dst.r), g: channel(src.g, dst.g), b: channel(src.b, dst.b), a: a)
         default:
-            // normal, and the four non-separable modes plus the two plus
-            // modes, which nothing in the game asks for.
             return mix(1, 1 - src.a)
         }
+    }
+
+    /// The four non-separable blends, in the PDF/CSS formulation: the
+    /// source's hue, saturation or luminosity set into the backdrop's, then
+    /// composited source-over.
+    private static func nonSeparable(_ mode: BlendMode, src: Premultiplied, dst: Premultiplied) -> Premultiplied {
+        typealias RGB = (r: CGFloat, g: CGFloat, b: CGFloat)
+        func lum(_ c: RGB) -> CGFloat { 0.3 * c.r + 0.59 * c.g + 0.11 * c.b }
+        func clip(_ c: RGB) -> RGB {
+            let l = lum(c)
+            let n = min(c.r, c.g, c.b), x = max(c.r, c.g, c.b)
+            var c = c
+            if n < 0 {
+                c = (l + (c.r - l) * l / (l - n), l + (c.g - l) * l / (l - n), l + (c.b - l) * l / (l - n))
+            }
+            if x > 1 {
+                c = (l + (c.r - l) * (1 - l) / (x - l), l + (c.g - l) * (1 - l) / (x - l), l + (c.b - l) * (1 - l) / (x - l))
+            }
+            return c
+        }
+        func setLum(_ c: RGB, _ l: CGFloat) -> RGB {
+            let d = l - lum(c)
+            return clip((c.r + d, c.g + d, c.b + d))
+        }
+        func sat(_ c: RGB) -> CGFloat { max(c.r, c.g, c.b) - min(c.r, c.g, c.b) }
+        func setSat(_ c: RGB, _ s: CGFloat) -> RGB {
+            let values = [c.r, c.g, c.b]
+            let maximum = values.max() ?? 0, minimum = values.min() ?? 0
+            guard maximum > minimum else { return (0, 0, 0) }
+            func scaled(_ v: CGFloat) -> CGFloat { (v - minimum) * s / (maximum - minimum) }
+            return (scaled(c.r), scaled(c.g), scaled(c.b))
+        }
+        let cs: RGB = src.a > 0 ? (src.r / src.a, src.g / src.a, src.b / src.a) : (0, 0, 0)
+        let cb: RGB = dst.a > 0 ? (dst.r / dst.a, dst.g / dst.a, dst.b / dst.a) : (0, 0, 0)
+        let blended: RGB
+        switch mode {
+        case .hue: blended = setLum(setSat(cs, sat(cb)), lum(cb))
+        case .saturation: blended = setLum(setSat(cb, sat(cs)), lum(cb))
+        case .color: blended = setLum(cs, lum(cb))
+        default: blended = setLum(cb, lum(cs))
+        }
+        func channel(_ sp: CGFloat, _ dp: CGFloat, _ b: CGFloat) -> CGFloat {
+            (1 - dst.a) * sp + (1 - src.a) * dp + src.a * dst.a * b
+        }
+        return Premultiplied(
+            r: channel(src.r, dst.r, blended.r),
+            g: channel(src.g, dst.g, blended.g),
+            b: channel(src.b, dst.b, blended.b),
+            a: src.a + dst.a * (1 - src.a)
+        )
     }
 
     /// The separable blends, in the PDF/CSS formulation: blend the colours
@@ -1118,8 +1191,9 @@ public final class BitmapContext {
             case .colorBurn: blended = cs <= 0 ? 0 : 1 - min(1, (1 - cb) / cs)
             case .hardLight: blended = cs <= 0.5 ? 2 * cs * cb : 1 - 2 * (1 - cs) * (1 - cb)
             case .softLight:
-                let d = cb <= 0.25 ? ((16 * cb - 12) * cb + 4) * cb : sqrt(cb)
-                blended = cs <= 0.5 ? cb - (1 - 2 * cs) * cb * (1 - cb) : cb + (2 * cs - 1) * (d - cb)
+                // CoreGraphics' soft light is Pegtop's, not the PDF's
+                // (`BlendModeTests` reads it back).
+                blended = (1 - 2 * cs) * cb * cb + 2 * cs * cb
             case .difference: blended = abs(cs - cb)
             case .exclusion: blended = cs + cb - 2 * cs * cb
             default: blended = cs

@@ -56,7 +56,7 @@ extension SKScene {
     ///
     /// `GLESRenderer.Viewport` projects with exactly this rectangle; the
     /// numbers are only ever worked out here.
-    public static func visibleRect(
+    nonisolated public static func visibleRect(
         sceneSize: CGSize,
         anchorPoint: CGPoint,
         scaleMode: SKSceneScaleMode,

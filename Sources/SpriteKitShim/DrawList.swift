@@ -144,13 +144,13 @@ public struct DrawList {
     /// Effect and crop nodes are the exception, as they are in SpriteKit:
     /// each composites its subtree as one picture, so it is one command at
     /// its own depth, with its contents ordered the same way inside it.
-    public init(scene: SKNode) {
+    @MainActor public init(scene: SKNode) {
         self.init(scene: scene, transform: .identity)
     }
 
     /// The same, drawn through `transform`: how the view puts a scene behind
     /// its camera (`SKScene.cameraTransform`).
-    public init(scene: SKNode, transform: CGAffineTransform) {
+    @MainActor public init(scene: SKNode, transform: CGAffineTransform) {
         commands = DrawList.ordered(
             DrawList.collect(scene, parentTransform: transform, parentAlpha: 1, parentZ: 0)
         )
@@ -170,7 +170,7 @@ public struct DrawList {
 
     /// Every command under `node`, each with its **own** accumulated z, in
     /// tree order and unsorted — sorting happens once, over the whole list.
-    private static func collect(
+    @MainActor private static func collect(
         _ node: SKNode,
         parentTransform: CGAffineTransform,
         parentAlpha: CGFloat,
@@ -205,10 +205,14 @@ public struct DrawList {
         if let crop = node as? SKCropNode {
             // The mask node itself draws the shape, so collect it, not just
             // its children — a solid sprite mask has none.
+            // Both in the crop node's own space, carried by its transform:
+            // the renderer draws a crop's mask and contents where they
+            // stand, through the stencil, with no composite of its own to
+            // put them back in place.
             let mask = crop.maskNode.map {
-                collect($0, parentTransform: .identity, parentAlpha: 1, parentZ: 0)
+                collect($0, parentTransform: transform, parentAlpha: 1, parentZ: 0)
             } ?? []
-            let contents = children(of: node, transform: .identity, alpha: 1, z: 0)
+            let contents = children(of: node, transform: transform, alpha: alpha, z: 0)
             return [(z, Command.crop(Crop(
                 transform: transform,
                 mask: wrap(ordered(mask)),
@@ -231,8 +235,12 @@ public struct DrawList {
                     texture: sprite.texture,
                     textureRect: piece.textureRect,
                     color: sprite.color,
-                    colorBlendFactor: sprite.colorBlendFactor,
-                    alpha: alpha,
+                    // SpriteKit draws an untextured sprite in its colour
+                    // whatever its blend factor says.
+                    colorBlendFactor: sprite.texture == nil ? 1 : sprite.colorBlendFactor,
+                    // ...and its colour's alpha with it (a clear one draws
+                    // nothing), which a textured sprite's tint never carries.
+                    alpha: sprite.texture == nil ? alpha * sprite.color.alpha : alpha,
                     blendMode: sprite.blendMode,
                     shader: sprite.shader,
                     attributeValues: sprite.attributeValues
@@ -284,7 +292,7 @@ public struct DrawList {
     /// One sprite's quads: just itself, or the nine a sliced one draws as.
     /// Each carries the anchor point that puts its own frame where the whole
     /// sprite would have put that part of itself.
-    private static func slices(
+    @MainActor private static func slices(
         of sprite: SKSpriteNode
     ) -> [(size: CGSize, anchorPoint: CGPoint, textureRect: CGRect)] {
         let textureRect = sprite.texture?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -308,7 +316,7 @@ public struct DrawList {
         }
     }
 
-    private static func children(
+    @MainActor private static func children(
         of node: SKNode,
         transform: CGAffineTransform,
         alpha: CGFloat,

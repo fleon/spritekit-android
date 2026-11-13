@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 // Android-only, like Compat/. Do not build this package on a Mac: it reaches
@@ -45,6 +45,11 @@ import PackageDescription
 //                  nothing in the shell knows what a sprite is.
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
+// The frame loop, the renderer and the game share one thread, which is the
+// main actor's (`MainActorJobs`, `MainThread`): SpriteKit's nodes are main-
+// actor isolated, as on Apple, so the code that drives them is too. Not
+// SDLAudio, whose callbacks run on SDL's audio thread.
+let mainActor = SwiftSetting.defaultIsolation(MainActor.self)
 
 let package = Package(
     name: "SwitchlingsShell",
@@ -90,7 +95,7 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "Android"),
             ],
             path: "Sources/ShellCore",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine, mainActor]
         ),
 
         .target(
@@ -102,7 +107,7 @@ let package = Package(
                 .product(name: "PlatformShim", package: "Android"),
             ],
             path: "Sources/SDLAudio",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine, mainActor]
         ),
 
         .target(
@@ -117,7 +122,7 @@ let package = Package(
                 .product(name: "GameCompat", package: "Compat"),
             ],
             path: "Sources/GLESBackend",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine, mainActor]
         ),
 
         .target(

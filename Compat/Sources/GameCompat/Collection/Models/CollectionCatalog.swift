@@ -1,0 +1,1 @@
+../../../../../../Source/Collection/Models/CollectionCatalog.swift

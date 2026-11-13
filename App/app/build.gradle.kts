@@ -35,6 +35,17 @@ val stageLevelAssets = tasks.register<Sync>("stageLevelAssets") {
     into(file("$levelAssets/levels"))
 }
 
+// Each language's strings, under `assets/lproj/<language>.lproj/`: what
+// `Localization` opens with `Bundle(path:)`, as on Apple. Only the `.strings`
+// files: the launch storyboard in Base.lproj is Apple's alone.
+val stringAssets = "build/generated/stringAssets"
+val stageStrings = tasks.register<Sync>("stageStrings") {
+    from(rootProject.file("../../Assets")) {
+        include("*.lproj/*.strings")
+    }
+    into(file("$stringAssets/lproj"))
+}
+
 android {
     namespace = "com.fleon.switchlings"
     compileSdk = property("switchlings.compileSdk").toString().toInt()
@@ -65,7 +76,7 @@ android {
             // art's directory is a build output that
             // `npm run art -- --android` rewrites wholesale, so nothing
             // else may live inside it.
-            assets.srcDirs("../../Assets", stagedFonts, audioAssets, levelAssets)
+            assets.srcDirs("../../Assets", stagedFonts, audioAssets, levelAssets, stringAssets)
         }
     }
 
@@ -84,7 +95,7 @@ android {
         // (`AAsset_openFileDescriptor` fails on a deflated asset). Keep m4a
         // here if the music ever moves container — ogg and mp3 are listed
         // for that day.
-        noCompress += listOf("png", "json", "ttf", "m4a", "wav", "ogg", "mp3")
+        noCompress += listOf("png", "json", "ttf", "m4a", "wav", "ogg", "mp3", "strings")
     }
 
     packaging {
@@ -127,7 +138,7 @@ val stageFonts = tasks.register<Copy>("stageFonts") {
 // Every staging task has to run before AGP merges the asset folders, and
 // AGP will not infer it from `assets.srcDirs` alone (see the note there).
 tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configureEach {
-    dependsOn(stageFonts, stageAudio, stageLevelAssets)
+    dependsOn(stageFonts, stageAudio, stageLevelAssets, stageStrings)
 }
 
 // An APK with no Swift in it still installs and still launches — and then

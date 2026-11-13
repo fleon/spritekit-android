@@ -9,7 +9,7 @@ import Foundation
 /// renderer rewrites the preamble to GLSL ES 3.0 at upload — the dialect
 /// change is textual and belongs in one place, not in 31 files.
 public final class SKShader: @unchecked Sendable {
-    public var source: String
+    public var source: String?
     public var uniforms: [SKUniform]
     public var attributes: [SKAttribute] = []
 

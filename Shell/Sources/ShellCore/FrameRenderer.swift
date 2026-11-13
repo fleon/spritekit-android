@@ -56,6 +56,18 @@ public protocol FrameRenderer: AnyObject {
     /// touch lands in a scene depends on the projection, and the projection
     /// is the renderer's, so undoing it is the renderer's job too.
     func receive(_ touch: TouchEvent)
+
+    /// Everything else the player does: the back button, a key, typing, a
+    /// gamepad, a link. Returns whether the game took it; the shell does
+    /// Android's own thing with what it does not (back leaves the app).
+    func receive(_ input: InputEvent) -> Bool
+
+    /// The window's safe area, way up or refresh rate changed (or are known
+    /// for the first time). Always called before the first frame.
+    func windowMetricsDidChange(_ metrics: WindowMetrics)
+
+    /// The activity came back to the front, or went away.
+    func applicationStateDidChange(active: Bool)
 }
 
 public extension FrameRenderer {
@@ -64,6 +76,48 @@ public extension FrameRenderer {
     func shouldDraw(_ frame: Frame) -> Bool { true }
     func rendererWillStop() {}
     func receive(_ touch: TouchEvent) {}
+    func receive(_ input: InputEvent) -> Bool { false }
+    func windowMetricsDidChange(_ metrics: WindowMetrics) {}
+    func applicationStateDidChange(active: Bool) {}
+}
+
+/// Input other than touches, as the shell reads it from SDL.
+public enum InputEvent: Sendable {
+    /// Android's back button or back gesture.
+    case back
+    /// A hardware key, by its USB HID usage (SDL's scancodes are that table),
+    /// with UIKit's modifier bits.
+    case key(usage: Int, modifiers: Int)
+    /// Text the keyboard typed while a text field takes typing.
+    case text(String)
+    /// A gamepad, in GameController's terms.
+    case gamepad(GamepadEvent)
+    /// The game was opened with a link (`switchlings://…`).
+    case link(URL)
+}
+
+/// What the window knows about where it can draw.
+public struct WindowMetrics: Equatable, Sendable {
+    /// What system bars and cutouts cover at each edge, in pixels.
+    public var safeArea: (top: CGFloat, left: CGFloat, bottom: CGFloat, right: CGFloat)
+    /// Which way up: SDL's `SDL_DisplayOrientation` raw value.
+    public var orientation: Int
+    /// The display's refresh rate in frames a second, rounded.
+    public var refreshRate: Int
+    /// Android's display density: pixels per density-independent pixel (160 dpi = 1), for telling a tablet by its smallest width.
+    public var displayScale: CGFloat
+
+    public init(safeArea: (top: CGFloat, left: CGFloat, bottom: CGFloat, right: CGFloat), orientation: Int, refreshRate: Int, displayScale: CGFloat) {
+        self.safeArea = safeArea
+        self.orientation = orientation
+        self.refreshRate = refreshRate
+        self.displayScale = displayScale
+    }
+
+    public static func == (a: WindowMetrics, b: WindowMetrics) -> Bool {
+        a.safeArea == b.safeArea && a.orientation == b.orientation
+            && a.refreshRate == b.refreshRate && a.displayScale == b.displayScale
+    }
 }
 
 /// One finger, one moment.
@@ -102,6 +156,9 @@ public struct RenderContext: Sendable {
     /// The drawable size in physical pixels at the moment the context became
     /// current.
     public var size: CGSize
+    /// The display's pixels per density-independent pixel
+    /// (`SDL_GetWindowDisplayScale`): what a point is on Android.
+    public var displayScale: CGFloat = 0
 
     public init(
         vendor: String,

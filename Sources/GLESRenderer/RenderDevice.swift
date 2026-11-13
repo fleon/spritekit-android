@@ -184,7 +184,7 @@ public final class ResourceCache {
         let uniforms = shader.uniforms.map { (name: $0.name, type: glslType(for: $0.value)) }
 
         let fragment = ShaderTranslator.fragmentShader(
-            from: shader.source,
+            from: shader.source ?? "",
             inputs: ShaderTranslator.Inputs(uniforms: uniforms, attributes: attributes)
         )
         let vertex = ShaderTranslator.spriteVertexShader(attributes: attributes)

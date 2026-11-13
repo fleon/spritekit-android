@@ -283,6 +283,7 @@ open class SKEmitterNode: SKNode {
 }
 
 /// One particle, in its emitter's (or target's) space.
+@MainActor
 struct Particle {
     var position: CGPoint
     var velocity: CGVector

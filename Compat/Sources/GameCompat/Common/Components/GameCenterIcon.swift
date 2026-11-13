@@ -1,0 +1,1 @@
+../../../../../../Source/Common/Components/GameCenterIcon.swift

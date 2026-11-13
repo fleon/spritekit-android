@@ -122,4 +122,26 @@ public func CTLineGetBoundsWithOptions(_ line: CTLine, _ options: CTLineBoundsOp
     )
 }
 
+
+// MARK: Registering fonts
+
+/// `FontRegistry` registers the bundled faces through this. On Android the
+/// shell has registered the same three files out of the APK before the first
+/// scene (`AssetBundle.installFonts`), so there is nothing left to do; the
+/// call answers whether the face is one the text stack holds.
+public typealias CFURL = URL
+
+public final class CFError: Error {}
+
+public enum CTFontManagerScope: UInt32, Sendable {
+    case none = 0, process, persistent, session, user
+}
+
+@discardableResult
+public func CTFontManagerRegisterFontsForURL(
+    _ fontURL: CFURL, _ scope: CTFontManagerScope, _ error: UnsafeMutablePointer<Unmanaged<CFError>?>?
+) -> Bool {
+    true
+}
+
 #endif

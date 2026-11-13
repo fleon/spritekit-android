@@ -16,7 +16,7 @@ import SpriteKitShim
 ///
 ///     typedef int (SDLCALL *SDL_main_func)(int argc, char *argv[]);
 @_cdecl("SDL_main")
-public func SDL_main(
+nonisolated public func SDL_main(
     _ argc: Int32,
     _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
@@ -33,20 +33,25 @@ public func SDL_main(
     if switchlings_set_main_executor(executor.identity, UInt(executor.implementation)) == 0 || !MainActorJobs.isInstalled {
         Log.error("could not take over the main executor — main-actor work will never run")
     }
-    // Proof it took: this runs at the top of the frame loop's first pass.
-    Task { @MainActor in
-        Log.info("main actor: jobs run on the frame thread (\(Thread.isMainThread ? "main" : "not main"))")
+    // From here on this thread is the main actor's: everything the game,
+    // the renderer and the frame loop do runs on it.
+    return MainActor.assumeIsolated {
+        // Proof it took: this runs at the top of the frame loop's first pass.
+        Task { @MainActor in
+            Log.info("main actor: jobs run on the frame thread (\(Thread.isMainThread ? "main" : "not main"))")
+        }
+
+        // What SDL was handed by MainActivity.getArguments(). The process's own
+        // argv is the zygote's, so this is the only place they exist.
+        ShellArguments.install(argc: argc, argv: argv)
+        GameEnvironment.install()
+        FilmSetup.useCacheForTemporaryFiles()
+        FilmSetup.install()
+
+        // Hands the shell a real renderer. If the art is missing from the APK
+        // the index does not load and every texture resolves to the white
+        // placeholder — tinted rectangles, visibly wrong rather than blank.
+        GLESBackend.prepare()
+        return Shell.run(makeRenderer: GLESBackend.makeRenderer)
     }
-
-    // What SDL was handed by MainActivity.getArguments(). The process's own
-    // argv is the zygote's, so this is the only place they exist.
-    ShellArguments.install(argc: argc, argv: argv)
-    FilmSetup.useCacheForTemporaryFiles()
-    FilmSetup.install()
-
-    // Hands the shell a real renderer. If the art is missing from the APK
-    // the index does not load and every texture resolves to the white
-    // placeholder — tinted rectangles, visibly wrong rather than blank.
-    GLESBackend.prepare()
-    return Shell.run(makeRenderer: GLESBackend.makeRenderer)
 }

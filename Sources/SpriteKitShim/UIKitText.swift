@@ -1,0 +1,182 @@
+#if SPRITEKIT_SHIM && !canImport(Darwin)
+import Foundation
+
+// A text field, for the one the game types into: the Level Designer's
+// friend-code prompt (`CodePromptPopup`), which lays an invisible
+// `UITextField` over its boxes and reads every edit through the delegate.
+// On Android the keyboard is SDL's text input (`SDL_StartTextInput`), which
+// the shell starts and stops as a field becomes and resigns first responder
+// (`SystemServices.textInput`) and whose typing it hands back here
+// (`UITextField.receive`): each insertion, backspace and Return reaches the
+// delegate exactly as UIKit hands them over, so the game's own handling
+// decides what the field holds.
+
+/// UIKit's responder, for the keyboard notifications' names.
+@MainActor
+open class UIResponder {
+    public static let keyboardWillChangeFrameNotification = Notification.Name("UIKeyboardWillChangeFrameNotification")
+    public static let keyboardWillHideNotification = Notification.Name("UIKeyboardWillHideNotification")
+    public static let keyboardWillShowNotification = Notification.Name("UIKeyboardWillShowNotification")
+    public static let keyboardFrameEndUserInfoKey = "UIKeyboardFrameEndUserInfoKey"
+}
+
+public enum UITextAutocapitalizationType: Int, Sendable { case none, words, sentences, allCharacters }
+public enum UITextAutocorrectionType: Int, Sendable { case `default`, no, yes }
+public enum UITextSpellCheckingType: Int, Sendable { case `default`, no, yes }
+public enum UITextSmartDashesType: Int, Sendable { case `default`, no, yes }
+public enum UITextSmartQuotesType: Int, Sendable { case `default`, no, yes }
+public enum UITextSmartInsertDeleteType: Int, Sendable { case `default`, no, yes }
+public enum UIKeyboardType: Int, Sendable { case `default`, asciiCapable, numbersAndPunctuation, URL, numberPad }
+public enum UIReturnKeyType: Int, Sendable { case `default`, go, done, next, search, send }
+public enum UITextBorderStyle: Int, Sendable { case none, line, bezel, roundedRect }
+
+/// A position in a field's text: only its end is ever asked for.
+public final class UITextPosition: Sendable {
+    let offset: Int
+    init(offset: Int) { self.offset = offset }
+}
+
+public final class UITextRange: Sendable {
+    public let start: UITextPosition
+    public let end: UITextPosition
+    init(start: UITextPosition, end: UITextPosition) {
+        self.start = start
+        self.end = end
+    }
+}
+
+@MainActor
+public protocol UITextFieldDelegate: AnyObject {
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool
+}
+
+public extension UITextFieldDelegate {
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool { true }
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool { true }
+}
+
+/// What the shell does for a text field: shows the keyboard over the field's
+/// frame in view points, or hides it (nil).
+public enum TextInput {
+    nonisolated(unsafe) public static var show: (CGRect?) -> Void = { _ in }
+}
+
+public final class UITextField: UIView {
+    public weak var delegate: UITextFieldDelegate?
+    public var text: String? = ""
+    public var autocapitalizationType = UITextAutocapitalizationType.sentences
+    public var autocorrectionType = UITextAutocorrectionType.default
+    public var spellCheckingType = UITextSpellCheckingType.default
+    public var smartDashesType = UITextSmartDashesType.default
+    public var smartQuotesType = UITextSmartQuotesType.default
+    public var smartInsertDeleteType = UITextSmartInsertDeleteType.default
+    public var keyboardType = UIKeyboardType.default
+    public var returnKeyType = UIReturnKeyType.default
+    public var textColor: UIColor?
+    public var tintColor: UIColor?
+    public var borderStyle = UITextBorderStyle.none
+    public var selectedTextRange: UITextRange?
+    public var frame: CGRect = .zero {
+        didSet { bounds = CGRect(origin: .zero, size: frame.size) }
+    }
+    public private(set) weak var superview: UIView?
+
+    /// The field taking typing now, if any.
+    public private(set) static weak var firstResponder: UITextField?
+
+    public convenience init() {
+        self.init(frame: .zero)
+    }
+
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
+        self.frame = frame
+    }
+
+    public var endOfDocument: UITextPosition { UITextPosition(offset: (text ?? "").utf16.count) }
+    public var beginningOfDocument: UITextPosition { UITextPosition(offset: 0) }
+
+    public func textRange(from: UITextPosition, to: UITextPosition) -> UITextRange? {
+        UITextRange(start: from, end: to)
+    }
+
+    @discardableResult
+    public func becomeFirstResponder() -> Bool {
+        Self.firstResponder = self
+        TextInput.show(frame)
+        return true
+    }
+
+    @discardableResult
+    public func resignFirstResponder() -> Bool {
+        guard Self.firstResponder === self else { return false }
+        Self.firstResponder = nil
+        TextInput.show(nil)
+        return true
+    }
+
+    public var isFirstResponder: Bool { Self.firstResponder === self }
+
+    func moved(to view: UIView?) { superview = view }
+
+    public func removeFromSuperview() {
+        superview = nil
+    }
+
+    /// What the keyboard typed, as the shell reads it from SDL.
+    public enum Typing: Equatable, Sendable {
+        case insert(String)
+        case backspace
+        case `return`
+    }
+
+    /// Hands typing to the field taking it, through its delegate as UIKit
+    /// does: an insertion at the end, a backspace over the last character.
+    public static func receive(_ typing: Typing) {
+        guard let field = firstResponder else { return }
+        let current = field.text ?? ""
+        let length = current.utf16.count
+        switch typing {
+        case let .insert(string):
+            let typed = field.autocapitalizationType == .allCharacters ? string.uppercased() : string
+            if field.delegate?.textField(field, shouldChangeCharactersIn: NSRange(location: length, length: 0), replacementString: typed) ?? true {
+                field.text = current + typed
+            }
+        case .backspace:
+            guard length > 0 else { return }
+            if field.delegate?.textField(field, shouldChangeCharactersIn: NSRange(location: length - 1, length: 1), replacementString: "") ?? true {
+                field.text = String(current.dropLast())
+            }
+        case .return:
+            _ = field.delegate?.textFieldShouldReturn(field)
+        }
+    }
+}
+
+public extension UIView {
+    func addSubview(_ view: UIView) {
+        (view as? UITextField)?.moved(to: self)
+    }
+}
+
+/// UIKit's coordinate spaces, as far as the code prompt names them: the
+/// keyboard's frame comes in the screen's, which on Android is the view's.
+@MainActor
+public protocol UICoordinateSpace: AnyObject {}
+
+extension UIView: UICoordinateSpace {}
+extension UIScreen: UICoordinateSpace {}
+
+public extension UIScreen {
+    var coordinateSpace: UICoordinateSpace { self }
+}
+
+public extension UIView {
+    func convert(_ rect: CGRect, from space: UICoordinateSpace) -> CGRect { rect }
+}
+
+public extension NSValue {
+    var cgRectValue: CGRect { .zero }
+}
+#endif

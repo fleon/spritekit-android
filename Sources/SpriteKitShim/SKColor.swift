@@ -69,6 +69,20 @@ public final class SKColor: @unchecked Sendable {
     public static let blue = SKColor(red: 0, green: 0, blue: 1, alpha: 1)
 }
 
+/// UIColor is an `NSObject`, equal and hashed by its components.
+extension SKColor: Hashable {
+    public static func == (a: SKColor, b: SKColor) -> Bool {
+        a.red == b.red && a.green == b.green && a.blue == b.blue && a.alpha == b.alpha
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(red)
+        hasher.combine(green)
+        hasher.combine(blue)
+        hasher.combine(alpha)
+    }
+}
+
 public typealias UIColor = SKColor
 
 public enum SKBlendMode: Int, Sendable {

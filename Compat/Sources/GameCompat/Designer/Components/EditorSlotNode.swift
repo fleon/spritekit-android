@@ -1,0 +1,1 @@
+../../../../../../Source/Designer/Components/EditorSlotNode.swift

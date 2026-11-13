@@ -8,6 +8,11 @@ import Foundation
 /// wrapper over a C++ engine, which Swift cannot subclass.
 @preconcurrency @MainActor
 open class SKNode {
+    /// UIKit's accessibility label, which every `NSObject` carries. Kept,
+    /// not read: the game supports no screen reader (AGENTS.md), and only
+    /// the Help button's badge sets one.
+    open var accessibilityLabel: String?
+
     // MARK: Tree
 
     public private(set) weak var parent: SKNode?

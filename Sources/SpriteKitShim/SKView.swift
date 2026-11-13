@@ -71,6 +71,12 @@ open class SKView: UIView {
     /// share film turning it off (`SolutionShare`) changes nothing.
     public var isAsynchronous = true
 
+    /// Always so here: the draw list is ordered by depth alone (README,
+    /// "a frame is a value"), which is what this asks SpriteKit for.
+    public var ignoresSiblingOrder = true
+    /// Carried: nothing off screen costs more than its transform here.
+    public var shouldCullNonVisibleNodes = true
+
     /// How fast transitions play: the port's own, for filming a 0.1-second
     /// fade on an emulator that draws a few frames a second
     /// (`debug.switchlings.transitionslowdown`). Not SpriteKit API.
@@ -98,6 +104,19 @@ open class SKView: UIView {
     /// When the frame rate last let a frame through, for
     /// `preferredFramesPerSecond`.
     private var lastFired: TimeInterval?
+
+    /// Sizes the view for a drawable of `pixels` on a display of
+    /// `displayScale` pixels per density-independent pixel (Android's dp,
+    /// `SDL_GetWindowDisplayScale`): a point is one of those, as an iOS
+    /// point is one of its screen's, so a 420 dpi phone's 1080 × 2400 is
+    /// 411 × 914 points, near an iPhone's, and the game's own layout sizes
+    /// every popup and sheet as it does there. The art's export scale has
+    /// no say: its textures are simply drawn at this many pixels a point.
+    public func resize(drawable pixels: CGSize, displayScale: CGFloat) {
+        let scale = displayScale > 0 ? displayScale : contentScaleFactor
+        contentScaleFactor = scale
+        bounds = CGRect(x: 0, y: 0, width: pixels.width / scale, height: pixels.height / scale)
+    }
 
     public init(bounds: CGRect) {
         super.init(frame: bounds)

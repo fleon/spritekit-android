@@ -3,11 +3,20 @@ package com.fleon.switchlings;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.content.Context;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.KeyEvent;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.util.Log;
 
 import java.io.File;
 
 import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLSurface;
 
 /**
  * The APK's only activity.
@@ -116,5 +125,73 @@ public class MainActivity extends SDLActivity {
                 }
             }
         });
+    }
+
+    /**
+     * Android's back goes to the game first, which treats it as the Apple TV
+     * remote's Back (Escape): it closes a popup or goes back, and leaves the
+     * game only from the title.
+     *
+     * <p>Targeting Android 16, the system no longer sends a back key or calls
+     * {@code onBackPressed} (predictive back), so the gesture is caught here
+     * and handed to SDL as the back key it used to be. Older versions send
+     * the key themselves, and SDL's trap hint (set by the shell) keeps
+     * {@code onBackPressed} from finishing the activity.
+     */
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            OnBackInvokedCallback callback = () -> {
+                SDLActivity.onNativeKeyDown(KeyEvent.KEYCODE_BACK);
+                SDLActivity.onNativeKeyUp(KeyEvent.KEYCODE_BACK);
+            };
+            backCallback = callback;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+        }
+    }
+
+    /** Kept so the dispatcher's callback lives as long as the activity. */
+    private Object backCallback;
+
+    /**
+     * What the game asks for when nothing took the back button
+     * ({@code SDL_SendAndroidBackButton}): leave, as back from a launcher
+     * app's first screen does — to the background, not finished.
+     */
+    @Override
+    public void superOnBackPressed() {
+        moveTaskToBack(true);
+    }
+
+    @Override
+    protected SDLSurface createSDLSurface(Context context) {
+        return new GameSurface(context);
+    }
+
+    /**
+     * SDL's surface, with the safe area iOS would give: the system bars and
+     * the display cutout. SDL's own adds the back-gesture edges (about 30 dp
+     * each side), which an iPhone's safe area has no counterpart for, so
+     * every screen came out 60 points narrower than the same screen on iOS.
+     * SDL's listener still runs first, for the keyboard; the insets it
+     * reports are then replaced.
+     */
+    static final class GameSurface extends SDLSurface {
+        GameSurface(Context context) {
+            super(context);
+        }
+
+        @Override
+        public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+            WindowInsets result = super.onApplyWindowInsets(v, insets);
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets safe = insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                SDLActivity.onNativeInsetsChanged(safe.left, safe.right, safe.top, safe.bottom);
+            }
+            return result;
+        }
     }
 }

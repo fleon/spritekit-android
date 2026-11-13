@@ -1,0 +1,1 @@
+../../../../../../Source/Game/Models/GuideNews.swift

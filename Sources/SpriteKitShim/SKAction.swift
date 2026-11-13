@@ -4,12 +4,16 @@ import Foundation
 public enum SKActionTimingMode: Int, Sendable {
     case linear, easeIn, easeOut, easeInEaseOut
 
+    /// SpriteKit's curves, measured off its own renderer (`SKRenderer` on
+    /// the Mac, a `moveBy` read back at tenths of its duration): cubics, not
+    /// the quadratics they are often taken for — ease in `2t² − t³`, ease
+    /// out its mirror `t + t² − t³`, both `3t² − 2t³` (smoothstep).
     func apply(_ t: CGFloat) -> CGFloat {
         switch self {
         case .linear: return t
-        case .easeIn: return t * t
-        case .easeOut: return t * (2 - t)
-        case .easeInEaseOut: return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+        case .easeIn: return t * t * (2 - t)
+        case .easeOut: return t * (1 + t - t * t)
+        case .easeInEaseOut: return t * t * (3 - 2 * t)
         }
     }
 }
@@ -40,6 +44,7 @@ public final class SKAction {
         case repeating(SKAction, Int?)              // nil count == forever
         case removeFromParent
         case hide(Bool)
+        case setTexture(SKTexture, resize: Bool)
         case warpTo(SKWarpGeometry)                 // SKWarpGeometry.swift
         case warps([SKWarpGeometry], [TimeInterval], Bool)
     }
@@ -164,6 +169,29 @@ public final class SKAction {
         SKAction(kind: shortestUnitArc ? .rotateToShortest(angle) : .rotateTo(angle), duration: duration)
     }
 
+    /// SpriteKit's `colorize(with:colorBlendFactor:duration:)`: a sprite's
+    /// colour and blend factor, from where they stand when it starts.
+    public static func colorize(with color: SKColor, colorBlendFactor: CGFloat, duration: TimeInterval) -> SKAction {
+        final class Start { var color: SKColor?; var factor: CGFloat = 0 }
+        let start = Start()
+        return customAction(withDuration: duration) { node, elapsed in
+            guard let sprite = node as? SKSpriteNode else { return }
+            if start.color == nil {
+                start.color = sprite.color
+                start.factor = sprite.colorBlendFactor
+            }
+            guard let from = start.color else { return }
+            let t = duration > 0 ? min(max(elapsed / CGFloat(duration), 0), 1) : 1
+            sprite.color = SKColor(
+                red: from.red + (color.red - from.red) * t,
+                green: from.green + (color.green - from.green) * t,
+                blue: from.blue + (color.blue - from.blue) * t,
+                alpha: from.alpha + (color.alpha - from.alpha) * t
+            )
+            sprite.colorBlendFactor = start.factor + (colorBlendFactor - start.factor) * t
+        }
+    }
+
     public static func rotate(byAngle angle: CGFloat, duration: TimeInterval) -> SKAction {
         SKAction(kind: .rotateBy(angle), duration: duration)
     }
@@ -185,6 +213,9 @@ public final class SKAction {
     }
 
     public static func hide() -> SKAction { SKAction(kind: .hide(true), duration: 0) }
+    /// A sprite's texture, at once; `resize` takes the texture's size too.
+    public static func setTexture(_ texture: SKTexture) -> SKAction { SKAction(kind: .setTexture(texture, resize: false), duration: 0) }
+    public static func setTexture(_ texture: SKTexture, resize: Bool) -> SKAction { SKAction(kind: .setTexture(texture, resize: resize), duration: 0) }
     public static func unhide() -> SKAction { SKAction(kind: .hide(false), duration: 0) }
 
     /// SpriteKit's reverse: relative actions undo themselves, sequences run
@@ -219,10 +250,11 @@ public final class SKAction {
 
     // MARK: Playback
 
-    func makeState() -> State { State(action: self) }
+    @MainActor func makeState() -> State { State(action: self) }
 
     /// One running instance. Actions are shared and re-runnable, so all
     /// mutable playback state lives here rather than on the action.
+    @MainActor
     struct State {
         let action: SKAction
         private var elapsed: TimeInterval = 0
@@ -231,6 +263,9 @@ public final class SKAction {
         private var children: [State] = []
         private var index = 0
         private var repeated = 0
+        /// Time into the current round of a repeat, so what a frame runs
+        /// past a round's end carries into the next, as SpriteKit's does.
+        private var roundElapsed: TimeInterval = 0
 
         /// What a relative action (moveBy, fadeBy, scaleBy) measures from.
         struct Snapshot {
@@ -290,10 +325,20 @@ public final class SKAction {
                 return allDone
 
             case let .repeating(_, count):
-                if children[0].advance(by: delta, on: node) {
+                roundElapsed += delta
+                var step = delta
+                var rounds = 0
+                while children[0].advance(by: step, on: node) {
                     repeated += 1
                     if let count, repeated >= count { return true }
+                    let length = children[0].action.totalDuration
+                    let overflow = length > 0 ? roundElapsed - length : 0
                     children[0] = children[0].action.makeState()
+                    roundElapsed = max(0, overflow)
+                    // Instant rounds wait for the next frame, as SpriteKit's.
+                    rounds += 1
+                    guard overflow > 0, rounds < 64 else { break }
+                    step = overflow
                 }
                 return false
 
@@ -307,6 +352,13 @@ public final class SKAction {
 
             case let .hide(hidden):
                 node.isHidden = hidden
+                return true
+
+            case let .setTexture(texture, resize):
+                if let sprite = node as? SKSpriteNode {
+                    sprite.texture = texture
+                    if resize { sprite.size = texture.size() }
+                }
                 return true
 
             default:

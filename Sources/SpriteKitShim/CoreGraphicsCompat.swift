@@ -109,6 +109,15 @@ public extension BitmapContext {
         bitmapInfo: UInt32
     ) {
         guard bitsPerComponent == 8, width > 0, height > 0 else { return nil }
+        // Alpha only, a byte a pixel (`MechanicSampleNode.opaqueBounds`):
+        // drawn as RGBA, its coverage handed back by `data`.
+        if data == nil, bitmapInfo & 0x1F == CGImageAlphaInfo.alphaOnly.rawValue {
+            self.init(width: width, height: height)
+            exposesAlphaOnly = true
+            translateBy(x: 0, y: CGFloat(height))
+            scaleBy(x: 1, y: -1)
+            return
+        }
         let stride = bytesPerRow > 0 ? bytesPerRow : width * 4
         if let data {
             self.init(wrapping: data, width: width, height: height, bytesPerRow: stride)
@@ -174,8 +183,6 @@ public extension CGPath {
             transform: transform?.pointee ?? .identity
         )
     }
-
-    var isEmpty: Bool { elements.isEmpty }
 
     /// The flattened bounds, which is what `CGPath.boundingBoxOfPath` is —
     /// `boundingBox` above is the looser control-point one.
@@ -264,6 +271,52 @@ public extension CGPath {
             end: endAngle,
             clockwise: !clockwise
         ))
+    }
+
+    /// Where the pen is, or `.zero` on an empty path, as CoreGraphics says.
+    var currentPoint: CGPoint { PathGeometry.currentPoint(after: pathElements) ?? .zero }
+
+    /// A line toward `tangent1End`, then the arc of `radius` that turns from
+    /// it onto the line to `tangent2End` (`PathGeometry.tangentArc`).
+    func addArc(
+        tangent1End: CGPoint,
+        tangent2End: CGPoint,
+        radius: CGFloat,
+        transform: CGAffineTransform = .identity
+    ) {
+        guard let pen = PathGeometry.currentPoint(after: pathElements) else {
+            move(to: tangent1End, transform: transform)
+            return
+        }
+        // The pen is already where the transform put it; work in the
+        // untransformed space, as CoreGraphics does, then move the result.
+        let inverse = transform.inverted()
+        let elements = PathGeometry.tangentArc(
+            from: pen.applying(inverse), corner: tangent1End, end: tangent2End, radius: radius
+        )
+        if transform.isIdentity {
+            append(portable: elements)
+        } else {
+            let scale = sqrt(abs(transform.a * transform.d - transform.b * transform.c))
+            append(portable: elements.map { element in
+                guard case let .arc(centre, r, start, end, clockwise) = element else {
+                    return element.applying(transform)
+                }
+                return .arc(center: centre.applying(transform), radius: r * (scale > 0 ? scale : 1),
+                            start: start, end: end, clockwise: clockwise)
+            })
+        }
+    }
+
+    /// The path cut into dashes, each an open subpath of its own.
+    func copy(dashingWithPhase phase: CGFloat, lengths: [CGFloat], transform: CGAffineTransform = .identity) -> CGPath {
+        let path = CGPath()
+        for dash in PathGeometry.dash(PathRasteriser.flatten(self, scale: 4), phase: phase, lengths: lengths) {
+            guard let first = dash.first else { continue }
+            path.move(to: first, transform: transform)
+            for point in dash.dropFirst() { path.addLine(to: point, transform: transform) }
+        }
+        return path
     }
 
     func addPath(_ path: CGPath, transform: CGAffineTransform = .identity) {
