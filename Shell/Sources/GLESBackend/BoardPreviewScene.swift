@@ -69,6 +69,8 @@ public final class BoardPreviewScene: SKScene {
         glyph.position = CGPoint(x: 0, y: cell)
         board.addChild(glyph)
 
+        addType()
+
         Log.info("preview scene: \(board.children.count) nodes, scene \(Int(size.width))x\(Int(size.height)) pt")
 
         // What the layer resolved, read back from the device rather than
@@ -90,5 +92,131 @@ public final class BoardPreviewScene: SKScene {
     public override func didChangeSize(_ oldSize: CGSize) {
         guard !children.isEmpty else { return }
         build()
+    }
+
+    // MARK: Type and shapes
+
+    /// The visual bar for text and vector shapes: real strings in the game's
+    /// own faces on a rasterised surface, drawn through the glyph atlas and
+    /// the path rasteriser.
+    ///
+    /// The Thai is what matters. Both lines are real strings out of
+    /// `Assets/th.lproj`, and between them they hold every case FreeType
+    /// alone gets wrong — SARA AM splitting into two glyphs and reordering
+    /// them, a tone mark taking its shifted form over a tall consonant, a
+    /// consonant swapping for its tail-less form under a below-vowel, and
+    /// marks positioned by GPOS rather than stacked at the pen. If the
+    /// shaper is not doing its job that is visibly broken, where a Latin
+    /// line would look perfectly fine.
+    ///
+    /// The first line also wraps, which is the other half of it: Thai breaks
+    /// between grapheme clusters rather than at spaces, and never straight
+    /// after a leading vowel.
+    private func addType() {
+        // The scene is a wide canvas shown with aspect fill, so only the
+        // middle of its width is ever on screen. This is what a phone sees.
+        let visible: CGFloat = 340
+        let card = SKNode()
+        card.zPosition = 500
+        addChild(card)
+
+        let body = SKLabelNode(fontNamed: "KoHo-Bold")
+        body.text = "ให้สวิตช์ลิงสองตัวยืนบนทั้งสองซีก แล้วชนกัน เพื่อเปิดประตูของสวิตช์ไว้ถาวร"
+        body.fontSize = 17
+        body.numberOfLines = 0
+        body.preferredMaxLayoutWidth = visible - 48
+
+        let samples: [SKLabelNode] = [
+            body,
+            label("สวิตช์ลิง ลำ ที่ ญุ", font: "KoHo-Bold", size: 26),
+            label("Switchlings", font: "ChironGoRoundTC-Black", size: 26),
+            label("スイッチリング 斯威奇灵 Свитчлинг", font: "ChironGoRoundTC-ExtraBold", size: 15),
+        ]
+
+        // Stacked by what each one actually measured, so a label that wrapped
+        // to three lines takes three lines of room — which is the layout and
+        // the renderer agreeing, read back rather than assumed.
+        let gap: CGFloat = 12
+        let heights = samples.map { max($0.contentFrame.height, $0.fontSize) }
+        let inset: CGFloat = 18
+        let height = heights.reduce(0, +) + gap * CGFloat(samples.count - 1) + inset * 2
+
+        let panel = SKShapeNode()
+        panel.path = UIBezierPath(
+            roundedRect: CGRect(x: -visible / 2, y: -height / 2, width: visible, height: height),
+            cornerRadius: 18
+        ).cgPath
+        panel.fillColor = SKColor(red: 0.99, green: 0.97, blue: 0.92, alpha: 1)
+        panel.strokeColor = SKColor(red: 0.42, green: 0.33, blue: 0.24, alpha: 1)
+        panel.lineWidth = 3
+        panel.lineJoin = .round
+        card.addChild(panel)
+
+        var y = height / 2 - inset
+        for (sample, lineHeight) in zip(samples, heights) {
+            sample.fontColor = SKColor(red: 0.18, green: 0.13, blue: 0.1, alpha: 1)
+            sample.horizontalAlignmentMode = .center
+            sample.verticalAlignmentMode = .top
+            sample.zPosition = 1
+            sample.position = CGPoint(x: 0, y: y)
+            card.addChild(sample)
+            report(sample)
+            y -= lineHeight + gap
+        }
+
+        card.position = CGPoint(x: size.width / 2, y: size.height / 2 - cell * 2.5 - height / 2)
+
+        // An open, stroked path with a round cap and a round join, so caps
+        // and joins are on screen too and not only in the tests.
+        let tick = SKShapeNode()
+        let stroke = UIBezierPath()
+        stroke.move(to: CGPoint(x: -visible / 2 + 10, y: -height / 2 - 34))
+        stroke.addLine(to: CGPoint(x: -visible / 2 + 30, y: -height / 2 - 50))
+        stroke.addLine(to: CGPoint(x: -visible / 2 + 62, y: -height / 2 - 16))
+        tick.path = stroke.cgPath
+        tick.strokeColor = SKColor(red: 0.35, green: 0.78, blue: 0.45, alpha: 1)
+        tick.fillColor = .clear
+        tick.lineWidth = 7
+        tick.lineCap = .round
+        tick.lineJoin = .round
+        card.addChild(tick)
+
+        // The same path filled rather than stroked, with a mitred join, so
+        // the two rules and the two joins can be told apart at a glance.
+        let wedge = SKShapeNode()
+        let filled = UIBezierPath()
+        filled.move(to: CGPoint(x: visible / 2 - 66, y: -height / 2 - 48))
+        filled.addLine(to: CGPoint(x: visible / 2 - 10, y: -height / 2 - 48))
+        filled.addLine(to: CGPoint(x: visible / 2 - 38, y: -height / 2 - 14))
+        filled.close()
+        wedge.path = filled.cgPath
+        wedge.fillColor = SKColor(red: 0.95, green: 0.72, blue: 0.25, alpha: 1)
+        wedge.strokeColor = SKColor(red: 0.42, green: 0.33, blue: 0.24, alpha: 1)
+        wedge.lineWidth = 3
+        wedge.lineJoin = .miter
+        card.addChild(wedge)
+    }
+
+    private func label(_ text: String, font: String, size: CGFloat) -> SKLabelNode {
+        let label = SKLabelNode(fontNamed: font)
+        label.text = text
+        label.fontSize = size
+        return label
+    }
+
+    /// What the layer worked out for a label, read back rather than assumed.
+    /// A zero frame means no font was registered; a width that does not
+    /// match the glyphs drawn means the layout and the renderer disagree.
+    private func report(_ label: SKLabelNode) {
+        let frame = label.contentFrame
+        let lines = label.layout?.lines.count ?? 0
+        Log.info(String(
+            format: "label %@ pt in %@: %d line(s), ink %.1f x %.1f at %.1f, %.1f",
+            String(format: "%.0f", Double(label.fontSize)),
+            label.fontName ?? "(none)",
+            lines,
+            Double(frame.width), Double(frame.height),
+            Double(frame.minX), Double(frame.minY)
+        ))
     }
 }

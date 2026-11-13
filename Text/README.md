@@ -146,6 +146,14 @@ baseline — the renderer should need nothing else.
 `DrawList.Label` carries that `TextLayout`, so the renderer draws what was
 measured and the two cannot drift apart.
 
+The renderer's end of it is `CoverageGeometry` (the quads, pure and
+host-tested) and `GlyphPages` (the `R8` uploads, which honour a page's
+dirty rect and generation). One thing it does that this package does not:
+it shapes at the label's own point size and rasterises at the **screen's
+density**, asking the atlas for a face at `size x scale` and dividing the
+bitmaps back into points. Shaping and measuring stay at the size the node
+measured itself at; only the pixels are denser.
+
 The alignment modes follow SpriteKit, which is not the obvious reading of
 them. **Vertical alignment works on the ink box, not the typographic one**,
 so `.center` centres the glyphs drawn and a descender lifts the whole label.

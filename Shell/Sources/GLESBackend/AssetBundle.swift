@@ -3,6 +3,7 @@ import Foundation
 import GLESRenderer
 import SpriteKitShim
 import ShellCore
+import TextShaping
 
 /// Reads the packed art out of the APK.
 ///
@@ -41,6 +42,45 @@ public enum AssetBundle {
         } catch {
             Log.error("asset index would not load: \(error)")
             return nil
+        }
+    }
+
+    /// Where the fonts are staged inside the APK, by the Gradle project's
+    /// `stageFonts` task.
+    public static let fontsRoot = "fonts"
+
+    /// Registers the game's faces with the text stack and makes it the
+    /// layer's text provider.
+    ///
+    /// Until this runs every label reports a zero frame, on purpose — the
+    /// shim's rule is an obvious nothing rather than a plausible wrong
+    /// number — so nothing draws any text before it.
+    ///
+    /// The fonts are read out of the APK rather than extracted: an asset is
+    /// a member of a zip, not a path, and Chiron is 50 MB, so extracting
+    /// would put a second copy on disk for no gain. `ttf` is in the Gradle
+    /// project's `noCompress` list, so this is a read out of the mapped APK
+    /// rather than an inflate.
+    @discardableResult
+    public static func installFonts() -> Bool {
+        var loaded: [(name: String, data: Data)] = []
+        for name in TextEngine.fontFileNames {
+            guard let data = load(path("\(fontsRoot)/\(name).ttf")) else {
+                Log.error("no \(name).ttf in the APK — text will not draw")
+                continue
+            }
+            loaded.append((name, data))
+        }
+        guard !loaded.isEmpty else { return false }
+
+        do {
+            let engine = try TextEngine.install(fonts: loaded)
+            Log.info("fonts: \(loaded.map(\.name).joined(separator: ", "))")
+            Log.info("faces: \(engine.library.registeredNames.joined(separator: ", "))")
+            return true
+        } catch {
+            Log.error("the fonts would not register: \(error)")
+            return false
         }
     }
 

@@ -46,14 +46,33 @@ JDK 17, cmake and ninja.
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Library/Android/android-ndk-r30
+Android/Vendor/build.sh android       # FreeType + HarfBuzz, both ABIs
 Android/Scripts/build-sdl.sh          # fetch + cross-compile SDL, both ABIs
 Android/Scripts/build-shell.sh        # cross-compile the Swift shell
 cd Android/App && ./gradlew assembleDebug
 ```
 
-The first script takes a few minutes; the second is seconds after that.
+The first two take a few minutes between them; the third is seconds after
+that. The renderer links the text stack for the glyph atlas, so
+`build-shell.sh` points `PKG_CONFIG_PATH` at the Vendor prefix for each ABI
+and stops with a readable message if it is not built.
 Either accepts an ABI to do just one (`build-shell.sh arm64-v8a`), and
 `build-shell.sh --debug` builds the Swift side unoptimised.
+
+## What goes into the APK
+
+Two asset trees, both staged rather than committed:
+
+- **`assets/`** — the packed art, straight out of `Android/Assets` (the
+  gitignored output of `npm run art -- --android`).
+- **`assets/fonts/`** — the three faces the text stack registers, copied out
+  of the repository's own `Assets/Fonts` by the `stageFonts` Gradle task.
+  Only those three: pointing the source set at the whole directory would
+  drag in the levels, the music and the sound effects. They are in
+  `noCompress`, so FreeType reads the 50 MB variable face out of the mapped
+  APK rather than out of an inflate buffer, and
+  `AssetBundle.installFonts()` registers them at start-up. Until that runs
+  every label reports a zero frame, on purpose.
 
 `build-shell.sh` stages `libAndroidShell.so` into
 `app/src/main/jniLibs/<abi>/` along with every library it needs, found by
@@ -151,6 +170,10 @@ shader's `u_time` and in the board's action timings.
 
 ## Known gaps
 
+- **The APK is 287 MB in debug**, both ABIs, with the art and the 50 MB
+  variable font in it. Splitting per ABI halves the native half; the font is
+  the next biggest single thing and cannot be subset per weight, because the
+  game's weight names are its named instances.
 - **The APK is 138 MB**, and 80 MB of that is two copies of
   `lib_FoundationICU.so`. It comes in through Foundation, which the shim
   needs for `CGFloat` and friends. Splitting the APK per ABI halves it

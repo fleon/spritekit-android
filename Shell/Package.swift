@@ -29,7 +29,10 @@ import PackageDescription
 //                  Its own target so the shell and the renderer can both
 //                  use it without depending on each other.
 //   GLESBackend    every GL call in the port, plus the asset loading and
-//                  PNG decoding that feed it.
+//                  PNG decoding that feed it. It links TextShaping, so a
+//                  shell build needs PKG_CONFIG_PATH pointing at the
+//                  Vendor prefix for the ABI — Scripts/build-shell.sh
+//                  sets it.
 //   AndroidShell   the window, the context, the lifecycle and the frame
 //                  loop. It depends on GLESBackend only to install it;
 //                  nothing in the shell knows what a sprite is.
@@ -45,6 +48,9 @@ let package = Package(
     ],
     dependencies: [
         .package(path: ".."),
+        // The glyph atlas. Only GLESBackend links it, and only to upload
+        // what it rasterises; nothing else in the shell knows about text.
+        .package(path: "../Text"),
     ],
     targets: [
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
@@ -68,6 +74,7 @@ let package = Package(
                 "ShellCore",
                 .product(name: "SpriteKitShim", package: "Android"),
                 .product(name: "GLESRenderer", package: "Android"),
+                .product(name: "TextShaping", package: "Text"),
             ],
             path: "Sources/GLESBackend",
             swiftSettings: [v5, shimDefine]

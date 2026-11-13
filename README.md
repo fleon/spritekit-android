@@ -58,7 +58,9 @@ Android/
   Probe/                 Android-only. Runs the game's own text layout on
                          a device: Probe/run-probe.sh.
   Vendor/                FreeType and HarfBuzz, fetched and built by a
-                         script. Nothing binary is committed.
+                         script. Nothing binary is committed. The shell
+                         links them too, for the glyph atlas, so
+                         Scripts/build-shell.sh needs them built first.
 ```
 
 The app shell has a README of its own: **[App/README.md](App/README.md)** —
@@ -256,19 +258,41 @@ Android. `Probe/run-probe.sh` runs the real `wrappedLines`, `capitalsOffset`
 and `TextBlockNode` on an emulator or device, because a build cannot show
 that corelibs Foundation's `NSAttributedString` really hands a `UIFont` back.
 
+It draws, too. `GlyphPages` uploads the atlas as `R8` textures, honouring
+its dirty rect and generation so a page goes up once and then only where it
+was written, and `CoverageGeometry` turns `DrawList.Label`'s layout into
+quads — the layout, never a second measurement, so what is drawn and what
+`contentFrame` reported cannot drift. Glyphs are shaped at the label's point
+size and rasterised at the screen's density, so a 24-point label on a 3x
+phone is not a 24-pixel bitmap magnified.
+
 What text still needs is the localisation ring: `FontRegistry` and
 `Localization.scriptFontName` are the last stubs in `GameCompat`.
 
+## Rasterising
+
+`PathRasteriser` in `Sources/GLESRenderer` fills and strokes a `CGPath`
+into 8-bit coverage: a scanline fill with both winding rules, and stroking
+with the caps, joins and mitre limit the path carries. It is Swift rather
+than a vendored C library on purpose — it sits in the half of the renderer
+with no GL in it, so its edge cases are tested on the Mac against paths
+built with CoreGraphics' own API, and nobody needs a second cmake build to
+work on the scene graph. See its doc comment, and `PathRasteriserTests`.
+
+`SKShapeNode` draws through it today. `SurfaceTexture`'s 7 `CGContext`
+sites — which is every chunky button, panel and meter — need a `CGContext`
+over the same rasteriser, with gradients, shadows and clipping. That is the
+surfaces ring and it is not started.
+
 ## What is deliberately unfinished
 
-- **Rasterising.** `CGPath` and `UIBezierPath` record; nothing fills or
-  strokes them yet. `SurfaceTexture`'s 7 `CGContext` sites need the same
-  rasteriser. (`cmake`, `ninja` and `pkg-config` are installed for this.)
-- **The renderer.** No GLES 3 backend yet. `SKTexture.glName` and
-  `SKShader.glProgram` are where it caches its handles. The game's GLSL is
-  ES 1.0 with SpriteKit's preamble (`u_time`, `v_tex_coord`, `u_texture`,
-  `SKDefaultShading()`); the plan is to rewrite that preamble to ES 3.0 at
-  upload, in one place, rather than editing 31 files.
+- **`CGContext`.** The rasteriser is there; the context around it is not, so
+  `SurfaceTexture` cannot draw yet. It also needs `UIImage`,
+  `UIGraphicsImageRenderer` and `SKTexture(image:)`, which do not exist.
+- **The renderer.** Sprites, text and shapes draw; the rest does not. The
+  game's GLSL is ES 1.0 with SpriteKit's preamble (`u_time`, `v_tex_coord`,
+  `u_texture`, `SKDefaultShading()`), rewritten to ES 3.0 at upload by
+  `ShaderTranslator` rather than in 31 source files.
 - **`SKEffectNode` semantics.** The type and its bounds are here; the
   behaviour the game depends on is documented in its doc comment and must be
   reproduced by the renderer rather than inherited from whatever a

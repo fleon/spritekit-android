@@ -25,6 +25,16 @@ VENDOR_DIR="$ANDROID_DIR/Vendor"
 SDL_SRC="$VENDOR_DIR/SDL"
 JNI_LIBS="$ANDROID_DIR/App/app/src/main/jniLibs"
 
+# What Vendor/build.sh calls an ABI's prefix, e.g. arm64-v8a ->
+# aarch64-linux-android. Not the Swift triple: that carries the API level.
+vendor_triple() {
+    case "$1" in
+        arm64-v8a) echo "aarch64-linux-android" ;;
+        x86_64)    echo "x86_64-linux-android" ;;
+        *) echo "unknown ABI: $1" >&2; return 1 ;;
+    esac
+}
+
 # The Swift triple for an ABI, e.g. arm64-v8a -> aarch64-unknown-linux-android23
 swift_triple() {
     case "$1" in

@@ -198,6 +198,35 @@ public enum ShaderTranslator {
     }
     """
 
+    /// What a glyph or a rasterised shape mask is drawn with.
+    ///
+    /// Both are single-channel coverage, not colour: the glyph atlas hands
+    /// out 8-bit pages and the path rasteriser makes 8-bit masks, so the
+    /// texture says *how much* of the pixel is covered and the node says
+    /// what colour to put there. The sprite shader cannot stand in — it
+    /// samples rgba and would draw every glyph as a black box.
+    ///
+    /// The output is premultiplied, because that is the blend the rest of
+    /// the renderer is set up for.
+    public static let coverageFragmentShader = """
+    #version 300 es
+
+    precision mediump float;
+
+    in vec2 v_tex_coord;
+    in vec4 v_color_mix;
+    in float v_blend;
+
+    uniform sampler2D u_texture;
+
+    out vec4 \(fragColor);
+
+    void main() {
+        float coverage = texture(u_texture, v_tex_coord).r * v_color_mix.a;
+        \(fragColor) = vec4(v_color_mix.rgb * coverage, coverage);
+    }
+    """
+
     // MARK: Word-boundary text work
     //
     // Done by hand rather than with NSRegularExpression: this runs for every

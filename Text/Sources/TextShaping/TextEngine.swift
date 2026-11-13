@@ -34,11 +34,34 @@ public final class TextEngine: TextProvider, @unchecked Sendable {
     @discardableResult
     public static func install(fontsAt directory: String) throws -> TextEngine {
         let engine = TextEngine.shared
-        for name in ["ChironGoRoundTC-Variable", "KoHo-Bold", "Montserrat"] {
+        for name in fontFileNames {
             let path = directory + "/" + name + ".ttf"
             if FileManager.default.fileExists(atPath: path) {
                 try engine.library.register(path: path)
             }
+        }
+        TextMetrics.provider = engine
+        return engine
+    }
+
+    /// The three faces `install` looks for, in the order it registers them.
+    /// The first registered is also what a label with no `fontName` falls
+    /// back to.
+    public static let fontFileNames = ["ChironGoRoundTC-Variable", "KoHo-Bold", "Montserrat"]
+
+    /// Registers fonts handed over as bytes, for a platform where they are
+    /// not files.
+    ///
+    /// On Android they are assets inside the APK, which is a zip rather than
+    /// a directory — there is no path to open. Extracting them first would
+    /// mean a second 50 MB copy of Chiron on disk and the same bytes in
+    /// memory afterwards, so the shell reads them through the asset manager
+    /// and hands them here.
+    @discardableResult
+    public static func install(fonts: [(name: String, data: Data)]) throws -> TextEngine {
+        let engine = TextEngine.shared
+        for font in fonts {
+            try engine.library.register(data: font.data, name: font.name)
         }
         TextMetrics.provider = engine
         return engine

@@ -3,6 +3,7 @@ import Foundation
 import GLESRenderer
 import SpriteKitShim
 import ShellCore
+import TextShaping
 
 /// Draws a scene graph with GLES 3.
 ///
@@ -21,6 +22,16 @@ public final class SceneRenderer: FrameRenderer {
     private var vbo: GLuint = 0
     private var ebo: GLuint = 0
     private var defaultProgram: GLuint = 0
+    /// Glyphs and rasterised shape masks: 8-bit coverage, the node's colour.
+    private var coverageProgram: GLuint = 0
+
+    private let glyphPages = GlyphPages(atlas: TextEngine.shared.atlas)
+    private let glyphSource = EngineGlyphSource(engine: TextEngine.shared)
+    private let shapeMasks = ShapeMasks()
+
+    /// Pixels per point, so glyphs are rasterised and masks filled at the
+    /// density they are drawn at rather than at one pixel per point.
+    private var deviceScale: CGFloat = 1
 
     /// Pixels for a packed page, by its index in `AssetIndex.pages`.
     private let pageLoader: (Int) -> (width: Int, height: Int, pixels: Data)?
@@ -75,6 +86,12 @@ public final class SceneRenderer: FrameRenderer {
         )
         if defaultProgram == 0 { Log.error("the default sprite program did not link") }
 
+        coverageProgram = device.createProgram(
+            vertex: ShaderTranslator.spriteVertexShader(),
+            fragment: ShaderTranslator.coverageFragmentShader
+        )
+        if coverageProgram == 0 { Log.error("the coverage program did not link") }
+
         // The art is premultiplied, so this is the blend for it.
         glEnable(GLenum(GL_BLEND))
         glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
@@ -90,6 +107,10 @@ public final class SceneRenderer: FrameRenderer {
 
     public func rendererWillStop() {
         cache.removeAll()
+        glyphPages.removeAll()
+        shapeMasks.removeAll()
+        glyphSource.flush()
+        if coverageProgram != 0 { device.deleteProgram(coverageProgram) }
         if defaultProgram != 0 { device.deleteProgram(defaultProgram) }
         glDeleteBuffers(1, &vbo)
         glDeleteBuffers(1, &ebo)
@@ -111,6 +132,8 @@ public final class SceneRenderer: FrameRenderer {
             anchorPoint: scene.anchorPoint
         )
         let projection = viewport.projection
+        deviceScale = max(viewport.scale.x, viewport.scale.y)
+        glyphSource.deviceScale = deviceScale
 
         glBindVertexArray(vao)
         draw(passes, projection: projection, time: Float(frame.time))
@@ -119,6 +142,19 @@ public final class SceneRenderer: FrameRenderer {
         if !reportedFirstFrame {
             reportedFirstFrame = true
             Log.info("first frame: \(passes.reduce(0) { $0 + $1.quadCount }) quads, \(passes.count) passes")
+        }
+
+        // Coverage is the part that could quietly cost a fortune: a glyph
+        // atlas re-uploaded every frame, or a shape rasterised every frame
+        // because its cache key moved. Both are cheap to get wrong and
+        // invisible from a screenshot, so the counts are logged once the
+        // frame loop has settled — they should have stopped rising.
+        if frame.index == 300 || frame.index == 900 {
+            Log.info(
+                "coverage after \(frame.index) frames: "
+                    + "\(glyphPages.uploads) glyph uploads (\(glyphPages.uploadedBytes / 1024) KB), "
+                    + "\(shapeMasks.rasterised) masks rasterised"
+            )
         }
     }
 
@@ -140,12 +176,141 @@ public final class SceneRenderer: FrameRenderer {
                 // clipped. Scenes that rely on it will overdraw.
                 draw(contents, projection: projection, time: time)
 
-            case .label, .shape:
-                // Text needs the glyph atlas wired up; shapes need a path
-                // rasteriser. Both are carried through the draw list so the
-                // order stays right once they arrive.
-                break
+            case let .label(label):
+                draw(label, projection: projection)
+
+            case let .shape(shape):
+                draw(shape, projection: projection)
             }
+        }
+    }
+
+    // MARK: Text
+
+    /// Draws a label from the layout the node already made.
+    ///
+    /// Nothing is measured here: `label.layout` holds the lines as the node
+    /// broke and placed them, with both alignment modes already applied to
+    /// each line's pen origin, and that is also what it reported as its
+    /// `contentFrame`. Re-measuring would be a second opinion, and the two
+    /// would drift.
+    private func draw(_ label: DrawList.Label, projection: [Float]) {
+        guard coverageProgram != 0 else { return }
+
+        // Shaping and rasterising happen inside this, so the atlas is only
+        // brought up to date afterwards — a glyph seen for the first time
+        // this frame is on the GPU before its quad is drawn.
+        let runs = CoverageGeometry.runs(for: label, source: glyphSource)
+        guard !runs.isEmpty else { return }
+        glyphPages.sync()
+
+        for run in runs {
+            let name = glyphPages.name(of: run.page)
+            guard name != 0 else { continue }
+            drawCoverage(run, texture: name, projection: projection)
+        }
+    }
+
+    // MARK: Shapes
+
+    /// Fills and strokes a shape through the path rasteriser.
+    ///
+    /// The mask is rasterised axis-aligned in the node's own space at the
+    /// density it will be drawn at, then drawn as one quad through the
+    /// node's transform — so a rotated or animated shape costs one mask, not
+    /// one per angle.
+    private func draw(_ shape: DrawList.Shape, projection: [Float]) {
+        guard coverageProgram != 0, let path = shape.path else { return }
+
+        let scale = deviceScale * transformScale(shape.transform)
+        guard scale > 0 else { return }
+
+        if shape.fillColor.alpha > 0,
+           let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale) {
+            drawCoverage(
+                CoverageGeometry.run(
+                    mask: mask.bounds, transform: shape.transform,
+                    colour: shape.fillColor, alpha: shape.alpha
+                ),
+                texture: mask.name,
+                projection: projection
+            )
+        }
+
+        if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
+           let mask = shapeMasks.stroke(
+               path, width: shape.lineWidth,
+               cap: shape.lineCap, join: shape.lineJoin, scale: scale
+           ) {
+            drawCoverage(
+                CoverageGeometry.run(
+                    mask: mask.bounds, transform: shape.transform,
+                    colour: shape.strokeColor, alpha: shape.alpha
+                ),
+                texture: mask.name,
+                projection: projection
+            )
+        }
+    }
+
+    /// How much a transform scales: the square root of the area it
+    /// multiplies by, which is the right number for a rotated shape and the
+    /// plain scale for an unrotated one.
+    private func transformScale(_ transform: CGAffineTransform) -> CGFloat {
+        let determinant = abs(transform.a * transform.d - transform.b * transform.c)
+        return determinant > 0 ? sqrt(determinant) : 0
+    }
+
+    // MARK: Coverage quads
+
+    /// Draws one run of coverage quads: glyphs or a mask, the texture saying
+    /// how much of each pixel is covered and the vertices saying in what
+    /// colour.
+    private func drawCoverage(
+        _ run: CoverageGeometry.Run,
+        texture: GLuint,
+        projection: [Float]
+    ) {
+        guard !run.indices.isEmpty else { return }
+
+        glUseProgram(coverageProgram)
+        var projection = projection
+        let location = glGetUniformLocation(coverageProgram, "u_projection")
+        if location >= 0 {
+            glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &projection)
+        }
+
+        glActiveTexture(GLenum(GL_TEXTURE0))
+        glBindTexture(GLenum(GL_TEXTURE_2D), texture)
+        let sampler = glGetUniformLocation(coverageProgram, "u_texture")
+        if sampler >= 0 { glUniform1i(sampler, 0) }
+
+        glEnable(GLenum(GL_BLEND))
+        glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
+
+        upload(vertices: run.vertices, indices: run.indices)
+        glDrawElements(
+            GLenum(GL_TRIANGLES), GLsizei(run.indices.count),
+            GLenum(GL_UNSIGNED_SHORT), nil
+        )
+    }
+
+    private func upload(vertices: [Float], indices: [UInt16]) {
+        vertices.withUnsafeBufferPointer { buffer in
+            glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
+            glBufferData(
+                GLenum(GL_ARRAY_BUFFER),
+                buffer.count * MemoryLayout<Float>.size,
+                buffer.baseAddress, GLenum(GL_STREAM_DRAW)
+            )
+        }
+        indices.withUnsafeBufferPointer { buffer in
+            glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), ebo)
+            glBufferData(
+                GLenum(GL_ELEMENT_ARRAY_BUFFER),
+                buffer.count * MemoryLayout<UInt16>.size,
+                buffer.baseAddress, GLenum(GL_STREAM_DRAW)
+            )
         }
     }
 

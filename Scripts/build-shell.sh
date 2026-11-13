@@ -4,7 +4,8 @@
 # exactly the runtime libraries it needs, into the Gradle project's jniLibs.
 #
 # Needs Scripts/build-sdl.sh to have run first: the shell compiles against
-# SDL's headers and links its .so.
+# SDL's headers and links its .so, and Vendor/build.sh android, because the
+# renderer links the text stack for the glyph atlas.
 #
 #   Scripts/build-shell.sh                  # both ABIs, release
 #   Scripts/build-shell.sh --debug          # both ABIs, debug
@@ -32,6 +33,17 @@ for abi in "${targets[@]}"; do
         echo "no SDL for $abi — run Scripts/build-sdl.sh first" >&2
         exit 1
     fi
+
+    # FreeType and HarfBuzz, found through pkg-config exactly as Android/Text
+    # finds them. Without this the shell fails to resolve CTextShaping and
+    # says so in a way that reads like a missing module rather than a missing
+    # build step.
+    text_prefix="$VENDOR_DIR/out/$(vendor_triple "$abi")"
+    if [ ! -d "$text_prefix/lib/pkgconfig" ]; then
+        echo "no FreeType/HarfBuzz for $abi — run Vendor/build.sh android first" >&2
+        exit 1
+    fi
+    export PKG_CONFIG_PATH="$text_prefix/lib/pkgconfig"
 
     echo "==> building AndroidShell for $abi ($triple, $CONFIG)"
     # One array so the build and the --show-bin-path query cannot drift: a
