@@ -1,0 +1,137 @@
+#if canImport(CTextShaping)
+import Foundation
+import SpriteKitShim
+
+/// Where a line may be broken.
+///
+/// This is not Unicode UAX #14, and not ICU: the game ships no ICU and the
+/// Swift SDK for Android carries no line-break tables. What it does cover is
+/// the three cases the game's 19 languages actually need.
+///
+/// - Space-separated scripts break after spaces, and after a hyphen.
+/// - Chinese and Japanese break between almost any two characters, held off
+///   only by the small kinsoku set below — no closing bracket or full stop
+///   starts a line, and no opening bracket ends one.
+/// - Thai writes without spaces and is properly broken with a dictionary,
+///   which there isn't one of here. The fallback is a break at each
+///   grapheme-cluster boundary *except* straight after a leading vowel
+///   (เ แ โ ใ ไ), which is written before the consonant it sounds after and
+///   must never be left stranded at the end of a line. It breaks mid-word,
+///   which is wrong and visible; it never breaks a cluster, which would be
+///   wrong and unreadable.
+enum LineBreak {
+    /// Indices in `text` where a line may start.
+    static func opportunities(in text: String) -> [String.Index] {
+        var places: [String.Index] = []
+        var index = text.startIndex
+
+        while index < text.endIndex {
+            let next = text.index(after: index)
+            guard next < text.endIndex else { break }
+
+            let here = text[index]
+            let after = text[next]
+
+            if here == " " || here == "\u{00A0}" {
+                if after != " " { places.append(next) }
+            } else if here == "-" || here == "\u{2010}" {
+                places.append(next)
+            } else if isThai(after), isThai(here) {
+                if !isThaiLeadingVowel(here), !startsWithMark(after) { places.append(next) }
+            } else if isIdeographic(here) || isIdeographic(after) {
+                if !noStart(after), !noEnd(here), after != " " { places.append(next) }
+            }
+            index = next
+        }
+        return places
+    }
+
+    private static func isThai(_ character: Character) -> Bool {
+        character.unicodeScalars.first.map { (0x0E00...0x0E7F).contains(Int($0.value)) } ?? false
+    }
+
+    private static func isThaiLeadingVowel(_ character: Character) -> Bool {
+        character.unicodeScalars.first.map { (0x0E40...0x0E44).contains(Int($0.value)) } ?? false
+    }
+
+    /// A grapheme whose first scalar is a combining mark belongs to what
+    /// came before it, whatever the cluster rules made of it.
+    private static func startsWithMark(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first else { return false }
+        return scalar.properties.generalCategory == .nonspacingMark
+            || scalar.properties.generalCategory == .spacingMark
+            || scalar.properties.generalCategory == .enclosingMark
+    }
+
+    private static func isIdeographic(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first else { return false }
+        switch TextScript.of(scalar) {
+        case .han, .hiragana, .katakana: return true
+        default:
+            // CJK punctuation, which breaks with the characters around it.
+            return (0x3000...0x303F).contains(Int(scalar.value))
+                || (0xFF00...0xFFEF).contains(Int(scalar.value))
+        }
+    }
+
+    private static let noStartSet: Set<Character> = [
+        "。", "、", "，", "．", "：", "；", "！", "？", "）", "】", "」", "』", "》", "〕", "｝",
+        "〉", "・", "ー", "ゝ", "ゞ", "々", "％", "℃", ")", "]", "}", ",", ".", "!", "?", ":", ";",
+    ]
+    private static let noEndSet: Set<Character> = [
+        "（", "【", "「", "『", "《", "〔", "｛", "〈", "(", "[", "{",
+    ]
+
+    private static func noStart(_ character: Character) -> Bool { noStartSet.contains(character) }
+    private static func noEnd(_ character: Character) -> Bool { noEndSet.contains(character) }
+
+    /// Greedily fills lines up to `maxWidth`, measuring each candidate with
+    /// `width`. A single word wider than the line is left over-wide rather
+    /// than cut, as CoreText leaves it.
+    static func wrap(
+        _ text: String,
+        maxWidth: CGFloat,
+        width: (Substring) -> CGFloat
+    ) -> [String] {
+        guard maxWidth > 0, !text.isEmpty else { return [text] }
+
+        let places = opportunities(in: text)
+        guard !places.isEmpty else { return [text] }
+
+        var lines: [String] = []
+        var start = text.startIndex
+        var lastFit: String.Index?
+
+        for place in places {
+            if width(text[start..<place]) <= maxWidth {
+                lastFit = place
+                continue
+            }
+            // This break is already too far. Take the last one that fitted,
+            // or this one if nothing did — a word on its own, over-wide.
+            let cut = lastFit ?? place
+            lines.append(trimmed(text[start..<cut]))
+            start = cut
+            lastFit = width(text[start..<place]) <= maxWidth ? place : nil
+        }
+
+        if start < text.endIndex {
+            let tail = text[start...]
+            if width(tail) <= maxWidth || lastFit == nil {
+                lines.append(trimmed(tail))
+            } else {
+                lines.append(trimmed(text[start..<lastFit!]))
+                lines.append(trimmed(text[lastFit!...]))
+            }
+        }
+
+        let kept = lines.filter { !$0.isEmpty }
+        return kept.isEmpty ? [text] : kept
+    }
+
+    private static func trimmed(_ text: Substring) -> String {
+        String(text).trimmingCharacters(in: .whitespaces)
+    }
+}
+
+#endif

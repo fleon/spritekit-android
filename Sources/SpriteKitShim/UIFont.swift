@@ -1,14 +1,16 @@
 #if SPRITEKIT_SHIM && !canImport(Darwin)
 import Foundation
 
-/// A font *handle* — a family name, a size and a weight, nothing more.
+/// A font *handle* — a family name, a size and a weight.
 ///
-/// Deliberately not a font engine. On Android the real work behind this is
-/// FreeType for rasterising and HarfBuzz for shaping, which the game needs
-/// for Thai (reordering, KoHo) and CJK, with the game's own `wrappedLines`
-/// line breaking above it. Until that lands, this carries the description so
-/// `appFont` / `chironFont` compile and the rest of the layer can be built
-/// and tested; it measures nothing.
+/// Deliberately not a font engine. Its metrics come from whatever
+/// `TextProvider` is registered with `TextMetrics`, which on Android is
+/// HarfBuzz and FreeType in `Android/Text`. That keeps those two C libraries
+/// out of this package, which everyone working on the scene graph, the
+/// actions and the renderer has to build.
+///
+/// With no provider registered the metrics are zero, as they were before any
+/// of this landed — an obvious nothing rather than plausible wrong numbers.
 public final class UIFont: @unchecked Sendable {
     public struct Weight: Hashable, Sendable, RawRepresentable {
         public var rawValue: CGFloat
@@ -46,11 +48,32 @@ public final class UIFont: @unchecked Sendable {
         UIFont(name: "system", size: size, weight: weight)
     }
 
-    /// Reported by the shaper once there is one; zero until then, which is the
-    /// honest answer rather than a plausible wrong one.
-    public var lineHeight: CGFloat { 0 }
-    public var ascender: CGFloat { 0 }
-    public var descender: CGFloat { 0 }
+    private var metrics: FontMetrics? {
+        TextMetrics.provider?.fontMetrics(FontKey(name: fontName, size: pointSize))
+    }
+
+    /// `ascent + descent + leading`, as UIKit reports it, so the game's
+    /// `lineHeightRatio` constants keep the meaning they were tuned with.
+    public var lineHeight: CGFloat { metrics?.lineHeight ?? 0 }
+
+    /// Positive above the baseline, as UIKit has it.
+    public var ascender: CGFloat { metrics?.ascent ?? 0 }
+
+    /// **Negative** below the baseline, as UIKit has it — FreeType reports
+    /// descent the other way round, and the provider turns it over.
+    public var descender: CGFloat { metrics.map { -$0.descent } ?? 0 }
+
+    public var leading: CGFloat { metrics?.leading ?? 0 }
+    public var capHeight: CGFloat { metrics?.capHeight ?? 0 }
+    public var xHeight: CGFloat { metrics?.xHeight ?? 0 }
+
+    /// The same measurement `SKLabelNode` lays out with, so a size taken
+    /// here and a label's frame can never disagree.
+    public func size(of text: String) -> CGSize {
+        guard let provider = TextMetrics.provider else { return .zero }
+        let line = provider.measure(text, font: FontKey(name: fontName, size: pointSize))
+        return CGSize(width: line.advance, height: lineHeight)
+    }
 }
 
 #endif

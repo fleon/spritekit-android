@@ -53,6 +53,10 @@ Android/
                          context and the frame loop.
   App/                   The Gradle project — the installable APK.
   Scripts/               Cross-compiling SDL and the shell.
+  Text/                  Shaping, metrics, rasterising, the glyph atlas.
+                         49 tests. Needs Vendor/ built first.
+  Vendor/                FreeType and HarfBuzz, fetched and built by a
+                         script. Nothing binary is committed.
 ```
 
 The app shell has a README of its own: **[App/README.md](App/README.md)** —
@@ -61,7 +65,12 @@ emulator image.
 
 `Compat` is a separate package because a target named `CoreGraphics` cycles
 with the system module when built on macOS. Keeping it out means the shim
-itself stays host-testable.
+itself stays host-testable. `Text` is separate for a related reason: it is
+the only part of the port with C dependencies, and folding them into the
+root package would make `swift build` here need a cmake run first, for
+everyone working on the scene graph, the actions or the renderer. The shim
+therefore never links FreeType — it asks whatever `TextProvider` has been
+registered with `TextMetrics`.
 
 ## How the same code compiles on both platforms
 
@@ -99,9 +108,19 @@ swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple aarch64-unknown-linux-android23    # real game sources
 swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple x86_64-unknown-linux-android23     # emulator too
+
+Vendor/build.sh                                         # FreeType + HarfBuzz
+cd Text
+PKG_CONFIG_PATH=../Vendor/out/host/lib/pkgconfig swift test              # 49 tests
+PKG_CONFIG_PATH=../Vendor/out/aarch64-linux-android/lib/pkgconfig \
+swift build --swift-sdk swift-6.4.2-RELEASE_android \
+            --triple aarch64-unknown-linux-android23 --product TextProbe
 ```
 
-All five pass. `GameCompat` compiles **4,711 lines of real, unmodified game
+All of them pass. `TextProbe` is an executable rather than a library, so it
+is the one thing here that proves the Android archives actually **link**: it
+comes out as an ELF for both ABIs and needs no `libc++_shared.so`.
+`GameCompat` compiles **4,711 lines of real, unmodified game
 source** for Android on both ABIs:
 
 | file | lines |
@@ -206,14 +225,29 @@ tree order. SpriteKit leaves ties nondeterministic (which is why AGENTS.md
 requires explicit `zPosition` for overlapping siblings); this is strictly more
 deterministic, never less.
 
+## Text
+
+Done, in `Text/` over `Vendor/` — see `Text/README.md`. HarfBuzz 15.1.0 for
+shaping and FreeType 2.15.0 for metrics and rasterising, both built from
+source for the host and both Android ABIs by a script, with a glyph atlas
+over them. `SKLabelNode` breaks and places its text and reports a real ink
+frame; `UIFont` reports real metrics; `DrawList.Label` carries the laid-out
+lines so the renderer draws what was measured.
+
+Thai is the acceptance test, since it is where FreeType alone is not merely
+imprecise but wrong: SARA AM splits into two glyphs and reorders them, tone
+marks take different forms over tall consonants, consonants lose their
+descenders under below-vowels, and marks are positioned by GPOS rather than
+stacked at the pen. Each has a test against what `FT_Get_Char_Index` alone
+produces. Axmol, for the record, would not have helped here: it vendors
+FreeType and **no** HarfBuzz.
+
+What text still needs: `TextHelpers.swift` compiling unchanged, which is now
+a `CoreText` compat job with no C dependency of its own, because the shim
+reaches text through `TextMetrics.provider`.
+
 ## What is deliberately unfinished
 
-- **Text.** `SKLabelNode` holds its state and reports a zero frame. It needs
-  HarfBuzz for shaping (Thai reordering, KoHo, CJK) plus FreeType for
-  rasterising, feeding a glyph atlas, with the game's `wrappedLines` on top.
-  This is the single largest remaining piece and has no shortcut — notably,
-  Axmol would not have helped: it vendors FreeType and **no** HarfBuzz.
-  `UIFont` here is a descriptor (family, size, weight) and measures nothing.
 - **Rasterising.** `CGPath` and `UIBezierPath` record; nothing fills or
   strokes them yet. `SurfaceTexture`'s 7 `CGContext` sites need the same
   rasteriser. (`cmake`, `ninja` and `pkg-config` are installed for this.)

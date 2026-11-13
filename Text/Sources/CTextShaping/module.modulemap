@@ -1,0 +1,6 @@
+module CTextShaping [system] {
+    header "shim.h"
+    link "harfbuzz"
+    link "freetype"
+    export *
+}

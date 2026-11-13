@@ -6,20 +6,25 @@ import SpriteKitShim
 // symlinked from Source/ — the point of the target is that those compile
 // against the shim without being touched.
 //
-// Both of these are text infrastructure, which is the part of the layer that
-// is genuinely unfinished (see SKLabelNode and UIFont in the shim).
+// Both of these are text infrastructure. The engine behind them is real now
+// (Android/Text: HarfBuzz and FreeType, with the glyph atlas), but it is a
+// package of its own so this one keeps building without a cmake run, and
+// wiring these up needs the language pick, which belongs to the
+// localisation ring.
 
 enum FontRegistry {
     /// Real one registers the bundled Chiron GoRound TC faces with CoreText.
-    /// On Android this becomes a FreeType face cache over the same files in
-    /// Assets/Fonts.
+    /// On Android it becomes `TextEngine.install(fontsAt:)`, which registers
+    /// the same files from Assets/Fonts — including the variable font's
+    /// named instances, which is how "ChironGoRoundTC-Black" resolves.
     static func registerChiron() {}
 }
 
 enum Localization {
     struct Script {
         /// Real one returns KoHo for Thai and Chiron for everything else.
-        /// Needs the language pick, so it lands with the localisation port.
+        /// Both faces are registered by then; all this needs is the language
+        /// pick, so it lands with the localisation port.
         func scriptFontName(_ weight: UIFont.Weight) -> String? { nil }
     }
 

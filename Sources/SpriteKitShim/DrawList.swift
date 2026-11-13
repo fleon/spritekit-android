@@ -54,6 +54,11 @@ public struct DrawList {
         public var horizontal: SKLabelHorizontalAlignmentMode
         public var vertical: SKLabelVerticalAlignmentMode
         public var alpha: CGFloat
+        /// The lines as the node broke and placed them, so the renderer
+        /// draws exactly what was measured. Nil when no `TextProvider` is
+        /// registered, which is the renderer's cue that there is nothing to
+        /// draw rather than a reason to measure the string itself.
+        public var layout: TextLayout?
     }
 
     public struct Effect {
@@ -160,7 +165,8 @@ public struct DrawList {
                 color: label.fontColor ?? .white,
                 horizontal: label.horizontalAlignmentMode,
                 vertical: label.verticalAlignmentMode,
-                alpha: alpha
+                alpha: alpha,
+                layout: label.layout
             ))))
         }
 
