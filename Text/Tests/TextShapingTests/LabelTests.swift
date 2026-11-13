@@ -6,7 +6,9 @@ import Testing
 /// What the game actually asks of the layer: a label that knows how big it
 /// is. Everything the rest of the UI positions — buttons sized to their
 /// labels, `centerCapitals`, `TextBlockNode` — is built on this.
+// Nodes are main-actor, as SpriteKit's are (#406), so building a draw list is too.
 @Suite("Label layout")
+@MainActor
 struct LabelTests {
     private func label(_ text: String, size: CGFloat = 32) -> SKLabelNode {
         _ = Fonts.engine

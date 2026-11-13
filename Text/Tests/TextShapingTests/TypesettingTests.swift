@@ -146,6 +146,9 @@ struct TypesettingTests {
         // back in one go. That matters more than it looks: `wrappedLines`
         // walks forward by whatever this returns, so anything that could
         // return 0 for a string it has not reached the end of would spin.
+        // The engine must be registered, or the shim reports no provider
+        // (0) whatever the face; suites run in any order.
+        _ = Fonts.engine
         let font = FontKey(name: "NoSuchFont", size: 20)
         #expect(Typesetting.suggestLineBreak("Play", font: font, startingAt: 0, maxWidth: 50) == 4)
         #expect(wrapped("Play and trade", maxWidth: 50, font: font) == ["Play and trade"])
