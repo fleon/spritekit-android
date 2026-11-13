@@ -7,6 +7,12 @@ import Foundation
 /// of other textures (the atlas slices the rigs and the board art use). The
 /// shim keeps the description; uploading to GL is the renderer's job, and
 /// `glName` is where the renderer caches the uploaded handle.
+///
+/// A named texture resolves through `AssetIndex.shared`, which says which
+/// packed page holds its pixels and where: so `size()` reports the art's own
+/// size in points, as SpriteKit's does, and `textureRect` is the slice of
+/// that page the renderer samples. With no index set — in a test that needs
+/// no art — a named texture stays unresolved and reports a zero size.
 public final class SKTexture: @unchecked Sendable {
     public enum Source {
         case named(String)
@@ -25,26 +31,39 @@ public final class SKTexture: @unchecked Sendable {
 
     private var declaredSize: CGSize?
 
+    /// What the asset index knows about this texture's image, if it was
+    /// made from an asset name and the index holds it.
+    public let asset: AssetIndex.Entry?
+
     public init(imageNamed name: String) {
         source = .named(name)
+        asset = AssetIndex.shared?.entry(name)
     }
 
     public init(data: Data, size: CGSize) {
         source = .data(data)
+        asset = nil
         declaredSize = size
     }
 
+    /// A sub-rectangle of `texture`, in its unit coordinate space, as
+    /// SpriteKit takes it: nesting composes, so a slice of a texture that is
+    /// itself a slice of a packed page lands in the right place on the page.
     public init(rect: CGRect, in texture: SKTexture) {
         source = .slice(texture, rect)
+        asset = nil
         let parent = texture.size()
         declaredSize = CGSize(width: parent.width * rect.width, height: parent.height * rect.height)
     }
 
     public init(color: SKColor, size: CGSize) {
         source = .color(color, size)
+        asset = nil
         declaredSize = size
     }
 
+    /// The image's size in points, as SpriteKit reports it: for a named
+    /// texture, the art's own size from the asset index.
     public func size() -> CGSize {
         if let declaredSize { return declaredSize }
         switch source {
@@ -53,18 +72,34 @@ public final class SKTexture: @unchecked Sendable {
             return CGSize(width: base.width * rect.width, height: base.height * rect.height)
         case let .color(_, size):
             return size
-        case .named, .data:
-            // Resolved by the asset loader once it reads the file; until then
-            // the node's explicit size is used.
+        case .named:
+            // Zero while no index is loaded, or when it holds no such asset,
+            // in which case a sprite falls back on its own explicit size.
+            return asset?.size ?? .zero
+        case .data:
             return .zero
         }
     }
 
-    /// The region of the underlying image this texture covers, in unit
-    /// coordinates — what the renderer turns into UVs.
+    /// The region of the page this texture covers, in that page's unit
+    /// coordinates with a bottom-left origin — what the renderer turns into
+    /// UVs. A named texture's is its rect on its packed page; a slice's is
+    /// its own rect taken inside its parent's.
     public var textureRect: CGRect {
-        if case let .slice(_, rect) = source { return rect }
-        return CGRect(x: 0, y: 0, width: 1, height: 1)
+        switch source {
+        case let .slice(parent, rect):
+            let outer = parent.textureRect
+            return CGRect(
+                x: outer.minX + rect.minX * outer.width,
+                y: outer.minY + rect.minY * outer.height,
+                width: rect.width * outer.width,
+                height: rect.height * outer.height
+            )
+        case .named:
+            return asset?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        case .data, .color:
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
     }
 
     /// The texture actually holding the pixels (a slice defers to its parent).
@@ -72,6 +107,11 @@ public final class SKTexture: @unchecked Sendable {
         if case let .slice(parent, _) = source { return parent.root }
         return self
     }
+
+    /// The packed page this texture's pixels are on, as an index into
+    /// `AssetIndex.pages` — the renderer's upload key. Nil for a texture
+    /// that is not backed by the asset index.
+    public var page: Int? { root.asset?.page }
 }
 
 public enum SKTextureFilteringMode: Int, Sendable {
