@@ -288,6 +288,34 @@ the port — whether eight procedural backdrops with live lighting hold 60 fps
 on a mid-range Android GPU (Mali-G57 / Adreno 610 class, not a flagship, and
 not the emulator, which renders through the host GPU and will flatter it).
 
+## The beta's reporting is off on Android
+
+Decided 2026-11-13, and it has to be honoured when the platform ring lands
+rather than patched afterwards.
+
+On iOS every build — debug, TestFlight and release alike — plays the Level
+Designer's feed and posts each clear to the designer's server
+(`DesignerFeed`, `PlaytestLog`). That is fine there, because those features
+come out before the App Store release and TestFlight is not a public
+listing. On Play it is not: an **internal or closed track is a distributed
+build**, so anything it reports has to be declared in Data Safety.
+
+So the Android build does not report. `PlaytestLog` and `DesignerFeed` are
+chokepoints — five and six call sites, none of which touch the network
+themselves — so the port swaps their bodies for ones that do nothing, the
+same way `StoreManager`, `GameCenterManager` and `ICloudSyncManager` get
+Android implementations. Nothing in `Source/` changes.
+
+Nothing in the shell reports today: it draws a board and knows nothing of
+levels or sessions. This note exists so that stays true by intent rather
+than by accident.
+
+Two consequences for the Play listing, both written up in
+`Tools/Play/PLAY-CONSOLE-SETUP.md`: the solve log needs no Data Safety
+declaration, and since there is no Game Center on Android there is no maker
+name or photo on a shared level either — so the whole Name/Photos half of
+the iOS answer drops away rather than carrying across.
+
 ## Toolchain
 
 Swift 6.4.2 (open-source, via swiftly — Xcode's Swift cannot cross-compile),

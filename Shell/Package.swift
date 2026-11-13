@@ -20,6 +20,19 @@ import PackageDescription
 //     -Xcc -I<sdl prefix>/include \
 //     -Xlinker -L<sdl prefix>/lib -Xlinker -lSDL3 \
 //     -Xlinker -lGLESv3 -Xlinker -llog
+//
+// The targets, and why there are four:
+//
+//   CAndroidShell  the C the clang importer cannot reach on its own.
+//   CZlib          Android's own zlib, for inflating the art's PNGs.
+//   ShellCore      the seam: FrameRenderer, Frame, RenderContext, Log.
+//                  Its own target so the shell and the renderer can both
+//                  use it without depending on each other.
+//   GLESBackend    every GL call in the port, plus the asset loading and
+//                  PNG decoding that feed it.
+//   AndroidShell   the window, the context, the lifecycle and the frame
+//                  loop. It depends on GLESBackend only to install it;
+//                  nothing in the shell knows what a sprite is.
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 
@@ -35,10 +48,37 @@ let package = Package(
     ],
     targets: [
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
+        .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
+
+        .target(
+            name: "ShellCore",
+            dependencies: [
+                "CAndroidShell",
+                .product(name: "SpriteKitShim", package: "Android"),
+            ],
+            path: "Sources/ShellCore",
+            swiftSettings: [v5, shimDefine]
+        ),
+
+        .target(
+            name: "GLESBackend",
+            dependencies: [
+                "CAndroidShell",
+                "CZlib",
+                "ShellCore",
+                .product(name: "SpriteKitShim", package: "Android"),
+                .product(name: "GLESRenderer", package: "Android"),
+            ],
+            path: "Sources/GLESBackend",
+            swiftSettings: [v5, shimDefine]
+        ),
+
         .target(
             name: "AndroidShell",
             dependencies: [
                 "CAndroidShell",
+                "ShellCore",
+                "GLESBackend",
                 .product(name: "SpriteKitShim", package: "Android"),
             ],
             path: "Sources/AndroidShell",

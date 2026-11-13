@@ -1,4 +1,5 @@
 import CAndroidShell
+import GLESBackend
 
 /// The APK's way in.
 ///
@@ -16,5 +17,9 @@ public func SDL_main(
     _ argc: Int32,
     _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
-    Shell.run()
+    // Hands the shell a real renderer. If the art is missing from the APK
+    // the index does not load and every texture resolves to the white
+    // placeholder — tinted rectangles, visibly wrong rather than blank.
+    GLESBackend.prepare()
+    return Shell.run(makeRenderer: GLESBackend.makeRenderer)
 }

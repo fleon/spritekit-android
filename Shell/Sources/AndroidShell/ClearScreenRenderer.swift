@@ -1,6 +1,7 @@
 import CAndroidShell
 import Foundation
 import SpriteKitShim
+import ShellCore
 
 /// The whole visual bar of the app-shell track: prove the context is real by
 /// clearing to a colour nothing else would pick.

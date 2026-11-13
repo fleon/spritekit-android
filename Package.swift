@@ -20,6 +20,7 @@ let package = Package(
     name: "SwitchlingsAndroid",
     products: [
         .library(name: "SpriteKitShim", targets: ["SpriteKitShim"]),
+        .library(name: "GLESRenderer", targets: ["GLESRenderer"]),
     ],
     targets: [
         .target(
@@ -27,10 +28,25 @@ let package = Package(
             path: "Sources/SpriteKitShim",
             swiftSettings: [v5, shimDefine]
         ),
+        // The renderer that consumes a DrawList. Its pure parts — shader
+        // translation, batching decisions — build and test on the Mac; the
+        // GL calls themselves are Android-only and come behind them.
+        .target(
+            name: "GLESRenderer",
+            dependencies: ["SpriteKitShim"],
+            path: "Sources/GLESRenderer",
+            swiftSettings: [v5, shimDefine]
+        ),
         .testTarget(
             name: "SpriteKitShimTests",
             dependencies: ["SpriteKitShim"],
             path: "Tests/SpriteKitShimTests",
+            swiftSettings: [v5, shimDefine]
+        ),
+        .testTarget(
+            name: "GLESRendererTests",
+            dependencies: ["GLESRenderer"],
+            path: "Tests/GLESRendererTests",
             swiftSettings: [v5, shimDefine]
         ),
     ]

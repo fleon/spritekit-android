@@ -1,6 +1,7 @@
 import CAndroidShell
 import Foundation
 import SpriteKitShim
+import ShellCore
 
 /// The Android app shell: SDL window, GLES 3 context, lifecycle, run loop.
 ///

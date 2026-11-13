@@ -22,6 +22,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    sourceSets {
+        getByName("main") {
+            // The packed art: atlas pages, the whole tiling pages and
+            // index.json, produced by `npm run art -- --android`. Gitignored
+            // and about 100 MB, so it is referenced where it is built rather
+            // than copied into the Gradle project.
+            assets.srcDirs("../../Assets")
+        }
+    }
+
+    androidResources {
+        // Store the pages rather than deflating them. They are already PNG,
+        // so compressing again buys nothing, and a stored asset can be read
+        // straight out of the mapped APK instead of being inflated first.
+        noCompress += listOf("png", "json")
+    }
+
     packaging {
         jniLibs {
             // The .so files are cross-compiled and already stripped by
