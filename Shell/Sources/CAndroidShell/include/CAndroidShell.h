@@ -29,4 +29,12 @@ static const SDL_InitFlags SWITCHLINGS_INIT_FLAGS =
 static const SDL_WindowFlags SWITCHLINGS_WINDOW_FLAGS =
     SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_RESIZABLE;
 
+/// `SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK` is a cast macro, which the clang
+/// importer does not turn into a Swift constant either.
+static const SDL_AudioDeviceID SWITCHLINGS_DEFAULT_PLAYBACK = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+
+/// Signed 16-bit host-endian samples: what the AAC decoder hands back and
+/// what the sound effects' WAVs already are, so nothing is converted twice.
+static const SDL_AudioFormat SWITCHLINGS_AUDIO_FORMAT = SDL_AUDIO_S16;
+
 #endif /* CANDROIDSHELL_H */

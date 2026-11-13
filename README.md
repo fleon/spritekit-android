@@ -41,6 +41,9 @@ primitives: `customAction`, `run`, `sequence` and `repeatForever`.
 Android/
   Package.swift          SpriteKitShim + tests. Builds on macOS and Android.
   Sources/SpriteKitShim/ The layer.
+  Sources/PlatformShim/  The Android stand-ins for AVFoundation, iCloud's
+                         key-value store, StoreKit and GameKit — the parts
+                         with no device in them. 30 tests.
   Tests/                 36 tests, no device or GL context needed.
   Assets/                The packed art. Generated, gitignored, 101 MB.
   Compat/                Android-only. Do not build on a Mac.
@@ -50,7 +53,8 @@ Android/
     Sources/CoreGraphics/
     Sources/GameCompat/  Symlinks into Source/ — real files, not copies.
   Shell/                 Android-only. The app shell: SDL3, the GLES 3
-                         context and the frame loop.
+                         context, the frame loop, and the audio backend
+                         (SDL3 output, MediaCodec for the soundtrack).
   App/                   The Gradle project — the installable APK.
   Scripts/               Cross-compiling SDL and the shell.
   Text/                  Shaping, metrics, rasterising, the glyph atlas.
@@ -311,6 +315,112 @@ none of the text or UI work, and it answers the question that actually decides
 the port — whether eight procedural backdrops with live lighting hold 60 fps
 on a mid-range Android GPU (Mali-G57 / Adreno 610 class, not a flagship, and
 not the emulator, which renders through the host GPU and will flatter it).
+
+## The platform ring
+
+The managers the game reaches the system through — audio, saved data,
+purchases, achievements, the beta's reporting — are swapped **body for
+body**. Every public API is the same name for name, so the call sites are
+untouched: `StoreManager` is called in 15 files, `ICloudSyncManager` in 9,
+`GameCenterManager` in 7, and not one of them imports StoreKit, GameKit or
+`NSUbiquitousKeyValueStore`. That is what makes the swap possible at all.
+
+The bodies live in `Compat/Sources/GameCompat/Platform/`, beside the
+symlinked game sources rather than instead of them — these six files are the
+only ones in the port that are *not* the game's own code, and each says at
+the top what it keeps, what it drops and why.
+
+Whatever has no device in it sits in `Sources/PlatformShim` and is tested on
+the Mac: the merge saved data depends on, what the full game being owned
+means, which achievements have moved. The device half is one protocol each
+(`AudioBackend`, `CloudKeyValueStore`, `BillingBackend`,
+`AchievementsBackend`), so the thing that cannot be tested is small enough
+to read.
+
+### Audio — done
+
+`AudioManager` keeps every decision it made: the sound list, the per-world
+track, the enable switches as synced settings, the pitch variation on
+footsteps, music waiting while the app is away. What went is AVFoundation.
+
+- **Sound effects**: the WAVs, decoded once with `SDL_LoadWAV`, a pool of
+  `SDL_AudioStream` voices each so repeats overlap. SDL's per-stream gain
+  and frequency ratio give the volume and the footstep pitch for free.
+- **The soundtrack**: AAC, decoded by Android's own MediaCodec through the
+  NDK's C API (`Shell/Sources/CSwitchlingsAudio`), mixed on a thread of its
+  own with sample-accurate gain ramps.
+
+Why AAC rather than re-encoding to Ogg or MP3: Android's CDD makes all three
+mandatory, so there is no format it prefers. What decides it is that the APK
+then ships **the same bytes the IPA does** — one encode, one set of loop
+points, nothing to drift — and that `libmediandk.so` is a system library, so
+nothing is vendored or built. It is also hardware-decoded on a real phone,
+which matters when the GPU is the budget. And it is cheap to undo:
+`AMediaCodec_createDecoderByType` takes the MIME type out of the container,
+so .ogg or .mp3 would decode through the same C unchanged.
+
+Loop points are the subtle part. `MusicLoops.frames` counts frames of the
+master, and an AAC decoder hands back the encoder's priming samples too, so
+a frame counter would sit a constant off. The mixer works in the container's
+presentation time for both "where am I" and "where does the loop start", so
+that constant cancels — and `export-music.js` crossfades the seam into the
+file itself, so the loop is forgiving by construction.
+
+The audio is staged into the APK under `assets/audio/` by the Gradle project
+and listed in `noCompress`: a stored asset has a file descriptor, which is
+what lets MediaCodec read the music out of the APK instead of 28 MB being
+copied onto the device first.
+
+`-AudioProbe` plays a track, overlaps sounds, crossfades, loops and fades
+out, saying in logcat what it did and how loud what it decoded was.
+
+### Saved data — local, and honest about it
+
+`ICloudSyncManager` keeps its shape exactly — `set` / `insert` /
+`addedTimes` / `resetSet`, latest-wins and union, the `didUpdateLocalData`
+notification — because `Progress`, `AudioManager`, `Localization` and
+`GameCenterManager` all lean on those semantics. The merge itself is the
+Apple file's logic, lifted into `SyncEngine` so it could be tested, and it
+runs here against `LocalOnlyCloud`: the same path the Apple build takes
+under `-ICloudOff`.
+
+**Nothing syncs between devices yet.** The Android answer is **Play Games
+Saved Games** (Snapshots), and the shape above fits it better than it looks:
+a snapshot is one blob with a conflict callback, but every record here is
+either a value with the time it changed or a set of items each with the time
+it was added — so merging two snapshots is commutative and idempotent and
+**there is no conflict to resolve**. One snapshot holding `[key: record]` as
+JSON is a `CloudKeyValueStore`, and that protocol's doc comment spells out
+which call maps to which part of the Snapshots API.
+
+### The beta's reporting — off, by decision
+
+See below. `PlaytestLog.run` returns nil and `DesignerFeed.whenAnswered`
+answers at once; neither opens a `URLSession`.
+
+### Billing and achievements — seams, and said so
+
+Both need a Play Console that does not exist yet: the full-game product
+`com.fleon.switchlings.fullgame` has not been created, and Play Games
+Services needs a game with its achievements and an OAuth client tied to the
+signing certificate. `Tools/Play/PLAY-CONSOLE-SETUP.md` is what has to
+happen first.
+
+What is real either way is the state above the service. The entitlement is
+kept on the device and read before anything asks anybody, so every lock,
+padlock, offer and the launch-event rule behave correctly — and the event's
+end is the same instant on both platforms, so a player who bought in time
+keeps the secret worlds wherever they play. Achievement progress is worked
+out from the game's own saved data and kept locally, and only what has moved
+is ever sent.
+
+What is not real is plain: `NoBilling` fails a purchase rather than quietly
+granting it, and `SimulatedBilling` — the Android side of
+`-SimulatePurchases` — grants locally and keeps it across launches, which is
+enough to walk the whole unlock flow on a device. There is no sign-in, no
+dashboard, and `localPlayer()` returns nil for good: no Game Center means a
+level shared from Android carries no maker credit, which is a settled
+decision rather than a gap.
 
 ## The beta's reporting is off on Android
 

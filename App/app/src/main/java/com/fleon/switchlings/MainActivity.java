@@ -1,5 +1,7 @@
 package com.fleon.switchlings;
 
+import android.content.Intent;
+
 import org.libsdl.app.SDLActivity;
 
 /**
@@ -24,5 +26,33 @@ public class MainActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[] { "SDL3", "AndroidShell" };
+    }
+
+    /**
+     * What SDL hands {@code SDL_main} as argv, and therefore what Swift sees
+     * in {@code CommandLine.arguments}.
+     *
+     * <p>The Apple build is driven in testing almost entirely by launch
+     * arguments — {@code -StartLevel}, {@code -AutoSolve}, {@code -Markers}
+     * and the rest of {@code LaunchArguments} — and Android has no
+     * equivalent of {@code xcrun simctl launch}'s trailing arguments. An
+     * intent extra is the nearest thing:
+     *
+     * <pre>
+     * adb shell am start -n com.fleon.switchlings/.MainActivity \
+     *     --esa args "-AudioProbe"
+     * </pre>
+     *
+     * <p>Nothing is passed when the launcher starts the app, which is what
+     * a release build always sees.
+     */
+    @Override
+    protected String[] getArguments() {
+        Intent intent = getIntent();
+        if (intent == null) {
+            return super.getArguments();
+        }
+        String[] arguments = intent.getStringArrayExtra("args");
+        return arguments == null ? super.getArguments() : arguments;
     }
 }

@@ -24,6 +24,9 @@ import PackageDescription
 // The targets, and why there are four:
 //
 //   CAndroidShell  the C the clang importer cannot reach on its own.
+//   CSwitchlingsAudio  the AAC decoder, over Android's MediaCodec.
+//   SDLAudio       the audio backend: SDL3 for output and sound effects,
+//                  the decoder above for the soundtrack.
 //   CZlib          Android's own zlib, for inflating the art's PNGs.
 //   ShellCore      the seam: FrameRenderer, Frame, RenderContext, Log.
 //                  Its own target so the shell and the renderer can both
@@ -54,6 +57,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
+        .target(name: "CSwitchlingsAudio", path: "Sources/CSwitchlingsAudio"),
         .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
 
         .target(
@@ -63,6 +67,18 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "Android"),
             ],
             path: "Sources/ShellCore",
+            swiftSettings: [v5, shimDefine]
+        ),
+
+        .target(
+            name: "SDLAudio",
+            dependencies: [
+                "CAndroidShell",
+                "CSwitchlingsAudio",
+                "ShellCore",
+                .product(name: "PlatformShim", package: "Android"),
+            ],
+            path: "Sources/SDLAudio",
             swiftSettings: [v5, shimDefine]
         ),
 
@@ -86,6 +102,7 @@ let package = Package(
                 "CAndroidShell",
                 "ShellCore",
                 "GLESBackend",
+                "SDLAudio",
                 .product(name: "SpriteKitShim", package: "Android"),
             ],
             path: "Sources/AndroidShell",

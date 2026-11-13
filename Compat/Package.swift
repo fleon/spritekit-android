@@ -37,13 +37,17 @@ let package = Package(
         .target(name: "CoreGraphics",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
                 path: "Sources/CoreGraphics", swiftSettings: [v5, shimDefine]),
+        .target(name: "QuartzCore",
+                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                path: "Sources/QuartzCore", swiftSettings: [v5, shimDefine]),
 
         .target(
             name: "GameCompat",
             dependencies: [
                 .product(name: "SpriteKitShim", package: "Android"),
+                .product(name: "PlatformShim", package: "Android"),
                 .product(name: "Macros", package: "Macros"),
-                "SpriteKit", "UIKit", "CoreText", "CoreGraphics",
+                "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "QuartzCore",
             ],
             path: "Sources/GameCompat",
             swiftSettings: [v5, shimDefine]

@@ -1,5 +1,6 @@
 import CAndroidShell
 import GLESBackend
+import ShellCore
 
 /// The APK's way in.
 ///
@@ -17,6 +18,9 @@ public func SDL_main(
     _ argc: Int32,
     _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
 ) -> Int32 {
+    // What SDL was handed by MainActivity.getArguments(). The process's own
+    // argv is the zygote's, so this is the only place they exist.
+    ShellArguments.install(argc: argc, argv: argv)
     // Hands the shell a real renderer. If the art is missing from the APK
     // the index does not load and every texture resolves to the white
     // placeholder — tinted rectangles, visibly wrong rather than blank.

@@ -21,6 +21,7 @@ let package = Package(
     products: [
         .library(name: "SpriteKitShim", targets: ["SpriteKitShim"]),
         .library(name: "GLESRenderer", targets: ["GLESRenderer"]),
+        .library(name: "PlatformShim", targets: ["PlatformShim"]),
     ],
     targets: [
         .target(
@@ -35,6 +36,25 @@ let package = Package(
             name: "GLESRenderer",
             dependencies: ["SpriteKitShim"],
             path: "Sources/GLESRenderer",
+            swiftSettings: [v5, shimDefine]
+        ),
+        // The platform ring: the Android stand-ins for the Apple services
+        // the game's managers sit on — AVFoundation, iCloud's key-value
+        // store, StoreKit and GameKit. Only the parts with no device in
+        // them live here, which is most of each: the merge saved data
+        // depends on, what the full game being owned means, which
+        // achievements have moved. The device half (SDL audio, a Play
+        // service) is behind a protocol each, so this whole target builds
+        // and tests on the Mac.
+        .target(
+            name: "PlatformShim",
+            path: "Sources/PlatformShim",
+            swiftSettings: [v5, shimDefine]
+        ),
+        .testTarget(
+            name: "PlatformShimTests",
+            dependencies: ["PlatformShim"],
+            path: "Tests/PlatformShimTests",
             swiftSettings: [v5, shimDefine]
         ),
         .testTarget(

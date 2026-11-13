@@ -1,5 +1,7 @@
 import CAndroidShell
 import Foundation
+import PlatformShim
+import SDLAudio
 import SpriteKitShim
 import ShellCore
 
@@ -20,18 +22,34 @@ public enum Shell {
     /// one the renderer wants is its call, not the shell's.
     public static var makeRenderer: ((RenderContext) -> FrameRenderer)?
 
+    /// The audio backend, opened once SDL is up and installed here for the
+    /// game's `AudioManager` to stand on. Nil when Android gives no audio
+    /// device, which the game must survive: it runs silent, not broken.
+    public private(set) static var audio: AudioBackend = NullAudioBackend()
+
     /// Run until Android tells us to stop. Returns the process exit status.
     @discardableResult
     public static func run(
         makeRenderer factory: ((RenderContext) -> FrameRenderer)? = nil
     ) -> Int32 {
         Log.info("Switchlings Android shell starting (SDL \(sdlVersion))")
+        // One clock. The shim answers `CACurrentMediaTime()` out of this, so
+        // the action system, `u_time` and the frame loop cannot drift apart.
+        MediaTime.source = { ShellClock.now }
 
         guard SDL_Init(SWITCHLINGS_INIT_FLAGS) else {
             Log.error("SDL_Init failed: \(sdlError)")
             return 1
         }
         defer { SDL_Quit() }
+
+        // Audio before the window: opening the device is the slow part and
+        // nothing on screen waits for it. A device that will not open leaves
+        // the null backend in place.
+        let soundtrack = SDLAudioBackend()
+        if let soundtrack { audio = soundtrack }
+        defer { audio = NullAudioBackend() }
+        let probe = AudioProbe(audio: audio)
 
         // GLES 3.0. Chosen over Vulkan because the game's 31 shaders are
         // GLSL ES 1.0, which maps almost 1:1 onto ES 3.0.
@@ -96,9 +114,13 @@ public enum Shell {
                     running = false
                 case SDL_EVENT_WILL_ENTER_BACKGROUND.rawValue:
                     foreground = false
+                    // The soundtrack stops with the game, as it does on
+                    // Apple: nothing plays over the launcher.
+                    audio.suspend()
                 case SDL_EVENT_DID_ENTER_FOREGROUND.rawValue:
                     foreground = true
                     previous = ShellClock.now
+                    audio.resume()
                 case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED.rawValue:
                     let updated = drawableSize(of: window)
                     if updated != size {
@@ -127,6 +149,7 @@ public enum Shell {
             )
             previous = now
 
+            probe?.tick(at: now)
             renderer.drawFrame(frame)
             SDL_GL_SwapWindow(window)
             index += 1

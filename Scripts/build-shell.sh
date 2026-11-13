@@ -58,6 +58,8 @@ for abi in "${targets[@]}"; do
         -Xlinker -lSDL3
         -Xlinker -lGLESv3
         -Xlinker -llog
+        # Android's own media stack, for decoding the soundtrack's AAC.
+        -Xlinker -lmediandk
     )
     swift build "${swiftpm[@]}"
 
