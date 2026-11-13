@@ -12,10 +12,11 @@
 #   Android/Scripts/emulators.sh status
 #       Who holds which slot, until when, and whether it's up.
 #
-# A slot is lent for a lease (60 minutes unless asked otherwise) that every
-# `acquire` by the same owner renews, so acquire before each emulator step.
-# A lapsed lease is taken back by the next acquire that needs a slot, so a
-# session that ends without releasing doesn't hold one for good.
+# A slot is lent for a lease (30 minutes unless asked otherwise) that every
+# `acquire` by the same owner renews, so acquire before each emulator step
+# and release after it. Every `acquire` and `status` first shuts down each
+# slot whose lease has lapsed and frees it, so a session that stops without
+# releasing (or a crash) holds no emulator, and no memory, for long.
 #
 # Each slot is an AVD of its own (`switchlings_pool_<n>`, made here on first
 # use from the template below) on console port 5556, 5558, 5560 or 5562, so
@@ -31,7 +32,7 @@ set -euo pipefail
 
 SLOTS=4
 FIRST_PORT=5556
-DEFAULT_MINUTES=60
+DEFAULT_MINUTES=30
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 ADB="$SDK/platform-tools/adb"
 EMULATOR="$SDK/emulator/emulator"
@@ -159,25 +160,31 @@ boot_slot() {
     die "slot $n ($serial) did not boot; see $STATE/slot-$n.log"
 }
 
+# Shuts down and frees every slot whose lease has lapsed, except `keep`'s
+# (an owner coming back renews its own). Call with the lock held.
+reap() {
+    local keep=${1:-} n owner
+    for n in $(seq 1 $SLOTS); do
+        owner=$(owner_of "$n")
+        [ -n "$owner" ] && [ "$owner" != "$keep" ] || continue
+        if [ "$(until_of "$n")" -lt "$(now)" ]; then
+            echo "emulators: slot $n's lease to $owner lapsed; shutting it down" >&2
+            stop_slot "$n"
+            free "$n"
+        fi
+    done
+}
+
 acquire() {
     local owner=${1:?owner} minutes=${2:-$DEFAULT_MINUTES} n slot=""
     lock
+    reap "$owner"
     for n in $(seq 1 $SLOTS); do
         [ "$(owner_of "$n")" = "$owner" ] && { slot=$n; break; }
     done
     if [ -z "$slot" ]; then
         for n in $(seq 1 $SLOTS); do
             [ -z "$(owner_of "$n")" ] && { slot=$n; break; }
-        done
-    fi
-    if [ -z "$slot" ]; then
-        for n in $(seq 1 $SLOTS); do
-            if [ "$(until_of "$n")" -lt "$(now)" ]; then
-                echo "emulators: slot $n's lease to $(owner_of "$n") lapsed; taking it" >&2
-                stop_slot "$n"
-                slot=$n
-                break
-            fi
         done
     fi
     if [ -z "$slot" ]; then
@@ -225,6 +232,6 @@ status() {
 case "${1:-}" in
     acquire) shift; acquire "$@" ;;
     release) shift; release "$@" ;;
-    status) status ;;
+    status) lock; reap; unlock; status ;;
     *) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

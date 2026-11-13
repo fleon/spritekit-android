@@ -133,9 +133,17 @@ down (about 15 seconds), waits for it, and exports `ANDROID_SERIAL`, so
 `adb`, `./gradlew installDebug` and everything else after it reach your slot
 alone. With more than one emulator up, a bare `adb` refuses to guess, so
 never skip it. Acquire again before each emulator step: a slot is lent for
-an hour at a time (`acquire <name> <minutes>` for longer), every acquire
-renews it, and a lapsed lease goes to the next session that needs a slot.
-If all four are held, `acquire` exits 2 and lists who holds them.
+half an hour at a time (`acquire <name> <minutes>` for longer), and every
+acquire renews it. Every `acquire` and `status` first shuts down each slot
+whose lease has lapsed, so a session that stops or crashes without
+releasing holds no emulator for long. If all four are held, `acquire` exits
+2 and lists who holds them.
+
+These four are the only Android emulators: no other AVD is booted, Play
+Store images included. While a pool emulator runs, a session may boot one
+iPhone simulator of its own for comparison (four across all sessions at
+most). It shuts the simulator down with its slot when the comparison is done.
+Everything at once once ran this Mac out of memory.
 
 ```bash
 Android/Scripts/emulators.sh release <your-session-name>
