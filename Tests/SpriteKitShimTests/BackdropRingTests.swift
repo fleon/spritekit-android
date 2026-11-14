@@ -167,4 +167,39 @@ final class BackdropRingTests: XCTestCase {
             XCTAssertEqual(variance.squareRoot(), sigma, accuracy: sigma * 0.1 + 0.3)
         }
     }
+
+    func testTheBlurMixesInLinearLightAsCoreImageDoes() throws {
+        // Black and white stripes a pixel wide, blurred: Core Image on a Mac
+        // writes 187 in the middle (half the light, encoded as sRGB), not 128.
+        let size = 40
+        var pixels = [UInt8](repeating: 255, count: size * size * 4)
+        for y in 0..<size {
+            for x in stride(from: 1, to: size, by: 2) {
+                for channel in 0..<3 { pixels[(y * size + x) * 4 + channel] = 0 }
+            }
+        }
+        let image = SpriteKitShim.CIImage(cgImage: RasterImage(width: size, height: size, pixels: pixels))
+        let blurred = image.clampedToExtent().applyingGaussianBlur(sigma: 4).cropped(to: image.extent)
+        let out = try XCTUnwrap(SpriteKitShim.CIContext().createCGImage(blurred, from: image.extent))
+        XCTAssertEqual(Int(out.pixels[(20 * size + 20) * 4]), 187, accuracy: 2)
+    }
+
+    func testAWhiteMaskOnClearKeepsItsAlphaAsBlurred() throws {
+        // Colour is converted unpremultiplied: white stays white, so the
+        // premultiplied colour follows alpha, which Core Image leaves linear.
+        var pixels = [UInt8](repeating: 0, count: 40 * 40 * 4)
+        for y in 0..<40 {
+            for x in 20..<40 { pixels[(y * 40 + x) * 4..<(y * 40 + x) * 4 + 4] = [255, 255, 255, 255] }
+        }
+        let image = SpriteKitShim.CIImage(cgImage: RasterImage(width: 40, height: 40, pixels: pixels))
+        let blurred = image.clampedToExtent().applyingGaussianBlur(sigma: 3).cropped(to: image.extent)
+        let out = try XCTUnwrap(SpriteKitShim.CIContext().createCGImage(blurred, from: image.extent))
+        for x in 12..<28 {
+            let pixel = (20 * 40 + x) * 4
+            XCTAssertEqual(Int(out.pixels[pixel]), Int(out.pixels[pixel + 3]), accuracy: 1)
+        }
+        // Core Image on a Mac: 51 two pixels short of the edge, 204 two past it.
+        XCTAssertEqual(Int(out.pixels[(20 * 40 + 17) * 4 + 3]), 51, accuracy: 8)
+        XCTAssertEqual(Int(out.pixels[(20 * 40 + 22) * 4 + 3]), 204, accuracy: 8)
+    }
 }

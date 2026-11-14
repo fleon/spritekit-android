@@ -1,6 +1,7 @@
 package com.fleon.switchlings;
 
 import android.content.ClipData;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.Intent;
 import android.net.Uri;
@@ -305,6 +306,7 @@ public class MainActivity extends SDLActivity {
      */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        holdDebugOrientation();
         super.onCreate(savedInstanceState);
         services = new PlatformServices(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -315,6 +317,28 @@ public class MainActivity extends SDLActivity {
             backCallback = callback;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+        }
+    }
+
+    /**
+     * {@code -Orientation} (debug builds only, as {@link #getArguments} reads
+     * them), held before SDL starts. SDL holds it too, from its orientations
+     * hint, but only once the shell makes its window, by when the activity has
+     * come up upright and the game has laid its first scene out that way;
+     * Apple's controller holds it from launch. A backdrop keeps a plan made
+     * then, so a landscape launch laid scenery out round an upright screen's
+     * buttons. Mapped as {@code Shell.orientationHint} maps it for SDL.
+     */
+    private void holdDebugOrientation() {
+        String[] args = getArguments();
+        for (int i = 0; i + 1 < args.length; i++) {
+            if (!"-Orientation".equals(args[i])) continue;
+            switch (args[i + 1]) {
+                case "portrait": setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT); break;
+                case "landscape": setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE); break;
+                case "flipped": setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE); break;
+                default: break;
+            }
         }
     }
 

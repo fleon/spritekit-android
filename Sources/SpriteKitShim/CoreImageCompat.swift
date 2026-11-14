@@ -11,6 +11,13 @@ import Foundation
 // The blur is three box blurs a direction (Wells' "boxes for Gauss"), which
 // is within a few levels of a true Gaussian for these sizes and costs the
 // same whatever the sigma: Core Image itself approximates large sigmas.
+//
+// Core Image works in linear light: it decodes an sRGB image's colour as it
+// reads it and encodes it again as it writes it out, on unpremultiplied
+// colour, leaving alpha as it is. So a blurred black-and-white mask comes out
+// lighter in its middle tones (a 50/50 mix writes about 187, not 128, as on a Mac), and
+// `LawnNode`'s clearing reaches that much further from the board; a white
+// mask on clear (`BoardGroundingArt`) keeps its alpha as blurred.
 
 public final class CIImage: @unchecked Sendable {
     /// Premultiplied RGBA, row 0 the top, as `RasterImage` keeps it.
@@ -31,8 +38,9 @@ public final class CIImage: @unchecked Sendable {
     }
 
     public convenience init(cgImage: RasterImage) {
-        self.init(width: cgImage.width, height: cgImage.height,
-                  pixels: cgImage.pixels.map { Float($0) / 255 }, clamped: false)
+        var pixels = cgImage.pixels.map { Float($0) / 255 }
+        Self.convertColour(&pixels, Self.linear)
+        self.init(width: cgImage.width, height: cgImage.height, pixels: pixels, clamped: false)
     }
 
     public convenience init?(image: UIImage) {
@@ -104,8 +112,30 @@ public final class CIImage: @unchecked Sendable {
     }
 
     fileprivate var raster: RasterImage {
-        RasterImage(width: width, height: height,
-                    pixels: pixels.map { UInt8(max(0, min(255, ($0 * 255).rounded()))) })
+        var encoded = pixels
+        Self.convertColour(&encoded, Self.encoded)
+        return RasterImage(width: width, height: height,
+                           pixels: encoded.map { UInt8(max(0, min(255, ($0 * 255).rounded()))) })
+    }
+
+    /// Applies `transfer` to each premultiplied pixel's colour, unpremultiplied.
+    private static func convertColour(_ values: inout [Float], _ transfer: (Float) -> Float) {
+        for base in stride(from: 0, to: values.count - 3, by: 4) {
+            let alpha = values[base + 3]
+            guard alpha > 0 else { continue }
+            for channel in 0..<3 {
+                values[base + channel] = transfer(min(1, values[base + channel] / alpha)) * alpha
+            }
+        }
+    }
+
+    /// The sRGB transfer function, decoding and encoding.
+    static func linear(_ value: Float) -> Float {
+        value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+    }
+
+    static func encoded(_ value: Float) -> Float {
+        value <= 0.0031308 ? value * 12.92 : 1.055 * pow(value, 1 / 2.4) - 0.055
     }
 }
 

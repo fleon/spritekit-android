@@ -167,11 +167,18 @@ public enum ShaderTranslator {
             lines.append("")
         }
 
-        // SpriteKit's helper: the sprite's own texture sampled at this pixel,
-        // tinted as the node asks. Declared only when the shader uses it.
-        if usesIdentifier("SKDefaultShading", in: body) {
+        // SpriteKit's helper: what the sprite would draw with no shader of its
+        // own (`defaultFragmentShader`), its texture mixed toward its colour by
+        // `colorBlendFactor` and multiplied through by its alpha, as a Mac's
+        // SpriteKit measures. Declared only when the shader uses it.
+        let usesDefaultShading = usesIdentifier("SKDefaultShading", in: body)
+        if usesDefaultShading, !declares("v_blend", in: body) {
+            lines.insert("in float v_blend;", at: lines.firstIndex(of: "out vec4 \(fragColor);") ?? lines.endIndex)
+        }
+        if usesDefaultShading {
             lines.append("vec4 SKDefaultShading() {")
-            lines.append("    return texture(u_texture, v_tex_coord);")
+            lines.append("    vec4 texel = texture(u_texture, v_tex_coord);")
+            lines.append("    return vec4(mix(texel.rgb, v_color_mix.rgb * texel.a, v_blend), texel.a) * v_color_mix.a;")
             lines.append("}")
             lines.append("")
         }

@@ -52,6 +52,20 @@ struct PreambleTests {
         let notUsing = ShaderTranslator.fragmentShader(from: "void main() { gl_FragColor = vec4(1.0); }")
         #expect(!notUsing.contains("vec4 SKDefaultShading() {"))
     }
+
+    @Test("SKDefaultShading tints and fades as an unshaded sprite draws")
+    func defaultShadingTintsAndFades() {
+        // A Mac's SpriteKit: a white sprite tinted red (colorBlendFactor 1)
+        // draws red through SKDefaultShading, and at alpha 0.5 half as bright,
+        // nothing multiplied after the shader. A lit signpost's ink arrow and
+        // a pressed plate's fading cap depend on it.
+        let out = ShaderTranslator.fragmentShader(from: "void main() { gl_FragColor = SKDefaultShading(); }")
+        #expect(out.contains("in float v_blend;"))
+        #expect(out.contains("mix(texel.rgb, v_color_mix.rgb * texel.a, v_blend)"))
+        #expect(out.contains("* v_color_mix.a;"))
+        let declared = ShaderTranslator.fragmentShader(from: "varying float v_blend; void main() { gl_FragColor = SKDefaultShading() * v_blend; }")
+        #expect(declared.components(separatedBy: "float v_blend;").count - 1 == 1)
+    }
 }
 
 @Suite("Dialect rewriting")

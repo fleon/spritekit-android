@@ -1274,7 +1274,19 @@ with what they override.
 - **Core Image** (`CoreImageCompat.swift`, a `CoreImage` module in
   `Compat`): the lawn's clearing round the board and the board's shadow and
   glow are a mask blurred with `clampedToExtent().applyingGaussianBlur`.
-  Three box blurs a direction, on the CPU.
+  Three box blurs a direction, on the CPU, in linear light as Core Image
+  blurs (colour decoded from sRGB unpremultiplied, alpha left linear, and
+  encoded again on the way out), so the clearing reaches as far as on Apple.
+- **`CGRect` as CoreGraphics answers** (`RectSemantics`): corelibs says
+  touching rects intersect, gives a spanned rect's own width as the
+  intersection's and tests `contains(_: CGRect)` as `union(r) == self`, which
+  rounding breaks; the backdrops' arrangement meets those edges on its grid,
+  so the scenery came out elsewhere. The shim's members shadow Foundation's,
+  fitted to CoreGraphics and checked against it on the host.
+- **`SKDefaultShading()`** is what the sprite would draw with no shader of its
+  own: its texture mixed toward its colour by `colorBlendFactor` and
+  multiplied by its alpha, as a Mac's SpriteKit measures (the lit signpost's
+  ink arrow, a lit piece's fades).
 - **CoreGraphics' image orientation.** `draw(_:in:)` puts an image's top on
   the rect's maxY, as CoreGraphics does, and a raw `CGContext(data:…)` is y
   up; a renderer's context stays y-down, as UIKit's is. The game flips for
@@ -1537,7 +1549,7 @@ each the `GameViewController` method of the same name:
 | `-KeyScript`, `-TouchScript` (`-ScriptTimes`, `-ScriptAfter`) | as on Apple: keys to `KeyboardControllable`, taps as touches at shares of the screen, named steps to `ScriptedStepping` |
 | `-GamepadScript` | a pretend pad of `GamepadInput`'s own, connected as the script starts |
 | `-RemoteScript` | Apple TV's presses as a TV's d-pad would press them: arrows move focus, `select` presses, `menu` is Back |
-| `-Orientation landscape\|flipped\|portrait` | held by SDL's orientations hint as the window is made (`landscape` is the camera on the left, as on Apple); `turn` is left out |
+| `-Orientation landscape\|flipped\|portrait` | held by `MainActivity` before SDL starts (`holdDebugOrientation`), so the game's first layout is already turned, as Apple's controller holds it from launch, and by SDL's orientations hint as the window is made (`landscape` is the camera on the left, as on Apple); `turn` is left out |
 | `-SyncedClears`, `-SyncedMoves`, `-SyncedLanguage` | as on Apple |
 | `-OpenLink`, `-OpenLinkAfter`, `-OpenCode` | as `SceneDelegate` reads them: a link the game opened with wins, else `-OpenLink` opens at launch (`WorldLink.pending`, `LevelShare.pendingCode`), else `-OpenCode`'s code; with `-OpenLinkAfter`, `-OpenLink` opens that many seconds after the game shows, as a tapped link does. `LaunchLinks` (PlatformShim, host-tested) decides which; MainActivity hands a real link as `-LaunchLink`, apart from the debug `-OpenLink` |
 
