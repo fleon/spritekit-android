@@ -11,6 +11,10 @@ val abis = listOf("arm64-v8a", "x86_64")
 // provider in `assets.srcDirs`, because it cannot tell generated output from
 // checked-in files and the task dependency would not carry — which is what
 // the `MergeSourceSetFolders` wiring at the foot of this file does by hand.
+//
+// The art, the fonts and the audio go into the debug APK's base only. A
+// release bundle carries them in the `content` install-time asset pack
+// (`../content`), which keeps the base under Google Play's 200 MB a device.
 
 // The fonts, under `assets/fonts/`. Only the faces the text stack registers:
 // pointing the source set at the whole of `Assets/Fonts` would drag in the
@@ -109,19 +113,33 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Release bundles carry the art, the fonts and the audio in an
+    // install-time asset pack, which Play installs with the app as one more
+    // split APK: `AAssetManager` finds every file at the same path as when it
+    // sat in the base.
+    assetPacks += listOf(":content")
+
     sourceSets {
         getByName("main") {
+            // The levels and the strings, each staged by a task below: small,
+            // and in the base of every build.
+            assets.srcDirs(levelAssets, stringAssets)
+        }
+        getByName("debug") {
             // The packed art: atlas pages, the whole tiling pages and
             // index.json, produced by `npm run art -- --android`. Gitignored
             // and about 100 MB, so it is referenced where it is built rather
             // than copied into the Gradle project.
             //
-            // Beside it, the fonts, the audio and the levels, each staged
-            // by a task below. Separate roots rather than one tree: the
-            // art's directory is a build output that
-            // `npm run art -- --android` rewrites wholesale, so nothing
-            // else may live inside it.
-            assets.srcDirs("../../Assets", stagedFonts, audioAssets, levelAssets, stringAssets)
+            // Beside it, the fonts and the audio, each staged by a task
+            // below. Separate roots rather than one tree: the art's directory
+            // is a build output that `npm run art -- --android` rewrites
+            // wholesale, so nothing else may live inside it.
+            //
+            // Only in debug: an APK Gradle builds has no asset packs, so the
+            // debug APK carries in its base what a release bundle carries in
+            // the `content` pack.
+            assets.srcDirs("../../Assets", stagedFonts, audioAssets)
         }
     }
 
@@ -213,6 +231,11 @@ tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configure
 tasks.matching { it.name.contains("lint", ignoreCase = true) }.configureEach {
     dependsOn(stageFonts, stageAudio, stageLevelAssets, stageStrings)
 }
+// The asset pack's plugin publishes its folder with no task behind it, so
+// whatever packs it into a bundle has to wait for the folder to be staged.
+tasks.matching { it.name.startsWith("assetPack") }.configureEach {
+    dependsOn(":content:stageContent")
+}
 
 // An APK with no Swift in it still installs and still launches — and then
 // dies in the linker with nothing useful in logcat. Fail here instead.
@@ -231,3 +254,14 @@ val checkNativeLibraries = tasks.register("checkNativeLibraries") {
 }
 
 tasks.named("preBuild") { dependsOn(checkNativeLibraries) }
+// A debug bundle would carry the art twice, in the debug APK's base and in
+// the `content` pack, which bundletool refuses with a puzzling "Both modules
+// contain asset entry". Say what to do instead.
+tasks.matching { it.name == "packageDebugBundle" }.configureEach {
+    doFirst {
+        throw GradleException(
+            "A debug bundle is not built: the debug APK carries the art in its base, a bundle in the " +
+                "`content` asset pack.\nBuild `assembleDebug` for an APK, or `bundleRelease` for Play."
+        )
+    }
+}

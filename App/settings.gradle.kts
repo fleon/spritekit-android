@@ -13,4 +13,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Switchlings"
-include(":app")
+include(":app", ":content")

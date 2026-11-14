@@ -84,6 +84,47 @@ then dies in the linker with nothing useful in logcat.
 
 The APK lands at `Android/App/app/build/outputs/apk/debug/app-debug.apk`.
 
+## The release bundle: an install-time asset pack
+
+Google Play caps the base module's download at 200 MB a device. Everything
+in one base came to 195.7 MB on an arm64 phone, with 4.3 MB spare. So
+`bundleRelease` puts the art, the fonts and the audio into **`content`**, an
+install-time asset pack (`content/build.gradle.kts`). The base keeps the
+code, the levels and the strings. Play installs the pack with the app as one
+more split APK (`split_content.apk`), so `AAssetManager`, and SDL_LoadFile
+over it, finds every file at the same path. The shell's code does not change:
+
+- `installIndex` and `installFonts` read the same paths.
+- The rigs unpack the same way.
+- The soundtrack's file descriptor works the same, because the bundle's
+  `noCompress` globs apply to the pack too.
+
+Per device, from `bundletool get-size total`:
+
+| | Pixel 6 (arm64, API 36) | M31-like (arm64, API 31) | Play's limit |
+|---|---:|---:|---:|
+| base module | 32.9 MB | 32.9 MB | 200 MB |
+| `content` pack | 162.7 MB | 162.7 MB | 1 GB for all install-time packs |
+| whole install download | 195.7 MB | 195.7 MB | |
+
+The pack's plugin reads only `content/src/main/assets`, so `stageContent`
+syncs it there (gitignored). Gradle builds APKs without packs, so
+`assembleDebug` still puts the art, fonts and audio in its base (the app's
+`debug` source set). For that reason a debug *bundle* is refused, with a
+message saying why.
+
+To install a release bundle the way Play would, packs and all:
+
+```bash
+bundletool build-apks --bundle=app/build/outputs/bundle/release/app-release.aab --output=/tmp/app.apks
+```
+
+```bash
+bundletool install-apks --apks=/tmp/app.apks
+```
+
+`adb shell pm path com.fleon.switchlings` then lists `split_content.apk`.
+
 ## Installing and running
 
 ```bash
@@ -211,10 +252,13 @@ shader's `u_time` and in the board's action timings.
 
 ## Known gaps
 
-- **The APK is 287 MB in debug**, both ABIs, with the art and the 50 MB
-  variable font in it. Splitting per ABI halves the native half; the font is
-  the next biggest single thing and cannot be subset per weight, because the
-  game's weight names are its named instances.
+- **The debug APK is 363 MB**, both ABIs, with the art and the 50 MB
+  variable font in it. A release bundle splits per ABI and moves the art
+  into the `content` pack (above). The font is the biggest single file
+  (26.5 MB compressed). Subsetting it per weight would not keep the game's
+  weights, because the game names them by the variable face's named
+  instances. It doesn't count against the base's 200 MB anyway, since it
+  sits in the pack.
 - **The APK is 138 MB**, and 80 MB of that is two copies of
   `lib_FoundationICU.so`. It comes in through Foundation, which the shim
   needs for `CGFloat` and friends. Splitting the APK per ABI halves it
