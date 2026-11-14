@@ -89,5 +89,24 @@ unsigned char *switchlings_platform_call(const char *name, const unsigned char *
 
 /// The events Java has queued, as a JSON array: freed by the caller, or NULL.
 unsigned char *switchlings_platform_drain(int *out_length);
+/// Registers `MainActivity`'s native methods (`nativeOpenLink`,
+/// `nativePaste`, `nativeKeyboard`) on SDL's activity, then tells it they're
+/// there (`nativesRegistered`), so it hands over a link it held meanwhile.
+/// SDL dlopens this library itself, so JNI would never find them by name.
+bool switchlings_register_natives(void);
+
+/// A link Android handed the running activity, or NULL. The caller frees it.
+char *switchlings_take_link(void);
+
+/// Text the player picked Paste for, or NULL. The caller frees it.
+char *switchlings_take_paste(void);
+
+/// The soft keyboard's height and the view's, in pixels, if either changed
+/// since the last call.
+bool switchlings_take_keyboard(int *height, int *viewHeight);
+
+/// Offers Android's Paste at a point in the view, in pixels
+/// (`MainActivity.offerPaste`).
+bool switchlings_offer_paste(float x, float y);
 
 #endif /* CANDROIDSHELL_H */

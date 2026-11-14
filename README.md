@@ -122,7 +122,7 @@ swift build --swift-sdk swift-6.4.2-RELEASE_android \
 
 Vendor/build.sh                                         # FreeType + HarfBuzz
 cd Text
-PKG_CONFIG_PATH=../Vendor/out/host/lib/pkgconfig swift test              # 60 tests
+PKG_CONFIG_PATH=$PWD/../Vendor/out/host/lib/pkgconfig swift test         # 60 tests
 PKG_CONFIG_PATH=../Vendor/out/aarch64-linux-android/lib/pkgconfig \
 swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple aarch64-unknown-linux-android23 --product TextProbe
@@ -639,7 +639,9 @@ and saved data stays on the device.
 ### The beta's reporting — off, by decision
 
 See below. `PlaytestLog.run` returns nil and `DesignerFeed.whenAnswered`
-answers at once; neither opens a `URLSession`.
+answers at once; neither opens a `URLSession`. The designer's server is
+still reached for what stays after the beta, the players' shared levels
+(see **The players' Level Designer**).
 
 ### What Data Safety has to say
 
@@ -740,7 +742,8 @@ Input, as the Apple controller routes it:
   through the game's own `FocusNavigator`.
 - **Typing** (the Level Designer's friend code) goes to a `UITextField`
   stand-in over SDL's text input; the field's delegate sees each insertion,
-  backspace and Return as UIKit hands them over.
+  backspace and Return as UIKit hands them over. See **The players' Level
+  Designer** for the keyboard's frame, Paste and links.
 
 ### What the shell gives the game
 
@@ -841,7 +844,6 @@ so where they are declared:
 | `Storefront.current` | `Compat/Sources/StoreKit` | nil: no App Store storefront, so a share's link falls back to the region's App Store page (a Play link is a follow-up; `SolutionShare` is the game's own) |
 | `UIDevice.batteryLevel` | `UIKitInput.swift` | unknown, as a simulator reports |
 | `UIApplication.connectedScenes` | `UIKitInput.swift` | empty |
-| keyboard notifications, `cgRectValue` | `UIKitText.swift` | never posted: the code prompt stays centred over the keyboard rather than rising clear of it |
 | `CTFontManagerRegisterFontsForURL` | `CoreTextCompat.swift` | true: the shell registered the fonts already |
 | `SKShapeNode.strokeShader`, `SKSpriteNode.normalTexture` | shim | carried, not drawn: the game sets neither in a way that shows |
 
@@ -1258,3 +1260,119 @@ can say whether that is the translator or the shader, and the same goes for
 whether `BandedLayerNode` pays (Reef, Bug Woods and Ruins band; #396 found
 bands a loss on the emulator). Reef also shows a faint seam where two of its
 caustic bands meet, which wants the same device to tell timing from a bug.
+
+## The players' Level Designer
+
+The title's Level Designer runs as on iOS, from the game's own
+`Source/Designer` (symlinked into `GameCompat` with the rest): the list
+(My levels and Community, the cards and their more-menus, the code prompt,
+the Discord invite), the editor (world and tool selects, the tool panel
+upright and in landscape, the rail and its modes, painting, moving and
+erasing, playing in place with undo, redo and reset), Share (a picture of
+the level and its link, into Android's share sheet) and a friend's level
+by its code or link. `DesignerStore` keeps its file where corelibs puts
+Application Support, `files/.local/share/Designer/Levels.json` in the app's
+internal storage (`XDG_DATA_HOME`, set by `GameEnvironment`), so drafts and
+friends' levels survive relaunches and updates. The full-game padlock and
+`DesignerUnlocks` are the game's own over `StoreManager`'s Android body
+(`-UnlockAll YES` in a debug build, `-SimulatePurchases YES` to walk the
+offer).
+
+### Shared levels, over the network
+
+`LevelShare` posts a level (`POST /levels`) and fetches a friend's
+(`GET /levels/<code>`) through `URLSession`, which on Android is corelibs'
+`FoundationNetworking` over libcurl, re-exported by the `UIKit` module
+target. Two things make it work:
+
+- **`DesignerServer.endpoint`** answers as on iOS
+  (`https://switchlings.fleon.com`, or `-DesignerServer <url>` in a debug
+  build). The beta's feed and solve log stay off; only shared levels, which
+  outlive the beta, reach the server. Play's Data Safety form therefore
+  needs the shared levels (a board and a random maker key, no name or
+  photo: Android has no Game Center) — `Tools/Play/PLAY-CONSOLE-SETUP.md`.
+- **`android.permission.INTERNET`** in the manifest. TLS needs nothing of
+  ours: the 6.4.2 SDK's `FoundationNetworking` reads Android's own CA store
+  (`/apex/com.android.conscrypt/cacerts`, else
+  `/system/etc/security/cacerts`). libcurl is not Android's Java network
+  stack, so the network security config's cleartext rule doesn't reach it,
+  and a debug build can share against a local server over plain HTTP:
+
+```bash
+SWL_DESIGNER_STORE=/tmp/designer SWL_SHARE_BASE=http://10.0.2.2:46198 \
+  DESIGNER_SECRET=$(openssl rand -hex 24) PORT=46198 \
+  node Tools/guard.js 12 -- node Tools/Levels/Designer/http.js
+adb shell am start -n com.fleon.switchlings/.MainActivity \
+  --esa args "-UnlockAll,YES,-DesignerServer,http://10.0.2.2:46198,-StartScreen,designer"
+```
+
+### The code prompt's keyboard
+
+`CodePromptPopup` lays an invisible `UITextField` over its boxes and
+listens for UIKit's keyboard notifications to rise clear of the keyboard.
+On Android:
+
+- **The keyboard** is SDL's text input, started with the field's own
+  settings as an Android `InputType` (`AndroidInputType` in the shell): the
+  code's capitals and no corrections or suggestions, as the field asks of
+  UIKit. Gboard still offered words for letters with `NO_SUGGESTIONS` alone,
+  and a word picked from its strip would arrive as one many-letter insert,
+  so such a field is also a visible password (no suggestions, a number row
+  for the code's digits). SDL's text input area is the field's frame.
+- **Its frame** comes from Android's IME insets (`MainActivity`'s
+  `GameSurface.onApplyWindowInsets` → `nativeKeyboard`) and is posted as
+  UIKit posts it (`SoftKeyboard` in the shim: `keyboardWillShow`,
+  `keyboardWillChangeFrame`, `keyboardWillHide`, each with
+  `keyboardFrameEndUserInfoKey` as an `NSValue`), so the game's own code
+  raises the card. The activity is `adjustNothing`: left to pan, Android
+  moved the whole game down to keep SDL's hidden edit box in view.
+- **Touches on the field** are the field's, as on iOS, where it is a view
+  over the game's: a tap brings the keyboard back if Android's back put it
+  away, and a long press offers Android's Paste over the boxes
+  (`MainActivity.offerPaste`), which hands the clipboard's text to the
+  field as a paste — so a link or a whole message finds its code
+  (`LevelShare.code(in:)`). A keyboard's own clipboard suggestion pastes
+  the same way, and a hardware keyboard's Ctrl+V (or Meta+V) too.
+
+### Links
+
+`switchlings://level/<code>` and `switchlings://world/<theme>` open the
+game (`VIEW` intent filters), and so does a level's page,
+`https://switchlings.fleon.com/l/<code>`, which `MainActivity` turns into
+the same `switchlings://level/` link before the game sees it, since the
+game's `LevelShare.code(opening:)` reads only its own scheme.
+
+- **Cold**, the link rides in as `-OpenLink` (`getArguments`), which
+  `AndroidGameController.launch(link:)` hands to `WorldLink.pending` or
+  `LevelShare.pendingCode`, as iOS's scene delegate does with its URL
+  contexts.
+- **Running** (`singleInstance`, so `onNewIntent`), the link goes through
+  `nativeOpenLink` to the frame loop, which hands it to
+  `AndroidGameController.open` — the scene on screen opens it
+  (`SharedLevelOpening`), or it waits for the next screen
+  (`SharedLevelOpening.takePendingCode`), or the world list opens on the
+  world (`WorldLink`).
+
+`MainActivity`'s three natives (`nativeOpenLink`, `nativePaste`,
+`nativeKeyboard`) are registered by the shell on the activity's class
+(`switchlings_register_natives`), since SDL dlopens `libAndroidShell.so`
+itself and the class loader never looks there; they leave what they're
+handed in a small locked inbox the frame loop empties (`SystemInbox`). A
+link that arrives before the shell has registered them waits in the
+activity.
+
+```bash
+adb shell am start -a android.intent.action.VIEW -d switchlings://level/W3VYEV
+adb shell am start -a android.intent.action.VIEW -d switchlings://world/reef
+adb shell am start -a android.intent.action.VIEW -d https://switchlings.fleon.com/l/W3VYEV -p com.fleon.switchlings
+```
+
+**App Links** need the site to vouch for the app: the https filter is
+`autoVerify`, and `Tools/Levels/Designer/http.js` now serves
+`/.well-known/assetlinks.json` from `config.json`'s `android` entry (the
+package and its signing certificates' SHA-256 fingerprints). It is empty,
+so the route answers 404 and Android shows the page in the browser, whose
+button opens the `switchlings://` link. To turn it on: add the Play App
+Signing key's fingerprint (Play Console → Setup → App signing) and the
+upload key's, deploy the server to fleon-home and restart it. Nothing was
+deployed.

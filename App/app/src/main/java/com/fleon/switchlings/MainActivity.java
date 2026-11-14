@@ -14,6 +14,17 @@ import android.window.OnBackInvokedDispatcher;
 import android.util.Log;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import android.content.ClipboardManager;
+import android.graphics.drawable.GradientDrawable;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.ViewGroup;
+import android.widget.PopupWindow;
+import android.widget.TextView;
 
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
@@ -87,7 +98,122 @@ public class MainActivity extends SDLActivity {
             return super.getArguments();
         }
         String[] arguments = intent.getStringArrayExtra("args");
-        return arguments == null ? super.getArguments() : arguments;
+        List<String> all = new ArrayList<>(Arrays.asList(arguments == null ? super.getArguments() : arguments));
+        // A link that started the game: the shell hands `-OpenLink` to the
+        // game's launch, as iOS's scene delegate hands its URL contexts.
+        String link = gameLink(intent);
+        if (link != null) {
+            all.add("-OpenLink");
+            all.add(link);
+        }
+        return all.toArray(new String[0]);
+    }
+
+    // MARK: Links
+
+    /**
+     * The link an intent opens, as the game reads links: its own
+     * {@code switchlings://level/<code>} and {@code switchlings://world/<id>},
+     * and a level's page, {@code https://switchlings.fleon.com/l/<code>},
+     * which is the same level's {@code switchlings://} link.
+     */
+    static String gameLink(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return null;
+        Uri uri = intent.getData();
+        if (uri == null || uri.getScheme() == null) return null;
+        String scheme = uri.getScheme().toLowerCase();
+        if (scheme.equals("switchlings")) return uri.toString();
+        List<String> path = uri.getPathSegments();
+        if (scheme.equals("https") && path.size() == 2 && path.get(0).equals("l")) {
+            return "switchlings://level/" + path.get(1);
+        }
+        return null;
+    }
+
+    /** Links that arrived before the shell registered its natives. */
+    private final List<String> heldLinks = new ArrayList<>();
+    private volatile boolean nativesReady;
+
+    /** A link opened while the game runs ({@code singleInstance}). */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String link = gameLink(intent);
+        if (link == null) return;
+        synchronized (heldLinks) {
+            if (!nativesReady) {
+                heldLinks.add(link);
+                return;
+            }
+        }
+        nativeOpenLink(link);
+    }
+
+    /** The shell has registered the natives below (on SDL's thread). */
+    public void nativesRegistered() {
+        synchronized (heldLinks) {
+            nativesReady = true;
+            for (String link : heldLinks) nativeOpenLink(link);
+            heldLinks.clear();
+        }
+    }
+
+    // Registered by the shell on this class (`switchlings_register_natives`),
+    // since SDL loads libAndroidShell.so itself.
+    static native void nativeOpenLink(String link);
+    static native void nativePaste(String text);
+    static native void nativeKeyboard(int height, int viewHeight);
+
+    // MARK: Paste
+
+    private PopupWindow pastePopup;
+
+    /**
+     * What a long press on the Level Designer's code boxes offers, as iOS's
+     * edit menu does over its text field: Android's Paste, over the point
+     * pressed (view pixels). Picking it hands the clipboard's text to the
+     * field as a paste. Nothing shows when the clipboard holds no text.
+     */
+    public void offerPaste(final float x, final float y) {
+        runOnUiThread(() -> {
+            final String text = clipboardText();
+            if (text == null || text.isEmpty() || mSurface == null) return;
+            if (pastePopup != null) pastePopup.dismiss();
+            float dp = getResources().getDisplayMetrics().density;
+            TextView paste = new TextView(this);
+            paste.setText(android.R.string.paste);
+            paste.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            paste.setTextColor(0xFFFFFFFF);
+            int padH = Math.round(16 * dp), padV = Math.round(10 * dp);
+            paste.setPadding(padH, padV, padH, padV);
+            GradientDrawable pill = new GradientDrawable();
+            pill.setColor(0xF0303030);
+            pill.setCornerRadius(20 * dp);
+            paste.setBackground(pill);
+            final PopupWindow popup = new PopupWindow(paste, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, false);
+            popup.setOutsideTouchable(true);
+            popup.setElevation(6 * dp);
+            paste.setOnClickListener(v -> {
+                popup.dismiss();
+                nativePaste(text);
+            });
+            paste.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+            int[] origin = new int[2];
+            mSurface.getLocationOnScreen(origin);
+            int px = origin[0] + Math.round(x) - paste.getMeasuredWidth() / 2;
+            int py = origin[1] + Math.round(y) - paste.getMeasuredHeight() - Math.round(12 * dp);
+            popup.showAtLocation(mSurface, Gravity.NO_GRAVITY, px, Math.max(origin[1], py));
+            pastePopup = popup;
+        });
+    }
+
+    private String clipboardText() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null || !clipboard.hasPrimaryClip() || clipboard.getPrimaryClip() == null) return null;
+        if (clipboard.getPrimaryClip().getItemCount() == 0) return null;
+        CharSequence text = clipboard.getPrimaryClip().getItemAt(0).coerceToText(this);
+        return text == null ? null : text.toString();
     }
 
     /**
@@ -227,6 +353,8 @@ public class MainActivity extends SDLActivity {
      * the insets it reports are then replaced.
      */
     static final class GameSurface extends SDLSurface {
+        private int lastKeyboard;
+
         GameSurface(Context context) {
             super(context);
         }
@@ -244,6 +372,15 @@ public class MainActivity extends SDLActivity {
                     android.view.RoundedCorner corner = insets.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT);
                     Log.i("Switchlings", "insets: safe " + safe + ", handle " + handle.bottom
                         + " px, corner radius " + (corner == null ? "none" : corner.getRadius() + " px"));
+                }
+                // The soft keyboard's height, which the game hears as UIKit's
+                // keyboard notifications: the code prompt rises clear of it.
+                int ime = insets.isVisible(WindowInsets.Type.ime())
+                    ? insets.getInsets(WindowInsets.Type.ime()).bottom : 0;
+                MainActivity activity = (MainActivity) getContext();
+                if (activity.nativesReady && ime != lastKeyboard) {
+                    lastKeyboard = ime;
+                    nativeKeyboard(ime, v.getHeight());
                 }
             }
             return result;

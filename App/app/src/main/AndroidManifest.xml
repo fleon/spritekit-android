@@ -11,6 +11,9 @@
 
     <!-- Haptics (DeviceServices). A normal permission: granted at install. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Shared Level Designer levels go to and come from the designer's
+         server (`LevelShare`: POST /levels, GET /levels/<code>). -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -19,16 +22,41 @@
 
         <!-- singleInstance and the configChanges list are SDL's requirements:
              SDL keeps its own GL surface across rotations and folds rather
-             than letting Android recreate the activity under it. -->
+             than letting Android recreate the activity under it.
+             adjustNothing: the soft keyboard neither pans nor resizes the
+             game, which hears its frame instead and moves what it must
+             (the code prompt rises clear of it), as on iOS. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:launchMode="singleInstance"
+            android:windowSoftInputMode="adjustNothing"
             android:resizeableActivity="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- A friend's level (switchlings://level/<code>, from its page
+                 on the designer's server) and a world (switchlings://world/
+                 <theme>, the In-App Event's link), as on iOS. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="switchlings" android:host="level" />
+                <data android:scheme="switchlings" android:host="world" />
+            </intent-filter>
+            <!-- The level's page itself (https://switchlings.fleon.com/l/
+                 <code>), opened straight in the game once the site serves
+                 /.well-known/assetlinks.json for this app (see
+                 Android/README.md); until then Android offers the browser,
+                 whose page opens the switchlings:// link. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="switchlings.fleon.com" android:pathPrefix="/l/" />
             </intent-filter>
         </activity>
 

@@ -157,6 +157,9 @@ public enum GLESBackend {
                 switch usage {
                 case UIKeyboardHIDUsage.keyboardDeleteOrBackspace.rawValue: UITextField.receive(.backspace)
                 case UIKeyboardHIDUsage.keyboardReturnOrEnter.rawValue: UITextField.receive(.return)
+                // A hardware keyboard's paste, as UIKit's field takes it.
+                case UIKeyboardHIDUsage.keyboardV.rawValue where UIKeyModifierFlags(rawValue: modifiers).contains(.control) || UIKeyModifierFlags(rawValue: modifiers).contains(.command):
+                    if let text = SystemServices.clipboard.get(), !text.isEmpty { UITextField.receive(.insert(text)) }
                 default: break
                 }
                 return true

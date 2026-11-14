@@ -155,7 +155,7 @@ struct LabelTests {
     }
 
     @Test("The draw list carries the layout, so the renderer never measures again")
-    func drawList() throws {
+    @MainActor func drawList() throws {
         _ = Fonts.engine
         let scene = SKScene(size: CGSize(width: 400, height: 200))
         let node = label("Play")

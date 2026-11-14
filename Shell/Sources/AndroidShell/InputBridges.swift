@@ -97,8 +97,92 @@ enum SystemBridge {
             if frame == nil {
                 _ = SDL_StopTextInput(window)
             } else {
-                _ = SDL_StartTextInput(window)
+                // Again when already started: SDL then shows the keyboard
+                // if Android's back put it away. The field's own settings
+                // pick the keyboard: the code prompt's capitals, no
+                // corrections.
+                let field = MainActor.assumeIsolated { UITextField.firstResponder }
+                let properties = SDL_CreateProperties()
+                defer { SDL_DestroyProperties(properties) }
+                _ = SDL_SetNumberProperty(properties, SDL_PROP_TEXTINPUT_ANDROID_INPUTTYPE_NUMBER, Int64(MainActor.assumeIsolated { AndroidInputType.of(field) }))
+                // Where the field is, for the keyboard's own use (its
+                // candidates), in the window's coordinates.
+                if let frame {
+                    let scale = CGFloat(SDL_GetWindowDisplayScale(window)) / CGFloat(max(SDL_GetWindowPixelDensity(window), 1))
+                    var area = SDL_Rect(x: Int32(frame.minX * scale), y: Int32(frame.minY * scale), w: Int32(frame.width * scale), h: Int32(frame.height * scale))
+                    _ = SDL_SetTextInputArea(window, &area, 0)
+                }
+                _ = SDL_StartTextInputWithProperties(window, properties)
             }
+        }
+        TextInput.offerPaste = { point in
+            let scale = CGFloat(SDL_GetWindowDisplayScale(window))
+            _ = switchlings_offer_paste(Float(point.x * scale), Float(point.y * scale))
+        }
+    }
+}
+
+/// Android's `InputType` for a field, from what UIKit's field asks for: the
+/// code prompt's capitals, with no corrections or suggestions (UIKit's
+/// `.no`), which SDL's own properties can't say (it has no flag for
+/// suggestions). Gboard takes `NO_SUGGESTIONS` as a hint and still offers
+/// words for letters, and a word picked from its strip would arrive as one
+/// insertion of several letters, so such a field is also a visible
+/// password, which no keyboard suggests for; the field capitalises what it's
+/// given itself.
+@MainActor
+enum AndroidInputType {
+    static let classText = 0x1
+    static let capCharacters = 0x1000
+    static let capWords = 0x2000
+    static let capSentences = 0x4000
+    static let autoCorrect = 0x8000
+    static let noSuggestions = 0x80000
+    static let visiblePassword = 0x90
+
+    static func of(_ field: UITextField?) -> Int {
+        var type = classText
+        switch field?.autocapitalizationType ?? .sentences {
+        case .allCharacters: type |= capCharacters
+        case .words: type |= capWords
+        case .sentences: type |= capSentences
+        case .none: break
+        }
+        type |= field?.autocorrectionType == .no ? noSuggestions | visiblePassword : autoCorrect
+        return type
+    }
+}
+
+/// What `MainActivity` hands the game outside SDL's events, taken once a
+/// frame on the game's thread: a link opened while the game runs (a cold
+/// start's comes as `-OpenLink` instead), text picked from Paste, and the
+/// soft keyboard's height from Android's insets, posted as UIKit's keyboard
+/// notifications (`SoftKeyboard`).
+@MainActor
+enum SystemInbox {
+    static func drain(into renderer: FrameRenderer, window: OpaquePointer) {
+        while let link = switchlings_take_link() {
+            defer { free(link) }
+            let text = String(cString: link)
+            if let url = URL(string: text) {
+                Log.info("link: \(text)")
+                _ = renderer.receive(.link(url))
+            }
+        }
+        while let paste = switchlings_take_paste() {
+            defer { free(paste) }
+            _ = renderer.receive(.text(String(cString: paste)))
+        }
+        var height: Int32 = 0, viewHeight: Int32 = 0
+        if switchlings_take_keyboard(&height, &viewHeight) {
+            let scale = CGFloat(SDL_GetWindowDisplayScale(window))
+            var w: Int32 = 0, h: Int32 = 0
+            SDL_GetWindowSizeInPixels(window, &w, &h)
+            guard scale > 0 else { return }
+            let bottom = CGFloat(viewHeight > 0 ? viewHeight : h) / scale
+            SoftKeyboard.frameDidChange(height > 0
+                ? CGRect(x: 0, y: bottom - CGFloat(height) / scale, width: CGFloat(w) / scale, height: CGFloat(height) / scale)
+                : nil)
         }
     }
 }

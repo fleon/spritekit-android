@@ -1124,10 +1124,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if touch.phase == .ended || touch.phase == .cancelled { primaryFinger = nil }
         // SDL's location is a share of the window from its top left, which
         // is UIKit's way round; the scene maps it on through its camera.
-        let point = scene.convertPoint(fromView: CGPoint(
+        let inView = CGPoint(
             x: touch.location.x * view.bounds.width,
             y: touch.location.y * view.bounds.height
-        ))
+        )
+        let point = scene.convertPoint(fromView: inView)
         let phase: UITouchPhase
         switch touch.phase {
         case .began: phase = .began
@@ -1135,11 +1136,20 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         case .ended: phase = .ended
         case .cancelled: phase = .cancelled
         }
+        // A text field taking typing is a view over the game's on iOS, so a
+        // touch that starts on it is the field's, not the scene's.
+        if phase == .began { touchIsField = UITextField.takesTouch(at: inView) }
+        if touchIsField {
+            UITextField.touch(phase, at: inView)
+            return
+        }
         scene.deliverTouch(phase: phase, at: point, identifier: touch.finger, timestamp: touch.time)
     }
 
     /// The finger the scene is following, if one is down.
     private var primaryFinger: Int?
+    /// Whether that finger came down on the text field taking typing.
+    private var touchIsField = false
 
     /// Input other than touches, for whoever drives the scene (the game's
     /// controller). Unset, nothing takes it.

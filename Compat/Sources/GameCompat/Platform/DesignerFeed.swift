@@ -10,9 +10,19 @@ import Foundation
 /// `whenAnswered` is the one that matters: the launch splash waits on it
 /// before building the first scene, so it must call back rather than never
 /// answer. It answers at once, because there is nothing to wait for.
+///
+/// The server itself is still reached, as on iOS, for what stays after the
+/// beta: the players' Level Designer shares a level (`LevelShare`: `POST
+/// /levels`) and opens a friend's (`GET /levels/<code>`), and a level's link
+/// is its page there (`/l/<code>`). Nothing here asks it for the feed or
+/// sends it a solve. `-DesignerServer <url>` points a debug build at another,
+/// as on iOS (`adb shell am start … --esa args -DesignerServer,http://10.0.2.2:46198`).
 enum DesignerServer {
-    /// There is no server to reach from Android.
-    static func endpoint(_ path: String) -> URL? { nil }
+    private static let url = URL(string: "https://switchlings.fleon.com")
+
+    static func endpoint(_ path: String) -> URL? {
+        (LaunchArguments.designerServerURL ?? url)?.appendingPathComponent(path)
+    }
 }
 
 final class DesignerFeed {

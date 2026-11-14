@@ -57,9 +57,42 @@ public extension UITextFieldDelegate {
 }
 
 /// What the shell does for a text field: shows the keyboard over the field's
-/// frame in view points, or hides it (nil).
+/// frame in view points, or hides it (nil); and offers the system's Paste at
+/// a point in view points, as a long press on a field does on iOS.
 public enum TextInput {
     nonisolated(unsafe) public static var show: (CGRect?) -> Void = { _ in }
+    nonisolated(unsafe) public static var offerPaste: (CGPoint) -> Void = { _ in }
+}
+
+/// The soft keyboard, as UIKit tells a game about it: the shell hands over
+/// its frame in view points as Android's insets move it (nil once it has
+/// gone), and this posts what UIKit posts — `keyboardWillShow` the first
+/// time, `keyboardWillChangeFrame` every time, `keyboardWillHide` as it goes,
+/// each with the frame it ends at (`keyboardFrameEndUserInfoKey`, in the
+/// screen's coordinates, which are the view's here). A keyboard on its way
+/// out ends just below the view, as UIKit's does.
+@MainActor
+public enum SoftKeyboard {
+    public private(set) static var frame: CGRect?
+
+    public static func frameDidChange(_ new: CGRect?) {
+        let center = NotificationCenter.default
+        let old = frame
+        guard new != old else { return }
+        frame = new
+        if let new {
+            if old == nil { center.post(name: UIResponder.keyboardWillShowNotification, object: nil, userInfo: info(new)) }
+            center.post(name: UIResponder.keyboardWillChangeFrameNotification, object: nil, userInfo: info(new))
+        } else if let old {
+            let gone = old.offsetBy(dx: 0, dy: old.height)
+            center.post(name: UIResponder.keyboardWillHideNotification, object: nil, userInfo: info(gone))
+            center.post(name: UIResponder.keyboardWillChangeFrameNotification, object: nil, userInfo: info(gone))
+        }
+    }
+
+    private static func info(_ frame: CGRect) -> [AnyHashable: Any] {
+        [UIResponder.keyboardFrameEndUserInfoKey: NSValue(cgRect: frame)]
+    }
 }
 
 public final class UITextField: UIView {
@@ -120,6 +153,47 @@ public final class UITextField: UIView {
 
     func moved(to view: UIView?) { superview = view }
 
+    // MARK: - Touches
+
+    /// UIKit's long press: held this long, no further than `pressSlop` from
+    /// where it began.
+    static let pressDuration: TimeInterval = 0.5
+    static let pressSlop: CGFloat = 10
+    private static var press: (start: CGPoint, generation: Int)?
+    private static var pressGeneration = 0
+
+    /// Whether a touch at `point` (view points) is the field's. On iOS the
+    /// field is a view over the game's, so a touch on it never reaches the
+    /// scene: the shell asks this first and hands such a touch here.
+    public static func takesTouch(at point: CGPoint) -> Bool {
+        firstResponder?.frame.contains(point) ?? false
+    }
+
+    /// A touch on the field taking typing, in view points. A tap brings the
+    /// keyboard back if Android's back put it away; a long press offers the
+    /// system's Paste.
+    public static func touch(_ phase: UITouchPhase, at point: CGPoint) {
+        guard let field = firstResponder else { return }
+        switch phase {
+        case .began:
+            TextInput.show(field.frame)
+            pressGeneration += 1
+            let generation = pressGeneration
+            press = (point, generation)
+            DispatchQueue.main.asyncAfter(deadline: .now() + pressDuration) {
+                MainActor.assumeIsolated {
+                    guard let held = press, held.generation == generation, firstResponder != nil else { return }
+                    press = nil
+                    TextInput.offerPaste(held.start)
+                }
+            }
+        case .moved:
+            if let held = press, hypot(point.x - held.start.x, point.y - held.start.y) > pressSlop { press = nil }
+        default:
+            press = nil
+        }
+    }
+
     public func removeFromSuperview() {
         superview = nil
     }
@@ -176,7 +250,9 @@ public extension UIView {
     func convert(_ rect: CGRect, from space: UICoordinateSpace) -> CGRect { rect }
 }
 
+// corelibs keeps a rect in an `NSValue` as `NSRect`, which is `CGRect` here.
 public extension NSValue {
-    var cgRectValue: CGRect { .zero }
+    convenience init(cgRect: CGRect) { self.init(rect: cgRect) }
+    var cgRectValue: CGRect { rectValue }
 }
 #endif

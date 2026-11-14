@@ -113,6 +113,9 @@ public enum Shell {
         Log.info("display scale \(info.displayScale) px a point")
 
         SystemBridge.install(window: window)
+        // Links while running, the soft keyboard and Paste come from
+        // `MainActivity` outside SDL's events (`SystemInbox`).
+        if !switchlings_register_natives() { Log.error("could not register MainActivity's native methods: no links while running, keyboard frame or Paste") }
         let renderer = (factory ?? makeRenderer ?? { ClearScreenRenderer(context: $0) })(info)
         renderer.rendererDidStart(info)
         renderer.drawableSizeDidChange(to: size)
@@ -201,6 +204,8 @@ public enum Shell {
                     break
                 }
             }
+
+            MainActor.assumeIsolated { SystemInbox.drain(into: renderer, window: window) }
 
             // Backgrounded: Android has taken the surface away, so there is
             // nothing to draw into. Idle rather than spin.

@@ -183,3 +183,123 @@ unsigned char *switchlings_platform_call(const char *name, const unsigned char *
 unsigned char *switchlings_platform_drain(int *out_length) {
     return switchlings_platform_invoke("platformDrain", "()[B", NULL, NULL, 0, out_length);
 }
+/* What Android tells the game outside SDL's events: a link the activity was
+   handed while running (`onNewIntent`), the soft keyboard's insets, and text
+   picked from the Paste a long press offers. `MainActivity` calls its native
+   methods on Android's UI thread; the frame loop takes what they left on
+   SDL's. Registered on the activity's own class, because SDL dlopens this
+   library itself, so the class loader never looks in it for natives. */
+
+#include <pthread.h>
+#include <stdlib.h>
+
+static pthread_mutex_t switchlings_inbox_lock = PTHREAD_MUTEX_INITIALIZER;
+#define SWITCHLINGS_INBOX_CAPACITY 8
+static char *switchlings_links[SWITCHLINGS_INBOX_CAPACITY];
+static int switchlings_link_count;
+static char *switchlings_pastes[SWITCHLINGS_INBOX_CAPACITY];
+static int switchlings_paste_count;
+static int switchlings_keyboard[2];
+static bool switchlings_keyboard_changed;
+
+static void switchlings_push(JNIEnv *env, jstring text, char **queue, int *count) {
+    if (text == NULL) return;
+    const char *utf = (*env)->GetStringUTFChars(env, text, NULL);
+    if (utf == NULL) return;
+    pthread_mutex_lock(&switchlings_inbox_lock);
+    if (*count < SWITCHLINGS_INBOX_CAPACITY) {
+        queue[(*count)++] = strdup(utf);
+    }
+    pthread_mutex_unlock(&switchlings_inbox_lock);
+    (*env)->ReleaseStringUTFChars(env, text, utf);
+}
+
+static void JNICALL switchlings_native_open_link(JNIEnv *env, jclass cls, jstring link) {
+    (void)cls;
+    switchlings_push(env, link, switchlings_links, &switchlings_link_count);
+}
+
+static void JNICALL switchlings_native_paste(JNIEnv *env, jclass cls, jstring text) {
+    (void)cls;
+    switchlings_push(env, text, switchlings_pastes, &switchlings_paste_count);
+}
+
+static void JNICALL switchlings_native_keyboard(JNIEnv *env, jclass cls, jint height, jint viewHeight) {
+    (void)env;
+    (void)cls;
+    pthread_mutex_lock(&switchlings_inbox_lock);
+    switchlings_keyboard[0] = height;
+    switchlings_keyboard[1] = viewHeight;
+    switchlings_keyboard_changed = true;
+    pthread_mutex_unlock(&switchlings_inbox_lock);
+}
+
+bool switchlings_register_natives(void) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
+    if (env == NULL || activity == NULL) return false;
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    JNINativeMethod methods[] = {
+        { "nativeOpenLink", "(Ljava/lang/String;)V", (void *)switchlings_native_open_link },
+        { "nativePaste", "(Ljava/lang/String;)V", (void *)switchlings_native_paste },
+        { "nativeKeyboard", "(II)V", (void *)switchlings_native_keyboard },
+    };
+    bool ok = (*env)->RegisterNatives(env, cls, methods, sizeof(methods) / sizeof(methods[0])) == JNI_OK;
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        ok = false;
+    }
+    if (ok) {
+        jmethodID ready = (*env)->GetMethodID(env, cls, "nativesRegistered", "()V");
+        if (ready != NULL) (*env)->CallVoidMethod(env, activity, ready);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    return ok;
+}
+
+static char *switchlings_pop(char **queue, int *count) {
+    pthread_mutex_lock(&switchlings_inbox_lock);
+    char *first = NULL;
+    if (*count > 0) {
+        first = queue[0];
+        memmove(queue, queue + 1, sizeof(char *) * (size_t)(*count - 1));
+        (*count)--;
+    }
+    pthread_mutex_unlock(&switchlings_inbox_lock);
+    return first;
+}
+
+char *switchlings_take_link(void) { return switchlings_pop(switchlings_links, &switchlings_link_count); }
+
+char *switchlings_take_paste(void) { return switchlings_pop(switchlings_pastes, &switchlings_paste_count); }
+
+bool switchlings_take_keyboard(int *height, int *viewHeight) {
+    pthread_mutex_lock(&switchlings_inbox_lock);
+    bool changed = switchlings_keyboard_changed;
+    if (changed) {
+        *height = switchlings_keyboard[0];
+        *viewHeight = switchlings_keyboard[1];
+        switchlings_keyboard_changed = false;
+    }
+    pthread_mutex_unlock(&switchlings_inbox_lock);
+    return changed;
+}
+
+bool switchlings_offer_paste(float x, float y) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject activity = (jobject)SDL_GetAndroidActivity();
+    if (env == NULL || activity == NULL) return false;
+    jclass cls = (*env)->GetObjectClass(env, activity);
+    jmethodID offer = (*env)->GetMethodID(env, cls, "offerPaste", "(FF)V");
+    bool ok = offer != NULL;
+    if (ok) (*env)->CallVoidMethod(env, activity, offer, (jfloat)x, (jfloat)y);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        ok = false;
+    }
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, activity);
+    return ok;
+}
