@@ -136,6 +136,16 @@ final class AudioManager {
         shared.preload()
     }
 
+    /// The shell opened its audio device after launch had loaded the sounds
+    /// into the silent backend: load them into this one, and play what the
+    /// game has asked for meanwhile.
+    static func use(_ backend: AudioBackend) {
+        self.backend = backend
+        shared.preload()
+        shared.playingMusic = nil
+        shared.updateMusic()
+    }
+
     /// A sound's file in the APK.
     static func url(of sound: Sound) -> URL? {
         Bundle.main.url(forResource: sound.rawValue, withExtension: "wav")

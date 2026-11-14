@@ -87,6 +87,13 @@ public final class AndroidGameController {
         laterLink = links.later.flatMap(URL.init(string:)).map { ($0, links.delay ?? 0) }
     }
 
+    /// The shell's audio, once SDL has opened a device: until this the game's
+    /// `AudioManager` stands on its silent backend, so its sounds load again
+    /// into this one and any track already asked for starts.
+    public static func useAudio(_ backend: AudioBackend) {
+        AudioManager.use(backend)
+    }
+
     /// `-OpenLinkAfter`'s link and delay, opened once the game shows.
     private static var laterLink: (url: URL, delay: TimeInterval)?
 

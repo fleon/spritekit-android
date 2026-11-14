@@ -497,6 +497,14 @@ copied onto the device first.
 `-AudioProbe` plays a track, overlaps sounds, crossfades, loops and fades
 out, saying in logcat what it did and how loud what it decoded was.
 
+The game's `AudioManager` starts on a silent backend, since launch runs
+before SDL is up; the shell hands it the SDL one the moment the device opens
+(`Shell.audioDidOpen`, `AndroidGameController.useAudio`), which loads the
+sounds into it and starts any track already asked for. Until 1.1.2 (56)
+nothing did, so the game was silent on every device while `-AudioProbe`,
+which talks to the backend itself, played fine. `audio: 19 sounds, 3 voices
+each` in logcat says the game's sounds reached it.
+
 ### Google Play and the device: one channel
 
 Play Billing, Play Games Services, haptics, audio focus and battery saver

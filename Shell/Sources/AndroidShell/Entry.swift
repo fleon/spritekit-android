@@ -59,6 +59,7 @@ nonisolated public func SDL_main(
         // the index does not load and every texture resolves to the white
         // placeholder — tinted rectangles, visibly wrong rather than blank.
         GLESBackend.prepare()
+        Shell.audioDidOpen = { GLESBackend.useAudio($0) }
         return Shell.run(makeRenderer: GLESBackend.makeRenderer)
     }
 }

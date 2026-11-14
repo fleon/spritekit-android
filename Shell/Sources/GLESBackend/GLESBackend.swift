@@ -39,6 +39,12 @@ public enum GLESBackend {
         AndroidGameController.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:)))
     }
 
+    /// Hands the game the shell's audio once its device is open.
+    @MainActor
+    public static func useAudio(_ audio: AudioBackend) {
+        AndroidGameController.useAudio(audio)
+    }
+
     /// The renderer the shell draws with.
     @MainActor
     public static func makeRenderer(_ context: RenderContext) -> FrameRenderer {

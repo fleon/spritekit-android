@@ -27,6 +27,11 @@ public enum Shell {
     /// device, which the game must survive: it runs silent, not broken.
     public private(set) static var audio: AudioBackend = NullAudioBackend()
 
+    /// Told the audio backend as soon as it opens, so the game plays through
+    /// it (`GLESBackend.useAudio`). Not told when no device opens: the game
+    /// keeps its silent backend.
+    public static var audioDidOpen: ((AudioBackend) -> Void)?
+
     /// Run until Android tells us to stop. Returns the process exit status.
     @discardableResult
     public static func run(
@@ -63,7 +68,10 @@ public enum Shell {
         // nothing on screen waits for it. A device that will not open leaves
         // the null backend in place.
         let soundtrack = SDLAudioBackend()
-        if let soundtrack { audio = soundtrack }
+        if let soundtrack {
+            audio = soundtrack
+            audioDidOpen?(soundtrack)
+        }
         defer { audio = NullAudioBackend() }
         let probe = AudioProbe(audio: audio)
 
