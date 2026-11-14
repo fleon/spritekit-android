@@ -41,7 +41,7 @@ static const SDL_AudioFormat SWITCHLINGS_AUDIO_FORMAT = SDL_AUDIO_S16;
 /// `__system_property_get` lives behind a header Swift's importer will not
 /// take, and it is how a run is configured without a rebuild:
 ///
-///     adb shell setprop debug.switchlings.scene sky
+///     adb shell setprop debug.switchlings.slowdown 4
 ///
 /// Debug-only plumbing: nothing in the game reads a property.
 int switchlings_property(const char *name, char *out, int capacity);

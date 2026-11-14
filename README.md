@@ -334,10 +334,7 @@ that keeps keyframes in time order.
 `EmitterTests` pins birth counts, lifetimes, every range's bounds under a
 seed, `advanceSimulationTime` against ticked frames, pausing and speed,
 sequences, actions and both spaces; `KeyframeSequenceTests` each mode.
-`adb shell setprop debug.switchlings.scene particles` shows the
-reef's particles alone, set up exactly as `SeabedNode` sets them up
-(`Compat/Sources/GameCompat/Play/EmitterPreviewScene.swift`); tap for a
-burst. The seabed itself is the backdrop stage's.
+Reef's own `SeabedNode` shows them in the game: `-StartLevel reef-1`.
 
 ## Design: a frame is a value
 
@@ -982,16 +979,9 @@ Android's libm overlay has no `Float` overloads of `sin`, `sqrt` and the
 rest, which Darwin's has; `BackdropWarp` mixes them with `SIMD2<Float>`, and
 the type checker gave up on the expression. `FloatMath.swift` supplies them.
 
-The `warp` scene is `WarpProbeScene`: real lawn-kit pieces bent
-by the game's own `BackdropWarp` (a crown stirring, plants at the lawn's sway
-and at four times it, a butterfly's wings) and reacting through
-`BackdropTouch`, on their own every 1.4 s and to a tap.
-
-```bash
-adb shell setprop debug.switchlings.scene warp
-# or, for one launch, without touching a shared emulator's property:
-adb shell am start -n com.fleon.switchlings/.MainActivity --esa args "-WarpProbe"
-```
+The lawns show it in the game: `-StartLevel garden-1` or `meadow-1`
+(crowns stirring, plants swaying, butterflies' wings), and a tap on the
+scenery bends it through `BackdropTouch`.
 
 ## Scene changes: the view, its camera and its transitions
 
@@ -1176,9 +1166,8 @@ about 14,800 lines, symlinked into `Compat/Sources/GameCompat/Backdrops`
 and compiled unmodified. `BackdropStubs.swift` and `RigStubs.swift` are
 gone, and so are the film's stand-ins for the backdrop and the lights.
 
-```bash
-adb shell "setprop debug.switchlings.scene world:reef-1; am start -n com.fleon.switchlings.worlds/com.fleon.switchlings.MainActivity; sleep 3; setprop debug.switchlings.scene ''"
-```
+Each world shows in its levels: `-StartLevel reef-1` and so on (the
+launch arguments, below).
 
 `WorldPreviewScene` stands in for `GameScene` until the scenes ring brings
 it: the port's board over the backdrop, set up in `GameScene`'s order, the

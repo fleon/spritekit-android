@@ -14,37 +14,7 @@ import SpriteKitShim
 /// about sprites, textures or shaders.
 public enum GLESBackend {
 
-    /// Which scene the shell draws. Set before the first frame from
-    /// `debug.switchlings.scene`, so a measuring run can switch with
-    /// `adb shell setprop` and no rebuild.
-    public enum Scene: String {
-        /// The game: the launch splash, then the title (or the screen it was
-        /// left on) through `TransitionManager`, as on Apple
-        /// (`AndroidGameController`). The default.
-        case game
-        /// The hand-laid board with its rigs, no level behind it.
-        case board
-        /// Starry Sky's backdrop, drawn by the game's own `NightSkyNode`,
-        /// with a board of Sky's bricks over it.
-        case sky
-        /// The same board, the same loop, no backdrop — the baseline the
-        /// sky's cost is measured against.
-        case skyBoardOnly
-        /// The sky drawn whole every frame instead of in bands, so the
-        /// saving `BandedLayerNode` buys can be read off.
-        case skyUnbanded
-        /// The reef's particles alone, each emitter set up exactly as
-        /// `SeabedNode` sets it up: snow, motes, puffing vents, and a burst
-        /// of bubbles wherever a tap lands.
-        case particles
-        /// Lawn-kit pieces bent by the game's own `BackdropWarp` and
-        /// `BackdropTouch` (SKWarpGeometry).
-        case warp
-    }
-
-    public nonisolated(unsafe) static var scene: Scene = .game
-
-    /// The game's controller, once the view exists (the `game` scene only).
+    /// The game's controller, once the view exists.
     @MainActor static var controller: AndroidGameController?
 
     /// Reads the packed art and the fonts out of the APK, makes the game's
@@ -65,14 +35,8 @@ public enum GLESBackend {
         // `BandedLayerNode.hold` — so there has to be exactly one of it.
         MediaTime.source = { TimeInterval(SDL_GetTicksNS()) / 1_000_000_000 }
 
-        if let name = DebugProperty.string("debug.switchlings.scene"), let picked = Scene(rawValue: name) {
-            scene = picked
-        }
-        // Per launch, so it never changes the scene another app on a shared
-        // emulator picks up from the property.
-        if ShellArguments.has("-WarpProbe") { scene = .warp }
         PNGFiles.install()
-        if scene == .game { AndroidGameController.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:))) }
+        AndroidGameController.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:)))
     }
 
     /// The renderer the shell draws with.
@@ -88,33 +52,17 @@ public enum GLESBackend {
             drawableSize: context.size, sceneSize: size, scaleMode: .aspectFill
         ).scale.x
 
-        Log.info("scene: \(Self.scene.rawValue), \(Int(size.width))x\(Int(size.height)) pt")
+        Log.info("scene: \(Int(size.width))x\(Int(size.height)) pt")
         let renderer = SceneRenderer(
             drawableSize: context.size,
             pointScale: pointScale,
             pageLoader: AssetBundle.page
-        ) { view in
-            switch Self.scene {
-            case .game:
-                // The controller presents the splash on the first layout,
-                // once the safe area is known (`windowMetricsDidChange`).
-                break
-            case .board:
-                view.presentScene(aspectFill(BoardPreviewScene(size: size)))
-            case .sky:
-                view.presentScene(aspectFill(SkyBackdropScene(size: size, drawsBackdrop: true, banded: true)))
-            case .skyBoardOnly:
-                view.presentScene(aspectFill(SkyBackdropScene(size: size, drawsBackdrop: false, banded: true)))
-            case .skyUnbanded:
-                view.presentScene(aspectFill(SkyBackdropScene(size: size, drawsBackdrop: true, banded: false)))
-            case .particles:
-                view.presentScene(aspectFill(EmitterPreviewScene(size: size)))
-            case .warp:
-                view.presentScene(aspectFill(WarpProbeScene(size: size)))
-            }
+        ) { _ in
+            // The controller presents the splash on the first layout, once
+            // the safe area is known (`windowMetricsDidChange`).
         }
-        renderer.reportLabel = Self.scene.rawValue
-        if scene == .game { controller = AndroidGameController(view: renderer.view) }
+        renderer.reportLabel = "game"
+        controller = AndroidGameController(view: renderer.view)
         if let controller {
             controller.captureFrame = { done in renderer.captureNextFrame(done) }
             renderer.onInput = { input in handle(input, controller: controller) }
