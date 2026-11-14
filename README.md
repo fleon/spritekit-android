@@ -363,8 +363,8 @@ deterministic, never less.
 Done, in `Text/` over `Vendor/` — see `Text/README.md`. HarfBuzz 15.1.0 for
 shaping and FreeType 2.15.0 for metrics and rasterising, both built from
 source for the host and both Android ABIs by a script, with a glyph atlas
-over them. `SKLabelNode` breaks and places its text and reports a real ink
-frame; `UIFont` reports real metrics; `DrawList.Label` carries the laid-out
+over them. `SKLabelNode` breaks and places its text and reports the frame
+Apple's would (the ink rounded out to whole points and padded by one); `UIFont` reports real metrics; `DrawList.Label` carries the laid-out
 lines so the renderer draws what was measured.
 
 Thai is the acceptance test, since it is where FreeType alone is not merely
@@ -1469,6 +1469,12 @@ each the `GameViewController` method of the same name:
 | `-SyncedClears`, `-SyncedMoves`, `-SyncedLanguage` | as on Apple |
 | `-OpenLink`, `-OpenLinkAfter`, `-OpenCode` | as `SceneDelegate` reads them: a link the game opened with wins, else `-OpenLink` opens at launch (`WorldLink.pending`, `LevelShare.pendingCode`), else `-OpenCode`'s code; with `-OpenLinkAfter`, `-OpenLink` opens that many seconds after the game shows, as a tapped link does. `LaunchLinks` (PlatformShim, host-tested) decides which; MainActivity hands a real link as `-LaunchLink`, apart from the debug `-OpenLink` |
 
+One is the port's own: `-SafeAreaInsets top,left,bottom,right` (points)
+lays the game out within those insets instead of the device's
+(`SafeAreaOverride`, read by `AndroidGameController.layout` in debug builds
+only), which the parity sweep uses to give the emulator the iPhone 17 Pro's
+safe area as well as its screen.
+
 Left out, as Apple's alone: `-SimulateViewSize`, `-MacWindowSize`,
 `-HoverAt`, `-VirtualGamepad`, `-HeaderFilm`, `-EventVideo`.
 
@@ -1504,7 +1510,8 @@ resets any screen size or density another session left on the slot (an
 override outlives a reboot), gives it the iPhone 17 Pro's screen for the
 sweep (1206 × 2622 px at 480 dpi, 402 × 874 points: the scenery's layout is
 seeded by the screen's size; `--pixel-screen` keeps the Pixel 6's own) and
-puts its own back before the slot goes, launches both with parity.json's
+puts its own back before the slot goes, tells the game the iPhone's safe
+area there too (`androidSafeArea`, as `-SafeAreaInsets`), launches both with parity.json's
 `base`, whose `-RandomSeed 7` makes every random draw the game makes the same
 on both (`Random`: scenery life, the title tour, petals, sparks, blinks…),
 keeps sound and music off, takes a still again if it came while a scene

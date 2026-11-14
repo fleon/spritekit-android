@@ -75,6 +75,18 @@ final class FaceHandle {
     private let lock = NSRecursiveLock()
     private(set) var ftFace: FT_Face?
     private(set) var hbFont: OpaquePointer?
+    /// HarfBuzz's own OpenType font over the same face, at a scale of
+    /// `subunits` to the font unit: what lines are shaped and measured with.
+    /// HarfBuzz over FreeType takes its advances from FreeType in 1/64
+    /// points, rounding every glyph's, and FreeType's outlines come scaled to
+    /// the same grid; Core Text, which the game is laid out by on Apple,
+    /// works from the font's own tables in floating point. Laid out to whole
+    /// points as SpriteKit lays labels out, those few hundredths tip frames a
+    /// point either way, so measuring here is as fine as Core Text's.
+    private(set) var exactFont: OpaquePointer?
+    /// Points per unit of `exactFont`.
+    private(set) var pointsPerUnit: CGFloat = 0
+    static let subunits: Int32 = 64
     private(set) var instanceNames: [String] = []
 
     /// Holds the face while `body` uses it. Every call into FreeType or
@@ -125,10 +137,21 @@ final class FaceHandle {
         hbFont = hb_ft_font_create_referenced(face)
         if let hbFont {
             hb_ft_font_set_load_flags(hbFont, Int32(FaceHandle.loadFlags))
+            if let hbFace = hb_font_get_face(hbFont), let exact = hb_font_create(hbFace) {
+                let units = Int32(face.pointee.units_per_EM) * FaceHandle.subunits
+                hb_font_set_scale(exact, units, units)
+                // HarfBuzz counts named instances from 0, FreeType from 1.
+                if let instance, let index = instanceNames.firstIndex(of: instance) {
+                    hb_font_set_var_named_instance(exact, UInt32(index))
+                }
+                exactFont = exact
+                pointsPerUnit = units > 0 ? size / CGFloat(units) : 0
+            }
         }
     }
 
     deinit {
+        if let exactFont { hb_font_destroy(exactFont) }
         if let hbFont { hb_font_destroy(hbFont) }
         if let ftFace { FT_Done_Face(ftFace) }
     }

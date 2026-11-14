@@ -92,11 +92,18 @@ UTF-8 byte offset of the character it came from. A string is itemised into
 one run per script so HarfBuzz gets the right script tag, with digits, spaces
 and punctuation joining whichever run they sit in.
 
-Hinting is off everywhere (`FT_LOAD_NO_HINTING`), both for shaping and for
-rasterising. HarfBuzz takes its advances from FreeType, so the two must load
-glyphs the same way or a line would be measured with numbers it is not drawn
-with. It also keeps measurement proportional across sizes, which hinting is
-not.
+Lines are shaped and measured as Core Text measures them on Apple, which
+the game is laid out by: HarfBuzz shapes with its own OpenType functions
+over the face at 64 units to the font unit (`FaceHandle.exactFont`, with the
+named instance's variations), so advances come out in floating point rather
+than FreeType's 1/64 point a glyph, and a glyph's ink is the box round its
+outline's points, on the curve and off, rounded out to whole font units, as
+Core Text bounds glyphs in a line (its image bounds and its glyph-path
+bounds alike). `CoreTextParityTests` holds both to Core Text's on the same
+files; what's left is a variable instance's advance deltas, which Core Text
+keeps fractional and HarfBuzz rounds to whole font units (a hundredth of a
+point a glyph). FreeType still rasterises, with hinting off
+(`FT_LOAD_NO_HINTING`), which also keeps it proportional across sizes.
 
 ### Thai, which is the point of all this
 
@@ -142,7 +149,7 @@ baseline — the renderer should need nothing else.
 
 ## What the shim does with it
 
-`SKLabelNode` breaks its text, places each line and reports the ink box.
+`SKLabelNode` breaks its text, places each line and reports its frame.
 `DrawList.Label` carries that `TextLayout`, so the renderer draws what was
 measured and the two cannot drift apart.
 
@@ -154,13 +161,21 @@ density**, asking the atlas for a face at `size x scale` and dividing the
 bitmaps back into points. Shaping and measuring stay at the size the node
 measured itself at; only the pixels are denser.
 
-The alignment modes follow SpriteKit, which is not the obvious reading of
-them. **Vertical alignment works on the ink box, not the typographic one**,
-so `.center` centres the glyphs drawn and a descender lifts the whole label.
-The game relies on exactly that: `TextHelpers.capitalsOffset` exists only to
-undo it for buttons, so matching it matters more than being tidy. Horizontal
-alignment works on the pen's advance, so a centred line is centred on its
-advance and its ink box may sit a fraction off centre, as on Apple.
+A line is laid out as Apple's `SKLabelNode` lays it out, measured against
+it on the Mac with the same font files (`SpriteKitLabelParityTests`):
+SpriteKit draws the line into a box of whole points, the ink box rounded
+out and padded by a point on every side, and that box is the frame and what
+the alignment modes place, on both axes: `.left` puts its left edge on the
+origin, `.center` its middle (rounded down), `.right` its right edge;
+`.baseline` puts its bottom at the ink's rounded-down bottom, `.center` its
+middle, `.top` and `.bottom` its edges. So a descender lifts a centred label
+(`TextHelpers.capitalsOffset` undoes it for buttons), and every frame is a
+point or two wider and taller than the ink, which the game's pills, buttons
+and language rows are sized by. Every Black frame matches SpriteKit's to the
+point; in the lighter instances 2% come out a point narrower, where a long
+line's fractional advance deltas (above) tip its ink over a whole point.
+Several lines (`numberOfLines` other than 1, which the game never sets) keep
+a simpler layout.
 
 ## CoreText, and `TextHelpers.swift`
 

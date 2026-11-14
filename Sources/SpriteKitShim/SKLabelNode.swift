@@ -21,14 +21,19 @@ public enum SKLabelVerticalAlignmentMode: Int, Sendable {
 /// this landed. That is deliberate: a label that measures nothing is obvious,
 /// where one measuring with made-up metrics is subtly wrong everywhere.
 ///
-/// The alignment modes follow SpriteKit, which is not the obvious reading of
-/// them: vertical alignment works on the **ink** box, not the typographic
-/// one, so `.center` centres the glyphs that are drawn and a descender moves
-/// the whole label. The game relies on exactly that — `TextHelpers`'
-/// `capitalsOffset` exists to undo it for buttons — so matching it matters
-/// more than being tidy. Horizontal alignment, by contrast, works on the
-/// pen's advance, so a centred line is centred on its advance width and its
-/// ink box may sit a fraction off centre, as it does on Apple.
+/// A single line (`numberOfLines` of 1, all the game uses) is laid out as
+/// SpriteKit lays it out, measured against Apple's own `SKLabelNode` on the
+/// same font files: SpriteKit draws the line into a box of whole points, the
+/// ink rounded out and padded by a point on every side, and that box is the
+/// label's frame and what the alignment modes place. `.left` puts its left
+/// edge on the origin, `.center` its middle (rounded down), `.right` its
+/// right edge; `.baseline` puts its bottom where the ink's rounded-down
+/// bottom is, `.center` its middle, `.top` and `.bottom` its edges. So both
+/// axes work on the **ink**, not the advance: a descender moves a centred
+/// label, which the game undoes for buttons (`TextHelpers`'
+/// `capitalsOffset`), and every frame is a little wider and taller than the
+/// ink, which the game's pills and buttons are sized by. Several lines keep
+/// the simpler layout below: the game never asks for them.
 open class SKLabelNode: SKNode {
     open var text: String? { didSet { invalidateLayout() } }
     open var fontName: String? { didSet { invalidateLayout() } }
@@ -132,6 +137,9 @@ open class SKLabelNode: SKNode {
         }
 
         guard var bounds = box else { return nil }
+        if numberOfLines == 1, placed.count == 1, !bounds.isEmpty {
+            return Self.spriteKitLine(placed[0].line, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+        }
 
         let shift: CGFloat
         switch verticalAlignmentMode {
@@ -152,6 +160,36 @@ open class SKLabelNode: SKNode {
         }
 
         return TextLayout(lines: placed, bounds: bounds)
+    }
+
+    /// One line as SpriteKit lays it out (see the type's comment): its frame
+    /// the ink's box rounded out to whole points and padded by one, placed by
+    /// the alignment modes, and the pen where that puts the ink.
+    static func spriteKitLine(
+        _ line: TextLine,
+        horizontal: SKLabelHorizontalAlignmentMode,
+        vertical: SKLabelVerticalAlignmentMode
+    ) -> TextLayout {
+        let ink = line.inkBounds
+        let left = ink.minX.rounded(.down), bottom = ink.minY.rounded(.down)
+        let width = ink.maxX.rounded(.up) - left + 2
+        let height = ink.maxY.rounded(.up) - bottom + 2
+        let x: CGFloat
+        switch horizontal {
+        case .left: x = 0
+        case .center: x = -(width / 2).rounded(.down)
+        case .right: x = -width
+        }
+        let y: CGFloat
+        switch vertical {
+        case .baseline: y = bottom
+        case .center: y = -(height / 2).rounded(.down)
+        case .top: y = -height
+        case .bottom: y = 0
+        }
+        let frame = CGRect(x: x, y: y, width: width, height: height)
+        let origin = CGPoint(x: x + 1 - left, y: y + 1 - bottom)
+        return TextLayout(lines: [TextLayout.Placed(line: line, origin: origin)], bounds: frame)
     }
 
     /// `numberOfLines` of 1 means one line whatever the text holds, 0 means

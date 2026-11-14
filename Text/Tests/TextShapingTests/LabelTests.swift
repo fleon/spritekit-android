@@ -19,14 +19,28 @@ struct LabelTests {
         return node
     }
 
-    @Test("A label's frame is the ink of its text")
-    func frameIsInk() {
+    @Test("A label's frame is its ink rounded out to whole points, a point to spare all round")
+    func frameIsInkRoundedOut() {
         let node = label("Switchlings")
-        let measured = Fonts.engine.measure("Switchlings", font: Fonts.chiron(32))
+        let ink = Fonts.engine.measure("Switchlings", font: Fonts.chiron(32)).inkBounds
 
-        #expect(node.contentFrame.width > 0)
-        #expect(abs(node.contentFrame.width - measured.inkBounds.width) < 0.001)
-        #expect(abs(node.contentFrame.height - measured.inkBounds.height) < 0.001)
+        #expect(node.contentFrame.width == ink.maxX.rounded(.up) - ink.minX.rounded(.down) + 2)
+        #expect(node.contentFrame.height == ink.maxY.rounded(.up) - ink.minY.rounded(.down) + 2)
+        #expect(node.contentFrame.width > ink.width + 2)
+    }
+
+    @Test("The ink is drawn a point inside the frame, as SpriteKit draws it")
+    func inkInsideFrame() throws {
+        for mode in [SKLabelHorizontalAlignmentMode.left, .center, .right] {
+            let node = label("(Español)"); node.horizontalAlignmentMode = mode
+            let layout = try #require(node.layout)
+            let ink = layout.lines[0].line.inkBounds.offsetBy(dx: layout.lines[0].origin.x, dy: layout.lines[0].origin.y)
+            let frame = node.contentFrame
+            #expect(abs(ink.minX - (frame.minX + 1 + ink.minX - ink.minX.rounded(.down))) < 0.001)
+            #expect(ink.maxX <= frame.maxX - 1 + 0.001)
+            #expect(ink.minY >= frame.minY + 1 - 0.001)
+            #expect(ink.maxY <= frame.maxY - 1 + 0.001)
+        }
     }
 
     @Test("An empty or unknown label has no frame at all")
@@ -38,18 +52,17 @@ struct LabelTests {
         #expect(unknown.contentFrame == .zero)
     }
 
-    @Test("Horizontal alignment moves the frame by the line's advance")
+    @Test("Horizontal alignment places the frame: its left edge, middle or right edge on the origin")
     func horizontal() {
-        let advance = Fonts.engine.measure("Play", font: Fonts.chiron(32)).advance
-
         let left = label("Play"); left.horizontalAlignmentMode = .left
         let centre = label("Play"); centre.horizontalAlignmentMode = .center
         let right = label("Play"); right.horizontalAlignmentMode = .right
+        let width = left.contentFrame.width
 
-        #expect(left.contentFrame.minX >= 0)
-        #expect(right.contentFrame.maxX <= 0.001)
-        #expect(abs(left.contentFrame.minX - (right.contentFrame.minX + advance)) < 0.001)
-        #expect(abs(centre.contentFrame.minX - (left.contentFrame.minX - advance / 2)) < 0.001)
+        #expect(left.contentFrame.minX == 0)
+        #expect(right.contentFrame.maxX == 0)
+        #expect(centre.contentFrame.minX == -(width / 2).rounded(.down))
+        #expect(centre.contentFrame.width == width && right.contentFrame.width == width)
     }
 
     @Test("Vertical alignment works on the ink, as SpriteKit's does")
@@ -62,7 +75,7 @@ struct LabelTests {
         let bottom = label("gpqy"); bottom.verticalAlignmentMode = .bottom
 
         #expect(baseline.contentFrame.minY < 0)          // descenders below the origin
-        #expect(abs(centre.contentFrame.midY) < 0.001)
+        #expect(centre.contentFrame.minY == -(centre.contentFrame.height / 2).rounded(.down))
         #expect(abs(top.contentFrame.maxY) < 0.001)
         #expect(abs(bottom.contentFrame.minY) < 0.001)
         #expect(abs(centre.contentFrame.height - baseline.contentFrame.height) < 0.001)

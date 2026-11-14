@@ -14,7 +14,7 @@ extension FaceHandle {
     }
 
     private func unsafeShape(_ text: String, script: TextScript, byteOffset: Int) -> ShapedRun {
-        guard let hbFont, let buffer = hb_buffer_create(), !text.isEmpty else {
+        guard let exactFont, let buffer = hb_buffer_create(), !text.isEmpty else {
             return ShapedRun(glyphs: [], script: script, byteOffset: byteOffset)
         }
         defer { hb_buffer_destroy(buffer) }
@@ -32,7 +32,7 @@ extension FaceHandle {
         // test can see a reordering for what it is.
         hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS)
 
-        hb_shape(hbFont, buffer, nil, 0)
+        hb_shape(exactFont, buffer, nil, 0)
 
         var count: UInt32 = 0
         guard let infos = hb_buffer_get_glyph_infos(buffer, &count),
@@ -46,10 +46,10 @@ extension FaceHandle {
             glyphs.append(ShapedGlyph(
                 glyph: infos[index].codepoint,
                 cluster: byteOffset + Int(infos[index].cluster),
-                xAdvance: CGFloat(positions[index].x_advance) / 64,
-                yAdvance: CGFloat(positions[index].y_advance) / 64,
-                xOffset: CGFloat(positions[index].x_offset) / 64,
-                yOffset: CGFloat(positions[index].y_offset) / 64
+                xAdvance: CGFloat(positions[index].x_advance) * pointsPerUnit,
+                yAdvance: CGFloat(positions[index].y_advance) * pointsPerUnit,
+                xOffset: CGFloat(positions[index].x_offset) * pointsPerUnit,
+                yOffset: CGFloat(positions[index].y_offset) * pointsPerUnit
             ))
         }
         return ShapedRun(glyphs: glyphs, script: script, byteOffset: byteOffset)
@@ -107,22 +107,56 @@ extension FaceHandle {
         run { unsafeOutlineBox(glyph) }
     }
 
+    /// The outline's control box, every point of it on the curve or off, in
+    /// whole font units, as Core Text bounds glyphs in a line (its image
+    /// bounds, its glyph-path bounds, and so SpriteKit's label frames).
+    /// Drawn by HarfBuzz at `exactFont`'s scale, so the named instance's
+    /// variations are in it.
     private func unsafeOutlineBox(_ glyph: UInt32) -> CGRect? {
-        guard let ftFace else { return nil }
-        guard FT_Load_Glyph(ftFace, glyph, FaceHandle.loadFlags) == FT_Err_Ok,
-              let slot = ftFace.pointee.glyph,
-              slot.pointee.format == FT_GLYPH_FORMAT_OUTLINE else { return nil }
+        guard let exactFont, let funcs = FaceHandle.inkFuncs else { return nil }
+        var box = InkBox()
+        hb_font_draw_glyph(exactFont, glyph, funcs, &box)
+        guard box.minX <= box.maxX, box.minY <= box.maxY else { return nil }
+        let unit = Double(FaceHandle.subunits)
+        let scale = Double(pointsPerUnit) * unit
+        let minX = (box.minX / unit).rounded(.down), maxX = (box.maxX / unit).rounded(.up)
+        let minY = (box.minY / unit).rounded(.down), maxY = (box.maxY / unit).rounded(.up)
+        return CGRect(x: minX * scale, y: minY * scale, width: (maxX - minX) * scale, height: (maxY - minY) * scale)
+    }
 
-        var outline = slot.pointee.outline
-        guard outline.n_points > 0 else { return nil }
-        var box = FT_BBox()
-        FT_Outline_Get_CBox(&outline, &box)
-        return CGRect(
-            x: CGFloat(box.xMin) / 64,
-            y: CGFloat(box.yMin) / 64,
-            width: CGFloat(box.xMax - box.xMin) / 64,
-            height: CGFloat(box.yMax - box.yMin) / 64
-        )
+    /// Collects the box round an outline's points as HarfBuzz draws it.
+    private static let inkFuncs: OpaquePointer? = {
+        guard let funcs = hb_draw_funcs_create() else { return nil }
+        hb_draw_funcs_set_move_to_func(funcs, { _, data, _, x, y, _ in
+            data?.assumingMemoryBound(to: InkBox.self).pointee.add(Double(x), Double(y))
+        }, nil, nil)
+        hb_draw_funcs_set_line_to_func(funcs, { _, data, _, x, y, _ in
+            data?.assumingMemoryBound(to: InkBox.self).pointee.add(Double(x), Double(y))
+        }, nil, nil)
+        hb_draw_funcs_set_quadratic_to_func(funcs, { _, data, _, cx, cy, x, y, _ in
+            guard let box = data?.assumingMemoryBound(to: InkBox.self) else { return }
+            box.pointee.add(Double(cx), Double(cy))
+            box.pointee.add(Double(x), Double(y))
+        }, nil, nil)
+        hb_draw_funcs_set_cubic_to_func(funcs, { _, data, _, c1x, c1y, c2x, c2y, x, y, _ in
+            guard let box = data?.assumingMemoryBound(to: InkBox.self) else { return }
+            box.pointee.add(Double(c1x), Double(c1y))
+            box.pointee.add(Double(c2x), Double(c2y))
+            box.pointee.add(Double(x), Double(y))
+        }, nil, nil)
+        hb_draw_funcs_make_immutable(funcs)
+        return funcs
+    }()
+}
+
+/// The box round an outline's points.
+struct InkBox {
+    var minX = Double.infinity, minY = Double.infinity
+    var maxX = -Double.infinity, maxY = -Double.infinity
+
+    mutating func add(_ x: Double, _ y: Double) {
+        minX = min(minX, x); maxX = max(maxX, x)
+        minY = min(minY, y); maxY = max(maxY, y)
     }
 }
 

@@ -134,6 +134,14 @@ public final class AndroidGameController {
     /// `viewDidLayoutSubviews`, as the shell learns them from SDL. The first
     /// call presents the splash.
     public func layout(size: CGSize, safeArea: UIEdgeInsets, orientation: UIInterfaceOrientation, idiom: UIUserInterfaceIdiom, maximumFramesPerSecond: Int) {
+        var safeArea = safeArea
+        #if DEBUG
+        // `-SafeAreaInsets top,left,bottom,right`: a parity run's iPhone
+        // safe area in place of the device's.
+        if let forced = SafeAreaOverride.parse(UserDefaults.standard.string(forKey: SafeAreaOverride.argument)) {
+            safeArea = UIEdgeInsets(top: forced.top, left: forced.left, bottom: forced.bottom, right: forced.right)
+        }
+        #endif
         let bounds = CGRect(origin: .zero, size: size)
         view.bounds = bounds
         view.safeAreaInsets = safeArea
