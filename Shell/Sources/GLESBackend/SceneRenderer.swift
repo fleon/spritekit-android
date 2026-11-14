@@ -94,10 +94,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// rather than quietly clipped to the wrong shape.
     private var warnedShadedMask = false
     private var clampedEffects: Set<ObjectIdentifier> = []
-    /// Textures handed to the game by `texture(from:)`, by the node they
-    /// were baked from. A backdrop bakes its floor again on every layout, so
-    /// the one it had is dropped here rather than left on the GPU.
-    private var bakedTextures: [ObjectIdentifier: UInt32] = [:]
+    /// Textures handed to the game by `texture(from:)`, each deleted once
+    /// the game lets go of it (`BakedTextures`).
+    private var bakedTextures = BakedTextures()
 
     // MARK: The frame's tally, for the performance report
 
@@ -138,7 +137,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         cache = ResourceCache(device: device)
         view = SKView(bounds: CGRect(origin: .zero, size: Self.points(drawableSize, scale: pointScale)))
         view.contentScaleFactor = pointScale
-        cache.pageSource = pageLoader
+        // The pages decode straight, as PNGs hold them; SpriteKit's
+        // textures, and so the blend and the game's shaders, are
+        // premultiplied (`Premultiply`).
+        cache.pageSource = { pageLoader($0).map { ($0.width, $0.height, Premultiply.rgba($0.pixels)) } }
         // Textures the asset index does not back: the noise lattices the
         // shaders sample (`Starlight.noise` is an `SKTexture(data:size:)`
         // the sky's nebula, its clouds and its mottled blue all read through
@@ -261,8 +263,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         films.failAll()
         if let filmTarget { device.deleteRenderTarget(filmTarget) }
         filmTarget = nil
-        for name in bakedTextures.values { device.deleteTexture(name) }
-        bakedTextures.removeAll()
+        for name in bakedTextures.removeAll() { device.deleteTexture(name) }
         targets.removeAll()
         cache.removeAll()
         glyphPages.removeAll()
@@ -799,17 +800,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let baked = SKTexture(color: .clear, size: bounds.size)
         baked.glName = handle.texture
 
-        // A backdrop re-bakes its floor whenever it lays out, and the one it
-        // had is unreachable from that moment.
-        let key = ObjectIdentifier(node)
-        if let previous = bakedTextures[key] { device.deleteTexture(previous) }
-        bakedTextures[key] = handle.texture
-        bakedSizes[handle.texture] = (handle.width, handle.height)
+        // A backdrop re-bakes its floor whenever it lays out, and lets go of
+        // the one it had: those the game has dropped are deleted now.
+        for name in bakedTextures.sweep() { device.deleteTexture(name) }
+        bakedTextures.add(baked, name: handle.texture, width: handle.width, height: handle.height)
         return baked
     }
-
-    /// Each baked texture's size in pixels, for reading it back.
-    private var bakedSizes: [GLuint: (width: Int, height: Int)] = [:]
 
     /// Hands `done` the next frame drawn, read back before it's swapped:
     /// `drawHierarchy`'s part, for the game's debug captures
@@ -840,7 +836,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// game's `cgImage()` asks of a snapshot (`MechanicSampleNode` fits a
     /// sample by what it draws).
     private func readBack(_ texture: SKTexture) -> RasterImage? {
-        guard let size = bakedSizes[texture.glName], size.width > 0, size.height > 0 else { return nil }
+        guard let size = bakedTextures.size(of: texture.glName), size.width > 0, size.height > 0 else { return nil }
         var framebuffer: GLuint = 0
         var previous: GLint = 0
         glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &previous)
@@ -1366,7 +1362,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         case let .encoded(data):
             do {
                 let image = try PNGDecoder.decode(data)
-                return (image.width, image.height, image.pixels)
+                return (image.width, image.height, Premultiply.rgba(image.pixels))
             } catch {
                 Log.error("a texture's image would not decode: \(error)")
                 return nil

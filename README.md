@@ -1245,6 +1245,21 @@ with what they override.
   (`ResourceCache.imageName(for:)`). Shaded sprites batch by image rather
   than page; Kitchen's first level draws 108 calls a frame against 106
   (`ShadedSpriteTests`).
+- **Textures are premultiplied, as SpriteKit's are.** The pages and the
+  rigs' own PNGs decode straight, and the renderer blends and the game's
+  shaders compute as SpriteKit's premultiplied textures ask. Uploaded
+  straight, every soft edge drew at its colour's full strength over what
+  lay behind it, a light halo round every Switchling, home and piece. The
+  cache premultiplies a page as it decodes it, and the renderer does the
+  same for an encoded PNG (`Premultiply`).
+- **A baked texture lives as long as the game holds it.** `texture(from:)`
+  used to keep its textures by the node baked, deleting the previous one
+  when that node baked again; but the nodes are throwaway canvases, and the
+  next one often lands at a freed one's address. Starry Sky's floor (its
+  mottled blue, `u_floor`) was deleted by the edge shade baked after it, so
+  the sky sampled the shade's near-transparent black and the night came out
+  dark and hardly blue. Each baked texture is now deleted once its
+  `SKTexture` is gone (`BakedTextures`, swept at the next bake).
 
 ### Frame times, and what they can't say
 
