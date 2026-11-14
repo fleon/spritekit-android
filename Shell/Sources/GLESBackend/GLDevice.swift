@@ -136,6 +136,19 @@ public final class GLDevice: RenderDevice {
         glDeleteTextures(1, &name)
     }
 
+    /// Rows bottom first, as GL takes them: no flip, unlike `createTexture`'s PNG rows.
+    public func updateTexture(_ name: UInt32, width: Int, height: Int, pixels: Data) {
+        guard pixels.count >= width * height * 4 else { return }
+        var bound: GLint = 0
+        glGetIntegerv(GLenum(GL_TEXTURE_BINDING_2D), &bound)
+        glBindTexture(GLenum(GL_TEXTURE_2D), name)
+        glPixelStorei(GLenum(GL_UNPACK_ALIGNMENT), 1)
+        pixels.withUnsafeBytes { raw in
+            glTexSubImage2D(GLenum(GL_TEXTURE_2D), 0, 0, 0, GLsizei(width), GLsizei(height), GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), raw.baseAddress)
+        }
+        glBindTexture(GLenum(GL_TEXTURE_2D), GLuint(bound))
+    }
+
     // MARK: Render targets
 
     /// Read once: GLES 3.0 guarantees 2048, and an effect node covering a

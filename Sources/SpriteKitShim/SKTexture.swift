@@ -190,7 +190,41 @@ public final class SKTexture: @unchecked Sendable {
     /// `AssetIndex.pages` — the renderer's upload key. Nil for a texture
     /// that is not backed by the asset index.
     public var page: Int? { root.asset?.page }
+
+    // MARK: Mutable textures
+
+    /// The pixels of a mutable texture (`SKMutableTexture`), rows bottom
+    /// first, and how many times they've changed: the renderer uploads them
+    /// again when the count moves on from the one it last uploaded.
+    public private(set) var mutablePixels: (width: Int, height: Int, pixels: Data)?
+    public private(set) var revision = 0
+    /// Set by the renderer: the `revision` it last uploaded.
+    public var uploadedRevision = 0
+
+    /// SpriteKit's `SKMutableTexture(size:)`: RGBA8 pixels the game writes
+    /// itself (`modifyPixelData`), a point a pixel.
+    public convenience init(size: CGSize) {
+        let width = max(Int(size.width), 1), height = max(Int(size.height), 1)
+        self.init(data: Data(count: width * height * 4), size: size)
+        mutablePixels = (width, height, Data(count: width * height * 4))
+    }
+
+    /// Hands `block` the pixels to rewrite in place, as SpriteKit's
+    /// `SKMutableTexture.modifyPixelData` does, and has the renderer upload
+    /// them again.
+    public func modifyPixelData(_ block: (UnsafeMutableRawPointer?, Int) -> Void) {
+        guard var pixels = mutablePixels else { return }
+        // Let go of the stored copy first, so the bytes change in place.
+        mutablePixels = nil
+        pixels.pixels.withUnsafeMutableBytes { block($0.baseAddress, $0.count) }
+        mutablePixels = pixels
+        revision += 1
+    }
 }
+
+/// SpriteKit's mutable texture: the shim's `SKTexture` made with
+/// `init(size:)`, which `modifyPixelData` rewrites.
+public typealias SKMutableTexture = SKTexture
 
 public enum SKTextureFilteringMode: Int, Sendable {
     case nearest, linear

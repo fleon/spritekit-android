@@ -10,6 +10,9 @@ import SpriteKitShim
 public protocol RenderDevice: AnyObject {
     func createTexture(width: Int, height: Int, pixels: Data?) -> UInt32
     func deleteTexture(_ name: UInt32)
+    /// Rewrites a texture's pixels: RGBA8, rows bottom first, at the size it
+    /// was made (a mutable texture, `SKTexture.modifyPixelData`).
+    func updateTexture(_ name: UInt32, width: Int, height: Int, pixels: Data)
 
     /// Compiles and links a program. Returns 0 on failure, having logged it.
     func createProgram(vertex: String, fragment: String) -> UInt32
@@ -39,6 +42,7 @@ public protocol RenderDevice: AnyObject {
 public extension RenderDevice {
     var maximumTextureSide: Int { 2048 }
     func setRepeats(_ name: UInt32) {}
+    func updateTexture(_ name: UInt32, width: Int, height: Int, pixels: Data) {}
     func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32 { 0 }
 }
 
@@ -97,6 +101,19 @@ public final class ResourceCache {
         // Not backed by the index: an atlas slice still shares its parent's
         // upload, since only the UVs differ.
         let root = texture.root
+        // A mutable texture uploads again each time its pixels change.
+        if let mutable = root.mutablePixels {
+            if root.glName == 0 {
+                root.glName = device.createTexture(width: mutable.width, height: mutable.height, pixels: nil)
+                if root.glName != 0 { ownedTextures.insert(root.glName) }
+                root.uploadedRevision = -1
+            }
+            if root.glName != 0, root.uploadedRevision != root.revision {
+                device.updateTexture(root.glName, width: mutable.width, height: mutable.height, pixels: mutable.pixels)
+                root.uploadedRevision = root.revision
+            }
+            return root.glName
+        }
         if root.glName != 0 { return root.glName }
         let name = upload(pixelSource?(root))
         root.glName = name
