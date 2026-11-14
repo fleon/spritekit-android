@@ -133,6 +133,7 @@ public final class AndroidGameController {
             }
         }
         startScripts()
+        MainframeReward.watch(view)
     }
 
     // MARK: - Layout
@@ -227,6 +228,8 @@ public final class AndroidGameController {
     /// took it on the title or the splash, so the game should leave, as
     /// Apple TV's Menu leaves from the title.
     public func handleBack() -> Bool {
+        // The pre-registration reward's notice is the shim's, not the scene's.
+        if MainframeReward.dismiss() { return true }
         let scene = view.scene
         let handled = (scene as? KeyboardControllable)?.handleKey(.keyboardEscape, modifiers: []) ?? false
         return handled || !(scene is TitleScene || scene is LaunchSplashScene)

@@ -17,6 +17,12 @@ import PlatformShim
 /// (`installPlatformServices`), `SimulatedBilling` under
 /// `-SimulatePurchases` (as on Apple: granted locally, no money moves), and
 /// `NoBilling` otherwise — a host test, where a purchase fails honestly.
+///
+/// Android's one rule of its own: Play's pre-registration reward
+/// (`Entitlements.mainframeRewardID`, granted free by Play at first launch to
+/// whoever pre-registered) keeps the secret worlds for good, even without
+/// the full game, once claimed (the locked world's Claim, or its banner) or
+/// once the launch event is over. `MainframeReward` tells the player once.
 final class StoreManager {
     static let shared = StoreManager()
     /// Posted whenever prices or purchases change.
@@ -80,10 +86,32 @@ final class StoreManager {
     }
 
     /// The secret worlds are the player's: the full game owned by the end of
-    /// the launch event (or every world unlocked for testing).
+    /// the launch event, Play's pre-registration reward (or every world
+    /// unlocked for testing).
     var keepsSecretWorlds: Bool {
         if LaunchArguments.unlocksAllWorlds { return true }
-        return entitlements.keepsSecretWorlds(owns: ownsFullGame)
+        return entitlements.keepsSecretWorlds(
+            owns: ownsFullGame,
+            rewarded: entitlements.rewardCounts(owned: isRewarded, eventRunning: isLaunchEventRunning)
+        )
+    }
+
+    /// Play granted the pre-registration reward.
+    var isRewarded: Bool {
+        owned.contains(Entitlements.mainframeRewardID)
+    }
+
+    /// The reward waits for its Claim button: granted, not yet claimed, while
+    /// the launch event runs (afterwards it counts without one).
+    var hasRewardToClaim: Bool {
+        isRewarded && !entitlements.rewardClaimed && isLaunchEventRunning
+    }
+
+    /// Claims the reward: the secret worlds open at once.
+    func claimReward() {
+        guard hasRewardToClaim else { return }
+        entitlements.rewardClaimed = true
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
     /// Every world is open: the full game bought (or unlocked for testing).

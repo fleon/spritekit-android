@@ -14,3 +14,15 @@ here isn't in the game's file.
 Every other language already calls it vibration on both platforms
 ("Vibración", "振動", "진동", "Вибрация", …), so only English and the two
 Chinese scripts are overridden.
+
+## Words only Android says
+
+`<language>.lproj/Android.strings` adds keys the game doesn't have, for what
+only the Android build shows; `stageStrings` appends them to that language's
+`Localizable.strings`, and stops the build if the game already has one of
+them or a language lacks a key `Base.lproj`'s file has. The shim reads them
+with `Localization.string(_:fallback:)`.
+
+| Key | What |
+|---|---|
+| `android.reward.mainframe` | the notice that Play's pre-registration reward, The Mainframe, came in (`MainframeReward`); `%@` is the world's name |

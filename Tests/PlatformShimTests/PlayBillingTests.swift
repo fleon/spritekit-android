@@ -249,3 +249,21 @@ struct PlayBillingTests {
         #expect(entitlements.keepsSecretWorlds(owns: true))
     }
 }
+
+@Suite("Play Billing: the pre-registration reward")
+@MainActor
+struct PlayBillingRewardTests {
+    @Test("Play's reward, found by the launch query with no order ID, is owned and acknowledged")
+    func reward() async {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel)
+        billing.start {}
+        // A reward carries no order ID or developer payload; only these fields are read.
+        java.send("billing", "owned", ["code": "ok", "purchases": [
+            ["products": [Entitlements.mainframeRewardID], "state": "purchased", "token": "reward", "time": bought, "acknowledged": false],
+        ]])
+        #expect(billing.ownedProducts == [Entitlements.mainframeRewardID])
+        await java.waitFor("billing.acknowledge")
+        #expect(java.calls.last?.arguments["token"] as? String == "reward")
+    }
+}

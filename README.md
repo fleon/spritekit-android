@@ -543,6 +543,25 @@ product, `com.fleon.switchlings.fullgame`:
 - **The launch event**: Play's `purchaseTime` stands in for StoreKit's
   `originalPurchaseDate`, so a player who bought before 14 February 2027
   keeps the secret worlds on a new phone too.
+- **The pre-registration reward** (Android's one store rule of its own):
+  Play grants `com.fleon.switchlings.mainframe` free, at first launch, to
+  whoever pre-registered. It's a one-time purchase like any other (no order
+  ID or payload, which nothing reads), found by the launch query and
+  acknowledged. While the launch event runs it waits to be **claimed**
+  (`StoreManager.hasRewardToClaim`): The Mainframe's page stays locked, its
+  purchase card saying "Your reward is here!" beside **Claim** in place of
+  the full game's price, and its banner "Claim your pre-registration
+  reward!"; Claim, or a tap on that banner, claims it (`claimReward()`, kept
+  in `Entitlements.rewardClaimed`) and the world opens at once, as a bought
+  one does, and the banner goes. Once the event is over the reward counts
+  without a claim. Owned and claimed, it keeps The Mainframe for good, with
+  or without the full game (`Entitlements.keepsSecretWorlds(owns:rewarded:)`),
+  and nothing else unlocks. The first time it's seen, `MainframeReward`
+  says so over the title or the world list with the game's own notice card
+  (Play's rules ask for that), whose Claim claims it and opens The
+  Mainframe's page (Play, once the event is over); Android's back closes it.
+  The game never sells the product. To see it without Play:
+  `-SimulatePurchases YES -store.simulatedProducts "(com.fleon.switchlings.mainframe)"`.
 - **Family Library** is a Play Console switch for the product; a shared
   purchase reaches the family member's query like their own.
 - **China**: Google Play isn't offered in mainland China, so there's no

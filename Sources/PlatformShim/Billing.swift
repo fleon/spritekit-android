@@ -118,9 +118,17 @@ public struct Entitlements {
         public static let boughtAt = "store.fullGameBoughtAt"
         /// Seen owned, with no purchase date, during the launch event.
         public static let ownedInEvent = "store.ownedDuringLaunchEvent"
+        /// The player has been told The Mainframe is their reward.
+        public static let rewardAnnounced = "store.mainframeRewardAnnounced"
+        /// The player claimed the pre-registration reward (its Claim button).
+        public static let rewardClaimed = "store.mainframeRewardClaimed"
     }
 
     public static let fullGameID = "com.fleon.switchlings.fullgame"
+    /// Play's pre-registration reward: a one-time product Play grants free
+    /// to whoever pre-registered, never sold in the game. Owning it keeps the
+    /// secret worlds for good, with or without the full game.
+    public static let mainframeRewardID = "com.fleon.switchlings.mainframe"
 
     /// When the launch event ends, and with it the chance to keep the secret
     /// worlds: as its App Store In-App Event does, 14 February 2027 at
@@ -164,8 +172,28 @@ public struct Entitlements {
 
     public var wasOwnedDuringEvent: Bool { defaults.bool(forKey: Key.ownedInEvent) }
 
-    /// Whether the secret worlds are the player's for good.
-    public func keepsSecretWorlds(owns: Bool) -> Bool {
+    /// Whether the player has been told about the pre-registration reward.
+    public var rewardAnnounced: Bool {
+        get { defaults.bool(forKey: Key.rewardAnnounced) }
+        nonmutating set { defaults.set(newValue, forKey: Key.rewardAnnounced) }
+    }
+
+    /// Whether the player has claimed the pre-registration reward.
+    public var rewardClaimed: Bool {
+        get { defaults.bool(forKey: Key.rewardClaimed) }
+        nonmutating set { defaults.set(newValue, forKey: Key.rewardClaimed) }
+    }
+
+    /// The pre-registration reward counts once claimed, or once the launch
+    /// event is over (when nothing offers the claim any more).
+    public func rewardCounts(owned: Bool, eventRunning: Bool) -> Bool {
+        owned && (rewardClaimed || !eventRunning)
+    }
+
+    /// Whether the secret worlds are the player's for good: the
+    /// pre-registration reward (`rewarded`), or the full game owned in time.
+    public func keepsSecretWorlds(owns: Bool, rewarded: Bool = false) -> Bool {
+        if rewarded { return true }
         guard owns else { return false }
         if let boughtAt { return boughtAt <= Self.launchEventEnd }
         return wasOwnedDuringEvent

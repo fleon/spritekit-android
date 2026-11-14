@@ -1,0 +1,2 @@
+/* Play's pre-registration reward: the notice at the first launch after it arrives. %@ is the world's name. */
+"android.reward.mainframe" = "Спасибо за предрегистрацию! Твоя награда — %@, секретный мир, который останется с тобой навсегда.";

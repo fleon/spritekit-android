@@ -184,3 +184,49 @@ struct AchievementTests {
         #expect(await LocalAchievements(defaults: scratchDefaults()).localPlayer() == nil)
     }
 }
+
+@Suite("Pre-registration reward")
+struct MainframeRewardTests {
+    @Test("Play's reward keeps the secret worlds without the full game")
+    func rewardAlone() {
+        let entitlements = Entitlements(defaults: scratchDefaults())
+        #expect(entitlements.keepsSecretWorlds(owns: false, rewarded: true))
+    }
+
+    @Test("The reward keeps them after the launch event, however late the full game was bought")
+    func rewardAfterEvent() {
+        let entitlements = Entitlements(defaults: scratchDefaults())
+        entitlements.noteBought(at: Entitlements.launchEventEnd.addingTimeInterval(60 * 60 * 24 * 30))
+        #expect(entitlements.keepsSecretWorlds(owns: true) == false)
+        #expect(entitlements.keepsSecretWorlds(owns: true, rewarded: true))
+    }
+
+    @Test("The notice is shown once")
+    func announcedOnce() {
+        let defaults = scratchDefaults()
+        #expect(Entitlements(defaults: defaults).rewardAnnounced == false)
+        Entitlements(defaults: defaults).rewardAnnounced = true
+        #expect(Entitlements(defaults: defaults).rewardAnnounced)
+    }
+}
+
+@Suite("Claiming the pre-registration reward")
+struct RewardClaimTests {
+    @Test("While the launch event runs, the reward counts only once claimed")
+    func claimDuringEvent() {
+        let defaults = scratchDefaults()
+        let entitlements = Entitlements(defaults: defaults)
+        #expect(entitlements.rewardCounts(owned: true, eventRunning: true) == false)
+        entitlements.rewardClaimed = true
+        #expect(Entitlements(defaults: defaults).rewardCounts(owned: true, eventRunning: true))
+    }
+
+    @Test("Once the event is over, an unclaimed reward counts anyway, and no reward never does")
+    func afterEvent() {
+        let entitlements = Entitlements(defaults: scratchDefaults())
+        #expect(entitlements.rewardCounts(owned: true, eventRunning: false))
+        #expect(entitlements.rewardCounts(owned: false, eventRunning: false) == false)
+        entitlements.rewardClaimed = true
+        #expect(entitlements.rewardCounts(owned: false, eventRunning: true) == false)
+    }
+}

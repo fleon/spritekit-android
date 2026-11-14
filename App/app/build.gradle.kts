@@ -60,7 +60,7 @@ val stageStrings = tasks.register<Sync>("stageStrings") {
     inputs.dir(androidStrings)
     doLast {
         val line = Regex("""^\s*"([^"]+)"\s*=.*;\s*$""")
-        androidStrings.walkTopDown().filter { it.isFile && it.extension == "strings" }.forEach { override ->
+        androidStrings.walkTopDown().filter { it.isFile && it.extension == "strings" && it.name != "Android.strings" }.forEach { override ->
             val target = file("$stringAssets/lproj/${override.parentFile.name}/${override.name}")
             if (!target.exists()) throw GradleException("Android/Strings: no ${override.parentFile.name}/${override.name} in the game's strings")
             val replacements = override.readLines().mapNotNull { l -> line.matchEntire(l)?.let { it.groupValues[1] to l } }.toMap()
@@ -72,6 +72,23 @@ val stageStrings = tasks.register<Sync>("stageStrings") {
             val missing = replacements.keys - seen
             if (missing.isNotEmpty()) throw GradleException("Android/Strings: ${override.parentFile.name} overrides keys the game doesn't have: $missing")
             target.writeText(merged.joinToString("\n", postfix = "\n"))
+        }
+        // Words only Android says (the pre-registration reward's notice):
+        // `Android.strings` adds its keys to the language's Localizable.strings,
+        // and stops the build if the game already has one of them, or if a
+        // language lacks a key the English file has.
+        val additions = androidStrings.walkTopDown().filter { it.isFile && it.name == "Android.strings" }.toList()
+        fun keys(file: File) = file.readLines().mapNotNull { l -> line.matchEntire(l)?.groupValues?.get(1) }.toSet()
+        val english = additions.firstOrNull { it.parentFile.name == "Base.lproj" }?.let(::keys).orEmpty()
+        additions.forEach { addition ->
+            val target = file("$stringAssets/lproj/${addition.parentFile.name}/Localizable.strings")
+            if (!target.exists()) throw GradleException("Android/Strings: no ${addition.parentFile.name}/Localizable.strings in the game's strings")
+            val added = keys(addition)
+            val clashing = added intersect keys(target)
+            if (clashing.isNotEmpty()) throw GradleException("Android/Strings: ${addition.parentFile.name}/Android.strings adds keys the game already has: $clashing")
+            val missing = english - added
+            if (missing.isNotEmpty()) throw GradleException("Android/Strings: ${addition.parentFile.name}/Android.strings lacks $missing")
+            target.appendText("\n" + addition.readText().trimEnd() + "\n")
         }
     }
 }
