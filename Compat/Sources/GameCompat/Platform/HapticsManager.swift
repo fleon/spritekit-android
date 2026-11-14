@@ -1,17 +1,24 @@
+import PlatformShim
 import UIKit
 
-/// `Source/Utils/HapticsManager.swift` on Android: the same API, settings and
-/// decisions, for the same callers. The game's own file plays its feedback
-/// only under `#if os(iOS)` (Apple TV has none), which Android isn't, so it
-/// would compile to silence; here the generators always play, and the shim's
-/// UIKit generators hand each kind to the phone's vibrator
-/// (`SystemServices.haptic`, `DeviceServices.java`). Phones only, as on iOS:
-/// a tablet's idiom is `.pad`.
+/// `Source/Utils/HapticsManager.swift` on Android: the same API and settings,
+/// for the same callers. The game's own file plays its feedback only under
+/// `#if os(iOS)` (Apple TV has none) and offers it on phones alone (its
+/// idiom), where Android offers it wherever the device has a vibrator,
+/// tablets too (`VibrationSupport`); here the generators always play, and
+/// the shim's UIKit generators hand each kind to the vibrator
+/// (`SystemServices.haptic`, `DeviceServices.java`).
 final class HapticsManager {
     static let shared = HapticsManager()
 
+    /// The settings' Vibration switch shows, and feedback plays, only here.
     static var isSupported: Bool {
-        UIDevice.current.userInterfaceIdiom == .phone
+        #if DEBUG
+        let override = UserDefaults.standard.string(forKey: VibrationSupport.argument)
+        #else
+        let override: String? = nil
+        #endif
+        return VibrationSupport.isSupported(hasVibrator: SystemServices.hasVibrator, override: override)
     }
 
     static var isHapticsEnabled: Bool {

@@ -67,6 +67,7 @@ enum AndroidPlatformServices {
         }
         if let state = channel.call("device.state") {
             SystemServices.lowPowerMode = state.bool("powerSave") ?? false
+            SystemServices.hasVibrator = state.bool("haptics") ?? false
         }
         channel.on("device") { event, body in
             switch event {

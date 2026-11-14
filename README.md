@@ -100,8 +100,9 @@ edit–test loop on a Mac; in the app it would be set for Android alone.
 The module-name targets are what make "unchanged" literal. A game file keeps
 `import SpriteKit`, `import UIKit`, `import CoreGraphics` and `import
 CoreText`; on Android no system module answers those names, so these targets
-do, and each re-exports the shim. **No file in `Source/` is edited — not even
-its imports.**
+do, and each re-exports the shim. **No file in `Source/` is edited for the
+port — not even its imports** — beyond what the owner allowed: seedable
+randomness (`-RandomSeed`) and phone checks that ask `os(iOS) || os(Android)`.
 
 Apple is detected with `canImport(Darwin)`, not `canImport(CoreGraphics)`,
 precisely because this package ships a module by that name.
@@ -134,9 +135,11 @@ cd ../Probe
 All of them pass. `TextProbe` is an executable rather than a library, so it
 is the one thing here that proves the Android archives actually **link**: it
 comes out as an ELF for both ABIs and needs no `libc++_shared.so`.
-`GameCompat` compiles **219 of the game's 235 source files**, unmodified,
+`GameCompat` compiles **220 of the game's 236 source files**, unmodified,
 for Android on both ABIs (see **The game's own scenes** for the sixteen it
-leaves out and why). The table below is the first slice that compiled:
+leaves out and why). Where the game asks `#if os(iOS)` about phones and touch
+screens rather than Apple's own APIs (the camera housing's side in
+landscape), it asks `os(iOS) || os(Android)`. The table below is the first slice that compiled:
 
 | file | lines |
 |---|---|
@@ -619,7 +622,11 @@ and saved data stays on the device.
   (`SystemServices.haptic`) and `DeviceServices` plays it: haptic
   primitives where the vibrator has them (Android 11+), predefined effects
   where not, a short buzz on the oldest, as touch feedback so the system's
-  own switch silences them. Phones only, as `HapticsManager` decides.
+  own switch silences them. The settings' Vibration switch shows, and
+  feedback plays, wherever the device has a vibrator, tablets too
+  (`VibrationSupport`, from `Vibrator.hasVibrator()`), not on phones alone
+  as iOS's idiom test decides; `-Vibrator NO` (or `YES`) stands in for the
+  device in a debug run.
 - **Audio focus**, matched to the iOS build's ambient session: the player's
   own music wins. Coming to the front with another app's music playing, the
   game takes no focus and keeps its soundtrack quiet (its sounds still mix
@@ -724,7 +731,7 @@ loading screen, the title (its wordmark, drawer, showcase and banner), the
 world list (its pages, sheet, level strip and previews), a level with its
 whole HUD (back, settings, the level code, the tip, undo, restart, hint and
 help), the win card with its Next, Level Select, Replay and Share, and the
-settings with their tabs. **219 of the game's 235 files** compile into
+settings with their tabs. **220 of the game's 236 files** compile into
 `GameCompat` unchanged, symlinked at the same paths they have under
 `Source/` (`Title/TitleScene.swift`, `Game/GameScene.swift`, …).
 
@@ -735,7 +742,7 @@ Left out, each for a reason of its own:
 | `AppDelegate`, `SceneDelegate`, `GameViewController` | the Apple app's own entry, window and controller | `Android/AndroidGameController.swift`, `GameViewControllerProtocols.swift` (below) |
 | `Utils/GamepadInput.swift` | observes `GCController` through `#selector`, which needs the Objective-C runtime | `Android/GamepadInput.swift`: the same `Action`s, mapping, thresholds and repeat, fed by SDL's gamepads |
 | `Utils/ShareSheet.swift` | `UIActivityViewController` | `Platform/ShareSheet.swift` (Android's chooser, from the share films) |
-| `AudioManager`, `StoreManager`, `GameCenterManager`, `ICloudSyncManager`, `HapticsManager` | AVFoundation, StoreKit, GameKit, iCloud, haptics compiled for iOS only | `Platform/` (the platform ring) |
+| `AudioManager`, `StoreManager`, `GameCenterManager`, `ICloudSyncManager`, `HapticsManager` | AVFoundation, StoreKit, GameKit, iCloud, haptics compiled for iOS only and offered on phones alone (Android offers them wherever there's a vibrator) | `Platform/` (the platform ring) |
 | `Utils/DesignerFeed.swift`, `Utils/PlaytestLog.swift` | the beta switch, which a store build can't read from launch arguments; `PlaytestLog`'s `#selector` observers | ports in `Platform/`, the game's logic line for line (**The beta's level feed and solve log**) |
 | `HeaderVideo/*`, `EventVideo/*` | the Mac's filming tools, debug only | nothing |
 

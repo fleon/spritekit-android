@@ -73,6 +73,8 @@ public enum SystemServices {
     /// Plays one of the feedback generators' kinds on the phone's vibrator:
     /// `light`, `medium`, `soft`, `selection`, `success` or `warning`.
     nonisolated(unsafe) public static var haptic: (String) -> Void = { _ in }
+    /// The device has a vibrator to play them on (`Vibrator.hasVibrator()`).
+    nonisolated(unsafe) public static var hasVibrator = false
     /// Battery saver is on. Whoever sets it posts
     /// `NSProcessInfoPowerStateDidChange`, as iOS does.
     nonisolated(unsafe) public static var lowPowerMode = false
