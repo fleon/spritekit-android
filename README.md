@@ -1456,12 +1456,13 @@ adb shell am start -a android.intent.action.VIEW -d https://switchlings.fleon.co
 **App Links** need the site to vouch for the app: the https filter is
 `autoVerify`, and `Tools/Levels/Designer/http.js` now serves
 `/.well-known/assetlinks.json` from `config.json`'s `android` entry (the
-package and its signing certificates' SHA-256 fingerprints). It is empty,
-so the route answers 404 and Android shows the page in the browser, whose
-button opens the `switchlings://` link. To turn it on: add the Play App
-Signing key's fingerprint (Play Console → Setup → App signing) and the
-upload key's, deploy the server to fleon-home and restart it. Nothing was
-deployed.
+package and its signing certificates' SHA-256 fingerprints): Play App
+Signing's key (24:3C:…:8F:3F, which signs every copy Play installs; Play
+Console → Test and release → App integrity → App signing) and the upload
+key's (19:4B:…:E3:69, for release builds installed by hand). fleon-home
+serves main, so it goes live when fleon-home restarts after the change
+merges. Without them the route answers 404 and Android shows the page in
+the browser, whose button opens the `switchlings://` link.
 
 ## Launch arguments, and the parity sweep
 
