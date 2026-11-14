@@ -263,9 +263,8 @@ public final class SKAction {
         private var children: [State] = []
         private var index = 0
         private var repeated = 0
-        /// Time into the current round of a repeat, so what a frame runs
-        /// past a round's end carries into the next, as SpriteKit's does.
-        private var roundElapsed: TimeInterval = 0
+        /// A group's children that have finished, which it no longer runs.
+        private var finishedChildren: Set<Int> = []
 
         /// What a relative action (moveBy, fadeBy, scaleBy) measures from.
         struct Snapshot {
@@ -291,6 +290,19 @@ public final class SKAction {
 
         /// Advances by `delta` seconds. Returns true once finished.
         mutating func advance(by delta: TimeInterval, on node: SKNode) -> Bool {
+            step(by: delta, on: node) != nil
+        }
+
+        /// Advances by `delta` seconds. Once it finishes, returns how much of
+        /// `delta` it didn't need, which a sequence hands its next step and a
+        /// repeat its next round, as SpriteKit does (measured with
+        /// `SKRenderer` on the Mac): a 0.15 s frame through two 0.1 s moves
+        /// ends half way through the second, a group hands on what its
+        /// longest child left, and a `repeatForever` runs on across each
+        /// wrap. A step finishes as its time is reached exactly, but what
+        /// follows it starts only on time left over, so a `.run` after a step
+        /// that ends right on a frame runs on the next one. Nil until then.
+        mutating func step(by delta: TimeInterval, on node: SKNode) -> TimeInterval? {
             if !started {
                 started = true
                 from = Snapshot(
@@ -304,69 +316,76 @@ public final class SKAction {
             }
 
             switch action.kind {
-            case let .sequence(actions):
+            case .sequence:
                 var remaining = delta
                 while index < children.count {
-                    let done = children[index].advance(by: remaining, on: node)
-                    if !done { return false }
-                    // Carry the overflow into the next step so a long frame
-                    // does not stall a sequence one action per frame.
-                    remaining = max(0, remaining - children[index].action.totalDuration)
+                    guard let left = children[index].step(by: remaining, on: node) else { return nil }
+                    remaining = left
                     index += 1
-                    if remaining <= 0 && index < children.count { return false }
+                    if remaining <= 0 && index < children.count { return nil }
                 }
-                return true
+                return remaining
 
             case .group:
+                // What the child that finishes last leaves: each child that
+                // finishes now reports its own, and the least is the group's.
                 var allDone = true
-                for i in children.indices where !children[i].advance(by: delta, on: node) {
-                    allDone = false
+                var left = delta
+                for i in children.indices where !finishedChildren.contains(i) {
+                    if let childLeft = children[i].step(by: delta, on: node) {
+                        finishedChildren.insert(i)
+                        left = min(left, childLeft)
+                    } else {
+                        allDone = false
+                    }
                 }
-                return allDone
+                return allDone ? left : nil
 
-            case let .repeating(_, count):
-                roundElapsed += delta
-                var step = delta
+            case let .repeating(inner, count):
+                var remaining = delta
                 var rounds = 0
-                while children[0].advance(by: step, on: node) {
+                while let left = children[0].step(by: remaining, on: node) {
                     repeated += 1
-                    if let count, repeated >= count { return true }
-                    let length = children[0].action.totalDuration
-                    let overflow = length > 0 ? roundElapsed - length : 0
-                    children[0] = children[0].action.makeState()
-                    roundElapsed = max(0, overflow)
-                    // Instant rounds wait for the next frame, as SpriteKit's.
+                    if let count, repeated >= count { return left }
+                    children[0] = inner.makeState()
                     rounds += 1
-                    guard overflow > 0, rounds < 64 else { break }
-                    step = overflow
+                    // An instant round, or one that ends right on the frame,
+                    // runs again on the next frame (SpriteKit spins forever
+                    // on a `repeatForever` of an instant action; this doesn't).
+                    guard left > 0, inner.totalDuration > 0, rounds < 64 else { return nil }
+                    remaining = left
                 }
-                return false
+                return nil
 
             case let .run(block):
                 block()
-                return true
+                return delta
 
             case .removeFromParent:
                 node.removeFromParent()
-                return true
+                return delta
 
             case let .hide(hidden):
                 node.isHidden = hidden
-                return true
+                return delta
 
             case let .setTexture(texture, resize):
                 if let sprite = node as? SKSpriteNode {
                     sprite.texture = texture
                     if resize { sprite.size = texture.size() }
                 }
-                return true
+                return delta
 
             default:
-                elapsed += delta * TimeInterval(max(0, action.speed))
+                let speed = TimeInterval(max(0, action.speed))
+                elapsed += delta * speed
                 let total = action.duration
                 let raw = total > 0 ? CGFloat(min(1, elapsed / total)) : 1
                 apply(progress: action.timingMode.apply(raw), rawElapsed: elapsed, on: node)
-                return total <= 0 || elapsed >= total
+                guard total <= 0 || elapsed >= total else { return nil }
+                // Back in the parent's time: what this action's own speed
+                // ran past its end.
+                return total <= 0 ? delta : speed > 0 ? (elapsed - total) / speed : 0
             }
         }
 

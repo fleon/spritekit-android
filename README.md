@@ -819,8 +819,13 @@ against Apple's own where Apple's runs on the Mac:
 - Actions: `rotate(toAngle:duration:shortestUnitArc:)`, `colorize`,
   `setTexture`, `reversed()`; timing modes on **SpriteKit's measured
   curves** (ease in `2t² − t³`, ease out `t + t² − t³`, both smoothstep, read
-  back from `SKRenderer` on the Mac), and a repeat carries what a frame runs
-  past a round's end into the next, as SpriteKit's does.
+  back from `SKRenderer` on the Mac). Every action hands on the time a
+  frame runs past its end, as SpriteKit's does: a sequence to its next step,
+  a group what its longest child left, a repeat to its next round (several
+  in one long frame). A step finishes as its time is reached exactly, but
+  what follows starts only on time left over, so a `.run` after a step that
+  ends right on a frame runs on the next one; a group runs a finished child
+  no more (`ActionTimingTests`, each case measured with `SKRenderer`).
 - Paths: `addArc(tangent1End:tangent2End:radius:)`,
   `copy(dashingWithPhase:lengths:)` and `currentPoint`, checked against
   CoreGraphics. The software context has every CoreGraphics blend mode, the

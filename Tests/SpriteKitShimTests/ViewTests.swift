@@ -555,9 +555,10 @@ struct ActionClockTests {
         // The frame that presented it took half a second.
         _ = view.tick(currentTime: 0.5, delta: 0.5)
         #expect(!waited)
-        // 0.2 s of frames after it: SpriteKit runs the wait out on the 13th,
-        // the shim a frame later (its sequences step on a frame late).
-        for frame in 1 ... 14 { _ = view.tick(currentTime: 0.5 + Double(frame) / 60, delta: 1.0 / 60) }
+        // 0.2 s of frames after it: SpriteKit runs the wait out on the 13th.
+        for frame in 1 ... 12 { _ = view.tick(currentTime: 0.5 + Double(frame) / 60, delta: 1.0 / 60) }
+        #expect(!waited)
+        _ = view.tick(currentTime: 0.5 + 13.0 / 60, delta: 1.0 / 60)
         #expect(waited)
         // The children had frames of their own before the wait ran out.
         #expect(ticksWhenWaited >= 12)
