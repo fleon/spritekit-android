@@ -8,10 +8,12 @@ import Testing
 /// Stands in for `PlatformServices.java`: records each call, answers nothing.
 final class FakeJava {
     private(set) var calls: [(name: String, arguments: [String: Any])] = []
+    /// What Java answers a call at once, by name (nothing for the rest).
+    var answers: [String: [String: Any]] = [:]
     private(set) lazy var channel = PlatformChannel { [unowned self] name, data in
         let arguments = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         self.calls.append((name, arguments))
-        return nil
+        return self.answers[name].flatMap { try? JSONSerialization.data(withJSONObject: $0) }
     }
 
     var names: [String] { calls.map(\.name) }

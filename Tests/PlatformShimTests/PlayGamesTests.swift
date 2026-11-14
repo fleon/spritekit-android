@@ -46,7 +46,7 @@ struct PlayGamesTests {
         var signedIn: [Bool] = []
         games.signInChanged = { signedIn.append($0) }
         games.start { answers += 1 }
-        #expect(java.names == ["games.start"])
+        #expect(java.names == ["games.available", "games.start"])
         java.send("games", "signIn", ["signedIn": false, "configured": true])
         #expect(answers == 1)
         #expect(!games.isSignedIn)
@@ -115,5 +115,41 @@ struct PlayGamesTests {
         let answer = await player.value
         #expect(answer?.name == "Zoë 🦊")
         #expect(answer?.photo == Data([1, 2, 3]))
+    }
+
+    @Test("The dashboard stands where Play Games can run, and opens signed out")
+    func dashboard() {
+        let java = FakeJava()
+        java.answers["games.available"] = ["available": true]
+        let games = PlayGamesAchievements(channel: java.channel, mapping: mapping)
+        #expect(java.names == ["games.available"])
+        #expect(games.hasDashboard)
+        games.start {}
+        java.send("games", "signIn", ["signedIn": false, "configured": true])
+        // Signed out, the title still opens it: Java signs the player in first.
+        #expect(!games.isSignedIn)
+        #expect(games.opensDashboard)
+        games.showDashboard()
+        #expect(java.names.last == "games.showAchievements")
+    }
+
+    @Test("Without Play Games on the device there's no dashboard to open")
+    func noDashboard() {
+        for answer in [nil, ["available": false]] as [[String: Any]?] {
+            let java = FakeJava()
+            if let answer { java.answers["games.available"] = answer }
+            let games = PlayGamesAchievements(channel: java.channel, mapping: mapping)
+            #expect(!games.hasDashboard)
+            #expect(!games.opensDashboard)
+            games.showDashboard()
+            #expect(java.count("games.showAchievements") == 0)
+            // A player signed in from Play Games' own app still counts as signed in.
+            games.start {}
+            java.send("games", "signIn", ["signedIn": true])
+            #expect(games.opensDashboard)
+        }
+        let local = LocalAchievements(defaults: UserDefaults(suiteName: "no-dashboard")!)
+        #expect(!local.hasDashboard)
+        #expect(!local.opensDashboard)
     }
 }

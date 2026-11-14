@@ -9,6 +9,8 @@ import android.net.Uri;
 import android.util.Base64;
 import android.util.Log;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.images.ImageManager;
 import com.google.android.gms.games.AchievementsClient;
 import com.google.android.gms.games.PlayGames;
@@ -42,6 +44,11 @@ import java.util.Map;
  * ({@code -Pswitchlings.playGamesAppId=…}): sign-in answers "no" at once, so
  * the launch splash never waits for a service that cannot answer.
  *
+ * <p>The title's Play Games button ({@code available}, {@code showAchievements})
+ * stands where Game Center's does on Apple: it shows only where Play Games can
+ * run, and a tap signs a signed-out player in before opening the
+ * achievements, as Game Center's button leads to its sign-in.
+ *
  * <p>Events, under {@code games}: {@code signIn}, {@code achievements},
  * {@code reported}, {@code player}, {@code snapshotOpened},
  * {@code snapshotCommitted}.
@@ -69,6 +76,8 @@ final class PlayGamesServices {
 
     JSONObject call(String method, JSONObject args) throws JSONException {
         switch (method) {
+            case "available":
+                return PlatformServices.object("available", isAvailable());
             case "start":
                 activity.runOnUiThread(() -> checkSignIn(false));
                 return PlatformServices.object("configured", configured);
@@ -119,7 +128,23 @@ final class PlayGamesServices {
         if (configured && !signedIn) checkSignIn(false);
     }
 
+    /**
+     * Whether Play Games can run here: the build names a project, and Google
+     * Play services are on the device and up to date. Without them the title
+     * leaves its Play Games button out.
+     */
+    private boolean isAvailable() {
+        if (!configured) return false;
+        int status = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity);
+        return status == ConnectionResult.SUCCESS;
+    }
+
     private void checkSignIn(boolean ask) {
+        checkSignIn(ask, null);
+    }
+
+    /** Signs in (asking the player when {@code ask}), then runs {@code then} if that worked. */
+    private void checkSignIn(boolean ask, Runnable then) {
         if (!configured) {
             services.post(SERVICE, "signIn", PlatformServices.object("signedIn", false, "configured", false));
             return;
@@ -132,6 +157,7 @@ final class PlayGamesServices {
             if (!done.isSuccessful()) Log.w(PlatformServices.TAG, "Play Games sign-in failed", done.getException());
             signedIn = authenticated;
             services.post(SERVICE, "signIn", PlatformServices.object("signedIn", authenticated, "configured", true));
+            if (authenticated && then != null) then.run();
         });
     }
 
@@ -189,13 +215,22 @@ final class PlayGamesServices {
         });
     }
 
+    /**
+     * Play Games' achievements over the game. A signed-out player is asked to
+     * sign in first, and the achievements open once they have; turned down,
+     * nothing opens.
+     */
     private void showAchievements() {
+        if (!configured) return;
         if (!signedIn) {
-            checkSignIn(true);
+            Log.i(PlatformServices.TAG, "Play Games: signing in before the achievements");
+            checkSignIn(true, this::showAchievements);
             return;
         }
+        Log.i(PlatformServices.TAG, "Play Games: opening the achievements");
         PlayGames.getAchievementsClient(activity).getAchievementsIntent()
-            .addOnSuccessListener(intent -> activity.startActivityForResult(intent, DASHBOARD_REQUEST));
+            .addOnSuccessListener(intent -> activity.startActivityForResult(intent, DASHBOARD_REQUEST))
+            .addOnFailureListener(error -> Log.w(PlatformServices.TAG, "could not open achievements", error));
     }
 
     /** The signed-in player's name and picture (a PNG, base64), for a shared level's credit. */

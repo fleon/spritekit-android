@@ -22,9 +22,21 @@ public protocol AchievementsBackend: AnyObject {
     func report(_ progress: [String: Double], showingBanners: Bool) async -> Bool
     /// Clears everything the service holds (`-ResetAchievements`).
     func reset() async -> Bool
+    /// Whether the service has a dashboard of its own, which signs a
+    /// signed-out player in before it opens: the title's button (Game
+    /// Center's on Apple) shows only then.
+    var hasDashboard: Bool { get }
+    /// Opens the dashboard, signing the player in first if need be.
     func showDashboard()
     /// The signed-in player's name and photo, for a shared level's credit.
     func localPlayer() async -> (name: String, photo: Data?)?
+}
+
+public extension AchievementsBackend {
+    /// Whether the title's button opens the dashboard: when the player is
+    /// signed in, or when the dashboard signs them in itself. Otherwise the
+    /// game's title would tell them to sign in from Game Center's settings.
+    var opensDashboard: Bool { isSignedIn || hasDashboard }
 }
 
 /// Keeps achievement progress on the device and sends it nowhere: an
@@ -69,6 +81,8 @@ public final class LocalAchievements: AchievementsBackend {
         defaults.removeObject(forKey: Key.reported)
         return true
     }
+
+    public var hasDashboard: Bool { false }
 
     public func showDashboard() {}
 

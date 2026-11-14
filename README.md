@@ -587,6 +587,24 @@ through Android's own codecs (`UIImage.jpegToPNG` / `pngToJPEG`, Java's
 Without the mapping file, nothing of Play Games runs: `LocalAchievements`
 keeps the percentages on the device.
 
+**The title's Play Games button** stands where iOS has its Game Center
+button, the game's own (`TitleScene`'s `gameCenterButton`), and opens Play
+Games' achievements over the game (`getAchievementsIntent`; v2's only other
+overlays are the game's Play Games settings and comparing profiles with
+another player). It wears Google Play Games' mark, a play triangle holding a
+gamepad in its own two greens, as Huerings draws it on its Play Games button
+(its Axmol app's `PlayGamesIconNode`, path data copied in), at the icons'
+size, 20 points across (`Platform/GameCenterIcon.swift`, standing in for the game's file). A
+signed-out player who taps it is asked to sign in, and the achievements open
+once they have, as Game Center's button leads to its sign-in: the title asks
+`GameCenterManager.isSignedIn` before opening the dashboard, which here is
+true wherever Play Games' dashboard can open (`opensDashboard`). Where
+Play Games can't run — no Google Play services on the device or out of date
+(`games.available`, `GoogleApiAvailability`), a build without Play Games, or
+`-GameCenterOff` — the button isn't shown: its icon hides it the first time
+the scene runs it, before it's drawn. The game always shows the button, so
+the icon is the one place the port can decide without touching `Source/`.
+
 ### Saved data — Play Games Saved Games
 
 `ICloudSyncManager` keeps its shape exactly — `set` / `insert` /
@@ -731,7 +749,7 @@ loading screen, the title (its wordmark, drawer, showcase and banner), the
 world list (its pages, sheet, level strip and previews), a level with its
 whole HUD (back, settings, the level code, the tip, undo, restart, hint and
 help), the win card with its Next, Level Select, Replay and Share, and the
-settings with their tabs. **220 of the game's 236 files** compile into
+settings with their tabs. **219 of the game's 236 files** compile into
 `GameCompat` unchanged, symlinked at the same paths they have under
 `Source/` (`Title/TitleScene.swift`, `Game/GameScene.swift`, …).
 
@@ -744,6 +762,7 @@ Left out, each for a reason of its own:
 | `Utils/ShareSheet.swift` | `UIActivityViewController` | `Platform/ShareSheet.swift` (Android's chooser, from the share films) |
 | `AudioManager`, `StoreManager`, `GameCenterManager`, `ICloudSyncManager`, `HapticsManager` | AVFoundation, StoreKit, GameKit, iCloud, haptics compiled for iOS only and offered on phones alone (Android offers them wherever there's a vibrator) | `Platform/` (the platform ring) |
 | `Utils/DesignerFeed.swift`, `Utils/PlaytestLog.swift` | the beta switch, which a store build can't read from launch arguments; `PlaytestLog`'s `#selector` observers | ports in `Platform/`, the game's logic line for line (**The beta's level feed and solve log**) |
+| `Common/Components/GameCenterIcon.swift` | Game Center's mark, on a button that opens Play Games here | `Platform/GameCenterIcon.swift`: Play Games' mark (below) |
 | `HeaderVideo/*`, `EventVideo/*` | the Mac's filming tools, debug only | nothing |
 
 ### The controller

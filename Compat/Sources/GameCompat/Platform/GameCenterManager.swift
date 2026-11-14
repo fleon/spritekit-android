@@ -16,6 +16,10 @@ import UIKit
 /// Sign-in is Play Games v2's own, silent: there is no sheet to present, and
 /// play never waits on it. The signed-in player's Play Games name and
 /// picture credit a Level Designer level they share, as Game Center's do.
+///
+/// The title's Game Center button is Play Games' here (its controller,
+/// `GameCenterIcon`): it opens Play Games' achievements, signing a
+/// signed-out player in first, and stands only where Play Games can run.
 final class GameCenterManager {
     static let shared = GameCenterManager()
 
@@ -62,14 +66,20 @@ final class GameCenterManager {
         }
     }
 
-    /// Whether the player is signed in to Play Games. Every caller handles
-    /// false: the game is built to stay playable signed out.
-    var isSignedIn: Bool { Self.service.isSignedIn }
+    /// What the title asks before its button opens the dashboard rather
+    /// than Game Center's "sign in from Settings" notice (`TitleScene`, the
+    /// game's only caller). Play Games' dashboard signs the player in itself
+    /// (`showDashboard`), so wherever it can open this is true, signed in or
+    /// not; without Play Games the button isn't shown at all.
+    var isSignedIn: Bool { Self.service.opensDashboard }
+
+    /// Whether the title shows its button: Play Games can run here.
+    var hasDashboard: Bool { Self.service.hasDashboard }
 
     /// Whether a Level Designer picture can credit the player. Off on
     /// Android by decision (2026-11-13: no maker name or photo leaves an
     /// Android device), whoever is signed in; `creditsPlayer` is the switch.
-    var canCredit: Bool { (Self.creditsPlayer && isSignedIn) || LaunchArguments.sharePlayerName != nil }
+    var canCredit: Bool { (Self.creditsPlayer && Self.service.isSignedIn) || LaunchArguments.sharePlayerName != nil }
 
     /// Whether a signed-in player's Play Games name and picture credit a
     /// level they share, as Game Center's do on iOS. Built, and off: turning
@@ -85,7 +95,8 @@ final class GameCenterManager {
         return (player.name, player.photo.flatMap(UIImage.init(data:)))
     }
 
-    /// Opens Play Games' achievements.
+    /// Opens Play Games' achievements, signing the player in first if they
+    /// aren't.
     func showDashboard(over window: UIWindow?) {
         Self.service.showDashboard()
     }

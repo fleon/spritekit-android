@@ -67,7 +67,8 @@ public struct PlayGamesMapping: Equatable, Sendable {
 
 /// Play Games Services v2 behind `AchievementsBackend`, the shape
 /// `GameCenterManager` already reports through: sign-in, what Play holds,
-/// sending what has moved, the dashboard and the player for a credit.
+/// sending what has moved, the dashboard (the title's Play Games button) and
+/// the player for a credit.
 ///
 /// Sign-in is v2's own: a returning player is signed in by Play Games as the
 /// app starts, without a sheet, and the game asks nothing of anyone who isn't
@@ -86,6 +87,9 @@ public final class PlayGamesAchievements: AchievementsBackend {
     private var playerWaiters: [CheckedContinuation<(name: String, photo: Data?)?, Never>] = []
 
     public private(set) var isSignedIn = false
+    /// Whether Play Games can run on this device (Google Play services there
+    /// and up to date), as Java answers once at launch.
+    public let hasDashboard: Bool
     /// Called whenever sign-in changes, for anything else riding on it
     /// (Saved Games).
     public var signInChanged: ((Bool) -> Void)?
@@ -93,6 +97,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
     public init(channel: PlatformChannel, mapping: PlayGamesMapping) {
         self.channel = channel
         self.mapping = mapping
+        hasDashboard = channel.call("games.available")?.bool("available") ?? false
         channel.on(Self.service) { [weak self] event, body in self?.handle(event, body) }
     }
 
@@ -133,7 +138,10 @@ public final class PlayGamesAchievements: AchievementsBackend {
     /// resets testers only), so `-ResetAchievements` resets nothing here.
     public func reset() async -> Bool { false }
 
+    /// Play Games' achievements, over the game. Signed out, Java signs the
+    /// player in first and opens them once that's done.
     public func showDashboard() {
+        guard hasDashboard else { return }
         channel.call("games.showAchievements")
     }
 
