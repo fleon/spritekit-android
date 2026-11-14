@@ -7,20 +7,33 @@
 # SDL's headers and links its .so, and Vendor/build.sh android, because the
 # renderer links the text stack for the glyph atlas.
 #
-#   Scripts/build-shell.sh                  # both ABIs, release
-#   Scripts/build-shell.sh --debug          # both ABIs, debug
-#   Scripts/build-shell.sh arm64-v8a        # just one
+#   Scripts/build-shell.sh --debug          # both ABIs, unoptimised: checks, emulator runs, pre-merge
+#   Scripts/build-shell.sh                  # both ABIs, optimised, with DEBUG: frame-time measurements
+#   Scripts/build-shell.sh --store          # optimised, without DEBUG: what goes to Play
+#   Scripts/build-shell.sh --debug arm64-v8a  # just one ABI
+#
+# Build optimised only to measure frame times or to upload to Play; every
+# other build, the last pass before a merge included, is `--debug`.
+#
+# The game's `#if DEBUG` is what lets it read its launch arguments
+# (`LaunchArguments`), print markers and run its scripts, as an Xcode Debug
+# build does. A debug build defines it, and so does an optimised one unless
+# it's `--store`, so a frame-time run can still take `-StartLevel` and
+# `-FrameLog`. What a release APK hands the game is MainActivity's to decide
+# (it passes no arguments outside a debuggable build).
 
 . "$(dirname "$0")/config.sh"
 require_ndk
 use_swiftly
 
 CONFIG=release
+DEBUG_DEFINE=1
 targets=()
 for arg in "$@"; do
     case "$arg" in
         --release) CONFIG=release ;;
         --debug) CONFIG=debug ;;
+        --store) CONFIG=release; DEBUG_DEFINE=0 ;;
         *) targets+=("$arg") ;;
     esac
 done
@@ -45,7 +58,7 @@ for abi in "${targets[@]}"; do
     fi
     export PKG_CONFIG_PATH="$text_prefix/lib/pkgconfig"
 
-    echo "==> building AndroidShell for $abi ($triple, $CONFIG)"
+    echo "==> building AndroidShell for $abi ($triple, $CONFIG$([ "$DEBUG_DEFINE" = 1 ] && [ "$CONFIG" = release ] && echo ", DEBUG"))"
     # One array so the build and the --show-bin-path query cannot drift: a
     # mismatched flag there gives a path for a build that never happened.
     swiftpm=(
@@ -56,6 +69,11 @@ for abi in "${targets[@]}"; do
         -Xcc "-I$prefix/include"
         -Xlinker "-L$prefix/lib"
     )
+    # A debug build defines DEBUG itself; an optimised one that isn't for
+    # the store is given it.
+    if [ "$CONFIG" = release ] && [ "$DEBUG_DEFINE" = 1 ]; then
+        swiftpm+=(-Xswiftc -DDEBUG)
+    fi
     # -lSDL3, -lGLESv3, -llog and -lmediandk used to be passed here. They cannot
     # be: `-Xlinker` reaches every link in the build, and since the shell
     # started linking GameCompat the build also makes a *host* macro plugin

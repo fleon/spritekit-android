@@ -762,9 +762,9 @@ Input, as the Apple controller routes it:
   every five seconds and whenever the app goes to the background, and reads
   them back at launch (`GameEnvironment`). Progress, settings and
   `ResumeScreen` survive a relaunch.
-- **Launch arguments** from the intent's `args` extra in the argument
-  domain, where `LaunchArguments` reads them (debug builds only, as on
-  Apple). `-settings.musicEnabled,<false/>` works in any build.
+- **Launch arguments**, from the intent, in the argument domain and
+  `ProcessInfo.arguments`, where `LaunchArguments` reads them (debuggable
+  builds only, as on Apple): see **Launch arguments, and the parity sweep**.
 - **Leaving the game**: `UIApplication.open` (`SDL_OpenURL`), the clipboard,
   keeping the screen on (`SDL_DisableScreenSaver`).
 
@@ -1381,3 +1381,124 @@ button opens the `switchlings://` link. To turn it on: add the Play App
 Signing key's fingerprint (Play Console → Setup → App signing) and the
 upload key's, deploy the server to fleon-home and restart it. Nothing was
 deployed.
+
+## Launch arguments, and the parity sweep
+
+Every debug launch argument in AGENTS.md's Debugging section works on
+Android, read by the game's own `LaunchArguments` unchanged.
+
+### Handing them over
+
+```bash
+node Android/Scripts/launch.js --package com.fleon.switchlings -- \
+    -StartLevel reef-12 -Stills "move 3@0.05;celebrate@0.7" -settings.musicEnabled "<false/>"
+```
+
+`launch.js` sends them as `--es args64 <base64 of a JSON array>`, which
+no shell on the way splits, so values with spaces, commas, quotes and plist
+syntax arrive whole. For a quick one by hand, `--esa args` works too:
+
+```bash
+adb shell am start -S -n com.fleon.switchlings/.MainActivity --esa args -StartLevel,reef-12,-HideTips,YES
+```
+
+`am` splits it at commas (`\,` for a comma inside a value), and `adb
+shell` hands the line to the device's shell, which splits it again at
+spaces and eats quotes, so anything beyond words and digits goes as
+`args64`. `MainActivity.getArguments` reads both, `args64`'s after
+`args'`, and only in a debuggable build: a release APK ignores them, as a
+release build on Apple ignores its arguments. SDL hands them to `SDL_main`
+(`ShellArguments`), which puts them in `CommandLine.arguments` (so
+`ProcessInfo.arguments`) and in `UserDefaults`' argument domain
+(`LaunchArgumentDomain`, in `PlatformShim`: `-Key value` pairs, a value
+read as a property list where it starts like one, nothing that starts with
+a dash ever a value — checked by `LaunchArgumentDomainTests` against a Mac
+process's own argument domain). `-AppleLanguages "(ja)"` stands in for the
+device's languages.
+
+The Swift side reads them under `#if DEBUG`, which every build defines but
+`build-shell.sh --store` (what goes to Play): `--debug` builds, which every
+check, emulator run and parity sweep uses, and the optimised builds made only
+to measure frame times, which can then still take `-StartLevel` and
+`-FrameLog`.
+
+### What each driver does here
+
+The Apple controller's debug drivers are in
+`Compat/Sources/GameCompat/Android/AndroidGameController+Scripts.swift`,
+each the `GameViewController` method of the same name:
+
+| argument | on Android |
+|---|---|
+| `-Markers`, `-MarkerClock` | the game's `print` reaches logcat under `Switchlings` (`switchlings_redirect_stdio` pipes stdout and stderr into it, line buffered) |
+| `-Stills` | holds the view still after each marker, as on Apple, its 2.5 s counted from the frame it paused in reaching the screen (an unoptimised build can take longer than that to draw a scene's first frame); the renderer then logs `view held: its last frame is on screen` once the frame it paused in has been swapped (an unoptimised build can take a second or two to draw it), and that's when `adb exec-out screencap -p` takes the still |
+| `-SnapshotEvery`, `-SnapshotLevels`, `-FrameLog` | write into the app's cache (`FileManager`'s caches directory is `XDG_CACHE_HOME`, the app's `cache/`): `adb exec-out run-as <package> cat cache/levels/garden-1.png > garden-1.png`. The frame is read back from the renderer before it's swapped (`SceneRenderer.captureNextFrame`) |
+| `-KeyScript`, `-TouchScript` (`-ScriptTimes`, `-ScriptAfter`) | as on Apple: keys to `KeyboardControllable`, taps as touches at shares of the screen, named steps to `ScriptedStepping` |
+| `-GamepadScript` | a pretend pad of `GamepadInput`'s own, connected as the script starts |
+| `-RemoteScript` | Apple TV's presses as a TV's d-pad would press them: arrows move focus, `select` presses, `menu` is Back |
+| `-Orientation landscape\|flipped\|portrait` | held by SDL's orientations hint as the window is made (`landscape` is the camera on the left, as on Apple); `turn` is left out |
+| `-SyncedClears`, `-SyncedMoves`, `-SyncedLanguage` | as on Apple |
+| `-OpenLink`, `-OpenLinkAfter`, `-OpenCode` | as `SceneDelegate` reads them: a link the game opened with wins, else `-OpenLink` opens at launch (`WorldLink.pending`, `LevelShare.pendingCode`), else `-OpenCode`'s code; with `-OpenLinkAfter`, `-OpenLink` opens that many seconds after the game shows, as a tapped link does. `LaunchLinks` (PlatformShim, host-tested) decides which; MainActivity hands a real link as `-LaunchLink`, apart from the debug `-OpenLink` |
+
+Left out, as Apple's alone: `-SimulateViewSize`, `-MacWindowSize`,
+`-HoverAt`, `-VirtualGamepad`, `-HeaderFilm`, `-EventVideo`.
+
+For a quick build of just the emulators' ABI,
+`./gradlew assembleDebug -Pswitchlings.abis=arm64-v8a` after
+`Scripts/build-shell.sh --debug arm64-v8a`.
+
+### The parity sweep
+
+`Tools/Capture/parity.js` captures the states in `Tools/Capture/parity.json`
+on one pool emulator, each at a still, and compares it with the iPhone 17
+Pro's shot of the same state with the same arguments, kept as a reference
+set; it ranks the pairs by how much they differ:
+
+```bash
+node Tools/Capture/parity.js build
+```
+
+```bash
+node Tools/guard.js 12 -- node Tools/Capture/parity.js
+```
+
+`build` (outside the guard, as Xcode builds run) makes an arm64 debug APK
+(`build-shell.sh --debug`: the sweep compares pictures, not frame times) as
+`com.fleon.switchlings.parity`. The sweep boots no simulator: the iPhone's
+side is `~/.switchlings/parity-reference/iphone/<state>.png` (outside every
+checkout; `--reference <dir>` for another), and a state with no reference is
+listed as such. It takes one pool slot and releases it as soon as its shots
+are taken, deletes the app's saved data before every launch (nothing to
+resume; not `pm clear`, after which Android shows its "Viewing full screen"
+notice over the next launch), tells the emulator that notice has been seen,
+resets any screen size or density another session left on the slot (an
+override outlives a reboot, and a 402 × 874 one turns the Pixel 6 into an
+iPhone-sized screen),
+keeps sound and music off, takes a still again if it came while a scene
+transition was still playing (a busy host can stall one frame for seconds),
+and writes `Tools/Capture/Out/parity/`: `pairs/<state>.png` (Android, iPhone,
+where they differ), `report.json` and `report.html`, worst first. The score
+is the mean difference of every channel on a 90-point-wide grid, 0 the same
+and 100 black against white, both shots stretched to one size (the two
+screens' aspects differ by 2%). `--only title,level-` captures the states
+whose names start so.
+
+Re-capturing the references is explicit and opt-in: `--boot-simulator`
+boots one iPhone 17 Pro simulator of its own while the sweep's pool emulator
+runs, shoots the selected states into the reference directory, and deletes
+it before the Android shots (the machine's rule: Android only on the four
+pool slots, and at most one iPhone simulator a session, booted only beside a
+running pool emulator, four at most on the machine, which the sweep checks
+before it boots one). Each launch is given empty seen-collectible and
+seen-guide lists, since the simulator keeps its preferences from one state
+to the next where Android starts clean:
+
+```bash
+node Tools/Capture/parity.js build --ios
+```
+
+```bash
+node Tools/guard.js 12 -- node Tools/Capture/parity.js --boot-simulator --only collection-,help
+```
+
+`report` compares the shots on disk again, with no emulator.

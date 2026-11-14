@@ -2,7 +2,11 @@ plugins {
     id("com.android.application")
 }
 
-val abis = listOf("arm64-v8a", "x86_64")
+// Both ABIs unless `-Pswitchlings.abis=arm64-v8a` asks for fewer: a quick
+// build for the Apple Silicon emulators (Android/Scripts/parity.js), which
+// needs only that ABI's `Scripts/build-shell.sh` run.
+val abis = (findProperty("switchlings.abis") as String?)?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+    ?: listOf("arm64-v8a", "x86_64")
 
 // Three things are staged into the APK out of the repository's own `Assets`,
 // each under a prefix of its own so the packed art keeps the assets root.

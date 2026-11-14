@@ -11,6 +11,9 @@ import Foundation
 ///     adb shell am start -n com.fleon.switchlings/.MainActivity \
 ///         --esa args "-AudioProbe"
 ///
+/// (or `--es args64 <base64 of a JSON array>`, which survives any quoting:
+/// see `MainActivity.getArguments`, and `Android/Scripts/launch.sh`).
+///
 /// So this is where the port's answer to `LaunchArguments` begins: the whole
 /// Apple testing story (`-StartLevel`, `-AutoSolve`, `-Markers`, …) is
 /// launch arguments, and this is the only way they reach an Android build.
@@ -24,6 +27,16 @@ public enum ShellArguments {
             return
         }
         values = (0..<Int(argc)).compactMap { argv[$0].map { String(cString: $0) } }
+        // The game, like any Apple app, may ask `ProcessInfo` for them, as
+        // on Apple, where a launch's arguments are the process's argv.
+        // Foundation's `ProcessInfo` reads `CommandLine.arguments` once, the
+        // first time it's asked, which is after this.
+        setCommandLine(values)
+    }
+
+    @available(*, deprecated, message: "only so the setter's own deprecation stays here")
+    private static func setCommandLine(_ values: [String]) {
+        CommandLine.arguments = values
     }
 
     public static func has(_ name: String) -> Bool {

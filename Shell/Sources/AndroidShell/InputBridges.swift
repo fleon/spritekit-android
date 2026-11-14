@@ -155,7 +155,7 @@ enum AndroidInputType {
 
 /// What `MainActivity` hands the game outside SDL's events, taken once a
 /// frame on the game's thread: a link opened while the game runs (a cold
-/// start's comes as `-OpenLink` instead), text picked from Paste, and the
+/// start's comes as `-LaunchLink` instead), text picked from Paste, and the
 /// soft keyboard's height from Android's insets, posted as UIKit's keyboard
 /// notifications (`SoftKeyboard`).
 @MainActor

@@ -28,6 +28,10 @@ nonisolated public func SDL_main(
         Log.error("could not claim the main thread — anything that primes a shader will trap")
     }
 
+    // What the game prints (`-Markers`' lines, above all) goes to logcat,
+    // under the shell's own tag: an app's standard output goes nowhere.
+    _ = switchlings_redirect_stdio("Switchlings")
+
     // `Task { @MainActor in … }` runs on this thread too, between frames.
     let executor = MainActorJobs.executorReference
     if switchlings_set_main_executor(executor.identity, UInt(executor.implementation)) == 0 || !MainActorJobs.isInstalled {

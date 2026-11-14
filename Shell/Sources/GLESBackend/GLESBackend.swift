@@ -2,6 +2,7 @@ import CAndroidShell
 import Foundation
 import GameCompat
 import GLESRenderer
+import PlatformShim
 import ShellCore
 import SpriteKitShim
 
@@ -71,7 +72,7 @@ public enum GLESBackend {
         // emulator picks up from the property.
         if ShellArguments.has("-WarpProbe") { scene = .warp }
         PNGFiles.install()
-        if scene == .game { AndroidGameController.launch(link: ShellArguments.value(after: "-OpenLink").flatMap(URL.init(string:))) }
+        if scene == .game { AndroidGameController.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:))) }
     }
 
     /// The renderer the shell draws with.
@@ -115,6 +116,7 @@ public enum GLESBackend {
         renderer.reportLabel = Self.scene.rawValue
         if scene == .game { controller = AndroidGameController(view: renderer.view) }
         if let controller {
+            controller.captureFrame = { done in renderer.captureNextFrame(done) }
             renderer.onInput = { input in handle(input, controller: controller) }
             renderer.onMetrics = { metrics, view in
                 controller.layout(

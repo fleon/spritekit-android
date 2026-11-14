@@ -109,4 +109,10 @@ bool switchlings_take_keyboard(int *height, int *viewHeight);
 /// (`MainActivity.offerPaste`).
 bool switchlings_offer_paste(float x, float y);
 
+/// Sends what the process prints to standard output and standard error into
+/// logcat under `tag`, a line an entry: an Android app's stdout goes nowhere,
+/// and the game's `-Markers` lines (`print`) are how tools time captures.
+/// Line buffered, so `print` reaches logcat as each line ends.
+bool switchlings_redirect_stdio(const char *tag);
+
 #endif /* CANDROIDSHELL_H */

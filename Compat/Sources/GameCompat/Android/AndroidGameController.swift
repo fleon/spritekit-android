@@ -1,3 +1,4 @@
+import PlatformShim
 import SpriteKit
 import UIKit
 
@@ -18,10 +19,10 @@ import UIKit
 /// supported orientations — the shell does through SDL, calling in here.
 ///
 /// Left out, as Apple-only: the Mac's window and hover focus, Apple TV's
-/// remote echoes, Game Center's sign-in sheet (Android has no Game Center),
-/// the iOS edge swipe (Android's back gesture arrives as the back button),
-/// and the simulator scripts and capture tools (`-TouchScript`, `-Stills`,
-/// `-SnapshotLevels`…), which drive Apple's simulators.
+/// remote echoes, Game Center's sign-in sheet (Android has no Game Center)
+/// and the iOS edge swipe (Android's back gesture arrives as the back
+/// button). The debug scripts and captures (`-TouchScript`, `-Stills`,
+/// `-SnapshotLevels`…) are in `AndroidGameController+Scripts.swift`.
 public final class AndroidGameController {
     public let view: SKView
     private let window: TouchOriginWindow
@@ -29,8 +30,13 @@ public final class AndroidGameController {
     private var splash: LaunchSplashScene? { view.scene as? LaunchSplashScene }
     private var hasAppeared = false
     private var hasGameCenterAnswered = false
-    private var focus: FocusNavigator?
+    var focus: FocusNavigator?
     private let gamepads = GamepadInput()
+    /// `-FrameLog`'s log, which the view holds only weakly.
+    var frameLog: FrameLog?
+    /// Hands `done` the next frame the view draws, as pixels (`-SnapshotEvery`,
+    /// `-SnapshotLevels`); the renderer sets it. `drawHierarchy`'s part.
+    public var captureFrame: ((@escaping (RasterImage?) -> Void) -> Void)?
 
     /// `AppDelegate.application(_:didFinishLaunchingWithOptions:)`: what
     /// the game starts before its first scene, in the same order. `link` is
@@ -53,12 +59,28 @@ public final class AndroidGameController {
         StoreManager.shared.start()
         DesignerFeed.shared.start()
         PlaytestLog.shared.flush()
-        if let url = link, WorldLink.isWorldLink(url) {
+        // As `SceneDelegate` connects its scene: the link the game opened
+        // with, else `-OpenLink`, else `-OpenCode`; `-OpenLinkAfter` holds
+        // `-OpenLink` back until the game is running (`didAppear`).
+        let links = LaunchLinks.plan(
+            link: link?.absoluteString,
+            openLink: LaunchArguments.openLink?.absoluteString,
+            openLinkAfter: LaunchArguments.openLinkAfter,
+            openCode: LaunchArguments.openCode
+        )
+        let opening = links.atLaunch.flatMap(URL.init(string:))
+        if let url = opening, WorldLink.isWorldLink(url) {
             WorldLink.pending = .some(WorldLink.world(opening: url))
-        } else if let url = link, let code = LevelShare.code(opening: url) {
+        } else if let url = opening, let code = LevelShare.code(opening: url) {
+            LevelShare.pendingCode = code
+        } else if let text = links.code, let code = LevelShare.code(in: text) {
             LevelShare.pendingCode = code
         }
+        laterLink = links.later.flatMap(URL.init(string:)).map { ($0, links.delay ?? 0) }
     }
+
+    /// `-OpenLinkAfter`'s link and delay, opened once the game shows.
+    private static var laterLink: (url: URL, delay: TimeInterval)?
 
     /// For the shell's scene dump: the view's safe area and the last level
     /// layout `GameScene` reported (debug builds).
@@ -102,6 +124,7 @@ public final class AndroidGameController {
                 MainActor.assumeIsolated { self?.applyFrameRate() }
             }
         }
+        startScripts()
     }
 
     // MARK: - Layout
@@ -141,6 +164,11 @@ public final class AndroidGameController {
     /// `viewDidAppear`: the splash starts loading and Game Center (Play Games
     /// on Android, a seam for now) is asked to sign in.
     public func didAppear() {
+        startCaptures()
+        if let later = Self.laterLink {
+            Self.laterLink = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + later.delay) { [weak self] in self?.open(later.url) }
+        }
         hasAppeared = true
         splash?.startLoading()
         GameCenterManager.shared.start(presentSignIn: { _ in }) { [weak self] in

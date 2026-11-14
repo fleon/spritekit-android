@@ -5,6 +5,9 @@
 #include <jni.h>
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
 
 void switchlings_log(int priority, const char *tag, const char *message) {
     __android_log_write(priority, tag, message);
@@ -182,6 +185,52 @@ unsigned char *switchlings_platform_call(const char *name, const unsigned char *
 
 unsigned char *switchlings_platform_drain(int *out_length) {
     return switchlings_platform_invoke("platformDrain", "()[B", NULL, NULL, 0, out_length);
+}
+
+/* What the game prints, line by line, into logcat. */
+static int switchlings_stdio_pipe[2] = { -1, -1 };
+static const char *switchlings_stdio_tag = "Switchlings";
+
+static void *switchlings_pump_stdio(void *ignored) {
+    (void)ignored;
+    char buffer[4096];
+    size_t used = 0;
+    for (;;) {
+        ssize_t got = read(switchlings_stdio_pipe[0], buffer + used, sizeof(buffer) - 1 - used);
+        if (got <= 0) break;
+        used += (size_t)got;
+        size_t start = 0;
+        for (size_t at = 0; at < used; at++) {
+            if (buffer[at] != '\n') continue;
+            buffer[at] = '\0';
+            __android_log_write(ANDROID_LOG_INFO, switchlings_stdio_tag, buffer + start);
+            start = at + 1;
+        }
+        if (start > 0) {
+            memmove(buffer, buffer + start, used - start);
+            used -= start;
+        } else if (used == sizeof(buffer) - 1) {
+            /* A line longer than the buffer goes out in pieces. */
+            buffer[used] = '\0';
+            __android_log_write(ANDROID_LOG_INFO, switchlings_stdio_tag, buffer);
+            used = 0;
+        }
+    }
+    return NULL;
+}
+
+bool switchlings_redirect_stdio(const char *tag) {
+    if (switchlings_stdio_pipe[0] >= 0) return true;
+    if (pipe(switchlings_stdio_pipe) != 0) return false;
+    switchlings_stdio_tag = strdup(tag);
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+    dup2(switchlings_stdio_pipe[1], STDOUT_FILENO);
+    dup2(switchlings_stdio_pipe[1], STDERR_FILENO);
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, switchlings_pump_stdio, NULL) != 0) return false;
+    pthread_detach(thread);
+    return true;
 }
 /* What Android tells the game outside SDL's events: a link the activity was
    handed while running (`onNewIntent`), the soft keyboard's insets, and text

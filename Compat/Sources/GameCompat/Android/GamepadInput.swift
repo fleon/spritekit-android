@@ -11,9 +11,10 @@ import UIKit
 /// controller. Its input is SDL's gamepads (`GamepadEvents`, posted by the
 /// shell) rather than GameController's. Keep the two in step.
 ///
-/// Left out, as Apple TV's alone: the remote's echoes (`menuArrived`,
-/// `isEcho`). And for now `-VirtualGamepad` and `-GamepadScript`, which drive
-/// a simulator.
+/// `-GamepadScript` plays on a pretend pad of its own, connected as the
+/// script starts, as Apple's plays on a `GCController` snapshot. Left out:
+/// Apple TV's remote echoes (`menuArrived`, `isEcho`) and `-VirtualGamepad`
+/// (Apple's on-screen pad).
 final class GamepadInput {
     enum Action: Equatable {
         case move(FocusNavigator.Direction)
@@ -35,7 +36,60 @@ final class GamepadInput {
     init() {
         GamepadEvents.sink = { [weak self] in self?.receive($0) }
         for id in GamepadEvents.connected.sorted() { receive(.connected(id: id)) }
+        playScriptIfNeeded()
     }
+
+    /// `-GamepadScript "down,a,b"`: a gamepad plays these after launch,
+    /// paced like `-RemoteScript` (`down:2` holds two seconds; `connect`
+    /// and `disconnect` come and go).
+    private func playScriptIfNeeded() {
+        #if DEBUG
+        let steps = LaunchArguments.gamepadScript
+        guard !steps.isEmpty else { return }
+        let pad = Self.scriptedPad
+        receive(.connected(id: pad))
+        for (index, step) in steps.enumerated() {
+            let parts = step.split(separator: ":")
+            let name = parts.first.map { String($0).lowercased() } ?? ""
+            let seconds = parts.count > 1 ? Double(parts[1]) ?? 0 : LaunchArguments.gamepadPressDuration
+            DispatchQueue.main.asyncAfter(deadline: .now() + LaunchArguments.remoteScriptDelay + LaunchArguments.remoteStepInterval * Double(index)) { [weak self] in
+                guard let self else { return }
+                switch name {
+                case "connect": receive(.connected(id: pad))
+                case "disconnect": receive(.disconnected(id: pad))
+                default:
+                    guard let set = Self.scriptControl(name, pad: pad) else { return }
+                    receive(set(true))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.receive(set(false)) }
+                }
+            }
+        }
+        #endif
+    }
+
+    #if DEBUG
+    /// The pretend pad's id, past any SDL hands out.
+    private static let scriptedPad = UInt32.max
+
+    private static let scriptWays: [String: (x: Float, y: Float)] = ["up": (0, 1), "down": (0, -1), "left": (-1, 0), "right": (1, 0)]
+
+    /// The event that presses (true) or lets go of (false) the control
+    /// `-GamepadScript` names: `up`…`right` (the d-pad), `stickup`… (the
+    /// left stick), `a`, `b`, `x`, `y`, `lb`, `rb` or `menu`.
+    private static func scriptControl(_ name: String, pad: UInt32) -> ((Bool) -> GamepadEvent)? {
+        if let way = scriptWays[name] {
+            return { .dpad(id: pad, x: $0 ? way.x : 0, y: $0 ? way.y : 0) }
+        }
+        if name.hasPrefix("stick"), let way = scriptWays[String(name.dropFirst("stick".count))] {
+            return { .stick(id: pad, x: $0 ? way.x : 0, y: $0 ? way.y : 0) }
+        }
+        let buttons: [String: GamepadEvent.Button] = [
+            "a": .a, "b": .b, "x": .x, "y": .y, "lb": .leftShoulder, "rb": .rightShoulder, "menu": .menu,
+        ]
+        guard let button = buttons[name] else { return nil }
+        return { .button(id: pad, button, pressed: $0) }
+    }
+    #endif
 
     private func receive(_ event: GamepadEvent) {
         switch event {

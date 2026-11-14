@@ -76,6 +76,13 @@ public enum Shell {
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0)
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8)
 
+        // `-Orientation landscape|flipped|portrait` holds the window that way
+        // up, as the Apple controller's `supportedInterfaceOrientations`
+        // does; read by SDL as the window is made.
+        if let orientations = Self.orientationHint(ShellArguments.value(after: "-Orientation")) {
+            SDL_SetHint(SDL_HINT_ORIENTATIONS, orientations)
+        }
+
         // Android picks the size; the 0 × 0 is ignored for a fullscreen window.
         guard let window = SDL_CreateWindow("Switchlings", 0, 0, SWITCHLINGS_WINDOW_FLAGS) else {
             Log.error("SDL_CreateWindow failed: \(sdlError)")
@@ -260,6 +267,19 @@ public enum Shell {
     static let skippedFrameWait: UInt32 = 2
 
     static var sdlError: String { String(cString: SDL_GetError()) }
+
+    /// SDL's orientations hint for `-Orientation`'s value. Apple's
+    /// `landscapeRight` has the camera on the left, which is Android's
+    /// plain landscape (SDL's `LandscapeLeft`), and `flipped` the other way.
+    /// `turn` (which keeps turning on Apple) and nothing leave it free.
+    static func orientationHint(_ value: String?) -> String? {
+        switch value {
+        case "portrait": return "Portrait"
+        case "landscape": return "LandscapeLeft"
+        case "flipped": return "LandscapeRight"
+        default: return nil
+        }
+    }
 
     /// The safe area, which way up, the refresh rate and the density.
     static func windowMetrics(of window: OpaquePointer) -> WindowMetrics {

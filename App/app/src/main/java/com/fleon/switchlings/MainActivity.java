@@ -1,8 +1,10 @@
 package com.fleon.switchlings;
 
 import android.content.ClipData;
+import android.content.pm.ApplicationInfo;
 import android.content.Intent;
 import android.net.Uri;
+import android.util.Base64;
 import android.os.Build;
 import android.os.Bundle;
 import android.content.Context;
@@ -14,6 +16,7 @@ import android.window.OnBackInvokedDispatcher;
 import android.util.Log;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -25,6 +28,9 @@ import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.PopupWindow;
 import android.widget.TextView;
+
+import org.json.JSONArray;
+import org.json.JSONException;
 
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
@@ -75,21 +81,34 @@ public class MainActivity extends SDLActivity {
 
     /**
      * What SDL hands {@code SDL_main} as argv, and therefore what Swift sees
-     * in {@code CommandLine.arguments}.
+     * in {@code CommandLine.arguments}, {@code ProcessInfo.arguments} and
+     * {@code UserDefaults}' argument domain.
      *
      * <p>The Apple build is driven in testing almost entirely by launch
      * arguments — {@code -StartLevel}, {@code -AutoSolve}, {@code -Markers}
      * and the rest of {@code LaunchArguments} — and Android has no
-     * equivalent of {@code xcrun simctl launch}'s trailing arguments. An
-     * intent extra is the nearest thing:
+     * equivalent of {@code xcrun simctl launch}'s trailing arguments. Two
+     * intent extras are the nearest thing:
      *
      * <pre>
      * adb shell am start -n com.fleon.switchlings/.MainActivity \
-     *     --esa args "-AudioProbe"
+     *     --esa args -StartLevel,reef-12,-HideTips,YES
+     * adb shell am start -n com.fleon.switchlings/.MainActivity \
+     *     --es args64 &lt;base64 of a JSON array of strings&gt;
      * </pre>
      *
-     * <p>Nothing is passed when the launcher starts the app, which is what
-     * a release build always sees.
+     * <p>{@code args} is quick to type; {@code am} splits it at commas, so a
+     * comma inside a value is written {@code \,} — and {@code adb shell}
+     * hands the line to the device's shell, which splits it again at spaces
+     * and eats quotes. {@code args64} survives anything: spaces, commas,
+     * quotes and plist syntax ({@code <false/>}, {@code (a,b)}) go through
+     * untouched, which is why the tools use it. Both may be given; args64's
+     * come after args'.
+     *
+     * <p>Debuggable builds only, as on Apple, where only a Debug build reads
+     * its launch arguments: a release build ignores both extras. A link that
+     * opened the game is handed on in every build, as {@code -LaunchLink}:
+     * apart from the debug {@code -OpenLink}, as Apple's URL contexts are.
      */
     @Override
     protected String[] getArguments() {
@@ -97,13 +116,31 @@ public class MainActivity extends SDLActivity {
         if (intent == null) {
             return super.getArguments();
         }
-        String[] arguments = intent.getStringArrayExtra("args");
-        List<String> all = new ArrayList<>(Arrays.asList(arguments == null ? super.getArguments() : arguments));
-        // A link that started the game: the shell hands `-OpenLink` to the
+        List<String> all = new ArrayList<>(Arrays.asList(super.getArguments()));
+        boolean debuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        if (debuggable) {
+            String[] plain = intent.getStringArrayExtra("args");
+            if (plain != null) {
+                all.addAll(Arrays.asList(plain));
+            }
+            String encoded = intent.getStringExtra("args64");
+            if (encoded != null) {
+                try {
+                    String json = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8);
+                    JSONArray array = new JSONArray(json);
+                    for (int i = 0; i < array.length(); i++) {
+                        all.add(array.getString(i));
+                    }
+                } catch (IllegalArgumentException | JSONException e) {
+                    Log.e("Switchlings", "args64 is not base64 of a JSON array of strings", e);
+                }
+            }
+        }
+        // A link that started the game: the shell hands `-LaunchLink` to the
         // game's launch, as iOS's scene delegate hands its URL contexts.
         String link = gameLink(intent);
         if (link != null) {
-            all.add("-OpenLink");
+            all.add("-LaunchLink");
             all.add(link);
         }
         return all.toArray(new String[0]);

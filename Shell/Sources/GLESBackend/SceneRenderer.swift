@@ -287,8 +287,19 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // A share film's frames first: asking the view takes its turn from
         // the film (`FilmDrawTurns`, the view's delegate while it works).
         drawFilmPasses()
-        return view.shouldRender(atTime: frame.time)
+        let draws = view.shouldRender(atTime: frame.time)
+        // Asked again after a frame was swapped: so once the view pauses (a
+        // `-Stills` hold), the frame it paused in is on screen, and a tool
+        // timing a capture by the still can take the screen now.
+        if view.isPaused != heldLogged {
+            heldLogged = view.isPaused
+            if view.isPaused { Log.info("view held: its last frame is on screen") }
+        }
+        return draws
     }
+
+    /// Whether the view's pause has been logged (`shouldDraw`).
+    private var heldLogged = false
 
     public func drawFrame(_ frame: Frame) {
         // The scene first: a transition, or a scene presenting another, can
@@ -338,6 +349,13 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         targets.evictKept(except: liveKept)
         targets.endFrame()
+
+        if !pendingCaptures.isEmpty {
+            let image = readScreen(width: Int(frame.size.width), height: Int(frame.size.height))
+            let waiting = pendingCaptures
+            pendingCaptures.removeAll()
+            for done in waiting { done(image) }
+        }
 
         if !reportedFirstFrame {
             reportedFirstFrame = true
@@ -792,6 +810,31 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// Each baked texture's size in pixels, for reading it back.
     private var bakedSizes: [GLuint: (width: Int, height: Int)] = [:]
+
+    /// Hands `done` the next frame drawn, read back before it's swapped:
+    /// `drawHierarchy`'s part, for the game's debug captures
+    /// (`-SnapshotEvery`, `-SnapshotLevels`).
+    public func captureNextFrame(_ done: @escaping (RasterImage?) -> Void) {
+        pendingCaptures.append(done)
+    }
+
+    private var pendingCaptures: [(RasterImage?) -> Void] = []
+
+    /// The default framebuffer as drawn, row 0 the top.
+    private func readScreen(width: Int, height: Int) -> RasterImage? {
+        guard width > 0, height > 0 else { return nil }
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), 0)
+        var rows = [UInt8](repeating: 0, count: width * height * 4)
+        glReadPixels(0, 0, GLsizei(width), GLsizei(height), GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), &rows)
+        let rowBytes = width * 4
+        var flipped = [UInt8](repeating: 0, count: rows.count)
+        for row in 0 ..< height {
+            flipped.replaceSubrange(row * rowBytes ..< (row + 1) * rowBytes, with: rows[(height - 1 - row) * rowBytes ..< (height - row) * rowBytes])
+        }
+        // The screen is opaque, whatever alpha the last blend left.
+        for at in stride(from: 3, to: flipped.count, by: 4) { flipped[at] = 255 }
+        return RasterImage(width: width, height: height, pixels: flipped)
+    }
 
     /// A baked texture's pixels, premultiplied, row 0 the top: what the
     /// game's `cgImage()` asks of a snapshot (`MechanicSampleNode` fits a

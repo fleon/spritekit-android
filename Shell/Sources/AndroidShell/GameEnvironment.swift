@@ -1,5 +1,6 @@
 import CAndroidShell
 import Foundation
+import PlatformShim
 import ShellCore
 
 /// What corelibs Foundation reads from the process's environment, set up the
@@ -19,15 +20,22 @@ import ShellCore
 ///   it is filled from Android's own list (`SDL_GetPreferredLocales`).
 /// - **Launch arguments.** On Apple, `-Key value` pairs reach
 ///   `UserDefaults`' argument domain, which `LaunchArguments` reads (in debug
-///   builds). Here the intent's `args` extra carries them (`ShellArguments`),
-///   and they are put in that domain the same way.
+///   builds). Here the intent's `args` or `args64` extra carries them
+///   (`ShellArguments`), and they are put in that domain the same way
+///   (`LaunchArgumentDomain`).
 enum GameEnvironment {
     static func install() {
         if let storage = SDL_GetAndroidInternalStoragePath().map({ String(cString: $0) }) {
             setenv("HOME", storage, 1)
             setenv("XDG_CONFIG_HOME", storage + "/.config", 1)
             setenv("XDG_DATA_HOME", storage + "/.local/share", 1)
-            setenv("TMPDIR", (SDL_GetAndroidCachePath().map { String(cString: $0) } ?? storage) + "/tmp", 1)
+            let cache = SDL_GetAndroidCachePath().map { String(cString: $0) } ?? storage
+            setenv("TMPDIR", cache + "/tmp", 1)
+            // `FileManager`'s caches directory is the app's cache, where the
+            // game's debug captures land (`-SnapshotLevels`' `levels/`,
+            // `-SnapshotEvery`'s `snapshot.png`, `-FrameLog`'s `frames.json`)
+            // and `adb exec-out run-as <package> cat cache/…` reaches them.
+            setenv("XDG_CACHE_HOME", cache, 1)
             try? FileManager.default.createDirectory(atPath: storage + "/.config", withIntermediateDirectories: true)
             if let tmp = ProcessInfo.processInfo.environment["TMPDIR"] {
                 try? FileManager.default.createDirectory(atPath: tmp, withIntermediateDirectories: true)
@@ -38,15 +46,19 @@ enum GameEnvironment {
 
         loadSavedDefaults()
 
-        let languages = preferredLanguages()
+        let arguments = LaunchArgumentDomain.parse(ShellArguments.values)
+        // `-AppleLanguages "(ja)"` stands in for the device's, as on Apple;
+        // set where `Locale.preferredLanguages` reads it whichever domain
+        // that is, and never saved, since it's an argument.
+        let languages = arguments["AppleLanguages"] as? [String] ?? preferredLanguages()
         if !languages.isEmpty {
             UserDefaults.standard.set(languages, forKey: "AppleLanguages")
             setenv("LANG", languages[0].replacingOccurrences(of: "-", with: "_") + ".UTF-8", 1)
             Log.info("languages: \(languages.joined(separator: ", "))")
         }
 
-        let arguments = argumentDomain(ShellArguments.values)
         if !arguments.isEmpty {
+            Log.info("launch arguments: \(arguments.count) (\(ProcessInfo.processInfo.arguments.count - 1) in ProcessInfo)")
             var domain = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
             domain.merge(arguments) { $1 }
             UserDefaults.standard.setVolatileDomain(domain, forName: UserDefaults.argumentDomain)
@@ -95,30 +107,5 @@ enum GameEnvironment {
             guard let country = locale.pointee.country else { return code }
             return "\(code)-\(String(cString: country))"
         }
-    }
-
-    /// `-Key value` pairs, each value read as a property list where it is
-    /// one (`<false/>`, `(a,b)`), else kept as text — as Foundation reads a
-    /// command line into the argument domain.
-    static func argumentDomain(_ values: [String]) -> [String: Any] {
-        var domain: [String: Any] = [:]
-        var index = 0
-        while index < values.count {
-            let key = values[index]
-            guard key.hasPrefix("-"), key.count > 1, index + 1 < values.count, !values[index + 1].hasPrefix("-") || values[index + 1].count == 1 else {
-                index += 1
-                continue
-            }
-            let value = values[index + 1]
-            if let data = value.data(using: .utf8),
-               value.hasPrefix("<") || value.hasPrefix("("),
-               let parsed = try? PropertyListSerialization.propertyList(from: data, format: nil) {
-                domain[String(key.dropFirst())] = parsed
-            } else {
-                domain[String(key.dropFirst())] = value
-            }
-            index += 2
-        }
-        return domain
     }
 }

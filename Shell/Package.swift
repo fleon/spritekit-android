@@ -120,6 +120,7 @@ let package = Package(
                 .product(name: "GLESRenderer", package: "Android"),
                 .product(name: "TextShaping", package: "Text"),
                 .product(name: "GameCompat", package: "Compat"),
+                .product(name: "PlatformShim", package: "Android"),
             ],
             path: "Sources/GLESBackend",
             swiftSettings: [v5, shimDefine, mainActor]
