@@ -846,7 +846,7 @@ so where they are declared:
 
 | stand-in | where | what it does |
 |---|---|---|
-| `Storefront.current` | `Compat/Sources/StoreKit` | nil: no App Store storefront, so a share's link falls back to the region's App Store page (a Play link is a follow-up; `SolutionShare` is the game's own) |
+| `Storefront.current` | `Compat/Sources/StoreKit` | nil: no App Store storefront. The App Store link `SolutionShare` builds from it never leaves the device: Android's `ShareSheet` swaps it for the game's Google Play page in the game's language (`PlayStorePage`, `ShareRequest(items:storePage:)`) |
 | `UIDevice.batteryLevel` | `UIKitInput.swift` | unknown, as a simulator reports |
 | `UIApplication.connectedScenes` | `UIKitInput.swift` | empty |
 | `CTFontManagerRegisterFontsForURL` | `CoreTextCompat.swift` | true: the shell registered the fonts already |

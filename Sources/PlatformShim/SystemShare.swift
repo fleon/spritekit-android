@@ -18,7 +18,9 @@ public struct ShareRequest: Equatable, Sendable {
     }
 
     /// `items` as the game passes them: strings, web links, and file URLs.
-    public init(items: [Any]) {
+    /// An App Store page among them links `storePage` instead when given
+    /// (`PlayStorePage`).
+    public init(items: [Any], storePage: URL? = nil) {
         var files: [URL] = []
         var words: [String] = []
         for item in items {
@@ -26,7 +28,8 @@ public struct ShareRequest: Equatable, Sendable {
             case let url as URL where url.isFileURL:
                 files.append(url)
             case let url as URL:
-                words.append(url.absoluteString)
+                let link = storePage.flatMap { PlayStorePage.isAppStorePage(url) ? $0 : nil } ?? url
+                words.append(link.absoluteString)
             case let string as String where !string.isEmpty:
                 words.append(string)
             default:

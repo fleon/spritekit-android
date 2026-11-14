@@ -322,4 +322,28 @@ struct ShareRequestTests {
         #expect(ShareRequest.mimeType(of: URL(fileURLWithPath: "/x/a.png")) == "image/png")
         #expect(ShareRequest(items: [film]).text == nil)
     }
+
+    @Test("An App Store link becomes the Google Play page; other links stay")
+    func linksPlay() {
+        let film = URL(fileURLWithPath: "/data/user/0/app/cache/Sunny Garden 1.png")
+        let appStore = URL(string: "https://apps.apple.com/us/app/switchlings/id6818995219")!
+        let play = PlayStorePage.url(language: "ja")
+        #expect(play.absoluteString == "https://play.google.com/store/apps/details?id=com.fleon.switchlings&hl=ja")
+        let request = ShareRequest(items: ["I got everyone home.", appStore, film], storePage: play)
+        #expect(request.text == "I got everyone home. \(play.absoluteString)")
+        #expect(request.files == [film])
+        let code = URL(string: "https://switchlings.fleon.com/l/K7Q2MX")!
+        #expect(ShareRequest(items: ["Its code is K7Q-2MX.", code], storePage: play).text == "Its code is K7Q-2MX. \(code.absoluteString)")
+    }
+
+    @Test("Play's language names: script subtags become regions, Mexico's Spanish Latin America's")
+    func playLanguages() {
+        #expect(PlayStorePage.url().absoluteString == "https://play.google.com/store/apps/details?id=com.fleon.switchlings")
+        #expect(PlayStorePage.url(language: "zh-Hans").query == "id=com.fleon.switchlings&hl=zh-CN")
+        #expect(PlayStorePage.url(language: "zh-Hant").query == "id=com.fleon.switchlings&hl=zh-TW")
+        #expect(PlayStorePage.url(language: "es-MX").query == "id=com.fleon.switchlings&hl=es-419")
+        #expect(PlayStorePage.url(language: "pt-BR").query == "id=com.fleon.switchlings&hl=pt-BR")
+        #expect(PlayStorePage.isAppStorePage(URL(string: "https://itunes.apple.com/app/id1")!))
+        #expect(!PlayStorePage.isAppStorePage(URL(string: "https://switchlings.fleon.com/l/ABC123")!))
+    }
 }
