@@ -48,11 +48,32 @@ val stageLevelAssets = tasks.register<Sync>("stageLevelAssets") {
 // `Localization` opens with `Bundle(path:)`, as on Apple. Only the `.strings`
 // files: the launch storyboard in Base.lproj is Apple's alone.
 val stringAssets = "build/generated/stringAssets"
+// Then Android's own words (`Android/Strings`, see its README) replace the
+// game's for the few keys where Android names a thing differently: the
+// Haptics setting is "Vibration" here.
+val androidStrings = rootProject.file("../Strings")
 val stageStrings = tasks.register<Sync>("stageStrings") {
     from(rootProject.file("../../Assets")) {
         include("*.lproj/*.strings")
     }
     into(file("$stringAssets/lproj"))
+    inputs.dir(androidStrings)
+    doLast {
+        val line = Regex("""^\s*"([^"]+)"\s*=.*;\s*$""")
+        androidStrings.walkTopDown().filter { it.isFile && it.extension == "strings" }.forEach { override ->
+            val target = file("$stringAssets/lproj/${override.parentFile.name}/${override.name}")
+            if (!target.exists()) throw GradleException("Android/Strings: no ${override.parentFile.name}/${override.name} in the game's strings")
+            val replacements = override.readLines().mapNotNull { l -> line.matchEntire(l)?.let { it.groupValues[1] to l } }.toMap()
+            val seen = mutableSetOf<String>()
+            val merged = target.readLines().map { l ->
+                val key = line.matchEntire(l)?.groupValues?.get(1)
+                if (key != null && key in replacements) { seen += key; replacements.getValue(key) } else l
+            }
+            val missing = replacements.keys - seen
+            if (missing.isNotEmpty()) throw GradleException("Android/Strings: ${override.parentFile.name} overrides keys the game doesn't have: $missing")
+            target.writeText(merged.joinToString("\n", postfix = "\n"))
+        }
+    }
 }
 
 // Play Games Services: the game's project ID and its achievements' IDs, both
