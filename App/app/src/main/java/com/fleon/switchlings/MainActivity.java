@@ -73,6 +73,7 @@ public class MainActivity extends SDLActivity {
     @Override
     public void loadLibraries() {
         exportVersion();
+        exportDevice();
         String[] libraries = getLibraries();
         for (int i = 0; i < libraries.length - 1; i++) {
             System.loadLibrary(libraries[i]);
@@ -438,5 +439,59 @@ public class MainActivity extends SDLActivity {
         } catch (Exception e) {
             Log.w("Switchlings", "no version for Bundle.main: " + e);
         }
+    }
+
+    /**
+     * The device as the beta's solve log names it ({@code PlaytestLog}, as
+     * TestFlight's feedback does on iOS), in the environment for the shim's
+     * {@code AndroidDevice}: the maker and model ("Google Pixel 6"), the
+     * Android version ("17") and whether this is an emulator, which records
+     * no solves unless given {@code -Playtest YES}, as an iOS simulator; and
+     * whether the build is a beta at all. Comes out with the solve log before
+     * the store release.
+     */
+    private void exportDevice() {
+        try {
+            android.system.Os.setenv("SWITCHLINGS_DEVICE_MODEL", deviceModel(), true);
+            android.system.Os.setenv("SWITCHLINGS_OS_VERSION", Build.VERSION.RELEASE == null ? "" : Build.VERSION.RELEASE, true);
+            android.system.Os.setenv("SWITCHLINGS_EMULATOR", isEmulator() ? "1" : "0", true);
+            android.system.Os.setenv("SWITCHLINGS_BETA", isBetaBuild() ? "1" : "0", true);
+        } catch (Exception e) {
+            Log.w("Switchlings", "no device for the solve log: " + e);
+        }
+    }
+
+    /**
+     * Whether this build is a beta, for Play's testing tracks: Gradle writes
+     * {@code -Pswitchlings.beta} into {@code SwitchlingsBuild.json} in the
+     * base module's assets. A build without it is not a beta.
+     */
+    private boolean isBetaBuild() {
+        try (java.io.InputStream in = getAssets().open("SwitchlingsBuild.json")) {
+            byte[] bytes = new byte[256];
+            int length = in.read(bytes);
+            return length > 0 && new org.json.JSONObject(new String(bytes, 0, length, StandardCharsets.UTF_8)).optBoolean("beta", false);
+        } catch (Exception e) {
+            Log.w("Switchlings", "no SwitchlingsBuild.json, so not a beta build: " + e);
+            return false;
+        }
+    }
+
+    /** "Google Pixel 6": the maker, capitalised, unless the model names it already. */
+    private static String deviceModel() {
+        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER;
+        String model = Build.MODEL == null ? "" : Build.MODEL;
+        if (maker.isEmpty() || model.toLowerCase().startsWith(maker.toLowerCase())) return model;
+        return Character.toUpperCase(maker.charAt(0)) + maker.substring(1) + " " + model;
+    }
+
+    /** The emulator's build: its goldfish or ranchu hardware, or an SDK image's fingerprint. */
+    private static boolean isEmulator() {
+        String fingerprint = Build.FINGERPRINT == null ? "" : Build.FINGERPRINT;
+        String hardware = Build.HARDWARE == null ? "" : Build.HARDWARE;
+        String product = Build.PRODUCT == null ? "" : Build.PRODUCT;
+        return hardware.contains("goldfish") || hardware.contains("ranchu")
+            || fingerprint.startsWith("generic") || fingerprint.contains("emulator") || fingerprint.contains("/sdk_")
+            || product.startsWith("sdk") || product.contains("emulator") || product.contains("simulator");
     }
 }

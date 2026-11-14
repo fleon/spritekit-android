@@ -633,12 +633,9 @@ and saved data stays on the device.
   reads it and `NSProcessInfoPowerStateDidChange` is posted as it changes,
   so the frame rate is held to 60 as on iOS.
 
-### The beta's reporting — off, by decision
+### The beta's level feed and solve log — on in beta builds
 
-See below. `PlaytestLog.run` returns nil and `DesignerFeed.whenAnswered`
-answers at once; neither opens a `URLSession`. The designer's server is
-still reached for what stays after the beta, the players' shared levels
-(see **The players' Level Designer**).
+See **The beta's level feed and solve log** below.
 
 ### What Data Safety has to say
 
@@ -648,31 +645,70 @@ achievements) and the saved game (Play Games Saved Games: levels cleared
 and settings, app functionality). No maker name or photo.
 `Tools/Play/PLAY-CONSOLE-SETUP.md` §4 has the answers.
 
-## The beta's reporting is off on Android
+## The beta's level feed and solve log
 
-Decided 2026-11-13, and it has to be honoured when the platform ring lands
-rather than patched afterwards.
+As on Apple, a beta build plays the Level Designer's live level feed and
+posts each clear to its solve log, and both come out with the Apple betas'
+before the store release. No Data Safety or privacy policy change goes with
+them: they never reach production (below). (Off from 2026-11-13; the user
+turned them on for the testing tracks on 2026-11-14.)
 
-On iOS every build — debug, TestFlight and release alike — plays the Level
-Designer's feed and posts each clear to the designer's server
-(`DesignerFeed`, `PlaytestLog`). That is fine there, because those features
-come out before the App Store release and TestFlight is not a public
-listing. On Play it is not: an **internal or closed track is a distributed
-build**, so anything it reports has to be declared in Data Safety.
+**The game's logic, ported where it must be.** `Platform/DesignerFeed.swift`
+and `Platform/PlaytestLog.swift` are copies of the game's
+`Source/Utils/` files, line for line but for what's listed at the top of
+each: both ask the beta switch (below), since a store build reads no launch
+arguments, and `PlaytestLog` watches the app's state with block observers
+(Swift on Android has no Objective-C runtime for its `#selector`s) and
+describes the device as Android's. `diff` either against its original to
+see all of it; keep them in step.
 
-So the Android build does not report. `PlaytestLog` and `DesignerFeed` are
-chokepoints — five and six call sites, none of which touch the network
-themselves — so the port swaps their bodies for ones that do nothing, the
-same way `StoreManager`, `GameCenterManager` and `ICloudSyncManager` get
-Android implementations. Nothing in `Source/` changes.
+- **The feed** (`GET /feed` on the designer's server) loads at launch while
+  the splash waits for it (`DesignerFeed.whenAnswered`, as on iOS), and again
+  whenever the game comes back to the front (`AndroidGameController`, as
+  `SceneDelegate` does). The last good set is cached in the app's cache
+  directory (`DesignerFeed.json`), else the bundle's levels play.
+- **The solve log** (`POST /solves`) queues each clear in user defaults with
+  its time over every visit since the level was last cleared, its replayable
+  log and the device, and posts at launch, after each clear and back in front.
+  Only clears post; a level left unsolved carries its time to the next visit.
+  The device is Android's, from `MainActivity` (`AndroidDevice`): `device`
+  "Google Pixel 6", `platform` "Android", `os` "17" (the designer shows
+  "Android 17"), `simulator` for an emulator; the battery and the connection
+  come from `DeviceServices.java` (`ACCESS_NETWORK_STATE`, a normal
+  permission), the version and build from the APK. Play Games hands the port
+  no player id, so records name an install (`anon:<id>`), as a signed-out
+  iOS build does.
+- **FoundationNetworking and CoreFoundation.** `URLSession` comes in through
+  Compat's `CryptoKit` (the feed's only other import), and the `CFBoolean`
+  check `JSONText` uses for a level's fingerprint through PlatformShim
+  (`CoreFoundationTypes.swift`), so `true` fingerprints as the designer's does.
+  `GameKit` and `Network` are Compat stand-ins for the solve log alone.
 
-Nothing in the shell reports today: it draws a board and knows nothing of
-levels or sessions. This note exists so that stays true by intent rather
-than by accident.
+**Beta builds.** Play can't tell an app which track installed it, so the
+build says: `-Pswitchlings.beta=true` for every testing track (internal,
+closed, open), `-Pswitchlings.beta=false` for production. A release build
+must name it (`checkBetaChoice`); a debug build is a beta unless told
+otherwise. Gradle writes it into the base module's assets
+(`SwitchlingsBuild.json`), `MainActivity` puts it in the environment
+(`SWITCHLINGS_BETA`, read by `BetaBuild`), the shell logs which it is at
+launch ("beta build: …" / "not a beta build: …"), and
+`Tools/Play/play.js release` refuses to upload a build that isn't a beta. A
+production release is its own `false` build, never promoted from a testing
+track (`Tools/Play/README.md`, "Beta builds").
 
-One consequence for the Play listing, written up in
-`Tools/Play/PLAY-CONSOLE-SETUP.md`: the solve log needs no Data Safety
-declaration.
+**Launch arguments** work as on iOS in a debug build: `-DesignerLevels NO`,
+`-Playtest NO|YES`, `-DesignerServer <url>`. With beta off the shell adds
+`-DesignerLevels NO` and `-Playtest NO` unless the launch names them.
+**An emulator records nothing** unless given `-Playtest YES`, as an iOS
+simulator records none: `MainActivity` spots one by its goldfish or ranchu
+hardware or an SDK image's fingerprint, and the shell adds `-Playtest NO`.
+Its records, if told to post, say `simulator: true`, which the hosted server
+drops anyway. Never post test solves to the production server: point a test
+at a local one.
+
+```bash
+node Android/Scripts/launch.js --package com.fleon.switchlings -- -DesignerServer http://10.0.2.2:46198 -Playtest YES
+```
 
 ## Toolchain
 
@@ -699,7 +735,8 @@ Left out, each for a reason of its own:
 | `AppDelegate`, `SceneDelegate`, `GameViewController` | the Apple app's own entry, window and controller | `Android/AndroidGameController.swift`, `GameViewControllerProtocols.swift` (below) |
 | `Utils/GamepadInput.swift` | observes `GCController` through `#selector`, which needs the Objective-C runtime | `Android/GamepadInput.swift`: the same `Action`s, mapping, thresholds and repeat, fed by SDL's gamepads |
 | `Utils/ShareSheet.swift` | `UIActivityViewController` | `Platform/ShareSheet.swift` (Android's chooser, from the share films) |
-| `AudioManager`, `StoreManager`, `GameCenterManager`, `ICloudSyncManager`, `HapticsManager`, `PlaytestLog`, `DesignerFeed` | AVFoundation, StoreKit, GameKit, iCloud, haptics compiled for iOS only, the beta's reporting | `Platform/` (the platform ring) |
+| `AudioManager`, `StoreManager`, `GameCenterManager`, `ICloudSyncManager`, `HapticsManager` | AVFoundation, StoreKit, GameKit, iCloud, haptics compiled for iOS only | `Platform/` (the platform ring) |
+| `Utils/DesignerFeed.swift`, `Utils/PlaytestLog.swift` | the beta switch, which a store build can't read from launch arguments; `PlaytestLog`'s `#selector` observers | ports in `Platform/`, the game's logic line for line (**The beta's level feed and solve log**) |
 | `HeaderVideo/*`, `EventVideo/*` | the Mac's filming tools, debug only | nothing |
 
 ### The controller

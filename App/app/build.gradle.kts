@@ -76,6 +76,49 @@ val stageStrings = tasks.register<Sync>("stageStrings") {
     }
 }
 
+// Whether this build is a beta, for Play's testing tracks (internal, closed
+// and open): it plays the Level Designer's live level feed and posts each
+// clear to its solve log (`DesignerFeed`, `PlaytestLog`), as every Apple
+// build does during the beta. Play can't tell an app which track installed
+// it, so it's chosen here:
+//
+//     ./gradlew bundleRelease -Pswitchlings.beta=true    # internal, closed, open
+//     ./gradlew bundleRelease -Pswitchlings.beta=false   # production
+//
+// A release build must say which (`checkBetaChoice`); a debug build is a beta
+// unless told otherwise. It lands in the base module's assets as
+// `SwitchlingsBuild.json`, which `MainActivity` reads at launch and
+// `Tools/Play/play.js release` checks before it uploads to a testing track.
+// A production release is its own `false` build, never a promotion from a
+// testing track. All of it comes out before the store release.
+val betaChoice = (findProperty("switchlings.beta") as String?)?.trim()
+val isBeta = when (betaChoice) {
+    null, "true" -> true
+    "false" -> false
+    else -> throw GradleException("-Pswitchlings.beta is true or false, not \"$betaChoice\"")
+}
+val buildInfoAssets = "build/generated/buildInfoAssets"
+val stageBuildInfo = tasks.register("stageBuildInfo") {
+    val beta = isBeta
+    val out = file("$buildInfoAssets/SwitchlingsBuild.json")
+    inputs.property("beta", beta)
+    outputs.file(out)
+    doLast {
+        out.parentFile.mkdirs()
+        out.writeText("{\"beta\": $beta}\n")
+    }
+}
+val checkBetaChoice = tasks.register("checkBetaChoice") {
+    val chosen = betaChoice != null
+    doFirst {
+        if (!chosen) throw GradleException(
+            "A release build must say whether it's a beta:\n" +
+                "    -Pswitchlings.beta=true    for Play's testing tracks (internal, closed, open)\n" +
+                "    -Pswitchlings.beta=false   for production, which is never promoted from a testing track"
+        )
+    }
+}
+
 // Play Games Services: the game's project ID and its achievements' IDs, both
 // written by `Tools/Play/games.js` once the achievements exist on Play. The
 // file goes into the APK beside the levels (`Bundle.main`'s `.json` folder),
@@ -159,7 +202,7 @@ android {
         getByName("main") {
             // The levels and the strings, each staged by a task below: small,
             // and in the base of every build.
-            assets.srcDirs(levelAssets, stringAssets)
+            assets.srcDirs(levelAssets, stringAssets, buildInfoAssets)
         }
         getByName("debug") {
             // The packed art: atlas pages, the whole tiling pages and
@@ -261,12 +304,14 @@ val stageFonts = tasks.register<Copy>("stageFonts") {
 // Every staging task has to run before AGP merges the asset folders, and
 // AGP will not infer it from `assets.srcDirs` alone (see the note there).
 tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configureEach {
-    dependsOn(stageFonts, stageAudio, stageLevelAssets, stageStrings)
+    dependsOn(stageFonts, stageAudio, stageLevelAssets, stageStrings, stageBuildInfo)
 }
 // A release build's lint reads the asset folders too.
 tasks.matching { it.name.contains("lint", ignoreCase = true) }.configureEach {
-    dependsOn(stageFonts, stageAudio, stageLevelAssets, stageStrings)
+    dependsOn(stageFonts, stageAudio, stageLevelAssets, stageStrings, stageBuildInfo)
 }
+// Every release build names its beta choice (above).
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkBetaChoice) }
 // The asset pack's plugin publishes its folder with no task behind it, so
 // whatever packs it into a bundle has to wait for the folder to be staged.
 tasks.matching { it.name.startsWith("assetPack") }.configureEach {

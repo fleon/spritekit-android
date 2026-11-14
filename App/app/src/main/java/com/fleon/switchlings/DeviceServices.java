@@ -10,6 +10,10 @@ import android.graphics.BitmapFactory;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.PowerManager;
 import android.os.VibrationAttributes;
@@ -24,7 +28,8 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 
 /**
- * The device's part: haptics, audio focus and battery saver.
+ * The device's part: haptics, audio focus, battery saver, and the battery
+ * and connection the beta's solve log records.
  *
  * <p><b>Haptics.</b> The game's five feedback kinds (UIKit's light, medium
  * and soft impacts, selection, success and warning) as Android's haptic
@@ -88,6 +93,10 @@ final class DeviceServices implements AudioManager.OnAudioFocusChangeListener {
                 return convert(args.optString("data"), Bitmap.CompressFormat.PNG, 100);
             case "pngToJpeg":
                 return convert(args.optString("data"), Bitmap.CompressFormat.JPEG, args.optInt("quality", 85));
+            case "battery":
+                return PlatformServices.object("level", batteryLevel());
+            case "connection":
+                return PlatformServices.object("kind", connection());
             case "state":
                 return PlatformServices.object(
                     "powerSave", power != null && power.isPowerSaveMode(),
@@ -95,6 +104,34 @@ final class DeviceServices implements AudioManager.OnAudioFocusChangeListener {
             default:
                 Log.w(PlatformServices.TAG, "no device." + method);
                 return null;
+        }
+    }
+
+    /** The battery's charge from 0 to 1, or -1 where there's none to read (the solve log's). */
+    private double batteryLevel() {
+        BatteryManager battery = (BatteryManager) activity.getSystemService(Context.BATTERY_SERVICE);
+        int percent = battery == null ? -1 : battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+        return percent < 0 || percent > 100 ? -1 : percent / 100.0;
+    }
+
+    /**
+     * How the device reaches the internet, as the solve log names it (iOS's
+     * path monitor): {@code wifi}, {@code cellular}, {@code wired},
+     * {@code other} or {@code none}.
+     */
+    private String connection() {
+        ConnectivityManager connectivity = (ConnectivityManager) activity.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivity == null) return "other";
+        try {
+            Network network = connectivity.getActiveNetwork();
+            NetworkCapabilities capabilities = network == null ? null : connectivity.getNetworkCapabilities(network);
+            if (capabilities == null || !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return "none";
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return "wifi";
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return "cellular";
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return "wired";
+            return "other";
+        } catch (SecurityException noPermission) {
+            return "other";
         }
     }
 

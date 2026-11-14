@@ -12,8 +12,14 @@
     <!-- Haptics (DeviceServices). A normal permission: granted at install. -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Shared Level Designer levels go to and come from the designer's
-         server (`LevelShare`: POST /levels, GET /levels/<code>). -->
+         server (`LevelShare`: POST /levels, GET /levels/<code>), and during
+         the beta the level feed and the solve log (`DesignerFeed`: GET
+         /feed, `PlaytestLog`: POST /solves). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The beta's solve log records how the device was connected, as
+         TestFlight's feedback does (DeviceServices). A normal permission:
+         granted at install. Comes out with the solve log. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="false"

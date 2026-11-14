@@ -59,6 +59,14 @@ public final class AndroidGameController {
         StoreManager.shared.start()
         DesignerFeed.shared.start()
         PlaytestLog.shared.flush()
+        // As `SceneDelegate.sceneDidBecomeActive`: the beta's level feed and
+        // solve log catch up whenever the game comes back to the front.
+        _ = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated {
+                DesignerFeed.shared.refresh()
+                PlaytestLog.shared.flush()
+            }
+        }
         // As `SceneDelegate` connects its scene: the link the game opened
         // with, else `-OpenLink`, else `-OpenCode`; `-OpenLinkAfter` holds
         // `-OpenLink` back until the game is running (`didAppear`).

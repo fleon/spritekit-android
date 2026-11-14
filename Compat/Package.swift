@@ -70,6 +70,12 @@ let package = Package(
         .target(name: "CryptoKit",
                 dependencies: [.product(name: "PlatformShim", package: "Android")],
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
+        // The beta's solve log's two (`PlaytestLog`).
+        .target(name: "GameKit",
+                path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
+        .target(name: "Network",
+                dependencies: [.product(name: "SpriteKitShim", package: "Android")],
+                path: "Sources/Network", swiftSettings: [v5, shimDefine]),
         // The share film's three (`SolutionFilm`, `FilmSoundtrack`).
         .target(name: "Metal",
                 dependencies: [.product(name: "SpriteKitShim", package: "Android")],
@@ -99,7 +105,7 @@ let package = Package(
                 .product(name: "PlatformShim", package: "Android"),
                 .product(name: "Macros", package: "Macros"),
                 "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "CoreImage", "QuartzCore", "os", "simd",
-                "Metal", "CoreVideo", "AVFoundation", "StoreKit", "CryptoKit",
+                "Metal", "CoreVideo", "AVFoundation", "StoreKit", "CryptoKit", "GameKit", "Network",
             ],
             path: "Sources/GameCompat",
             swiftSettings: gameSettings

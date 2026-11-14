@@ -22,7 +22,11 @@ import ShellCore
 ///   `UserDefaults`' argument domain, which `LaunchArguments` reads (in debug
 ///   builds). Here the intent's `args` or `args64` extra carries them
 ///   (`ShellArguments`), and they are put in that domain the same way
-///   (`LaunchArgumentDomain`).
+///   (`LaunchArgumentDomain`). An emulator's gain `-Playtest NO` unless
+///   they name it (`AndroidDevice`): `LaunchArguments` knows an iOS
+///   simulator only at compile time. A build that isn't a beta
+///   (`-Pswitchlings.beta=false`) gains `-DesignerLevels NO` too
+///   (`BetaBuild`).
 enum GameEnvironment {
     static func install() {
         if let storage = SDL_GetAndroidInternalStoragePath().map({ String(cString: $0) }) {
@@ -46,7 +50,11 @@ enum GameEnvironment {
 
         loadSavedDefaults()
 
-        let arguments = LaunchArgumentDomain.parse(ShellArguments.values)
+        // An emulator records no solves for the beta's solve log unless told
+        // to (`-Playtest YES`), as an iOS simulator records none; a build
+        // that isn't a beta neither plays the feed nor posts unless told to.
+        Log.info(BetaBuild.current.description)
+        let arguments = BetaBuild.current.arguments(AndroidDevice.current.arguments(LaunchArgumentDomain.parse(ShellArguments.values)))
         // `-AppleLanguages "(ja)"` stands in for the device's, as on Apple;
         // set where `Locale.preferredLanguages` reads it whichever domain
         // that is, and never saved, since it's an argument.

@@ -49,9 +49,14 @@ enum AndroidPlatformServices {
         if LaunchArguments.keepsGameCenterOff { games.start {} }
     }
 
-    /// Haptics, battery saver and audio focus (`DeviceServices.java`).
+    /// Haptics, battery saver and audio focus, and the battery and
+    /// connection the beta's solve log records (`DeviceServices.java`).
     private static func installDevice(_ channel: PlatformChannel) {
         SystemServices.haptic = { kind in channel.call("device.haptic", ["kind": kind]) }
+        SystemServices.batteryLevel = {
+            channel.call("device.battery")?.double("level").map(Float.init) ?? -1
+        }
+        SystemServices.connection = { channel.call("device.connection")?["kind"] as? String }
         UIImage.jpegToPNG = { jpeg in
             (channel.call("device.jpegToPng", ["data": jpeg.base64EncodedString()])?["data"] as? String)
                 .flatMap { Data(base64Encoded: $0) }

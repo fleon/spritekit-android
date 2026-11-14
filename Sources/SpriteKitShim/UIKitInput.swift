@@ -43,10 +43,11 @@ public final class UIDevice {
     public var userInterfaceIdiom: UIUserInterfaceIdiom = .phone {
         didSet { UITraitCollection.idiom = userInterfaceIdiom }
     }
-    /// Only `-FrameLog` reads it; Android's comes through BatteryManager,
-    /// which SDL does not wrap, so it reports unknown as a simulator does.
+    /// The beta's solve log and `-FrameLog` read it; Android's comes
+    /// through BatteryManager (`SystemServices.batteryLevel`). With no
+    /// platform services (a host test) it reports unknown, as a simulator does.
     public var isBatteryMonitoringEnabled = false
-    public var batteryLevel: Float { -1 }
+    public var batteryLevel: Float { SystemServices.batteryLevel() }
 
     private init() {}
 }
@@ -75,6 +76,12 @@ public enum SystemServices {
     /// Battery saver is on. Whoever sets it posts
     /// `NSProcessInfoPowerStateDidChange`, as iOS does.
     nonisolated(unsafe) public static var lowPowerMode = false
+    /// The battery's charge from 0 to 1, or -1 where it can't be read.
+    nonisolated(unsafe) public static var batteryLevel: () -> Float = { -1 }
+    /// How the device reaches the internet (`wifi`, `cellular`, `wired`,
+    /// `other` or `none`), or nil where it can't be told: the beta's solve
+    /// log's `NWPathMonitor`.
+    nonisolated(unsafe) public static var connection: () -> String? = { nil }
 }
 
 public extension UIApplication {

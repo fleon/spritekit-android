@@ -49,9 +49,26 @@ extension UITraitCollection {
 
 @MainActor
 public final class UIScreen {
+    /// UIKit's `coordinateSpace` kinds, as far as the game asks: bounds.
+    public struct CoordinateSpace: Sendable {
+        public let bounds: CGRect
+    }
+
+    /// The screen the game shows on: Android has one, the last made. The
+    /// beta's solve log reads its size (`PlaytestLog.screen`), where iOS
+    /// finds it through its window scenes.
+    public private(set) static weak var main: UIScreen?
+
     public var bounds: CGRect
     public var nativeBounds: CGRect
     public var nativeScale: CGFloat
+
+    /// Its bounds upright, whichever way it's turned, as UIKit's fixed
+    /// coordinate space gives them.
+    public var fixedCoordinateSpace: CoordinateSpace {
+        CoordinateSpace(bounds: CGRect(x: 0, y: 0, width: min(bounds.width, bounds.height),
+                                       height: max(bounds.width, bounds.height)))
+    }
 
     public init(bounds: CGRect, nativeScale: CGFloat) {
         self.bounds = bounds
@@ -59,6 +76,7 @@ public final class UIScreen {
         nativeBounds = CGRect(
             x: 0, y: 0, width: bounds.width * nativeScale, height: bounds.height * nativeScale
         )
+        Self.main = self
     }
 }
 
