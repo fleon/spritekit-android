@@ -39,8 +39,13 @@ public enum Typesetting {
         guard !tail.isEmpty else { return 0 }
 
         let whole = tail.utf16.count
+        // Whitespace a line ends on hangs past its edge: Core Text fits a
+        // line by its width without it, then hands the spaces to that line.
         func width(upTo offset: Int) -> CGFloat {
-            let end = String.Index(utf16Offset: offset, in: tail)
+            var end = String.Index(utf16Offset: offset, in: tail)
+            while end > tail.startIndex, tail[tail.index(before: end)].isWhitespace {
+                end = tail.index(before: end)
+            }
             return provider.measure(String(tail[..<end]), font: font).advance
         }
 

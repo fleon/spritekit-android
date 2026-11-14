@@ -8,7 +8,10 @@ import SpriteKitShim
 /// Swift SDK for Android carries no line-break tables. What it does cover is
 /// the three cases the game's 19 languages actually need.
 ///
-/// - Space-separated scripts break after spaces, and after a hyphen.
+/// - Space-separated scripts break after spaces, and after a hyphen. A
+///   no-break space (U+00A0) holds its neighbours together, as UAX #14's
+///   glue does: the game joins "Sunny Garden · Level 1" with them so a
+///   collection row breaks before the place, never in it.
 /// - Chinese and Japanese break between almost any two characters, held off
 ///   only by the small kinsoku set below — no closing bracket or full stop
 ///   starts a line, and no opening bracket ends one.
@@ -32,7 +35,7 @@ enum LineBreak {
             let here = text[index]
             let after = text[next]
 
-            if here == " " || here == "\u{00A0}" {
+            if here == " " {
                 if after != " " { places.append(next) }
             } else if here == "-" || here == "\u{2010}" {
                 places.append(next)
@@ -102,8 +105,11 @@ enum LineBreak {
         var start = text.startIndex
         var lastFit: String.Index?
 
+        // Spaces a line ends on hang past its edge, as Core Text lets them.
+        func fits(_ piece: Substring) -> Bool { width(withoutTrailingSpaces(piece)) <= maxWidth }
+
         for place in places {
-            if width(text[start..<place]) <= maxWidth {
+            if fits(text[start..<place]) {
                 lastFit = place
                 continue
             }
@@ -112,12 +118,12 @@ enum LineBreak {
             let cut = lastFit ?? place
             lines.append(trimmed(text[start..<cut]))
             start = cut
-            lastFit = width(text[start..<place]) <= maxWidth ? place : nil
+            lastFit = fits(text[start..<place]) ? place : nil
         }
 
         if start < text.endIndex {
             let tail = text[start...]
-            if width(tail) <= maxWidth || lastFit == nil {
+            if fits(tail) || lastFit == nil {
                 lines.append(trimmed(tail))
             } else {
                 lines.append(trimmed(text[start..<lastFit!]))
@@ -127,6 +133,14 @@ enum LineBreak {
 
         let kept = lines.filter { !$0.isEmpty }
         return kept.isEmpty ? [text] : kept
+    }
+
+    static func withoutTrailingSpaces(_ text: Substring) -> Substring {
+        var end = text.endIndex
+        while end > text.startIndex, text[text.index(before: end)].isWhitespace {
+            end = text.index(before: end)
+        }
+        return text[..<end]
     }
 
     private static func trimmed(_ text: Substring) -> String {

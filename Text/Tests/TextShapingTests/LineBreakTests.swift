@@ -17,6 +17,22 @@ struct LineBreakTests {
         #expect(lines.allSatisfy { !$0.hasPrefix(" ") && !$0.hasSuffix(" ") })
     }
 
+    @Test("A no-break space holds its words together")
+    func noBreakSpace() {
+        // The collection's "First appears in: Sunny Garden · Level 1", the
+        // place joined with no-break spaces so it moves to a line of its own.
+        let text = "First appears in: Sunny\u{00A0}Garden\u{00A0}·\u{00A0}Level\u{00A0}1"
+        #expect(LineBreak.opportunities(in: text).map { $0.utf16Offset(in: text) } == [6, 14, 18])
+    }
+
+    @Test("Spaces a line ends on hang past its edge")
+    func hangingSpaces() {
+        let font = Fonts.chiron(20)
+        let word = Fonts.engine.measure("Unlock", font: font).advance
+        let lines = Fonts.engine.breakLines("Unlock     everything", font: font, maxWidth: word + 0.01)
+        #expect(lines == ["Unlock", "everything"])
+    }
+
     @Test("A word wider than the line is left over-wide rather than cut")
     func longWord() {
         let lines = Fonts.engine.breakLines("Switchlings", font: Fonts.chiron(40), maxWidth: 20)
