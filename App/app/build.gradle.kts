@@ -136,6 +136,21 @@ val checkBetaChoice = tasks.register("checkBetaChoice") {
     }
 }
 
+// The NDK, for a release build's strip and its native debug symbols (the
+// `ndkPath` below). Without it AGP would package the libraries as staged,
+// symbols and all, so a release build stops instead.
+val ndk = file(System.getenv("ANDROID_NDK_HOME") ?: "${System.getProperty("user.home")}/Library/Android/android-ndk-r30")
+val checkReleaseNdk = tasks.register("checkReleaseNdk") {
+    val found = ndk.isDirectory
+    val path = ndk.path
+    doFirst {
+        if (!found) throw GradleException(
+            "A release build strips its native libraries and keeps their debug symbols with the NDK,\n" +
+                "which isn't at $path. Install it there (Android/Scripts/config.sh) or set ANDROID_NDK_HOME."
+        )
+    }
+}
+
 // Play Games Services: the game's project ID and its achievements' IDs, both
 // written by `Tools/Play/games.js` once the achievements exist on Play. The
 // file goes into the APK beside the levels (`Bundle.main`'s `.json` folder),
@@ -257,14 +272,14 @@ android {
         noCompress += listOf("png", "json", "ttf", "m4a", "wav", "ogg", "mp3", "strings")
     }
 
-    packaging {
-        jniLibs {
-            // The .so files are cross-compiled and already stripped by
-            // Android/Scripts/build-{sdl,shell}.sh. Telling AGP to keep their
-            // symbols stops it running its own strip step, which would want
-            // an NDK installed under the SDK just to redo work already done.
-            keepDebugSymbols += "**/*.so"
-        }
+    // The NDK the native build uses (Android/Scripts/config.sh), which AGP
+    // needs only to strip a release build's libraries and pull their symbols
+    // out (below). It isn't installed under the SDK.
+    if (ndk.isDirectory) {
+        ndkPath = ndk.path
+        // AGP wants its version named too, or it ignores the path.
+        ndkVersion = ndk.resolve("source.properties").readLines()
+            .first { it.startsWith("Pkg.Revision") }.substringAfter("=").trim()
     }
 
     signingConfigs {
@@ -284,6 +299,16 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("upload")
+            // Native debug symbols for Play vitals' crash and ANR stacks.
+            // `build-shell.sh` stages an optimised build's libraries with
+            // their symbols; AGP strips them for the APKs and puts each
+            // library's symbols and DWARF in the bundle's
+            // BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/
+            // as <lib>.so.dbg, which Play keeps and never ships to a device.
+            // FULL rather than SYMBOL_TABLE: it adds line numbers, and is
+            // smaller too (58 MB to 70 MB, compressed), since a `.sym` keeps
+            // the code and a `.dbg` only the debug sections.
+            ndk { debugSymbolLevel = "FULL" }
         }
         debug {
             isJniDebuggable = true
@@ -300,6 +325,15 @@ android {
             // default, so a plain build is unchanged.
             applicationIdSuffix = (findProperty("switchlings.applicationIdSuffix") as String?) ?: ""
         }
+    }
+}
+
+// A debug build's libraries come stripped from `build-shell.sh --debug`, so
+// AGP keeps them as they are: no second strip, and no NDK needed to package
+// the APK every check and emulator run installs.
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
     }
 }
 
@@ -327,8 +361,8 @@ tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configure
 tasks.matching { it.name.contains("lint", ignoreCase = true) }.configureEach {
     dependsOn(stageFonts, stageAudio, stageLevelAssets, stageStrings, stageBuildInfo)
 }
-// Every release build names its beta choice (above).
-tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkBetaChoice) }
+// Every release build names its beta choice and has the NDK (above).
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkBetaChoice, checkReleaseNdk) }
 // The asset pack's plugin publishes its folder with no task behind it, so
 // whatever packs it into a bundle has to wait for the folder to be staged.
 tasks.matching { it.name.startsWith("assetPack") }.configureEach {

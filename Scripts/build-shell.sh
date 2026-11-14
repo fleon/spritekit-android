@@ -10,6 +10,10 @@
 #   Scripts/build-shell.sh --debug          # both ABIs, unoptimised: checks, emulator runs, pre-merge
 #   Scripts/build-shell.sh                  # both ABIs, optimised, with DEBUG: frame-time measurements
 #   Scripts/build-shell.sh --store          # optimised, without DEBUG: what goes to Play
+#
+# A --debug build's libraries are stripped as they're staged; an optimised
+# build's keep their symbols, which `bundleRelease` puts in the bundle for
+# Play and strips out of the APKs (README.md, "Native debug symbols").
 #   Scripts/build-shell.sh --debug arm64-v8a  # just one ABI
 #
 # Build optimised only to measure frame times or to upload to Play; every
@@ -97,8 +101,15 @@ for abi in "${targets[@]}"; do
     # rather than all 20-odd in the SDK bundle.
     stage_with_dependencies "$out" "$dest" "$abi"
 
-    strip="$(ndk_tool llvm-strip)"
-    [ -n "$strip" ] && "$strip" --strip-unneeded "$dest"/*.so 2>/dev/null || true
+    # A debug build is stripped here, so the APK every check and emulator run
+    # installs stays small and quick to push. An optimised one is staged with
+    # its symbols: the release variant's own strip (app/build.gradle.kts)
+    # takes them out of the APKs and keeps them in the bundle's
+    # BUNDLE-METADATA, so Play vitals shows readable native stacks.
+    if [ "$CONFIG" = debug ]; then
+        strip="$(ndk_tool llvm-strip)"
+        [ -n "$strip" ] && "$strip" --strip-unneeded "$dest"/*.so 2>/dev/null || true
+    fi
 
     echo "    staged $(ls "$dest"/*.so | wc -l | tr -d ' ') libraries, $(du -sh "$dest" | cut -f1) in $dest"
     ls "$dest" | sed 's/^/      /'

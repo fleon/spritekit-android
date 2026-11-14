@@ -754,6 +754,48 @@ at a local one.
 node Android/Scripts/launch.js --package com.fleon.switchlings -- -DesignerServer http://10.0.2.2:46198 -Playtest YES
 ```
 
+## Native debug symbols
+
+The game is almost all native Swift, so Play vitals can only read a crash or
+ANR stack against the libraries' symbols. A release bundle carries them:
+
+- `Scripts/build-shell.sh` strips a `--debug` build's libraries as it stages
+  them, as before, but stages an optimised build's (`--store`, and the
+  frame-time builds) with their symbols and DWARF.
+- The release build type sets `ndk { debugSymbolLevel = "FULL" }`
+  (`App/app/build.gradle.kts`), so `bundleRelease` strips the libraries for
+  the APKs itself (the same `llvm-strip --strip-unneeded`, from the NDK at
+  `ANDROID_NDK_HOME`, which it fails without) and puts each one's debug
+  sections in `BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/<lib>.so.dbg`.
+  Play keeps those and never sends them to a device; it matches them to a
+  crash's frames by each library's build ID.
+- The debug build type keeps the staged libraries as they are
+  (`keepDebugSymbols`), so `assembleDebug` needs no NDK and the pool
+  emulators' install is as quick as before.
+
+FULL rather than SYMBOL_TABLE: it adds file and line numbers, and is smaller
+too, since a `.sym` keeps each library's code and a `.dbg` only its debug
+sections. Measured on 1.1 (54), both ABIs, `--store`:
+
+| | AAB | symbols in it (compressed) | arm64 split APK | x86_64 split APK |
+|---|---:|---:|---:|---:|
+| before (stripped by `build-shell.sh`) | 227.3 MB | none | 81,114,791 B | 83,506,795 B |
+| SYMBOL_TABLE (40 `.so.sym`) | 297.0 MB | 69.6 MB | same | same |
+| FULL (40 `.so.dbg`), what ships | 285.5 MB | 58.2 MB | same | same |
+
+The APKs bundletool makes from the bundle hold the same libraries, byte for
+byte, as before (no `.symtab`, no debug sections), so the download a device
+gets is unchanged; only the upload grows. `play.js release` checks a bundle
+for a symbol file per library and says which are missing, as a bundle built
+from `--debug` libraries would be. Builds already on Play (1.1.1 (55),
+1.1.2 (56)) keep Play's "Native code without debug symbols" warning until
+they're replaced. Play's other warning, "No deobfuscation file", is for R8's
+`mapping.txt`; the app doesn't use R8, so there's none (`play.js release
+--mapping` passes one through if it ever does).
+
+To look at a symbolised stack locally, `ndk-stack -sym` takes the
+`.dbg` files' folder for an ABI (unzip `BUNDLE-METADATA` from the bundle).
+
 ## Toolchain
 
 Swift 6.4.2 (open-source, via swiftly — Xcode's Swift cannot cross-compile),

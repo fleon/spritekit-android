@@ -77,8 +77,10 @@ Two asset trees, both staged rather than committed:
 `build-shell.sh` stages `libAndroidShell.so` into
 `app/src/main/jniLibs/<abi>/` along with every library it needs, found by
 walking `DT_NEEDED` — the Swift runtime, SDL and `libc++_shared`, but not the
-libraries Android itself provides. Everything is stripped with the NDK's
-`llvm-strip`. Gradle fails early with a readable message if the `.so` files
+libraries Android itself provides. A `--debug` build's are stripped with the
+NDK's `llvm-strip` there; an optimised one's keep their symbols, which
+`bundleRelease` strips out of the APKs and keeps in the bundle for Play
+(`../README.md`, "Native debug symbols"). Gradle fails early with a readable message if the `.so` files
 are not there, because an APK missing them installs and launches fine and
 then dies in the linker with nothing useful in logcat.
 
