@@ -85,6 +85,14 @@ fun uploadPassword(): String? = System.getenv("SWITCHLINGS_UPLOAD_PASSWORD") ?: 
     }.standardOutput.asText.get().trim().ifEmpty { null }
 }.getOrNull()
 
+// One build setting from the iOS app's Xcode project, which every target
+// shares (the app, the stickers and Top Shelf carry the same values).
+fun appleVersion(setting: String): String {
+    val project = rootProject.file("../../Switchlings.xcodeproj/project.pbxproj").readText()
+    val values = Regex("""\b$setting = ([^;]+);""").findAll(project).map { it.groupValues[1].trim('"', ' ') }.toSet()
+    return values.singleOrNull() ?: error("$setting isn't one value in the Xcode project: $values")
+}
+
 android {
     namespace = "com.fleon.switchlings"
     compileSdk = property("switchlings.compileSdk").toString().toInt()
@@ -93,8 +101,11 @@ android {
         applicationId = "com.fleon.switchlings"
         minSdk = property("switchlings.minSdk").toString().toInt()
         targetSdk = property("switchlings.targetSdk").toString().toInt()
-        versionCode = 1
-        versionName = "0.1"
+        // The same version and build as the iOS app: MARKETING_VERSION and
+        // CURRENT_PROJECT_VERSION in the Xcode project (`Build N` bumps it).
+        // `-Pswitchlings.versionCode` / `versionName` override them.
+        versionCode = ((findProperty("switchlings.versionCode") as String?) ?: appleVersion("CURRENT_PROJECT_VERSION")).toInt()
+        versionName = (findProperty("switchlings.versionName") as String?) ?: appleVersion("MARKETING_VERSION")
         ndk { abiFilters += abis }
 
         // Play Games' project ID, a string resource because the manifest's
