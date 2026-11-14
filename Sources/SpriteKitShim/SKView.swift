@@ -140,6 +140,7 @@ open class SKView: UIView {
         self.scene = scene
         guard let scene else { return }
         scene.view = self
+        scene.actionClockStarted = false
         scene.didMove(to: self)
     }
 
@@ -162,6 +163,7 @@ open class SKView: UIView {
         outgoing?.willMove(from: self)
         self.scene = scene
         scene.view = self
+        scene.actionClockStarted = false
         if let outgoing {
             if transition.duration > 0 {
                 flight = Flight(outgoing: outgoing, transition: transition)
@@ -233,10 +235,23 @@ open class SKView: UIView {
         return compose(flight, incoming: shown)
     }
 
+    /// A scene's update, then its actions, as SpriteKit times them (measured
+    /// on a Mac's `SKView`): a scene's first frame after it's presented
+    /// counts no time, however long it took, and nor does any frame longer
+    /// than `longestCountedFrame`, which isn't clamped but dropped. So a
+    /// level that took a while to present doesn't spend its first frame
+    /// running out a wait its rigs haven't had a frame of yet (the tip's
+    /// sample snapped its board before its Switchlings drew).
     private func advance(_ scene: SKScene, currentTime: TimeInterval, delta: TimeInterval) {
         scene.update(currentTime)
-        scene.tickActions(delta)
+        let counted = scene.actionClockStarted && delta <= Self.longestCountedFrame ? delta : 0
+        scene.actionClockStarted = true
+        scene.tickActions(counted)
     }
+
+    /// The longest frame whose time actions count: a 0.98 s frame advances
+    /// them in full on SpriteKit, a 1.03 s one not at all.
+    static let longestCountedFrame: TimeInterval = 1
 
     // MARK: Composing
 

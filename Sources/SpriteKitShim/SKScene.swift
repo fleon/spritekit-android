@@ -30,6 +30,10 @@ open class SKScene: SKNode {
     /// Touches in flight, by finger, each with the node that took it, so
     /// every phase after `began` reaches the same node (see Touches.swift).
     var activeTouches: [Int: ActiveTouch] = [:]
+    /// Whether its actions have had a frame in the view since it was last
+    /// presented: SpriteKit starts a scene's action clock on its first
+    /// frame, so that frame counts no time (`SKView.advance`).
+    var actionClockStarted = false
 
     public init(size: CGSize) {
         self.size = size

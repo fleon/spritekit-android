@@ -335,8 +335,9 @@ struct TransitionTests {
             for _ in 0 ..< 3 { _ = view.tick(currentTime: 0, delta: 0.25) }
             #expect(a.updates == (pausesOut ? 0 : 3))
             #expect(b.updates == (pausesIn ? 0 : 3))
-            #expect(abs(a.zRotation - (pausesOut ? 0 : 0.75)) < 1e-9)
-            #expect(abs(b.zRotation - (pausesIn ? 0 : 0.75)) < 1e-9)
+            // Each scene's first frame in the view counts no time.
+            #expect(abs(a.zRotation - (pausesOut ? 0 : 0.5)) < 1e-9)
+            #expect(abs(b.zRotation - (pausesIn ? 0 : 0.5)) < 1e-9)
             // Once it lands, only the new scene runs, paused or not before.
             _ = view.tick(currentTime: 0, delta: 0.25)
             _ = view.tick(currentTime: 0, delta: 0.25)
@@ -524,5 +525,70 @@ struct ViewDelegateTests {
         #expect(silent?.view?(view, shouldRenderAtTime: 0) == true)
         _ = ForwardingDelegate(view: view)
         #expect((1 ... 3).allSatisfy { view.shouldRender(atTime: Double($0) * frame) })
+    }
+}
+
+@Suite("Action clock")
+struct ActionClockTests {
+    /// A scene built before it's presented, as the game builds its scenes
+    /// off the main thread, with a 0.2 s wait on a parent and a child
+    /// ticking under it: `MechanicSampleNode` snapping its rigs.
+    private func presented(_ waited: @escaping () -> Void, ticks: @escaping () -> Void) -> SKView {
+        let view = SKView(bounds: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let scene = SKScene(size: CGSize(width: 200, height: 100))
+        let parent = SKNode()
+        let child = SKNode()
+        scene.addChild(parent)
+        parent.addChild(child)
+        child.run(.repeatForever(.customAction(withDuration: 1) { _, _ in ticks() }))
+        parent.run(.sequence([.wait(forDuration: 0.2), .run(waited)]))
+        view.presentScene(scene)
+        return view
+    }
+
+    @Test("A scene's first frame counts no time, however long it took")
+    func firstFrame() {
+        var waited = false
+        var ticks = 0
+        var ticksWhenWaited = -1
+        let view = presented({ waited = true; ticksWhenWaited = ticks }, ticks: { ticks += 1 })
+        // The frame that presented it took half a second.
+        _ = view.tick(currentTime: 0.5, delta: 0.5)
+        #expect(!waited)
+        // 0.2 s of frames after it: SpriteKit runs the wait out on the 13th,
+        // the shim a frame later (its sequences step on a frame late).
+        for frame in 1 ... 14 { _ = view.tick(currentTime: 0.5 + Double(frame) / 60, delta: 1.0 / 60) }
+        #expect(waited)
+        // The children had frames of their own before the wait ran out.
+        #expect(ticksWhenWaited >= 12)
+    }
+
+    @Test("A frame longer than a second counts no time; one just under counts in full")
+    func longFrames() {
+        var waited = false
+        let view = presented({ waited = true }, ticks: {})
+        _ = view.tick(currentTime: 0, delta: 0)
+        _ = view.tick(currentTime: 1.5, delta: 1.5)
+        #expect(!waited)
+        _ = view.tick(currentTime: 2.0, delta: 0.19)
+        #expect(!waited)
+        _ = view.tick(currentTime: 2.9, delta: 0.9)
+        #expect(waited)
+    }
+
+    @Test("A scene presented again starts its clock again, through a transition too")
+    func presentedAgain() {
+        let view = SKView(bounds: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let first = SKScene(size: CGSize(width: 200, height: 100))
+        let second = SKScene(size: CGSize(width: 200, height: 100))
+        view.presentScene(first)
+        _ = view.tick(currentTime: 0, delta: 0)
+        var waited = false
+        second.run(.sequence([.wait(forDuration: 0.2), .run { waited = true }]))
+        view.presentScene(second, transition: .fade(withDuration: 0.1))
+        _ = view.tick(currentTime: 0.6, delta: 0.6)
+        #expect(!waited)
+        _ = view.tick(currentTime: 0.85, delta: 0.25)
+        #expect(waited)
     }
 }

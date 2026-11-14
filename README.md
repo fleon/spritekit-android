@@ -797,6 +797,14 @@ against Apple's own where Apple's runs on the Mac:
   stretches the middle. The meter's fill at a small fraction is a pill, and
   so is the world list's current page dot (an 8-point dot from a 16-point
   texture, stretched 3× across).
+- Actions keep SpriteKit's clock (measured on a Mac's `SKView`): a scene's
+  first frame after it's presented counts no time, however long it took,
+  and a frame longer than a second counts none either (dropped, not
+  clamped). Without it the frame that presents a level, slow while it
+  draws for the first time, ran out the tip sample's 0.2 s wait before its
+  rigs had a frame: their meshes hadn't attached their shader, so the
+  snapshot held only the arrows and the text column started 19 points too
+  far left (`ActionClockTests`).
 - `SKSpriteNode`'s designated initialiser is `init(texture:color:size:)`, as
   SpriteKit's (`GlowNode`, `ConveyorNode` call it); an untextured sprite
   draws its own colour, its alpha included (a clear one draws nothing).

@@ -25,6 +25,8 @@ struct EmitterTests {
     private func run(_ scene: SKScene, frames: Int) {
         let view = SKView(bounds: CGRect(origin: .zero, size: scene.size))
         view.presentScene(scene)
+        // The frame that presents it, which counts no time (`ActionClockTests`).
+        _ = view.tick(currentTime: 0, delta: 0)
         for _ in 0 ..< frames { _ = view.tick(currentTime: 0, delta: frame) }
     }
 
