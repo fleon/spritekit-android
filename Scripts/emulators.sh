@@ -138,8 +138,20 @@ stop_slot() {
     pkill -f "qemu-system.*-avd $(avd_of "$1") " 2>/dev/null || true
 }
 
+# A slot handed to a new owner starts as the AVD defines it. Screen overrides
+# (`wm size`, `wm density`) survive reboots in the AVD's data, and one session
+# left a 402-point screen for the next; `debug.switchlings.*` properties last
+# until a reboot. Every new lease clears them.
+clean_slot() {
+    local serial
+    serial=$(serial_of "$1")
+    "$ADB" -s "$serial" shell wm size reset >/dev/null 2>&1 || true
+    "$ADB" -s "$serial" shell wm density reset >/dev/null 2>&1 || true
+    "$ADB" -s "$serial" shell 'for p in $(getprop | grep -o "^\[debug\.switchlings\.[^]]*" | tr -d "["); do setprop "$p" ""; done' >/dev/null 2>&1 || true
+}
+
 boot_slot() {
-    local n=$1 serial window=()
+    local n=$1 fresh=${2:-0} serial window=()
     serial=$(serial_of "$n")
     ensure_avd "$n"
     if ! is_up "$n"; then
@@ -153,6 +165,7 @@ boot_slot() {
             if "$ADB" -s "$serial" shell dumpsys SurfaceFlinger 2>/dev/null | grep -q '^GLES.*SwiftShader'; then
                 echo "emulators: slot $n came up on SwiftShader, not the host GPU" >&2
             fi
+            [ "$fresh" = 1 ] && clean_slot "$n"
             return 0
         fi
         sleep 2
@@ -176,7 +189,7 @@ reap() {
 }
 
 acquire() {
-    local owner=${1:?owner} minutes=${2:-$DEFAULT_MINUTES} n slot=""
+    local owner=${1:?owner} minutes=${2:-$DEFAULT_MINUTES} n slot="" fresh=0
     lock
     reap "$owner"
     for n in $(seq 1 $SLOTS); do
@@ -184,7 +197,7 @@ acquire() {
     done
     if [ -z "$slot" ]; then
         for n in $(seq 1 $SLOTS); do
-            [ -z "$(owner_of "$n")" ] && { slot=$n; break; }
+            [ -z "$(owner_of "$n")" ] && { slot=$n; fresh=1; break; }
         done
     fi
     if [ -z "$slot" ]; then
@@ -195,7 +208,7 @@ acquire() {
     fi
     lease "$slot" "$owner" "$minutes"
     unlock
-    boot_slot "$slot"
+    boot_slot "$slot" "$fresh"
     echo "export ANDROID_SERIAL=$(serial_of "$slot")"
 }
 
