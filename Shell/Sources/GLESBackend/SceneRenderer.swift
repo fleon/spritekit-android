@@ -112,6 +112,40 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// calls a frame if it is not kept.
     private var attributeLocations: [GLuint: [String: GLint]] = [:]
 
+    /// Where each uniform sits in each program, looked up once: a frame
+    /// binds a few hundred sprites' uniforms, and Mali's
+    /// `glGetUniformLocation` is a name lookup in the driver each time.
+    private var uniformLocations: [GLuint: [String: GLint]] = [:]
+
+    /// The frame's vertex and index data share one buffer each, written
+    /// batch after batch (`upload`). Re-specifying a buffer for every draw,
+    /// as this did, makes a tiler's driver find new memory a few hundred
+    /// times a frame while the GPU still holds the old.
+    private var vertexCapacity = 0
+    private var indexCapacity = 0
+    private var vertexOffset = 0
+    private var indexOffset = 0
+    /// Whether this frame has its own stores yet: the first upload of each
+    /// frame orphans them, so the writes after it never touch memory a
+    /// frame still in flight reads.
+    private var streamIsFresh = false
+
+    /// The share of the screen's pixels the scene draws at. Below 1 the
+    /// scene draws into `sceneTarget` and is stretched onto the screen as
+    /// the frame ends: a phone's GPU that can't fill every pixel of a
+    /// 1080 × 2340 screen a frame (a Galaxy M31's Mali-G72 MP3) fills fewer.
+    /// Shaders still count the screen's own pixels (`FragCoordSpace`), so
+    /// the lights and the edge blur land where they do at full size.
+    public var renderScale: CGFloat = 1
+    /// Set once something chose `renderScale` (`debug.switchlings.renderscale`):
+    /// the governor leaves it alone.
+    public var pinsRenderScale = false
+    private var sceneTarget: RenderTargetHandle = .none
+    /// Moves `renderScale` with how frames keep time (`RenderScaleGovernor`).
+    private var governor = RenderScaleGovernor()
+    /// One refresh of the display: a frame's budget, at the most.
+    private var refreshInterval = 1.0 / 60
+
     /// Shows `scene` from the first frame.
     public convenience init(
         scene: SKScene,
@@ -168,13 +202,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public func rendererDidStart(_ context: RenderContext) {
         Log.info("GLSL \(context.shadingLanguageVersion)")
 
-        // A rig mesh sprite carries four triangles as twelve vec4s, and the
-        // quad's own four attributes bring that to sixteen — exactly what
-        // GLES 3.0 guarantees. Worth saying out loud, because a driver at
-        // the minimum leaves no room and a rig shader would simply not link.
-        var maxAttributes: GLint = 0
-        glGetIntegerv(GLenum(GL_MAX_VERTEX_ATTRIBS), &maxAttributes)
-        Log.info("max vertex attributes \(maxAttributes) (rig meshes need 16)")
+        // A rig mesh sprite carries four triangles as twelve vec4 uniforms
+        // of its fragment stage (`bind(_:program:shader:)`), on top of the
+        // lights its lit shaders declare.
+        var maxFragmentVectors: GLint = 0
+        glGetIntegerv(GLenum(GL_MAX_FRAGMENT_UNIFORM_VECTORS), &maxFragmentVectors)
+        Log.info("max fragment uniform vectors \(maxFragmentVectors)")
 
         glGenVertexArrays(1, &vao)
         glBindVertexArray(vao)
@@ -275,6 +308,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // A new context relinks every program, and GL reuses names, so a
         // location learned for an old one must not be trusted again.
         attributeLocations.removeAll()
+        uniformLocations.removeAll()
+        if sceneTarget.isValid { device.deleteRenderTarget(sceneTarget) }
+        sceneTarget = .none
+        vertexCapacity = 0
+        indexCapacity = 0
+        streamIsFresh = false
         if defaultProgram != 0 { device.deleteProgram(defaultProgram) }
         glDeleteBuffers(1, &vbo)
         glDeleteBuffers(1, &ebo)
@@ -321,12 +360,21 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         deviceScale = max(viewport.scale.x, viewport.scale.y)
         glyphSource.deviceScale = deviceScale
 
+        let screenWidth = Int(frame.size.width)
+        let screenHeight = Int(frame.size.height)
+        let scene = sceneDrawTarget(screenWidth: screenWidth, screenHeight: screenHeight)
         target = Target(
-            framebuffer: 0,
-            widthInPixels: Int(frame.size.width),
-            heightInPixels: Int(frame.size.height),
+            framebuffer: scene.framebuffer,
+            widthInPixels: scene.isValid ? scene.width : screenWidth,
+            heightInPixels: scene.isValid ? scene.height : screenHeight,
             visible: viewport.visibleSceneRect,
-            fragSpace: .target(heightInPixels: Int(frame.size.height))
+            fragSpace: scene.isValid
+                ? FragCoordSpace(
+                    offsetX: 0, offsetY: Float(screenHeight),
+                    scaleX: Float(screenWidth) / Float(scene.width),
+                    scaleY: -Float(screenHeight) / Float(scene.height)
+                )
+                : .target(heightInPixels: screenHeight)
         )
         bindTarget()
         // The stencil clears with the colour: every crop node is balanced
@@ -345,8 +393,23 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         cropDepth = 0
 
         glBindVertexArray(vao)
+        streamIsFresh = false
         draw(passes, projection: projection, time: Float(frame.time))
         glBindVertexArray(0)
+
+        if scene.isValid {
+            present(scene, screenWidth: screenWidth, screenHeight: screenHeight)
+        } else {
+            // Nothing reads the stencil back: a tiler needn't write it out.
+            var stencil = GLenum(GL_STENCIL)
+            glInvalidateFramebuffer(GLenum(GL_FRAMEBUFFER), 1, &stencil)
+        }
+        // A frame's budget is a refresh, or longer if the game draws slower
+        // (its frame-rate setting, `preferredFramesPerSecond`).
+        let budget = max(refreshInterval, 1 / Double(max(view.preferredFramesPerSecond, 1)))
+        if !pinsRenderScale, governor.add(frame: frame.delta, cpu: MediaTime.source() - started, budget: budget) {
+            renderScale = CGFloat(governor.scale)
+        }
 
         targets.evictKept(except: liveKept)
         targets.endFrame()
@@ -366,6 +429,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             delta: frame.delta,
             cpu: MediaTime.source() - started,
             scene: flattened - started,
+            renderScale: Double(renderScale),
             renderer: self
         )
 
@@ -856,6 +920,45 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         return RasterImage(width: size.width, height: size.height, pixels: flipped)
     }
 
+    /// Where the frame draws: `.none` for the screen itself, else a target
+    /// `renderScale` of its size (made again when that changes).
+    private func sceneDrawTarget(screenWidth: Int, screenHeight: Int) -> RenderTargetHandle {
+        let scale = min(max(renderScale, 0.25), 1)
+        guard scale < 1 else {
+            if sceneTarget.isValid {
+                device.deleteRenderTarget(sceneTarget)
+                sceneTarget = .none
+                Log.info("render scale 1: the scene drawn on the screen")
+            }
+            return .none
+        }
+        let width = max(1, Int((CGFloat(screenWidth) * scale).rounded()))
+        let height = max(1, Int((CGFloat(screenHeight) * scale).rounded()))
+        if sceneTarget.isValid, sceneTarget.width == width, sceneTarget.height == height { return sceneTarget }
+        if sceneTarget.isValid { device.deleteRenderTarget(sceneTarget) }
+        sceneTarget = device.createRenderTarget(width: width, height: height, stencil: true) ?? .none
+        if sceneTarget.isValid { Log.info("render scale \(scale): the scene drawn at \(width)x\(height), stretched to \(screenWidth)x\(screenHeight)") }
+        return sceneTarget
+    }
+
+    /// Stretches the frame drawn at `renderScale` onto the screen.
+    private func present(_ scene: RenderTargetHandle, screenWidth: Int, screenHeight: Int) {
+        glBindFramebuffer(GLenum(GL_READ_FRAMEBUFFER), scene.framebuffer)
+        var stencil = GLenum(GL_STENCIL_ATTACHMENT)
+        glInvalidateFramebuffer(GLenum(GL_READ_FRAMEBUFFER), 1, &stencil)
+        glBindFramebuffer(GLenum(GL_DRAW_FRAMEBUFFER), 0)
+        // Every pixel is written: the last frame's needn't be read back in.
+        var attachments = [GLenum(GL_COLOR), GLenum(GL_STENCIL)]
+        glInvalidateFramebuffer(GLenum(GL_DRAW_FRAMEBUFFER), 2, &attachments)
+        glBlitFramebuffer(
+            0, 0, GLint(scene.width), GLint(scene.height),
+            0, 0, GLint(screenWidth), GLint(screenHeight),
+            GLbitfield(GL_COLOR_BUFFER_BIT), GLenum(GL_LINEAR)
+        )
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), 0)
+        targetBinds += 1
+    }
+
     private func bindTarget() {
         glBindFramebuffer(GLenum(GL_FRAMEBUFFER), target.framebuffer)
         glViewport(0, 0, GLsizei(target.widthInPixels), GLsizei(target.heightInPixels))
@@ -1020,45 +1123,104 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let program = program ?? coverageProgram
         glUseProgram(program)
         var projection = projection
-        let location = glGetUniformLocation(program, "u_projection")
+        let location = uniformLocation(program, "u_projection")
         if location >= 0 {
             glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &projection)
         }
 
         glActiveTexture(GLenum(GL_TEXTURE0))
         glBindTexture(GLenum(GL_TEXTURE_2D), texture)
-        let sampler = glGetUniformLocation(program, "u_texture")
+        let sampler = uniformLocation(program, "u_texture")
         if sampler >= 0 { glUniform1i(sampler, 0) }
 
         glEnable(GLenum(GL_BLEND))
         glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
 
-        upload(vertices: run.vertices, indices: run.indices)
+        let indexStart = upload(vertices: run.vertices, indices: run.indices)
         glDrawElements(
             GLenum(GL_TRIANGLES), GLsizei(run.indices.count),
-            GLenum(GL_UNSIGNED_SHORT), nil
+            GLenum(GL_UNSIGNED_SHORT), indexStart
         )
         drawCalls += 1
         quadsDrawn += run.indices.count / 6
     }
 
-    private func upload(vertices: [Float], indices: [UInt16]) {
-        vertices.withUnsafeBufferPointer { buffer in
-            glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
-            glBufferData(
-                GLenum(GL_ARRAY_BUFFER),
-                buffer.count * MemoryLayout<Float>.size,
-                buffer.baseAddress, GLenum(GL_STREAM_DRAW)
+    /// Writes a draw's vertices and indices after the frame's last, points
+    /// the vertex attributes at them and hands back where its indices
+    /// start, for `glDrawElements`.
+    private func upload(vertices: [Float], indices: [UInt16]) -> UnsafeRawPointer? {
+        let vertexBytes = vertices.count * MemoryLayout<Float>.size
+        let indexBytes = indices.count * MemoryLayout<UInt16>.size
+        glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
+        glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), ebo)
+        if !streamIsFresh || vertexOffset + vertexBytes > vertexCapacity || indexOffset + indexBytes > indexCapacity {
+            // A fresh store for each: the frame's first draw, or a frame that
+            // outgrew them, which then keep the bigger size.
+            if streamIsFresh {
+                vertexCapacity = max(vertexCapacity, vertexOffset + vertexBytes) * 2
+                indexCapacity = max(indexCapacity, indexOffset + indexBytes) * 2
+            }
+            vertexCapacity = max(vertexCapacity, vertexBytes, Self.streamVertexBytes)
+            indexCapacity = max(indexCapacity, indexBytes, Self.streamIndexBytes)
+            glBufferData(GLenum(GL_ARRAY_BUFFER), vertexCapacity, nil, GLenum(GL_STREAM_DRAW))
+            glBufferData(GLenum(GL_ELEMENT_ARRAY_BUFFER), indexCapacity, nil, GLenum(GL_STREAM_DRAW))
+            vertexOffset = 0
+            indexOffset = 0
+            streamIsFresh = true
+        }
+        write(vertices, into: GLenum(GL_ARRAY_BUFFER), at: vertexOffset, bytes: vertexBytes)
+        write(indices, into: GLenum(GL_ELEMENT_ARRAY_BUFFER), at: indexOffset, bytes: indexBytes)
+        pointAttributes(at: vertexOffset)
+        let indexStart = UnsafeRawPointer(bitPattern: indexOffset)
+        vertexOffset += Self.aligned(vertexBytes)
+        indexOffset += Self.aligned(indexBytes)
+        return indexStart
+    }
+
+    /// Where a frame's stream starts: enough for a busy world's frame, so
+    /// most never grow.
+    private static let streamVertexBytes = 2 << 20
+    private static let streamIndexBytes = 512 << 10
+
+    private static func aligned(_ bytes: Int) -> Int { (bytes + 15) & ~15 }
+
+    /// Copies `values` into the bound buffer's store, unsynchronised: the
+    /// region is new this frame, so nothing the GPU holds is in it.
+    private func write<Value>(_ values: [Value], into target: GLenum, at offset: Int, bytes: Int) {
+        guard bytes > 0 else { return }
+        let access = GLbitfield(GL_MAP_WRITE_BIT) | GLbitfield(GL_MAP_UNSYNCHRONIZED_BIT) | GLbitfield(GL_MAP_INVALIDATE_RANGE_BIT)
+        values.withUnsafeBytes { source in
+            if let mapped = glMapBufferRange(target, offset, bytes, access) {
+                mapped.copyMemory(from: source.baseAddress!, byteCount: bytes)
+                glUnmapBuffer(target)
+            } else {
+                glBufferSubData(target, offset, bytes, source.baseAddress)
+            }
+        }
+    }
+
+    /// The batcher's interleaving (x y u v r g b a blend), starting `offset`
+    /// bytes into the vertex buffer.
+    private func pointAttributes(at offset: Int) {
+        let stride = GLsizei(SpriteBatcher.floatsPerVertex * MemoryLayout<Float>.size)
+        func attribute(_ index: GLuint, _ count: GLint, _ offsetInFloats: Int) {
+            glVertexAttribPointer(
+                index, count, GLenum(GL_FLOAT), GLboolean(GL_FALSE), stride,
+                UnsafeRawPointer(bitPattern: offset + offsetInFloats * MemoryLayout<Float>.size)
             )
         }
-        indices.withUnsafeBufferPointer { buffer in
-            glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), ebo)
-            glBufferData(
-                GLenum(GL_ELEMENT_ARRAY_BUFFER),
-                buffer.count * MemoryLayout<UInt16>.size,
-                buffer.baseAddress, GLenum(GL_STREAM_DRAW)
-            )
-        }
+        attribute(GLDevice.Attribute.position, 2, 0)
+        attribute(GLDevice.Attribute.texCoord, 2, 2)
+        attribute(GLDevice.Attribute.colorMix, 4, 4)
+        attribute(GLDevice.Attribute.blend, 1, 8)
+    }
+
+    /// A uniform's location in `program`, asked of GL once.
+    private func uniformLocation(_ program: GLuint, _ name: String) -> GLint {
+        if let known = uniformLocations[program]?[name] { return known }
+        let location = glGetUniformLocation(program, name)
+        uniformLocations[program, default: [:]][name] = location
+        return location
     }
 
     private func draw(
@@ -1083,7 +1245,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         glUseProgram(program)
 
         var projection = projection
-        let location = glGetUniformLocation(program, "u_projection")
+        let location = uniformLocation(program, "u_projection")
         if location >= 0 {
             glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &projection)
         }
@@ -1092,7 +1254,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // reads it, so this is pushed whether or not the batch has a shader
         // of its own — the location simply comes back -1 when it is unused.
         let space = fragSpace ?? target.fragSpace
-        let fragLocation = glGetUniformLocation(program, ShaderTranslator.fragCoordUniform)
+        let fragLocation = uniformLocation(program, ShaderTranslator.fragCoordUniform)
         if fragLocation >= 0 {
             glUniform4f(fragLocation, space.offsetX, space.offsetY, space.scaleX, space.scaleY)
         }
@@ -1108,7 +1270,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         } else {
             glBindTexture(GLenum(GL_TEXTURE_2D), cache.name(for: SceneRenderer.white))
         }
-        let sampler = glGetUniformLocation(program, "u_texture")
+        let sampler = uniformLocation(program, "u_texture")
         if sampler >= 0 { glUniform1i(sampler, 0) }
 
         // SpriteKit's blend modes over premultiplied colour. Toy Box's room
@@ -1134,10 +1296,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
         }
 
-        upload(vertices: batch.vertices, indices: batch.indices)
+        let indexStart = upload(vertices: batch.vertices, indices: batch.indices)
         glDrawElements(
             GLenum(GL_TRIANGLES), GLsizei(batch.indices.count),
-            GLenum(GL_UNSIGNED_SHORT), nil
+            GLenum(GL_UNSIGNED_SHORT), indexStart
         )
         drawCalls += 1
         quadsDrawn += batch.quadCount
@@ -1204,6 +1366,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     public func windowMetricsDidChange(_ metrics: WindowMetrics) {
+        refreshInterval = 1 / Double(max(metrics.refreshRate, 1))
         // The density can change (another display, a fold): points follow it.
         view.resize(drawable: drawableSize, displayScale: metrics.displayScale)
         let scale = view.contentScaleFactor
@@ -1243,12 +1406,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// must come from the shell's monotonic clock, not the wall clock, or the
     /// currents and lights run at the wrong pace.
     private func bind(_ shader: SKShader, program: GLuint, time: Float) {
-        let timeLocation = glGetUniformLocation(program, "u_time")
+        let timeLocation = uniformLocation(program, "u_time")
         if timeLocation >= 0 { glUniform1f(timeLocation, time) }
 
         var unit: GLint = 1
         for uniform in shader.uniforms {
-            let location = glGetUniformLocation(program, uniform.name)
+            let location = uniformLocation(program, uniform.name)
             guard location >= 0 else { continue }
             switch uniform.value {
             case let .float(v):
@@ -1283,14 +1446,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     ///
     /// These are per node, not per vertex: SpriteKit's are, and the batcher
     /// honours that by never merging a sprite that carries them into another
-    /// sprite's batch. So each is a *generic* vertex attribute — the constant
-    /// GL hands every vertex when no array is enabled for that location —
-    /// which is one call per value per draw and no buffer traffic at all.
-    ///
-    /// The generated vertex shader declares them as `a_<name>` and passes
-    /// them straight through to a varying called `<name>`, which is what the
-    /// game's fragment source reads. Generic attribute values are context
-    /// state rather than VAO state, so nothing in the VAO has to change.
+    /// sprite's batch. So each is a uniform of the fragment stage
+    /// (`ShaderTranslator`), set before the sprite's draw: one call per value
+    /// and no buffer traffic, as constant vertex attributes were, without
+    /// the varyings that carried those, which dropped rig triangles on Mali.
     ///
     /// Only what the node set is pushed. SpriteKit requires every attribute a
     /// shader declares to be set on every node drawn with it, so a missing one
@@ -1305,21 +1464,20 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             if let known = locations[attribute.name] {
                 location = known
             } else {
-                location = glGetAttribLocation(program, "a_" + attribute.name)
+                location = glGetUniformLocation(program, attribute.name)
                 locations[attribute.name] = location
                 learned = true
             }
             guard location >= 0 else { continue }
-            let index = GLuint(location)
             switch value.value {
             case let .float(v):
-                glVertexAttrib1f(index, Float(v))
+                glUniform1f(location, Float(v))
             case let .vector2(v):
-                glVertexAttrib2f(index, v.x, v.y)
+                glUniform2f(location, v.x, v.y)
             case let .vector3(v):
-                glVertexAttrib3f(index, v.x, v.y, v.z)
+                glUniform3f(location, v.x, v.y, v.z)
             case let .vector4(v):
-                glVertexAttrib4f(index, v.x, v.y, v.z, v.w)
+                glUniform4f(location, v.x, v.y, v.z, v.w)
             case .texture, .matrix2, .matrix3, .matrix4:
                 // `SKAttributeValue` shares `SKUniform.Value`, but SpriteKit's
                 // `SKAttributeType` has no textures and no matrices, so neither

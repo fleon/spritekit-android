@@ -280,13 +280,13 @@ that calls `claim()`; the shell calls it first thing in `SDL_main`. Any
 later ring that asserts the main thread needs this too.
 
 **The attributes.** A rig mesh sprite carries twelve `vec4`s — four
-triangles, three each — and the quad's own four bring that to sixteen, which
-is exactly what GLES 3.0 guarantees. They are *per node*, which is why
-`SpriteBatcher` never merges a sprite that carries them; `SceneRenderer`
-pushes each as a generic vertex attribute (`glVertexAttrib4f`), the constant
-GL hands every vertex when no array is enabled for that location. The
-renderer logs `GL_MAX_VERTEX_ATTRIBS` at start-up, because a driver at the
-minimum leaves no headroom at all.
+triangles, three each. They are *per node*, which is why `SpriteBatcher`
+never merges a sprite that carries them, so the translator makes each a
+uniform of the fragment stage (`ShaderTranslator`) and `SceneRenderer` sets
+it before the sprite's draw (`glUniform4f`). They began as constant vertex
+attributes passed through twelve varyings, which the emulator drew right and
+a Galaxy M31's Mali-G72 did not: every rig dropped whole triangles. Uniforms
+also spare the GPU interpolating twelve constants across every pixel.
 
 **What is not wired yet.** `SKTexture.usesMipmaps` is carried but the
 uploader ignores it, so a minified rig aliases. Lighting is stood in for
@@ -1427,6 +1427,56 @@ can say whether that is the translator or the shader, and the same goes for
 whether `BandedLayerNode` pays (Reef, Bug Woods and Ruins band; #396 found
 bands a loss on the emulator). Reef also shows a faint seam where two of its
 caustic bands meet, which wants the same device to tell timing from a bug.
+
+### On a real phone: a Galaxy M31
+
+The first physical device the port ran on (Exynos 9611, Mali-G72 MP3,
+1080 × 2340 at 60 Hz, Android 12) was fill-rate bound, as the emulator
+could never show. Optimised build, each world's first level, the median of
+300 frames after the scene settled:
+
+| | before | after | render scale |
+|---|---|---|---|
+| Sunny Garden, Happy Farm, Glass Garden, Cozy Kitchen | 51–55 ms (18–19 fps) | 16.7 ms (60 fps) | 0.5–0.58 |
+| the world list (Sunny Garden) | 52 ms | 16.7 ms (60 fps) | 0.5–0.58 |
+| the title | 51 ms | 20 ms (49 fps) | 0.5 |
+| Flooded Ruins, The Mainframe, Cloud Castle, Coral Reef, Bug Woods | 70–75 ms (13–14 fps) | 20–22 ms (46–50 fps) | 0.5 |
+| the world list (Starry Sky) | 98 ms (10 fps) | 26 ms (38 fps) | 0.5 |
+| Starry Sky | 116 ms (8.6 fps) | 30 ms (33 fps) | 0.5 |
+| Toy Box | 80 ms (12.5 fps) | 34 ms (29 fps) | 0.5 |
+
+What changed, by what it bought:
+
+- **The render scale** (`RenderScaleGovernor`). Frame times fell almost
+  exactly with the pixels drawn (Sunny Garden 52 ms at full size, 25.5 at
+  0.67, 16.7 at 0.5), so the renderer draws the scene into a target a share
+  of the screen's size and stretches it on (`glBlitFramebuffer`), with
+  shaders still counting the screen's own pixels (`FragCoordSpace`). The
+  governor starts at 1 and steps down while frames run late, unless the
+  CPU took most of the frame, and tries a step up after a run of frames
+  on time, backing off if that fails. It judges by the wall clock: the
+  M31's `GL_EXT_disjoint_timer_query` answers a frame that draws into more
+  than one target with nonsense, elapsed or by timestamps. `adb shell setprop
+  debug.switchlings.renderscale 0.67` holds it, for measuring.
+- **The CPU side**, a quarter to a third of the renderer's time (simpleperf):
+  one vertex and one index buffer a frame, written batch after batch through
+  unsynchronised maps, not `glBufferData` for every draw; uniform locations
+  looked up once per program; and optimised builds without Swift's run-time
+  exclusivity checks, which on Android read emulated TLS and came to about a
+  tenth of the game thread. None of it moved a frame on the M31, which was
+  waiting on the GPU, but it is what the render scale's 60 fps stands on.
+
+What's left, at 0.5 (the governor's floor):
+
+- **Starry Sky, Toy Box and the Starry Sky world page** still miss 60 fps on
+  the GPU: their backdrops' full-screen lit shaders (the night's nebula and
+  planets, the rug's room light) cost more than a Mali-G72 has at any
+  scale worth showing. Lighter shaders there are game-side work.
+- **The CPU** takes 12–18 ms a frame (ticking actions, the rigs, flattening
+  and batching; Bug Woods' warped trees most), close to the whole budget.
+
+Rigs dropped triangles there too, and audio was silent everywhere; both are
+under Rigs and Audio.
 
 ## The players' Level Designer
 

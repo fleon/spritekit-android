@@ -252,7 +252,7 @@ struct ProgramCacheTests {
         #expect(fragment.contains("uniform sampler2D u_normal;"))
     }
 
-    @Test("Attributes reach both stages")
+    @Test("Attributes are uniforms of the fragment stage")
     func attributesBothStages() {
         let device = RecordingDevice()
         let cache = ResourceCache(device: device)
@@ -260,8 +260,8 @@ struct ProgramCacheTests {
         shader.attributes = [SKAttribute(name: "a_run", type: .vectorFloat4)]
         cache.program(for: shader)
 
-        #expect(device.programs[0].vertex.contains("out vec4 a_run;"))
-        #expect(device.programs[0].fragment.contains("in vec4 a_run;"))
+        #expect(!device.programs[0].vertex.contains("a_run"))
+        #expect(device.programs[0].fragment.contains("uniform vec4 a_run;"))
     }
 
     @Test("A shader that fails to link is not cached as linked")

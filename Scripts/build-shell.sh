@@ -78,6 +78,14 @@ for abi in "${targets[@]}"; do
     if [ "$CONFIG" = release ] && [ "$DEBUG_DEFINE" = 1 ]; then
         swiftpm+=(-Xswiftc -DDEBUG)
     fi
+    # An optimised build skips Swift's run-time exclusivity checks. On
+    # Android each one reads thread-local storage through emulated TLS
+    # (`__emutls_get_address`, `pthread_getspecific`), which came to about
+    # a tenth of the game thread on a Galaxy M31. Debug builds keep them,
+    # so a violation still traps where it's checked.
+    if [ "$CONFIG" = release ]; then
+        swiftpm+=(-Xswiftc -enforce-exclusivity=unchecked)
+    fi
     # -lSDL3, -lGLESv3, -llog and -lmediandk used to be passed here. They cannot
     # be: `-Xlinker` reaches every link in the build, and since the shell
     # started linking GameCompat the build also makes a *host* macro plugin

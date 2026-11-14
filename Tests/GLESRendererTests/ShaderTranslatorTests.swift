@@ -249,12 +249,17 @@ struct VertexTests {
         #expect(out.contains("gl_Position = u_projection * vec4(a_position, 0.0, 1.0);"))
     }
 
-    @Test("Per-node SKAttributes are passed through to the fragment stage")
+    @Test("Per-node SKAttributes are not vertex inputs")
     func attributes() {
-        // RigMeshNode's triangle runs ride on an attribute like this.
-        let out = ShaderTranslator.spriteVertexShader(attributes: [("a_run", "vec4")])
-        #expect(out.contains("in vec4 a_a_run;"))
-        #expect(out.contains("out vec4 a_run;"))
-        #expect(out.contains("a_run = a_a_run;"))
+        // RigMeshNode's triangle runs are uniforms of the fragment stage:
+        // twelve varyings dropped triangles on a Mali-G72.
+        let out = ShaderTranslator.spriteVertexShader()
+        #expect(!out.contains("a_a_run"))
+        let fragment = ShaderTranslator.fragmentShader(
+            from: "void main() { gl_FragColor = a_run; }",
+            inputs: ShaderTranslator.Inputs(attributes: [("a_run", "vec4")])
+        )
+        #expect(fragment.contains("uniform vec4 a_run;"))
+        #expect(!fragment.contains("in vec4 a_run;"))
     }
 }

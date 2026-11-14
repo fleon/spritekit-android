@@ -40,6 +40,7 @@ struct FrameReport {
     /// Ticking, flattening and batching alone — no GL. The one number here
     /// that carries to a phone unchanged.
     private var sceneTimes: [Double] = []
+    private var scales: [Double] = []
 
     mutating func begin(_ label: String) {
         self.label = label
@@ -47,17 +48,19 @@ struct FrameReport {
 
     /// One frame. `delta` is the wall clock between frames (so it carries
     /// the GPU and the swap), `cpu` the time inside `drawFrame`.
-    mutating func add(delta: Double, cpu: Double, scene: Double, renderer: SceneRenderer) {
+    mutating func add(delta: Double, cpu: Double, scene: Double, renderScale: Double, renderer: SceneRenderer) {
         frames += 1
         guard frames > Self.warmUp else { return }
         times.append(delta)
         cpuTimes.append(cpu)
         sceneTimes.append(scene)
+        scales.append(renderScale)
         guard times.count >= Self.interval else { return }
         report(renderer)
         times.removeAll(keepingCapacity: true)
         cpuTimes.removeAll(keepingCapacity: true)
         sceneTimes.removeAll(keepingCapacity: true)
+        scales.removeAll(keepingCapacity: true)
     }
 
     private func report(_ renderer: SceneRenderer) {
@@ -70,6 +73,10 @@ struct FrameReport {
             frame.median * 1000, frame.p95 * 1000, frame.max * 1000,
             frame.median > 0 ? 1 / frame.median : 0,
             cpu.median * 1000, cpu.p95 * 1000, scene.median * 1000
+        ))
+        Log.info(String(
+            format: "[frames] %@ render scale p50 %.2f min %.2f max %.2f",
+            label, Self.summary(scales).median, scales.min() ?? 0, scales.max() ?? 0
         ))
         Log.info(String(
             format: "[frames] %@ draw calls %d  target binds %d  quads %d  effects drawn %d cached %d",

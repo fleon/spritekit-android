@@ -145,8 +145,15 @@ public enum ShaderTranslator {
         for (name, type) in builtinVaryings where !declares(name, in: body) {
             lines.append("in \(type) \(name);")
         }
+        // A node's own attributes are constant across its sprite (SpriteKit
+        // sets them per node, and the batcher never merges a sprite that
+        // carries them), so they are uniforms of the fragment stage rather
+        // than vertex attributes passed through as varyings. A rig mesh's
+        // twelve vec4s as varyings drop whole triangles on a Mali-G72 (the
+        // Galaxy M31), and interpolating twelve constants per pixel was
+        // never free.
         for (name, type) in inputs.attributes where !declares(name, in: body) {
-            lines.append("in \(type) \(name);")
+            lines.append("uniform \(type) \(name);")
         }
         lines.append("")
 
@@ -189,8 +196,8 @@ public enum ShaderTranslator {
 
     /// The vertex shader every sprite quad uses. SpriteKit has no equivalent
     /// to translate — it owns its vertex stage — so this is the renderer's.
-    public static func spriteVertexShader(attributes: [(name: String, type: String)] = []) -> String {
-        var lines = [
+    public static func spriteVertexShader() -> String {
+        [
             "#version 300 es",
             "",
             "precision highp float;",
@@ -199,36 +206,20 @@ public enum ShaderTranslator {
             "in vec2 a_tex_coord;",
             "in vec4 a_color_mix;",
             "in float a_blend;",
-        ]
-        for (name, type) in attributes {
-            lines.append("in \(type) a_\(name);")
-        }
-        lines.append(contentsOf: [
             "",
             "uniform mat4 u_projection;",
             "",
             "out vec2 v_tex_coord;",
             "out vec4 v_color_mix;",
             "out float v_blend;",
-        ])
-        for (name, type) in attributes {
-            lines.append("out \(type) \(name);")
-        }
-        lines.append(contentsOf: [
             "",
             "void main() {",
             "    v_tex_coord = a_tex_coord;",
             "    v_color_mix = a_color_mix;",
             "    v_blend = a_blend;",
-        ])
-        for (name, _) in attributes {
-            lines.append("    \(name) = a_\(name);")
-        }
-        lines.append(contentsOf: [
             "    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);",
             "}",
-        ])
-        return lines.joined(separator: "\n")
+        ].joined(separator: "\n")
     }
 
     /// What a sprite with no shader of its own is drawn with.

@@ -229,7 +229,7 @@ public final class ResourceCache {
             from: shader.source ?? "",
             inputs: ShaderTranslator.Inputs(uniforms: uniforms, attributes: attributes)
         )
-        let vertex = ShaderTranslator.spriteVertexShader(attributes: attributes)
+        let vertex = ShaderTranslator.spriteVertexShader()
 
         let name = device.createProgram(vertex: vertex, fragment: fragment)
         shader.glProgram = name

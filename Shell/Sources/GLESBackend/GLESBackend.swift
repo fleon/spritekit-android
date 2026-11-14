@@ -94,6 +94,11 @@ public enum GLESBackend {
             renderer.view.transitionSpeed = 1 / slowdown
             Log.info("transitions \(slowdown)x slower")
         }
+        if let scale = DebugProperty.string("debug.switchlings.renderscale").flatMap(Double.init), scale > 0 {
+            renderer.renderScale = scale
+            renderer.pinsRenderScale = true
+            Log.info("render scale held at \(scale)")
+        }
         if let slowdown = DebugProperty.string("debug.switchlings.slowdown").flatMap(Double.init), slowdown > 1 {
             renderer.slowdown = slowdown
             Log.info("everything \(slowdown)x slower")
