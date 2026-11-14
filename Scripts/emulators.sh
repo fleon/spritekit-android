@@ -67,7 +67,7 @@ unlock() { rmdir "$LOCK" 2>/dev/null || true; trap - EXIT; }
 
 owner_of() { cat "$STATE/slot-$1.owner" 2>/dev/null || true; }
 until_of() { cat "$STATE/slot-$1.until" 2>/dev/null || echo 0; }
-is_up() { "$ADB" -s "$(serial_of "$1")" get-state >/dev/null 2>&1; }
+is_up() { bounded 5 "$ADB" -s "$(serial_of "$1")" get-state >/dev/null 2>&1; }
 
 lease() { # slot owner minutes
     echo "$2" > "$STATE/slot-$1.owner"
@@ -129,13 +129,45 @@ target=android-37
 EOF
 }
 
+# The slot's emulator process, which can outlive adb's view of it: a qemu
+# that hung on shutdown once held its AVD's locks and stopped the slot's next
+# boot, while adb already reported the device gone.
+qemu_of() { pgrep -f "qemu-system.*-avd $(avd_of "$1") " 2>/dev/null || true; }
+
+# Runs a command for at most $1 seconds: adb waits for ever on an emulator
+# whose console has hung (`emu kill` did, on a frozen qemu).
+bounded() {
+    local seconds=$1 pid
+    shift
+    "$@" & pid=$!
+    for _ in $(seq 1 $((seconds * 5))); do
+        kill -0 "$pid" 2>/dev/null || { wait "$pid"; return; }
+        sleep 0.2
+    done
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    return 124
+}
+
 stop_slot() {
-    local serial
-    serial=$(serial_of "$1")
-    is_up "$1" || return 0
-    "$ADB" -s "$serial" emu kill >/dev/null 2>&1 || true
-    for _ in $(seq 1 30); do is_up "$1" || return 0; sleep 1; done
-    pkill -f "qemu-system.*-avd $(avd_of "$1") " 2>/dev/null || true
+    local n=$1 serial
+    serial=$(serial_of "$n")
+    if is_up "$n"; then
+        bounded 10 "$ADB" -s "$serial" emu kill >/dev/null 2>&1 || true
+        for _ in $(seq 1 30); do [ -z "$(qemu_of "$n")" ] && break; sleep 1; done
+    fi
+    if [ -n "$(qemu_of "$n")" ]; then
+        pkill -TERM -f "qemu-system.*-avd $(avd_of "$n") " 2>/dev/null || true
+        for _ in $(seq 1 10); do [ -z "$(qemu_of "$n")" ] && break; sleep 1; done
+    fi
+    if [ -n "$(qemu_of "$n")" ]; then
+        echo "emulators: slot $n's emulator hung; killing it" >&2
+        pkill -KILL -f "qemu-system.*-avd $(avd_of "$n") " 2>/dev/null || true
+        sleep 1
+        # A killed emulator leaves its locks behind, and the next boot of
+        # this AVD would refuse to start.
+        rm -f "$AVD_HOME/$(avd_of "$n").avd/"*.lock 2>/dev/null || true
+    fi
 }
 
 # A slot handed to a new owner starts as the AVD defines it. Screen overrides
@@ -155,6 +187,9 @@ boot_slot() {
     serial=$(serial_of "$n")
     ensure_avd "$n"
     if ! is_up "$n"; then
+        # An emulator adb can't see but that is still running (hung) would
+        # hold the AVD's locks: stop it before booting a new one.
+        [ -n "$(qemu_of "$n")" ] && stop_slot "$n"
         [ "${SWITCHLINGS_EMULATOR_WINDOW:-1}" = 0 ] && window=(-no-window)
         nohup "$EMULATOR" -avd "$(avd_of "$n")" -port "$(port_of "$n")" -gpu host \
             -no-snapshot -no-boot-anim -no-audio ${window[@]+"${window[@]}"} \
