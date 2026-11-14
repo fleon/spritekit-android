@@ -18,7 +18,7 @@ extension SpriteBatcher {
         // Unit space is the sprite's frame, placed by its anchor point.
         let origin = CGPoint(x: -sprite.size.width * sprite.anchorPoint.x,
                              y: -sprite.size.height * sprite.anchorPoint.y)
-        let uv = sprite.textureRect
+        let uv = sprite.shader == nil ? sprite.textureRect : Self.ownImage(sprite.textureRect, of: sprite.texture)
         let colour = sprite.color
         let base: [Float] = [
             Float(colour.red), Float(colour.green), Float(colour.blue),

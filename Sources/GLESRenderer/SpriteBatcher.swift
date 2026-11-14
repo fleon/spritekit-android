@@ -27,6 +27,10 @@ public struct SpriteBatcher {
         /// Set when the batch is a single node carrying its own SKAttribute
         /// values, which cannot be merged with anything else.
         public var attributeValues: [String: SKAttributeValue]
+        /// The batch has a shader of its own, so its UVs are in its image's
+        /// own 0…1 (`ownImage(_:)`) and the renderer binds that image alone
+        /// (`ResourceCache.imageName(for:)`) rather than its packed page.
+        public var ownImage: Bool { shader != nil }
 
         public var quadCount: Int { indices.count / 6 }
 
@@ -139,8 +143,8 @@ public struct SpriteBatcher {
            mergeable,
            last.vertices.count / Self.floatsPerVertex + Self.vertexCount(of: sprite) <= Int(UInt16.max) + 1,
            last.attributeValues.isEmpty,
-           sameTexture(last.texture, sprite.texture),
            last.shader === sprite.shader,
+           sprite.shader == nil ? sameTexture(last.texture, sprite.texture) : sameImage(last.texture, sprite.texture),
            last.blendMode == sprite.blendMode
         {
             addQuad(sprite, to: &last)
@@ -156,6 +160,40 @@ public struct SpriteBatcher {
         )
         addQuad(sprite, to: &batch)
         batches.append(batch)
+    }
+
+    /// Two shaded sprites share a texture when they show the same image: each
+    /// is bound alone, not as its page.
+    private func sameImage(_ a: SKTexture?, _ b: SKTexture?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case let (a?, b?):
+            if let nameA = a.root.asset?.name, let nameB = b.root.asset?.name { return nameA == nameB }
+            return a.root === b.root
+        default: return false
+        }
+    }
+
+    /// Where a shaded sprite's `textureRect` (a rect on its packed page) lies
+    /// in its image's own 0…1.
+    ///
+    /// SpriteKit hands a custom shader `v_tex_coord` in the texture's own
+    /// space, and the game's images are each a texture of their own there:
+    /// 0…1 across the image, through its 9-slice when it's sliced, and a
+    /// slice of it (`SKTexture(rect:in:)`) within that. Every shader that
+    /// works out where it is from `v_tex_coord` — `CrumbleNode`'s cracks, a
+    /// bank's groove, a pad's dish — depends on it. Given the page's
+    /// coordinates instead, the cracks were struck far off the brick (a
+    /// plain brick) and their colour was read from a row of the page
+    /// (streaks of whatever art sat there).
+    static func ownImage(_ rect: CGRect, of texture: SKTexture?) -> CGRect {
+        guard let image = texture?.root.textureRect, image.width > 0, image.height > 0 else { return rect }
+        return CGRect(
+            x: (rect.minX - image.minX) / image.width,
+            y: (rect.minY - image.minY) / image.height,
+            width: rect.width / image.width,
+            height: rect.height / image.height
+        )
     }
 
     /// Two sprites share a texture when the renderer would bind the same
@@ -198,7 +236,7 @@ public struct SpriteBatcher {
             CGPoint(x: frame.minX, y: frame.maxY),
         ].map { $0.applying(sprite.transform) }
 
-        let uv = sprite.textureRect
+        let uv = sprite.shader == nil ? sprite.textureRect : Self.ownImage(sprite.textureRect, of: sprite.texture)
         let uvs = [
             CGPoint(x: uv.minX, y: uv.minY),
             CGPoint(x: uv.maxX, y: uv.minY),

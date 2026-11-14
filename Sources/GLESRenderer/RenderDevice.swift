@@ -56,6 +56,8 @@ public final class ResourceCache {
     /// Packed images cut out of their pages for shaders that sample them
     /// as uniforms (`samplerName(for:)`), by asset name.
     private var sliceNames: [String: UInt32] = [:]
+    /// The same, clamped, for shaded sprites' own images (`imageName(for:)`).
+    private var imageNames: [String: UInt32] = [:]
     private var lastPage: (number: Int, image: (width: Int, height: Int, pixels: Data))?
 
     /// Pixels for one packed page, which the asset index names. Hundreds of
@@ -112,13 +114,36 @@ public final class ResourceCache {
     /// wraps, the first time a shader asks for it. Whole pages, and textures
     /// the index does not back, are what `name(for:)` gives.
     public func samplerName(for texture: SKTexture) -> UInt32 {
+        cutOut(texture, repeats: true)
+    }
+
+    /// The texture a **shaded sprite** samples as `u_texture`: its image
+    /// alone, clamped at its edges as SpriteKit's sprite textures are.
+    ///
+    /// On iOS the game's images are each a texture of their own, so a
+    /// shader's `v_tex_coord` runs 0…1 across the image (through its 9-slice)
+    /// and `CrumbleNode` reads its brick's front face at a fixed `y`. The
+    /// batcher hands a shaded sprite those coordinates (`Batch.ownImage`),
+    /// so this is what they index. A slice copy rather than the page, since
+    /// a shader may sample anywhere in 0…1, and a page would hand it the
+    /// neighbours.
+    public func imageName(for texture: SKTexture) -> UInt32 {
+        cutOut(texture.root, repeats: false)
+    }
+
+    /// A packed image cut out of its page once, by asset name; whole pages
+    /// and textures the index does not back are what `name(for:)` gives.
+    private func cutOut(_ texture: SKTexture, repeats: Bool) -> UInt32 {
         guard texture === texture.root, let entry = texture.asset, let index = AssetIndex.shared,
               index.pages.indices.contains(entry.page) else { return name(for: texture) }
         let page = index.pages[entry.page]
         if entry.rect.width >= page.size.width - 0.5, entry.rect.height >= page.size.height - 0.5 {
             return name(for: texture)
         }
-        if let existing = sliceNames[entry.name] { return existing }
+        if let existing = (repeats ? sliceNames : imageNames)[entry.name] { return existing }
+        func keep(_ name: UInt32) {
+            if repeats { sliceNames[entry.name] = name } else { imageNames[entry.name] = name }
+        }
         // Copied out of the page already uploaded, on the GPU, where the
         // device can: decoding a page again costs a second or more on a
         // phone, and a backdrop asks for several slices off several pages.
@@ -131,8 +156,8 @@ public final class ResourceCache {
         )
         if copied != 0 {
             ownedTextures.insert(copied)
-            device.setRepeats(copied)
-            sliceNames[entry.name] = copied
+            if repeats { device.setRepeats(copied) }
+            keep(copied)
             return copied
         }
         // A page decodes once for the slices cut from it in a row.
@@ -153,8 +178,8 @@ public final class ResourceCache {
             }
         }
         let name = upload((width, height, pixels))
-        if name != 0 { device.setRepeats(name) }
-        sliceNames[entry.name] = name
+        if name != 0, repeats { device.setRepeats(name) }
+        keep(name)
         return name
     }
 
@@ -205,6 +230,7 @@ public final class ResourceCache {
         ownedPrograms.removeAll()
         pageNames.removeAll()
         sliceNames.removeAll()
+        imageNames.removeAll()
         lastPage = nil
         for texture in textures { texture.root.glName = 0 }
         for shader in shaders { shader.glProgram = 0 }

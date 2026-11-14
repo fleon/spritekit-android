@@ -1231,6 +1231,20 @@ with what they override.
   shader samples (Kitchen's gingham, the grounds, the clearing's stones) is
   cut out of its atlas page once into a texture of its own that wraps; the
   page itself would show the whole atlas.
+- **A shaded sprite sees its own image.** SpriteKit hands a custom shader
+  `v_tex_coord` in its texture's own 0…1, and on iOS each image is a texture
+  of its own, so `CrumbleNode` strikes its cracks from the brick's middle
+  and reads their colour from its front face at a fixed `y`, and every lit
+  brick, kerb and piece reads its normals at `v_tex_coord`. Given the
+  page's coordinates, a cracked tile drew as a plain brick (cracks struck
+  off the brick) or with streaks of the page's other art, and the lit
+  pieces took their normals from the wrong place. So the batcher gives a
+  shaded sprite UVs in its image's own space (9-slices and
+  `SKTexture(rect:in:)` slices within it, `SpriteBatcher.ownImage`), and the
+  renderer binds that image cut out of its page, clamped as SpriteKit's are
+  (`ResourceCache.imageName(for:)`). Shaded sprites batch by image rather
+  than page; Kitchen's first level draws 108 calls a frame against 106
+  (`ShadedSpriteTests`).
 
 ### Frame times, and what they can't say
 

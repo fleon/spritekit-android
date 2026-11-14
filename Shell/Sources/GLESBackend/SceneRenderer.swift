@@ -1108,7 +1108,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         glActiveTexture(GLenum(GL_TEXTURE0))
         if let texture = batch.texture {
-            glBindTexture(GLenum(GL_TEXTURE_2D), cache.name(for: texture))
+            glBindTexture(GLenum(GL_TEXTURE_2D), batch.ownImage ? cache.imageName(for: texture) : cache.name(for: texture))
         } else {
             glBindTexture(GLenum(GL_TEXTURE_2D), cache.name(for: SceneRenderer.white))
         }

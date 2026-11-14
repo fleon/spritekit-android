@@ -29,6 +29,9 @@ final class RecordingDevice: RenderDevice {
 
     func deleteTexture(_ name: UInt32) { deletedTextures.append(name) }
 
+    private(set) var repeating: Set<UInt32> = []
+    func setRepeats(_ name: UInt32) { repeating.insert(name) }
+
     func createProgram(vertex: String, fragment: String) -> UInt32 {
         programs.append((vertex, fragment))
         guard !failsToLink else { return 0 }
@@ -156,6 +159,37 @@ struct PackedPageTests {
         #expect(d != a)
         // Two pages, not four assets.
         #expect(device.uploads.count == 2)
+    }
+
+    @Test("A shaded sprite's image is cut out of its page once, clamped; a uniform's wraps")
+    func ownImage() throws {
+        let index = try AssetIndex(json: Data("""
+        {
+          "version": 1, "scale": 3,
+          "pages": [{"file": "p.png", "width": 8, "height": 8},
+                    {"file": "whole.png", "width": 4, "height": 4, "repeats": true}],
+          "assets": {"Brick": {"page": 0, "rect": [2, 2, 4, 4], "size": [4, 4]},
+                     "Ground": {"page": 1, "rect": [0, 0, 4, 4], "size": [4, 4]}}
+        }
+        """.utf8))
+        AssetIndex.shared = index
+        defer { AssetIndex.shared = nil }
+
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        cache.pageSource = { page in page == 0 ? (8, 8, Data(count: 8 * 8 * 4)) : (4, 4, Data(count: 4 * 4 * 4)) }
+
+        let page = cache.name(for: SKTexture(imageNamed: "Brick"))
+        let own = cache.imageName(for: SKTexture(imageNamed: "Brick"))
+        #expect(own != page)
+        #expect(cache.imageName(for: SKTexture(imageNamed: "Brick")) == own)
+        #expect(cache.imageName(for: SKTexture(rect: CGRect(x: 0, y: 0, width: 0.5, height: 0.5), in: SKTexture(imageNamed: "Brick"))) == own)
+        #expect(device.uploads.last?.width == 4 && device.uploads.last?.height == 4)
+        #expect(!device.repeating.contains(own), "a sprite's own texture clamps, as SpriteKit's do")
+        let wrapping = cache.samplerName(for: SKTexture(imageNamed: "Brick"))
+        #expect(wrapping != own && device.repeating.contains(wrapping))
+        // A whole page is the image already.
+        #expect(cache.imageName(for: SKTexture(imageNamed: "Ground")) == cache.name(for: SKTexture(imageNamed: "Ground")))
     }
 
     @Test("A named texture reports its art's size in points, not pixels")
