@@ -1501,8 +1501,12 @@ are taken, deletes the app's saved data before every launch (nothing to
 resume; not `pm clear`, after which Android shows its "Viewing full screen"
 notice over the next launch), tells the emulator that notice has been seen,
 resets any screen size or density another session left on the slot (an
-override outlives a reboot, and a 402 × 874 one turns the Pixel 6 into an
-iPhone-sized screen),
+override outlives a reboot), gives it the iPhone 17 Pro's screen for the
+sweep (1206 × 2622 px at 480 dpi, 402 × 874 points: the scenery's layout is
+seeded by the screen's size; `--pixel-screen` keeps the Pixel 6's own) and
+puts its own back before the slot goes, launches both with parity.json's
+`base`, whose `-RandomSeed 7` makes every random draw the game makes the same
+on both (`Random`: scenery life, the title tour, petals, sparks, blinks…),
 keeps sound and music off, takes a still again if it came while a scene
 transition was still playing (a busy host can stall one frame for seconds),
 and writes `Tools/Capture/Out/parity/`: `pairs/<state>.png` (Android, iPhone,

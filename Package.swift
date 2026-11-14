@@ -85,6 +85,13 @@ let package = Package(
             path: "Tests/RigRuntimeTests",
             swiftSettings: [v5, shimDefine, testIsolation]
         ),
+        // The game's seeded randomness (`-RandomSeed`), Random.swift
+        // symlinked in as the rig runtime's sources are.
+        .testTarget(
+            name: "RandomTests",
+            path: "Tests/RandomTests",
+            swiftSettings: [v5, shimDefine, testIsolation]
+        ),
         .testTarget(
             name: "GLESRendererTests",
             dependencies: ["GLESRenderer"],
