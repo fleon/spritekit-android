@@ -101,9 +101,10 @@ public final class AndroidGameController {
         AudioManager.use(backend)
     }
 
-    /// The graphics setting's ceiling for the render scale
-    /// (`DisplaySettings.Graphics`), which the renderer keeps under.
-    public static var renderScaleCap: Double { DisplaySettings.renderScaleCap }
+    /// The render scale a picked graphics setting holds
+    /// (`DisplaySettings.Graphics`); nil while nothing's picked, when the
+    /// renderer's governor moves it.
+    public static var heldRenderScale: Double? { DisplaySettings.heldRenderScale }
 
     /// A render scale nothing moves (`-RenderScale`, or a capture running).
     public static var pinnedRenderScale: Double? { DisplaySettings.pinnedRenderScale }
@@ -111,10 +112,11 @@ public final class AndroidGameController {
     /// Where the render scale starts: where this device settled last time.
     public static var startingRenderScale: Double { DisplaySettings.startingRenderScale }
 
-    /// Calls `changed` with the ceiling whenever the graphics setting moves.
-    public static func observeRenderScaleCap(_ changed: @escaping @MainActor (Double) -> Void) {
-        _ = NotificationCenter.default.addObserver(forName: DisplaySettings.graphicsDidChange, object: nil, queue: nil) { _ in
-            MainActor.assumeIsolated { changed(DisplaySettings.renderScaleCap) }
+    /// Calls `changed` with the scale held whenever the player picks a
+    /// graphics setting.
+    public static func observeHeldRenderScale(_ changed: @escaping @MainActor (Double?) -> Void) {
+        _ = NotificationCenter.default.addObserver(forName: DisplaySettings.graphicsPicked, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated { changed(DisplaySettings.heldRenderScale) }
         }
     }
 

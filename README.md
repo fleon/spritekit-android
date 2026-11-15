@@ -1685,10 +1685,11 @@ What changed, by what it bought:
   on time, backing off if that fails. It judges by the wall clock: the
   M31's `GL_EXT_disjoint_timer_query` answers a frame that draws into more
   than one target with nonsense, elapsed or by timestamps. `adb shell setprop
-  debug.switchlings.renderscale 0.67` holds it, for measuring. The game's
-  Graphics setting (Low, Med, High) is its ceiling (`renderScaleCeiling`,
-  from `DisplaySettings`), the tier it settles at is what the setting shows
-  until the player picks one, and a launch starts there
+  debug.switchlings.renderscale 0.67` holds it, for measuring. The governor
+  runs only until the player picks a Graphics setting (Low, Med, High):
+  a picked tier holds its scale, late frames or not (`heldRenderScale`, from
+  `DisplaySettings`), at once whichever way it moves. Till then the tier it
+  settles at is what the setting shows, and a launch starts there
   (`startingRenderScale`); the governor itself is the game's
   (`Source/Utils/RenderScaleGovernor.swift`, symlinked into GLESRenderer), as
   Apple's game view adapts the same way.

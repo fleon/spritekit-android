@@ -51,15 +51,9 @@ struct RenderScaleGovernorTests {
         #expect(governor.scale == 0.58)
     }
 
-    @Test("The ceiling holds it down, and lowering it takes effect at once")
-    func ceiling() {
-        var governor = RenderScaleGovernor()
-        governor.ceiling = 0.75
-        #expect(governor.scale == 0.75)
-        for _ in 0..<40 { _ = window(&governor, frame: budget) }
-        #expect(governor.scale == 0.75)
-        // Raised again, it tries its way back up.
-        governor.ceiling = 1
+    @Test("From a lower start, frames on time try their way back to full size")
+    func climbsBack() {
+        var governor = RenderScaleGovernor(scale: 0.75)
         for _ in 0..<40 { _ = window(&governor, frame: budget) }
         #expect(governor.scale == 1)
     }
