@@ -142,39 +142,53 @@ public enum PNGDecoder {
         _ raw: [UInt8], into lines: inout [UInt8],
         stride: Int, height: Int, channels: Int
     ) throws {
-        for y in 0 ..< height {
-            let filter = raw[y * (stride + 1)]
-            let source = y * (stride + 1) + 1
-            let row = y * stride
-            let previous = row - stride
-
-            for x in 0 ..< stride {
-                let value = Int(raw[source + x])
-                let a = x >= channels ? Int(lines[row + x - channels]) : 0
-                let b = y > 0 ? Int(lines[previous + x]) : 0
-                let c = (x >= channels && y > 0) ? Int(lines[previous + x - channels]) : 0
-
-                let restored: Int
-                switch filter {
-                case 0: restored = value
-                case 1: restored = value + a
-                case 2: restored = value + b
-                case 3: restored = value + (a + b) / 2
-                case 4:
-                    // Paeth.
-                    let p = a + b - c
-                    let pa = abs(p - a), pb = abs(p - b), pc = abs(p - c)
-                    let nearest = (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c)
-                    restored = value + nearest
-                default:
-                    throw Failure.corrupt("row \(y) has filter \(filter)")
+        // A row at a time through pointers, the filter chosen once a row and
+        // the first pixel's bytes (no left neighbour) apart from the rest:
+        // the byte-at-a-time switch took seconds a page in a debug build,
+        // on the thread that draws. Zeros stand in for the row above the
+        // first, as the format says.
+        let zeros = [UInt8](repeating: 0, count: stride)
+        try raw.withUnsafeBufferPointer { rawBuffer in
+            try zeros.withUnsafeBufferPointer { zeroBuffer in
+                try lines.withUnsafeMutableBufferPointer { lineBuffer in
+                    guard let source = rawBuffer.baseAddress, let out = lineBuffer.baseAddress,
+                          let zero = zeroBuffer.baseAddress else { return }
+                    let lead = min(channels, stride)
+                    for y in 0 ..< height {
+                        let filter = source[y * (stride + 1)]
+                        let input = source + y * (stride + 1) + 1
+                        let row = out + y * stride
+                        let above = y > 0 ? UnsafePointer(row - stride) : zero
+                        switch filter {
+                        case 0:
+                            row.update(from: input, count: stride)
+                        case 1:
+                            for x in 0 ..< lead { row[x] = input[x] }
+                            for x in lead ..< stride { row[x] = input[x] &+ row[x - channels] }
+                        case 2:
+                            for x in 0 ..< stride { row[x] = input[x] &+ above[x] }
+                        case 3:
+                            for x in 0 ..< lead { row[x] = input[x] &+ above[x] >> 1 }
+                            for x in lead ..< stride {
+                                row[x] = input[x] &+ UInt8((UInt16(row[x - channels]) + UInt16(above[x])) >> 1)
+                            }
+                        case 4:
+                            // Paeth; with no left neighbour it picks the byte above.
+                            for x in 0 ..< lead { row[x] = input[x] &+ above[x] }
+                            for x in lead ..< stride {
+                                let a = Int(row[x - channels]), b = Int(above[x]), c = Int(above[x - channels])
+                                let pa = abs(b - c), pb = abs(a - c), pc = abs(a + b - 2 * c)
+                                row[x] = input[x] &+ UInt8(truncatingIfNeeded: pa <= pb && pa <= pc ? a : (pb <= pc ? b : c))
+                            }
+                        default:
+                            throw Failure.corrupt("row \(y) has filter \(filter)")
+                        }
+                    }
                 }
-                lines[row + x] = UInt8(restored & 0xFF)
             }
         }
     }
 
-    /// Widens whatever the file held into RGBA8.
     private static func expand(
         _ lines: [UInt8], width: Int, height: Int,
         colour: Int, channels: Int, palette: [UInt8]

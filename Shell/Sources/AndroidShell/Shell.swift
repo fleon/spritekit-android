@@ -247,6 +247,12 @@ public enum Shell {
                 continue
             }
             previous = now
+            // A frame that took far longer than its share: a stall on the
+            // frame thread (a page decoded, a shader compiled, a bake), the
+            // freezes a phone shows and an average hides.
+            if frame.delta >= Self.longFrame {
+                Log.info("long frame: \(Int((frame.delta * 1000).rounded())) ms before frame \(index)")
+            }
 
             probe?.tick(at: now)
             renderer.drawFrame(frame)
@@ -273,6 +279,10 @@ public enum Shell {
     /// milliseconds: a fraction of the shortest frame, so the next frame due
     /// is never late by more than that.
     static let skippedFrameWait: UInt32 = 2
+
+    /// How long a frame may take before the log calls it a stall: three
+    /// frames at 60 Hz.
+    static let longFrame: TimeInterval = 0.05
 
     static var sdlError: String { String(cString: SDL_GetError()) }
 

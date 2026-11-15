@@ -17,17 +17,19 @@ public enum MediaTime {
     /// Where the time comes from. The shell sets this before anything draws.
     public nonisolated(unsafe) static var source: () -> TimeInterval = defaultSource
 
-    private nonisolated(unsafe) static var base: TimeInterval?
+    /// Set once, by whichever thread asks first (a share film's asks off
+    /// the main one): a `static let` is initialised exactly once.
+    private static let base = monotonic()
 
     public static func defaultSource() -> TimeInterval {
+        let base = self.base
+        return monotonic() - base
+    }
+
+    private static func monotonic() -> TimeInterval {
         var now = timespec()
         clock_gettime(CLOCK_MONOTONIC, &now)
-        let seconds = TimeInterval(now.tv_sec) + TimeInterval(now.tv_nsec) / 1_000_000_000
-        guard let base else {
-            base = seconds
-            return 0
-        }
-        return seconds - base
+        return TimeInterval(now.tv_sec) + TimeInterval(now.tv_nsec) / 1_000_000_000
     }
 }
 

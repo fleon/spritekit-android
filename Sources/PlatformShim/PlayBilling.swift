@@ -97,6 +97,11 @@ public final class PlayBilling: BillingBackend {
         channel.call("billing.start", ["products": productIDs])
     }
 
+    /// On the main actor, as Play's answers are delivered there
+    /// (`PlatformBridge`): run off it, as a nonisolated `async` method
+    /// does, it called into Java and changed the waiters from a
+    /// libdispatch worker while the frame thread handled events.
+    @MainActor
     public func purchase(_ productID: String) async -> BillingResult {
         if ownedProducts.contains(productID) { return .purchased }
         return await withCheckedContinuation { continuation in
@@ -106,6 +111,7 @@ public final class PlayBilling: BillingBackend {
         }
     }
 
+    @MainActor
     public func restore() async -> Bool {
         await withCheckedContinuation { continuation in
             let first = restoreWaiters.isEmpty

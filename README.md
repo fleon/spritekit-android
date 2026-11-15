@@ -1280,6 +1280,42 @@ stand-in Share button are gone.
 Android has no Game Center, so a film credits "A Switchlings player" with
 one of the world's Switchlings, as iOS does signed out.
 
+## Work off the main thread
+
+The game builds scenes, world pages, backdrops, circuit floors and share
+films on threads of its own while the main one draws, as on Apple, and
+the port runs that as the game wrote it: the builds really do run on
+libdispatch's workers (`offMainActor` is the game's own, an unchecked call
+on the calling thread; `Task.detached`, `DispatchQueue.global` and
+`Thread` all start threads here: `top -H` shows `DispatchWorker` threads
+busy while a scene builds). They run near the frame thread's priority,
+though: a Linux thread takes the niceness of whoever started it, so the
+workers sit at -2 or -4 beside `SDLThread`'s -4, where Apple would run
+them below the main thread. What the audit found was the shim putting
+work back on the frame thread, or racing it:
+
+| site | threads | on Android | verdict |
+|---|---|---|---|
+| `LoadingScene` builds the next scene (`DispatchQueue.global` + `offMainActor`, back with `Task { @MainActor }`) | worker, then main | builds on a worker; the main actor's jobs run on the frame loop (`MainActorJobs`) | OK |
+| `SKTexture.preload` (the loading screen, `WorldTextures` for the world list and the title's tour, backdrops, the Level Designer) | the caller's | a no-op: every 2048-pixel page is read, inflated and premultiplied on the frame thread the first time it draws, the loading screen's warm-up draw included, so the loading screen stalls for each new page (`page N decoded in … ms` in the log). Decoding them on the preloading thread instead, as SpriteKit does, cut those stalls by 70% on an emulator but kept the loading screen up longer, as it decodes every page the scene and its neighbours hold before the scene shows: `claude/android-preload-decode`, to measure on a phone | risk |
+| PNG unfiltering (`PNGDecoder`) | the frame thread | a byte-at-a-time `switch`; now a row at a time through pointers, byte-identical on all of the art's PNGs and 2.7× faster | fixed |
+| `UIGraphicsImageRenderer` (`SurfaceTexture`, carets, credits, the circuit floor and lawns' masks off the main thread) | main and builds at once | **one context stack for every thread**: an image drawn on one could land in another's bitmap, and concurrent pushes tore the array (a crash in `ThreadingTests`); now per thread, as UIKit's is | fixed |
+| `SKView.texture(from:)`, a baked texture's `cgImage()` | main | GL calls, current on the frame thread alone; any other thread is now refused with an error in the log rather than drawing into whatever was bound | guarded |
+| World list pages, previews, backdrop planning (`pageQueue`, `previewQueue`), the title's boards, the designer's pieces and priming | workers, back by `DispatchQueue.main.async` | workers; `DispatchQueue.main` drained on the frame thread each pass (#401) | OK |
+| `BuildGate` (`NSLock`s), the lights' and rigs' locks, `OSAllocatedUnfairLock` (an `NSLock` here) | main and workers | pthread mutexes; every lock is unlocked on the thread that took it, which a mutex needs | OK |
+| `UISkin.using`, `UITraitCollection.performAsCurrent` | workers | the skin per thread (`threadDictionary`); the traits handed in are the global ones, so nothing is set | OK |
+| `RouteSolver`'s hint map (`Task.detached`), the soundtrack mix | the cooperative pool | libdispatch's global queues | OK |
+| `SolutionFilm` (`Thread`, `FilmDrawTurns`, `DispatchQueue.main.sync` to prime) | film thread and main | the film records off the main thread and the frame thread draws it; the lock is never held across a wait for the other | OK |
+| `MTLCommandBuffer.waitUntilCompleted` | film thread | woke before the completed handlers had run; now after | fixed |
+| `PlayBilling`, `PlayGamesAchievements`' `async` calls | **were** a libdispatch worker | Play's answers arrive on the frame thread, so the waiters raced it and Java was called from a worker; now on the main actor | fixed |
+| `MediaTime`'s start | any | a `static let` | fixed |
+| Text (`TextEngine`, `FontLibrary`, each face, `GlyphAtlas`) | main and builds | locked, each FreeType face behind its own lock | OK |
+
+Thread Sanitizer runs the host tests clean (`swift test --sanitize=thread
+--scratch-path .build/tsan`); before these fixes it reported eight races.
+The shell logs every frame that takes 50 ms or more (`long frame: … ms`),
+so a stall shows up in logcat wherever it happens.
+
 ## Every world's backdrop
 
 Every world's live backdrop draws behind its levels, lit by its own light,

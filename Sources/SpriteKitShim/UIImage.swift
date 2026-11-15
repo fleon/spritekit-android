@@ -138,10 +138,30 @@ public final class UIImage: @unchecked Sendable {
 
     /// The width and height out of a PNG's IHDR, which is always the first
     /// chunk: 8 bytes of signature, then length, type, width, height.
-    /// The renderers' contexts, innermost last (UIKit's context stack). One
-    /// thread draws images at a time in the game: the main one, or a build
-    /// off it holding the build gate.
-    nonisolated(unsafe) static var contexts: [BitmapContext] = []
+    /// The renderers' contexts on the calling thread, innermost last: UIKit
+    /// keeps a context stack per thread. The game draws on several at once:
+    /// the main thread's buttons and carets while a build off it draws a
+    /// circuit floor or a lawn's clearing, and one shared stack let each
+    /// draw into the other's context, or tore the array itself.
+    static var contexts: [BitmapContext] {
+        get { ContextStack.current.contexts }
+        set { ContextStack.current.contexts = newValue }
+    }
+
+    /// One thread's stack, kept in its thread dictionary.
+    private final class ContextStack {
+        var contexts: [BitmapContext] = []
+
+        private static let key = "SpriteKitShim.UIImage.contexts"
+
+        static var current: ContextStack {
+            let dictionary = Thread.current.threadDictionary
+            if let stack = dictionary[key] as? ContextStack { return stack }
+            let stack = ContextStack()
+            dictionary[key] = stack
+            return stack
+        }
+    }
 
     /// Decodes a PNG's bytes, which the shim can't inflate on its own; the
     /// shell installs its decoder. Without it, an image read from a file

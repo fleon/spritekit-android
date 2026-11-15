@@ -185,6 +185,9 @@ public final class MTLCommandBuffer: @unchecked Sendable {
     private var _status: MTLCommandBufferStatus = .notEnqueued
     private var _error: Error?
     private var handlers: [(MTLCommandBuffer) -> Void] = []
+    /// Set once the completed handlers have run: a wait ends only then, so
+    /// whatever a handler wrote is there for the waiter to read.
+    private var isFinished = false
     public private(set) var passes: [RecordedRenderPass] = []
 
     init(commandQueue: MTLCommandQueue) {
@@ -220,18 +223,21 @@ public final class MTLCommandBuffer: @unchecked Sendable {
         let handlers: [(MTLCommandBuffer) -> Void] = lock.withLock {
             _error = error
             _status = error == nil ? .completed : .error
-            lock.broadcast()
             defer { self.handlers = [] }
             return self.handlers
         }
         for handler in handlers { handler(self) }
+        lock.withLock {
+            isFinished = true
+            lock.broadcast()
+        }
     }
 
     public func waitUntilScheduled() {}
 
     public func waitUntilCompleted() {
         lock.lock()
-        while _status != .completed, _status != .error {
+        while !isFinished {
             if _status == .notEnqueued || _status == .enqueued { break }
             lock.wait()
         }

@@ -27,9 +27,8 @@ import Foundation
 /// the 6.4 Android SDK's interface.
 ///
 /// `DispatchQueue.main.async` is not covered: that goes to libdispatch's own
-/// queue, still bound to the UI thread. The game's few uses of it outside
-/// the main actor (`BuildGate`'s deferred light updates, `FilmDrawTurns`
-/// giving its turn back) are noted in Android/README.md.
+/// queue, which the shell binds to the same thread and drains once a pass
+/// (Android/README.md, "`DispatchQueue.main` runs on the game's thread").
 public enum MainActorJobs {
     /// The executor's reference, as the runtime passes executors: the object
     /// and its `SerialExecutor` witness table (with flag bits).

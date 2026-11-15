@@ -106,6 +106,11 @@ public final class PlayGamesAchievements: AchievementsBackend {
         channel.call("games.start")
     }
 
+    /// On the main actor, as Play's answers are delivered there
+    /// (`PlatformBridge`): run off it, as a nonisolated `async` method
+    /// does, it called into Java and changed the waiters from a
+    /// libdispatch worker while the frame thread handled events.
+    @MainActor
     public func load() async -> [String: Double] {
         guard isSignedIn else { return [:] }
         return await withCheckedContinuation { continuation in
@@ -115,6 +120,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
         }
     }
 
+    @MainActor
     public func report(_ progress: [String: Double], showingBanners: Bool) async -> Bool {
         guard isSignedIn else { return false }
         var items: [[String: Any]] = []
@@ -145,6 +151,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
         channel.call("games.showAchievements")
     }
 
+    @MainActor
     public func localPlayer() async -> (name: String, photo: Data?)? {
         guard isSignedIn else { return nil }
         return await withCheckedContinuation { (continuation: CheckedContinuation<(name: String, photo: Data?)?, Never>) in

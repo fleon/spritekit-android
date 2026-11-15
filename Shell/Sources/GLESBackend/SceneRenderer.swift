@@ -174,7 +174,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // The pages decode straight, as PNGs hold them; SpriteKit's
         // textures, and so the blend and the game's shaders, are
         // premultiplied (`Premultiply`).
-        cache.pageSource = { pageLoader($0).map { ($0.width, $0.height, Premultiply.rgba($0.pixels)) } }
+        // Each page decodes on the frame thread as it first draws: the log
+        // says how long it held the frame, the loading screen's stalls.
+        cache.pageSource = { number in
+            let started = DispatchTime.now().uptimeNanoseconds
+            let page = pageLoader(number).map { ($0.width, $0.height, Premultiply.rgba($0.pixels)) }
+            let took = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+            Log.info("page \(number) decoded in \(String(format: "%.0f", took)) ms")
+            return page
+        }
         // Textures the asset index does not back: the noise lattices the
         // shaders sample (`Starlight.noise` is an `SKTexture(data:size:)`
         // the sky's nebula, its clouds and its mottled blue all read through
@@ -266,9 +274,17 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // the renderer can answer, since only it has a framebuffer. The hook
         // is `SKViewSnapshot.swift`'s, which also explains why the priming
         // calls that throw the texture away need no pixels here.
-        SKTexture.readBack = { [weak self] texture in self?.readBack(texture) }
+        // Both draw or read with GL, whose context is current on the frame
+        // thread alone; called from another they'd draw nothing, or into
+        // whatever the frame thread had bound (as `texture(from:)` off
+        // SpriteKit's main thread is wrong on Apple too). Refused, loudly.
+        SKTexture.readBack = { [weak self] texture in
+            guard Self.onGLThread("cgImage() of a baked texture") else { return nil }
+            return self?.readBack(texture)
+        }
         SKView.snapshot = { [weak self] _, node, crop in
-            self?.bake(node, crop: crop)
+            guard Self.onGLThread("SKView.texture(from:)") else { return nil }
+            return self?.bake(node, crop: crop)
         }
 
         // `SKRenderer`'s command buffers (a share film) draw here, on this
@@ -804,6 +820,20 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// `SKView.texture(from:)`: a subtree rendered to a texture the game then
     /// samples. Every live backdrop bakes its floor this way once per layout.
+    /// Whether the caller is on the frame thread, whose GL context the
+    /// renderer draws with; says so once for each `what` that isn't.
+    nonisolated private static func onGLThread(_ what: String) -> Bool {
+        guard !Thread.isMainThread else { return true }
+        offThreadLock.lock()
+        let first = offThreadCalls.insert(what).inserted
+        offThreadLock.unlock()
+        if first { Log.error("\(what) called off the frame thread (\(Thread.current.name ?? "unnamed")): refused, as GL is current only there") }
+        return false
+    }
+
+    nonisolated private static let offThreadLock = NSLock()
+    nonisolated(unsafe) private static var offThreadCalls: Set<String> = []
+
     private func bake(_ node: SKNode, crop: CGRect?) -> SKTexture? {
         // The subtree draws with the node's own transform (a crop is given
         // in that space too: the lawn bakes a root scaled by its floor's
