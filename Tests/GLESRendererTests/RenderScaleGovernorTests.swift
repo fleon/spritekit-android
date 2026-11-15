@@ -51,6 +51,19 @@ struct RenderScaleGovernorTests {
         #expect(governor.scale == 0.58)
     }
 
+    @Test("The ceiling holds it down, and lowering it takes effect at once")
+    func ceiling() {
+        var governor = RenderScaleGovernor()
+        governor.ceiling = 0.75
+        #expect(governor.scale == 0.75)
+        for _ in 0..<40 { _ = window(&governor, frame: budget) }
+        #expect(governor.scale == 0.75)
+        // Raised again, it tries its way back up.
+        governor.ceiling = 1
+        for _ in 0..<40 { _ = window(&governor, frame: budget) }
+        #expect(governor.scale == 1)
+    }
+
     @Test("A starting scale between steps rounds down to one")
     func startingScale() {
         #expect(RenderScaleGovernor(scale: 0.7).scale == 0.67)

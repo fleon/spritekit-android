@@ -94,6 +94,29 @@ public final class AndroidGameController {
         AudioManager.use(backend)
     }
 
+    /// The graphics setting's ceiling for the render scale
+    /// (`DisplaySettings.Graphics`), which the renderer keeps under.
+    public static var renderScaleCap: Double { DisplaySettings.renderScaleCap }
+
+    /// A render scale nothing moves (`-RenderScale`, or a capture running).
+    public static var pinnedRenderScale: Double? { DisplaySettings.pinnedRenderScale }
+
+    /// Where the render scale starts: where this device settled last time.
+    public static var startingRenderScale: Double { DisplaySettings.startingRenderScale }
+
+    /// Calls `changed` with the ceiling whenever the graphics setting moves.
+    public static func observeRenderScaleCap(_ changed: @escaping @MainActor (Double) -> Void) {
+        _ = NotificationCenter.default.addObserver(forName: DisplaySettings.graphicsDidChange, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated { changed(DisplaySettings.renderScaleCap) }
+        }
+    }
+
+    /// The scale the renderer settled on for a while, which measures the
+    /// setting shown until the player picks one.
+    public static func noteRenderScale(_ scale: Double) {
+        DisplaySettings.noteRenderScale(scale)
+    }
+
     /// `-OpenLinkAfter`'s link and delay, opened once the game shows.
     private static var laterLink: (url: URL, delay: TimeInterval)?
 

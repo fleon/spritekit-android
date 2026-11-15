@@ -137,12 +137,31 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Shaders still count the screen's own pixels (`FragCoordSpace`), so
     /// the lights and the edge blur land where they do at full size.
     public var renderScale: CGFloat = 1
+    /// The graphics setting's ceiling for `renderScale`.
+    public var renderScaleCeiling: Double = 1 {
+        didSet {
+            governor.ceiling = renderScaleCeiling
+            if !pinsRenderScale { renderScale = CGFloat(governor.scale) }
+        }
+    }
+    /// Told the scale each time the governor has judged a window of frames.
+    public var onRenderScaleJudged: ((Double) -> Void)?
+    private var judgedWindows = 0
     /// Set once something chose `renderScale` (`debug.switchlings.renderscale`):
     /// the governor leaves it alone.
     public var pinsRenderScale = false
     private var sceneTarget: RenderTargetHandle = .none
     /// Moves `renderScale` with how frames keep time (`RenderScaleGovernor`).
     private var governor = RenderScaleGovernor()
+    /// Where the governor starts: where this device was measured to draw
+    /// last time (`AndroidGameController.startingRenderScale`).
+    public var startingRenderScale: Double = 1 {
+        didSet {
+            governor = RenderScaleGovernor(scale: startingRenderScale)
+            governor.ceiling = renderScaleCeiling
+            if !pinsRenderScale { renderScale = CGFloat(governor.scale) }
+        }
+    }
     /// One refresh of the display: a frame's budget, at the most.
     private var refreshInterval = 1.0 / 60
 
@@ -425,6 +444,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let budget = max(refreshInterval, 1 / Double(max(view.preferredFramesPerSecond, 1)))
         if !pinsRenderScale, governor.add(frame: frame.delta, cpu: MediaTime.source() - started, budget: budget) {
             renderScale = CGFloat(governor.scale)
+        }
+        if !pinsRenderScale, governor.windows != judgedWindows {
+            judgedWindows = governor.windows
+            onRenderScaleJudged?(governor.scale)
         }
 
         targets.evictKept(except: liveKept)

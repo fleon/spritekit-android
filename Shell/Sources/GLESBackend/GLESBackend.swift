@@ -94,6 +94,18 @@ public enum GLESBackend {
             renderer.view.transitionSpeed = 1 / slowdown
             Log.info("transitions \(slowdown)x slower")
         }
+        // The graphics setting caps the render scale, and the scale the
+        // renderer settles on measures the setting shown till one's picked.
+        renderer.renderScaleCeiling = AndroidGameController.renderScaleCap
+        renderer.startingRenderScale = AndroidGameController.startingRenderScale
+        AndroidGameController.observeRenderScaleCap { [weak renderer] cap in renderer?.renderScaleCeiling = cap }
+        renderer.onRenderScaleJudged = { AndroidGameController.noteRenderScale($0) }
+        // `-RenderScale`, or a capture running: every pixel, or the pin's.
+        if let pinned = AndroidGameController.pinnedRenderScale {
+            renderer.renderScale = CGFloat(pinned)
+            renderer.pinsRenderScale = true
+            Log.info("render scale held at \(pinned)")
+        }
         if let scale = DebugProperty.string("debug.switchlings.renderscale").flatMap(Double.init), scale > 0 {
             renderer.renderScale = scale
             renderer.pinsRenderScale = true
