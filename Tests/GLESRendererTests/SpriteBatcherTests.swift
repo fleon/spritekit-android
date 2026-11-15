@@ -260,3 +260,100 @@ struct NestedPassTests {
         if case .label = passes[1] {} else { Issue.record("expected the label in the middle") }
     }
 }
+
+@Suite("Batches across empty crops and pass-through effects")
+struct InlineTests {
+    @Test("A crop with no mask doesn't break the batch, and keeps its place in the order")
+    func cropWithoutMask() {
+        let texture = SKTexture(imageNamed: "Brick")
+        let list = scene { s in
+            s.addChild(sprite(texture, at: CGPoint(x: 0, y: 0)))
+            let crop = SKCropNode()
+            crop.addChild(sprite(texture, at: CGPoint(x: 20, y: 0)))
+            s.addChild(crop)
+            s.addChild(sprite(texture, at: CGPoint(x: 40, y: 0)))
+        }
+        let passes = SpriteBatcher().passes(for: list)
+        #expect(passes.count == 1)
+        guard case let .batches(batches) = passes.first else { Issue.record("expected batches"); return }
+        #expect(batches.count == 1)
+        #expect(batches[0].quadCount == 3)
+        // The middle quad is the crop's, where it was.
+        let x = batches[0].vertices[4 * SpriteBatcher.floatsPerVertex]
+        #expect(x == 15)
+    }
+
+    @Test("An effect node with no shader, cache or fade draws its children in place, carried by its transform")
+    func passThroughEffect() {
+        let texture = SKTexture(imageNamed: "Brick")
+        let list = scene { s in
+            s.addChild(sprite(texture))
+            let effect = SKEffectNode()
+            effect.position = CGPoint(x: 30, y: 5)
+            effect.setScale(2)
+            effect.addChild(sprite(texture))
+            s.addChild(effect)
+        }
+        let passes = SpriteBatcher().passes(for: list)
+        #expect(passes.count == 1)
+        guard case let .batches(batches) = passes.first else { Issue.record("expected batches"); return }
+        #expect(batches.count == 1)
+        #expect(batches[0].quadCount == 2)
+        // The effect's quad: 20 points wide round (30, 5).
+        let at = 4 * SpriteBatcher.floatsPerVertex
+        #expect(batches[0].vertices[at] == 20)
+        #expect(batches[0].vertices[at + 1] == -5)
+    }
+
+    @Test("A cached effect node whose pixels are still good is composited without its contents")
+    func freshRaster() {
+        let effect = SKEffectNode()
+        effect.shouldRasterize = true
+        effect.addChild(sprite(SKTexture(imageNamed: "Brick")))
+        let list = scene { $0.addChild(effect) }
+        var batcher = SpriteBatcher()
+        guard case let .effect(_, _, _, _, _, _, _, _, _, contents)? = batcher.passes(for: list).first else {
+            Issue.record("expected the effect"); return
+        }
+        #expect(!contents.isEmpty)
+        batcher.rasterIsFresh = { _, _, _ in true }
+        guard case let .effect(_, _, _, _, _, _, _, _, _, kept)? = batcher.passes(for: list).first else {
+            Issue.record("expected the effect"); return
+        }
+        #expect(kept.isEmpty)
+    }
+}
+
+@Suite("Culling")
+struct CullingTests {
+    @Test("Sprites wholly outside the view are left out; those touching it, warped ones and effects stay")
+    @MainActor func culls() {
+        let scene = SKScene(size: CGSize(width: 100, height: 100))
+        let inside = sprite(at: CGPoint(x: 50, y: 50))
+        let outside = sprite(at: CGPoint(x: 300, y: 50))
+        let touching = sprite(size: 20, at: CGPoint(x: 108, y: 50))
+        let warped = sprite(at: CGPoint(x: -300, y: 50))
+        warped.warpGeometry = SKWarpGeometryGrid(columns: 1, rows: 1)
+        let effect = SKEffectNode()
+        effect.shader = SKShader(source: "void main() { gl_FragColor = vec4(1.0); }")
+        effect.addChild(sprite(at: CGPoint(x: 500, y: 500)))
+        for node in [inside, outside, touching, warped, effect] { scene.addChild(node) }
+        let all = DrawList(scene: scene, transform: .identity)
+        let culled = DrawList(scene: scene, transform: .identity, culling: CGRect(x: 0, y: 0, width: 100, height: 100))
+        #expect(all.spriteCount == 5)
+        #expect(culled.spriteCount == 4)
+    }
+
+    @Test("Inside an effect node that passes through, children cull by the view in its own space")
+    @MainActor func cullsThroughPassThrough() {
+        let scene = SKScene(size: CGSize(width: 100, height: 100))
+        let effect = SKEffectNode()
+        effect.position = CGPoint(x: 200, y: 0)
+        effect.addChild(sprite(at: CGPoint(x: -150, y: 50)))
+        effect.addChild(sprite(at: CGPoint(x: 0, y: 50)))
+        scene.addChild(effect)
+        let culled = DrawList(scene: scene, transform: .identity, culling: CGRect(x: 0, y: 0, width: 100, height: 100))
+        #expect(culled.spriteCount == 1)
+    }
+}
+

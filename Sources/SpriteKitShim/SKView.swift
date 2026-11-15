@@ -74,7 +74,8 @@ open class SKView: UIView {
     /// Always so here: the draw list is ordered by depth alone (README,
     /// "a frame is a value"), which is what this asks SpriteKit for.
     public var ignoresSiblingOrder = true
-    /// Carried: nothing off screen costs more than its transform here.
+    /// Sprites wholly outside what the view shows are left out of the frame
+    /// (`DrawList(scene:transform:culling:)`), as SpriteKit culls them.
     public var shouldCullNonVisibleNodes = true
 
     /// How fast transitions play: the port's own, for filming a 0.1-second
@@ -232,7 +233,7 @@ open class SKView: UIView {
 
         // Either scene may have presented another meanwhile.
         guard let shown = self.scene else { return DrawList() }
-        guard let flight else { return Self.picture(of: shown) }
+        guard let flight else { return Self.picture(of: shown, culling: shouldCullNonVisibleNodes) }
         return compose(flight, incoming: shown)
     }
 
@@ -259,12 +260,15 @@ open class SKView: UIView {
     /// A scene as the view shows it, in its own coordinates as they are
     /// with no camera (`visibleFrame`'s): its background over the whole
     /// view, then its contents through its camera.
-    static func picture(of scene: SKScene) -> DrawList {
+    /// With `culling`, what lies wholly outside the view is left out: a
+    /// transition moves a scene's picture after this, so it's culled by the
+    /// scene's own frame, which keeps all that can show.
+    static func picture(of scene: SKScene, culling: Bool = false) -> DrawList {
         var list = DrawList()
         if scene.backgroundColor.alpha > 0 {
             list.commands.append(.sprite(fill(scene.visibleFrame, colour: scene.backgroundColor, alpha: 1)))
         }
-        list.commands += DrawList(scene: scene, transform: scene.cameraTransform).commands
+        list.commands += DrawList(scene: scene, transform: scene.cameraTransform, culling: culling ? scene.visibleFrame : nil).commands
         return list
     }
 
@@ -287,12 +291,12 @@ open class SKView: UIView {
             switch layer {
             case let .outgoing(offset, alpha):
                 list.commands += Self.layer(
-                    Self.picture(of: flight.outgoing), of: flight.outgoing,
+                    Self.picture(of: flight.outgoing, culling: shouldCullNonVisibleNodes), of: flight.outgoing,
                     placed: across, offset: offset, alpha: alpha, in: frame
                 )
             case let .incoming(offset, alpha):
                 list.commands += Self.layer(
-                    Self.picture(of: incoming), of: incoming,
+                    Self.picture(of: incoming, culling: shouldCullNonVisibleNodes), of: incoming,
                     placed: .identity, offset: offset, alpha: alpha, in: frame
                 )
             case let .colour(colour, alpha):

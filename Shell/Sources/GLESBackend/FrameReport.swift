@@ -41,6 +41,10 @@ struct FrameReport {
     /// that carries to a phone unchanged.
     private var sceneTimes: [Double] = []
     private var scales: [Double] = []
+    /// The frame thread's CPU time from one frame to the next: its work,
+    /// whatever it waited on (the GPU, the swap) left out.
+    private var threadTimes: [Double] = []
+    private var lastThreadTime: Double?
 
     mutating func begin(_ label: String) {
         self.label = label
@@ -50,7 +54,10 @@ struct FrameReport {
     /// the GPU and the swap), `cpu` the time inside `drawFrame`.
     mutating func add(delta: Double, cpu: Double, scene: Double, renderScale: Double, renderer: SceneRenderer) {
         frames += 1
+        let thread = Self.threadTime()
+        defer { lastThreadTime = thread }
         guard frames > Self.warmUp else { return }
+        if let last = lastThreadTime { threadTimes.append(thread - last) }
         times.append(delta)
         cpuTimes.append(cpu)
         sceneTimes.append(scene)
@@ -61,6 +68,14 @@ struct FrameReport {
         cpuTimes.removeAll(keepingCapacity: true)
         sceneTimes.removeAll(keepingCapacity: true)
         scales.removeAll(keepingCapacity: true)
+        threadTimes.removeAll(keepingCapacity: true)
+    }
+
+    /// The calling thread's CPU time, in seconds.
+    private static func threadTime() -> Double {
+        var now = timespec()
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now)
+        return Double(now.tv_sec) + Double(now.tv_nsec) / 1_000_000_000
     }
 
     private func report(_ renderer: SceneRenderer) {
@@ -74,14 +89,19 @@ struct FrameReport {
             frame.median > 0 ? 1 / frame.median : 0,
             cpu.median * 1000, cpu.p95 * 1000, scene.median * 1000
         ))
+        let thread = Self.summary(threadTimes)
+        Log.info(String(
+            format: "[frames] %@ thread cpu p50 %.2f ms p95 %.2f ms",
+            label, thread.median * 1000, thread.p95 * 1000
+        ))
         Log.info(String(
             format: "[frames] %@ render scale p50 %.2f min %.2f max %.2f",
             label, Self.summary(scales).median, scales.min() ?? 0, scales.max() ?? 0
         ))
         Log.info(String(
-            format: "[frames] %@ draw calls %d  target binds %d  quads %d  effects drawn %d cached %d",
+            format: "[frames] %@ draw calls %d  target binds %d  quads %d  effects drawn %d cached %d  buffer maps %d",
             label, renderer.drawCalls, renderer.targetBinds, renderer.quadsDrawn,
-            renderer.effectsDrawn, renderer.effectsCached
+            renderer.effectsDrawn, renderer.effectsCached, renderer.streamMaps
         ))
         Log.info(String(
             format: "[frames] %@ nodes %d  texture memory %.1f MB",

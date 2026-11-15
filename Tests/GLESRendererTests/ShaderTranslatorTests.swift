@@ -61,8 +61,10 @@ struct PreambleTests {
         // a pressed plate's fading cap depend on it.
         let out = ShaderTranslator.fragmentShader(from: "void main() { gl_FragColor = SKDefaultShading(); }")
         #expect(out.contains("in float v_blend;"))
-        #expect(out.contains("mix(texel.rgb, v_color_mix.rgb * texel.a, v_blend)"))
-        #expect(out.contains("* v_color_mix.a;"))
+        #expect(out.contains("mediump vec4 tint = v_color_mix;"))
+        #expect(out.contains("mediump float blend = v_blend;"))
+        #expect(out.contains("mix(texel.rgb, tint.rgb * texel.a, blend)"))
+        #expect(out.contains("* tint.a;"))
         let declared = ShaderTranslator.fragmentShader(from: "varying float v_blend; void main() { gl_FragColor = SKDefaultShading() * v_blend; }")
         #expect(declared.components(separatedBy: "float v_blend;").count - 1 == 1)
     }
@@ -261,5 +263,18 @@ struct VertexTests {
         )
         #expect(fragment.contains("uniform vec4 a_run;"))
         #expect(!fragment.contains("in vec4 a_run;"))
+    }
+
+    @Test("The built-in shaders do their colour maths in half precision, their coordinates in full")
+    func builtInPrecision() {
+        for source in [ShaderTranslator.defaultFragmentShader, ShaderTranslator.maskFragmentShader, ShaderTranslator.coverageMaskFragmentShader] {
+            #expect(source.contains("precision mediump float;"))
+            #expect(source.contains("in highp vec2 v_tex_coord;"))
+            #expect(!source.contains("precision highp float;"))
+        }
+        // The game's own shaders keep full precision.
+        let game = ShaderTranslator.fragmentShader(from: "void main() { gl_FragColor = vec4(1.0); }")
+        #expect(game.contains("precision highp float;"))
+        #expect(ShaderTranslator.spriteVertexShader().contains("precision highp float;"))
     }
 }

@@ -150,10 +150,42 @@ public struct DrawList {
 
     /// The same, drawn through `transform`: how the view puts a scene behind
     /// its camera (`SKScene.cameraTransform`).
-    @MainActor public init(scene: SKNode, transform: CGAffineTransform) {
+    ///
+    /// With `culling`, the rect the view shows in the list's coordinates
+    /// (`SKView.shouldCullNonVisibleNodes`), a sprite whose quad lies wholly
+    /// outside it is left out: its fragments would all be clipped, so the
+    /// picture can't change. Only quads are culled: a warped sprite can reach
+    /// past its frame, and effect and crop nodes, labels and shapes are kept
+    /// whole.
+    @MainActor public init(scene: SKNode, transform: CGAffineTransform, culling: CGRect? = nil) {
         var entries: [(CGFloat, Command)] = []
-        DrawList.collect(scene, parentTransform: transform, parentAlpha: 1, parentZ: 0, into: &entries)
+        let cull = culling.map { $0.insetBy(dx: -Self.cullMargin, dy: -Self.cullMargin) }
+        DrawList.collect(scene, parentTransform: transform, parentAlpha: 1, parentZ: 0, cull: cull, into: &entries)
         commands = DrawList.ordered(entries)
+    }
+
+    /// Points kept round the culling rect, so rounding never drops a quad
+    /// that touches its edge.
+    static let cullMargin: CGFloat = 2
+
+    /// Whether a quad of `size` anchored at `anchor`, carried by `transform`,
+    /// lies wholly outside `cull`.
+    static func isCulled(size: CGSize, anchor: CGPoint, transform t: CGAffineTransform, by cull: CGRect) -> Bool {
+        let x0 = -size.width * anchor.x, y0 = -size.height * anchor.y
+        let x1 = x0 + size.width, y1 = y0 + size.height
+        let xs = (t.a * x0 + t.c * y0, t.a * x1 + t.c * y0, t.a * x1 + t.c * y1, t.a * x0 + t.c * y1)
+        let ys = (t.b * x0 + t.d * y0, t.b * x1 + t.d * y0, t.b * x1 + t.d * y1, t.b * x0 + t.d * y1)
+        let minX = min(min(xs.0, xs.1), min(xs.2, xs.3)) + t.tx
+        let maxX = max(max(xs.0, xs.1), max(xs.2, xs.3)) + t.tx
+        let minY = min(min(ys.0, ys.1), min(ys.2, ys.3)) + t.ty
+        let maxY = max(max(ys.0, ys.1), max(ys.2, ys.3)) + t.ty
+        return maxX < cull.minX || minX > cull.maxX || maxY < cull.minY || minY > cull.maxY
+    }
+
+    /// A sprite command the cull rect leaves out.
+    static func isCulled(_ sprite: Sprite, by cull: CGRect?) -> Bool {
+        guard let cull, sprite.warp == nil else { return false }
+        return isCulled(size: sprite.size, anchor: sprite.anchorPoint, transform: sprite.transform, by: cull)
     }
 
     /// Stable sort by accumulated z: ties keep tree order.
@@ -186,6 +218,7 @@ public struct DrawList {
         parentTransform: CGAffineTransform,
         parentAlpha: CGFloat,
         parentZ: CGFloat,
+        cull: CGRect? = nil,
         into entries: inout [(CGFloat, Command)]
     ) {
         guard !node.isHidden, node.alpha > 0 else { return }
@@ -199,7 +232,17 @@ public struct DrawList {
         if let effect = node as? SKEffectNode, effect.shouldEnableEffects {
             // Ordered before it is digested: draw order is part of what a
             // rasterized node's cached pixels depend on.
-            let contents = wrap(ordered(children(of: node, transform: .identity, alpha: 1, z: 0)))
+            // One that composites to its children drawn in place (no shader,
+            // cache or fade) has no texture of its own to fill, so its
+            // contents cull as the rest of the scene does, by the view's
+            // rect in its own space. One that does fill a texture keeps
+            // every child: its texture spans the off-screen ones too.
+            var inner: CGRect?
+            if let cull, effect.shader == nil, !effect.shouldRasterize, alpha >= 0.999,
+               transform.a * transform.d - transform.b * transform.c != 0 {
+                inner = cull.applying(transform.inverted())
+            }
+            let contents = wrap(ordered(children(of: node, transform: .identity, alpha: 1, z: 0, cull: inner)))
             entries.append((z, Command.effect(Effect(
                 bounds: effect.effectBounds,
                 transform: transform,
@@ -226,7 +269,7 @@ public struct DrawList {
             if let maskNode = crop.maskNode {
                 collect(maskNode, parentTransform: transform, parentAlpha: 1, parentZ: 0, into: &mask)
             }
-            let contents = children(of: node, transform: transform, alpha: alpha, z: 0)
+            let contents = children(of: node, transform: transform, alpha: alpha, z: 0, cull: cull)
             entries.append((z, Command.crop(Crop(
                 transform: transform,
                 mask: wrap(ordered(mask)),
@@ -273,6 +316,7 @@ public struct DrawList {
                     command.warp = grid
                     command.subdivisionLevels = sprite.subdivisionLevels
                 }
+                if isCulled(command, by: cull) { continue }
                 entries.append((z, .sprite(command)))
             }
         } else if let shape = node as? SKShapeNode {
@@ -300,13 +344,16 @@ public struct DrawList {
             ))))
         } else if let emitter = node as? SKEmitterNode {
             // Its particles, one sprite each, at its own depth.
-            entries.append(contentsOf: emitter.particleCommands(transform: transform, alpha: alpha, z: z))
+            for entry in emitter.particleCommands(transform: transform, alpha: alpha, z: z) {
+                if cull != nil, case let .sprite(particle) = entry.1, isCulled(particle, by: cull) { continue }
+                entries.append(entry)
+            }
         }
 
         // Each descendant keeps its own accumulated z. Re-keying a whole
         // subtree by the child's z here is what used to keep it in one block.
         for child in node.children {
-            collect(child, parentTransform: transform, parentAlpha: alpha, parentZ: z, into: &entries)
+            collect(child, parentTransform: transform, parentAlpha: alpha, parentZ: z, cull: cull, into: &entries)
         }
     }
 
@@ -344,11 +391,12 @@ public struct DrawList {
         of node: SKNode,
         transform: CGAffineTransform,
         alpha: CGFloat,
-        z: CGFloat
+        z: CGFloat,
+        cull: CGRect? = nil
     ) -> [(CGFloat, Command)] {
         var entries: [(CGFloat, Command)] = []
         for child in node.children {
-            collect(child, parentTransform: transform, parentAlpha: alpha, parentZ: z, into: &entries)
+            collect(child, parentTransform: transform, parentAlpha: alpha, parentZ: z, cull: cull, into: &entries)
         }
         return entries
     }

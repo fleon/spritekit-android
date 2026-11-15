@@ -183,9 +183,13 @@ public enum ShaderTranslator {
             lines.insert("in float v_blend;", at: lines.firstIndex(of: "out vec4 \(fragColor);") ?? lines.endIndex)
         }
         if usesDefaultShading {
+            // Its colour maths in half precision, as the default shader's;
+            // the coordinate it samples at stays the shader's own.
             lines.append("vec4 SKDefaultShading() {")
-            lines.append("    vec4 texel = texture(u_texture, v_tex_coord);")
-            lines.append("    return vec4(mix(texel.rgb, v_color_mix.rgb * texel.a, v_blend), texel.a) * v_color_mix.a;")
+            lines.append("    mediump vec4 texel = texture(u_texture, v_tex_coord);")
+            lines.append("    mediump vec4 tint = v_color_mix;")
+            lines.append("    mediump float blend = v_blend;")
+            lines.append("    return vec4(mix(texel.rgb, tint.rgb * texel.a, blend), texel.a) * tint.a;")
             lines.append("}")
             lines.append("")
         }
@@ -229,12 +233,17 @@ public enum ShaderTranslator {
     /// multiply through by the node's composited alpha. The art is
     /// premultiplied, so the tint is scaled by the sample's alpha — tinting
     /// a transparent pixel must leave it transparent, not paint it.
+    ///
+    /// Half precision for the colour maths (Mali runs `mediump` at about
+    /// twice the rate), full for the texture coordinate: a big page's texel
+    /// is finer than half floats step near 1, so a `mediump` coordinate
+    /// would wobble the art.
     public static let defaultFragmentShader = """
     #version 300 es
 
-    precision highp float;
+    precision mediump float;
 
-    in vec2 v_tex_coord;
+    in highp vec2 v_tex_coord;
     in vec4 v_color_mix;
     in float v_blend;
 
@@ -297,9 +306,9 @@ public enum ShaderTranslator {
     public static let maskFragmentShader = """
     #version 300 es
 
-    precision highp float;
+    precision mediump float;
 
-    in vec2 v_tex_coord;
+    in highp vec2 v_tex_coord;
     in vec4 v_color_mix;
     in float v_blend;
 
@@ -321,9 +330,9 @@ public enum ShaderTranslator {
     public static let coverageMaskFragmentShader = """
     #version 300 es
 
-    precision highp float;
+    precision mediump float;
 
-    in vec2 v_tex_coord;
+    in highp vec2 v_tex_coord;
     in vec4 v_color_mix;
     in float v_blend;
 

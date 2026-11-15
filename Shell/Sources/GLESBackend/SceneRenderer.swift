@@ -13,7 +13,7 @@ import TextShaping
 public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private let device = GLDevice()
     private let cache: ResourceCache
-    private let batcher = SpriteBatcher()
+    private var batcher = SpriteBatcher()
     private lazy var targets = RenderTargetPool(device: device)
 
     /// The view the game presents its scenes in. Its bounds are in points
@@ -30,9 +30,16 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// How long a frame waits for a film being made to commit its next.
     private static let filmTurnWait: TimeInterval = 0.012
 
+    /// The frame's sprites and composites, written once a frame (`stage`).
     private var vao: GLuint = 0
     private var vbo: GLuint = 0
     private var ebo: GLuint = 0
+    /// What's drawn as it comes (text, shapes, bakes): written draw by draw.
+    private var dynamicVAO: GLuint = 0
+    private var dynamicVBO: GLuint = 0
+    private var dynamicEBO: GLuint = 0
+    /// The GL state as last set (`GLStateCache`).
+    private var state = GLStateCache()
     private var defaultProgram: GLuint = 0
     /// Glyphs and rasterised shape masks: 8-bit coverage, the node's colour.
     private var coverageProgram: GLuint = 0
@@ -141,6 +148,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// against what they'd take as RGBA8.
     public var textureCount: Int { cache.uploadedTextureCount }
     public var textureBytes: (gpu: Int, rgba: Int) { cache.uploadedTextureBytes }
+    /// Buffer maps this frame: two for the staged stream, two for each
+    /// draw written as it comes.
+    public private(set) var streamMaps = 0
 
     /// Where each per-node attribute sits in each program, looked up once.
     /// A rig mesh sprite carries twelve of them and there are dozens of
@@ -153,10 +163,25 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// `glGetUniformLocation` is a name lookup in the driver each time.
     private var uniformLocations: [GLuint: [String: GLint]] = [:]
 
-    /// The frame's vertex and index data share one buffer each, written
-    /// batch after batch (`upload`). Re-specifying a buffer for every draw,
-    /// as this did, makes a tiler's driver find new memory a few hundred
-    /// times a frame while the GPU still holds the old.
+    /// The frame's batches and composites go into one vertex and one index
+    /// buffer, each mapped once (`stage`), their indices counting from the
+    /// buffer's start so the vertex attributes are pointed once, when the
+    /// buffers are made. Re-specifying a buffer for every draw makes a
+    /// tiler's driver find new memory a few hundred times a frame while the
+    /// GPU still holds the old.
+    private var stagedVertexCapacity = 0
+    private var stagedIndexCapacity = 0
+    /// Composite quads staged with the frame, by their effect node.
+    private var stagedComposites: [ObjectIdentifier: SpriteBatcher.Batch] = [:]
+    /// Each rasterizing effect node's contents as last batched, for a kept
+    /// target that must draw again although the batcher left its contents
+    /// out as fresh (`rasterIsFresh`): a new size (the render scale moved).
+    private var rasterContents: [ObjectIdentifier: [SpriteBatcher.Pass]] = [:]
+    /// The nodes whose contents the batcher left out this frame.
+    private var skippedRaster: Set<ObjectIdentifier> = []
+    /// What's drawn as it comes is written after the last, in buffers of
+    /// its own (`uploadDynamic`), so the staged stream is never orphaned
+    /// while draws that read it are still to come.
     private var vertexCapacity = 0
     private var indexCapacity = 0
     private var vertexOffset = 0
@@ -294,27 +319,35 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         glGetIntegerv(GLenum(GL_MAX_FRAGMENT_UNIFORM_VECTORS), &maxFragmentVectors)
         Log.info("max fragment uniform vectors \(maxFragmentVectors)")
 
-        glGenVertexArrays(1, &vao)
-        glBindVertexArray(vao)
-        glGenBuffers(1, &vbo)
-        glGenBuffers(1, &ebo)
+        state.forgetAll()
+        // Two vertex arrays, each over its own pair of buffers, its
+        // attributes pointed once at the buffer's start: indices count from
+        // there (`stage`, `uploadDynamic`).
+        func vertexArray(_ array: inout GLuint, _ vertices: inout GLuint, _ indices: inout GLuint) {
+            glGenVertexArrays(1, &array)
+            glBindVertexArray(array)
+            glGenBuffers(1, &vertices)
+            glGenBuffers(1, &indices)
+            glBindBuffer(GLenum(GL_ARRAY_BUFFER), vertices)
+            glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), indices)
 
-        glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
-        glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), ebo)
-
-        // The batcher's interleaving: x y u v r g b a blend.
-        let stride = GLsizei(SpriteBatcher.floatsPerVertex * MemoryLayout<Float>.size)
-        func attribute(_ index: GLuint, _ count: GLint, _ offsetInFloats: Int) {
-            glEnableVertexAttribArray(index)
-            glVertexAttribPointer(
-                index, count, GLenum(GL_FLOAT), GLboolean(GL_FALSE), stride,
-                UnsafeRawPointer(bitPattern: offsetInFloats * MemoryLayout<Float>.size)
-            )
+            // The batcher's interleaving: x y u v r g b a blend.
+            let stride = GLsizei(Self.vertexStride)
+            func attribute(_ index: GLuint, _ count: GLint, _ offsetInFloats: Int) {
+                glEnableVertexAttribArray(index)
+                glVertexAttribPointer(
+                    index, count, GLenum(GL_FLOAT), GLboolean(GL_FALSE), stride,
+                    UnsafeRawPointer(bitPattern: offsetInFloats * MemoryLayout<Float>.size)
+                )
+            }
+            attribute(GLDevice.Attribute.position, 2, 0)
+            attribute(GLDevice.Attribute.texCoord, 2, 2)
+            attribute(GLDevice.Attribute.colorMix, 4, 4)
+            attribute(GLDevice.Attribute.blend, 1, 8)
         }
-        attribute(GLDevice.Attribute.position, 2, 0)
-        attribute(GLDevice.Attribute.texCoord, 2, 2)
-        attribute(GLDevice.Attribute.colorMix, 4, 4)
-        attribute(GLDevice.Attribute.blend, 1, 8)
+        vertexArray(&vao, &vbo, &ebo)
+        vertexArray(&dynamicVAO, &dynamicVBO, &dynamicEBO)
+        glBindVertexArray(0)
 
         defaultProgram = device.createProgram(
             vertex: ShaderTranslator.spriteVertexShader(),
@@ -341,8 +374,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if shapeMaskProgram == 0 { Log.error("the shape mask program did not link") }
 
         // The art is premultiplied, so this is the blend for it.
-        glEnable(GLenum(GL_BLEND))
-        glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
+        setBlend(.alpha)
         glDisable(GLenum(GL_DEPTH_TEST))
         glClearColor(0, 0, 0, 1)
 
@@ -394,6 +426,13 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // context, at the top of each frame.
         MetalExecution.executor = self
 
+        batcher.rasterIsFresh = { [weak self] owner, generation, digest in
+            guard let self, rasterContents[owner] != nil,
+                  targets.isFresh(.init(owner: owner), generation: generation, contents: digest) else { return false }
+            skippedRaster.insert(owner)
+            return true
+        }
+
         Log.info("max texture side \(device.maximumTextureSide)")
         if let start {
             self.start = nil
@@ -439,15 +478,24 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // location learned for an old one must not be trusted again.
         attributeLocations.removeAll()
         uniformLocations.removeAll()
+        state.forgetAll()
         if sceneTarget.isValid { device.deleteRenderTarget(sceneTarget) }
         sceneTarget = .none
         vertexCapacity = 0
         indexCapacity = 0
+        stagedVertexCapacity = 0
+        stagedIndexCapacity = 0
+        stagedComposites.removeAll()
+        rasterContents.removeAll()
+        skippedRaster.removeAll()
         streamIsFresh = false
         if defaultProgram != 0 { device.deleteProgram(defaultProgram) }
         glDeleteBuffers(1, &vbo)
         glDeleteBuffers(1, &ebo)
         glDeleteVertexArrays(1, &vao)
+        glDeleteBuffers(1, &dynamicVBO)
+        glDeleteBuffers(1, &dynamicEBO)
+        glDeleteVertexArrays(1, &dynamicVAO)
     }
 
     // MARK: Frames
@@ -526,13 +574,16 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         effectsDrawn = 0
         effectsCached = 0
         quadsDrawn = 0
+        streamMaps = 0
         liveKept.removeAll(keepingCapacity: true)
         cropDepth = 0
 
-        glBindVertexArray(vao)
+        state.forgetTextures()
         streamIsFresh = false
-        draw(passes, projection: projection, time: Float(frame.time))
-        glBindVertexArray(0)
+        let staged = stage(passes)
+        draw(staged, projection: projection, time: Float(frame.time))
+        stagedComposites.removeAll(keepingCapacity: true)
+        bindVertexArray(0)
 
         if scene.isValid {
             present(scene, screenWidth: screenWidth, screenHeight: screenHeight)
@@ -554,6 +605,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         targets.evictKept(except: liveKept)
         targets.endFrame()
+        if rasterContents.count > liveKept.count {
+            rasterContents = rasterContents.filter { liveKept.contains(.init(owner: $0.key)) }
+        }
+        skippedRaster.removeAll(keepingCapacity: true)
         warmAhead()
         launchPages?.writeIfDue(at: MediaTime.source() - launchStart)
 
@@ -684,6 +739,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             return
         }
         guard bounds.width > 0, bounds.height > 0 else { return }
+        // Left out by the batcher as fresh: what it last drew, should the
+        // target need it again after all.
+        let contents = contents.isEmpty && skippedRaster.contains(owner) ? rasterContents[owner] ?? [] : contents
 
         let density = target.visible.height > 0
             ? CGFloat(target.heightInPixels) / target.visible.height
@@ -713,6 +771,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             }
             handle = kept.target
             needsRedraw = kept.needsRedraw
+            // A resize deletes the old target, whose name may come back.
+            state.forgetTextures()
             if needsRedraw { targets.markDrawn(key, generation: generation, contents: digest) }
         } else {
             guard let transient = targets.transient(
@@ -762,11 +822,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // on the screen from `gl_FragCoord`).
         let space = target.fragSpace
 
-        let quad = compositeQuad(
-            bounds: bounds, transform: transform, alpha: alpha,
-            texture: handle.texture, shader: shader, blendMode: blendMode
+        let quad = stagedComposites[owner] ?? compositeQuad(
+            bounds: bounds, transform: transform, alpha: alpha, shader: shader, blendMode: blendMode
         )
-        draw(quad, projection: projection, time: time, fragSpace: space)
+        draw(quad, projection: projection, time: time, fragSpace: space, texture: handle.texture)
     }
 
     /// `SKCropNode`: the mask into the stencil, then the contents where it
@@ -930,9 +989,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         glClearColor(0, 0, 0, 1)
         cropDepth = 0
 
-        glBindVertexArray(vao)
-        draw(batcher.passes(for: pass.list), projection: frame.projection, time: Float(pass.time))
-        glBindVertexArray(0)
+        state.forgetTextures()
+        draw(stage(batcher.passes(for: pass.list)), projection: frame.projection, time: Float(pass.time))
+        stagedComposites.removeAll(keepingCapacity: true)
+        bindVertexArray(0)
 
         // Back into the film's buffer: GL's rows run bottom first and RGBA,
         // the buffer's top first and BGRA.
@@ -1019,9 +1079,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         bindTarget()
         glClearColor(0, 0, 0, 0)
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
-        glBindVertexArray(vao)
+        // Drawn as it comes: the frame's staged stream may still be read by
+        // draws to come.
         draw(passes, projection: plan.projection, time: 0)
-        glBindVertexArray(0)
+        bindVertexArray(0)
 
         target = outer
         cropDepth = outerDepth
@@ -1047,6 +1108,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // A backdrop re-bakes its floor whenever it lays out, and lets go of
         // the one it had: those the game has dropped are deleted now.
         for name in bakedTextures.sweep() { device.deleteTexture(name) }
+        state.forgetTextures()
         bakedTextures.add(baked, name: handle.texture, width: handle.width, height: handle.height)
         return baked
     }
@@ -1148,23 +1210,22 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// A quad covering `bounds` under `transform`, carrying the effect's
     /// texture whole. Built through the batcher so the vertex layout and the
     /// `v_color_mix` contract stay in one place.
+    ///
+    /// It carries no texture: the effect's target is bound by name as it
+    /// draws (`draw(_:…texture:)`), so it can be staged with the frame.
     private func compositeQuad(
         bounds: CGRect,
         transform: CGAffineTransform,
         alpha: CGFloat,
-        texture: UInt32,
         shader: SKShader?,
         blendMode: SKBlendMode
     ) -> SpriteBatcher.Batch {
-        let carrier = SKTexture(color: .white, size: bounds.size)
-        carrier.glName = texture
-
         let sprite = DrawList.Sprite(
             transform: CGAffineTransform(translationX: bounds.midX, y: bounds.midY)
                 .concatenating(transform),
             size: bounds.size,
             anchorPoint: CGPoint(x: 0.5, y: 0.5),
-            texture: carrier,
+            texture: nil,
             textureRect: CGRect(x: 0, y: 0, width: 1, height: 1),
             color: .white,
             colorBlendFactor: 0,
@@ -1301,38 +1362,144 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         guard !run.indices.isEmpty else { return }
 
         let program = program ?? coverageProgram
-        glUseProgram(program)
-        var projection = projection
-        let location = uniformLocation(program, "u_projection")
-        if location >= 0 {
-            glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &projection)
-        }
+        useProgram(program)
+        let held = state.uniforms(of: program)
+        setProjection(projection, program: program, held: held)
+        bindSprite(texture, program: program, held: held)
+        setBlend(.alpha)
 
-        glActiveTexture(GLenum(GL_TEXTURE0))
-        glBindTexture(GLenum(GL_TEXTURE_2D), texture)
-        let sampler = uniformLocation(program, "u_texture")
-        if sampler >= 0 { glUniform1i(sampler, 0) }
-
-        glEnable(GLenum(GL_BLEND))
-        glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
-
-        let indexStart = upload(vertices: run.vertices, indices: run.indices)
-        glDrawElements(
-            GLenum(GL_TRIANGLES), GLsizei(run.indices.count),
-            GLenum(GL_UNSIGNED_SHORT), indexStart
-        )
-        drawCalls += 1
+        let first = uploadDynamic(vertices: run.vertices, indices: run.indices)
+        bindVertexArray(dynamicVAO)
+        drawElements(count: run.indices.count, first: first)
         quadsDrawn += run.indices.count / 6
     }
 
-    /// Writes a draw's vertices and indices after the frame's last, points
-    /// the vertex attributes at them and hands back where its indices
-    /// start, for `glDrawElements`.
-    private func upload(vertices: [Float], indices: [UInt16]) -> UnsafeRawPointer? {
+    // MARK: The stream
+
+    /// Bytes a vertex takes: the batcher's x y u v r g b a blend.
+    static let vertexStride = SpriteBatcher.floatsPerVertex * MemoryLayout<Float>.size
+
+    /// Where a frame's buffers start: enough for a busy world's frame, so
+    /// most never grow.
+    private static let streamVertexBytes = 2 << 20
+    private static let streamIndexBytes = 1 << 20
+    /// Where the buffers for what's drawn as it comes start.
+    private static let dynamicVertexBytes = 256 << 10
+    private static let dynamicIndexBytes = 64 << 10
+
+    /// Writes every batch in `passes`, and the quad each effect composites
+    /// with, into the frame's stream at once, one map of each buffer, and
+    /// hands the passes back with each batch's place in it. Their indices
+    /// count from the buffer's start (32-bit, as a frame passes 65,536
+    /// vertices), so no draw moves the vertex attributes.
+    private func stage(_ passes: [SpriteBatcher.Pass]) -> [SpriteBatcher.Pass] {
+        stagedComposites.removeAll(keepingCapacity: true)
+        var vertexBytes = 0
+        var indexCount = 0
+        measure(passes, vertexBytes: &vertexBytes, indexCount: &indexCount)
+        guard vertexBytes > 0, indexCount > 0 else { return passes }
+        let indexBytes = indexCount * MemoryLayout<UInt32>.size
+
+        // A fresh store each time, so nothing a frame still in flight reads
+        // is written over (and the writes need no sync).
+        if vertexBytes > stagedVertexCapacity || stagedVertexCapacity == 0 {
+            stagedVertexCapacity = max(Self.streamVertexBytes, vertexBytes * 3 / 2)
+        }
+        if indexBytes > stagedIndexCapacity || stagedIndexCapacity == 0 {
+            stagedIndexCapacity = max(Self.streamIndexBytes, indexBytes * 3 / 2)
+        }
+        let vertexTarget = GLenum(GL_COPY_WRITE_BUFFER)
+        let indexTarget = GLenum(GL_COPY_READ_BUFFER)
+        // Bound to the copy targets rather than the array and element ones,
+        // so no vertex array's bindings change.
+        glBindBuffer(vertexTarget, vbo)
+        glBindBuffer(indexTarget, ebo)
+        glBufferData(vertexTarget, stagedVertexCapacity, nil, GLenum(GL_STREAM_DRAW))
+        glBufferData(indexTarget, stagedIndexCapacity, nil, GLenum(GL_STREAM_DRAW))
+
+        var writer = StreamWriter(
+            vertices: map(vertexTarget, bytes: vertexBytes),
+            indices: map(indexTarget, bytes: indexBytes),
+            vertexBytes: vertexBytes, indexCount: indexCount
+        )
+        let staged = write(passes, into: &writer)
+        writer.finish(vertexTarget: vertexTarget, indexTarget: indexTarget)
+        glBindBuffer(vertexTarget, 0)
+        glBindBuffer(indexTarget, 0)
+        return staged
+    }
+
+    /// The whole range, unsynchronised: the store was just orphaned.
+    private func map(_ target: GLenum, bytes: Int) -> UnsafeMutableRawPointer? {
+        streamMaps += 1
+        let access = GLbitfield(GL_MAP_WRITE_BIT) | GLbitfield(GL_MAP_UNSYNCHRONIZED_BIT) | GLbitfield(GL_MAP_INVALIDATE_RANGE_BIT)
+        return glMapBufferRange(target, 0, bytes, access)
+    }
+
+    /// How much `passes` and their composites stage.
+    private func measure(_ passes: [SpriteBatcher.Pass], vertexBytes: inout Int, indexCount: inout Int) {
+        for pass in passes {
+            switch pass {
+            case let .batches(batches):
+                for batch in batches where !batch.indices.isEmpty {
+                    vertexBytes += batch.vertices.count * MemoryLayout<Float>.size
+                    indexCount += batch.indices.count
+                }
+            case let .effect(bounds, _, _, _, _, _, _, _, _, contents):
+                measure(contents, vertexBytes: &vertexBytes, indexCount: &indexCount)
+                if bounds.width > 0, bounds.height > 0 {
+                    vertexBytes += 4 * Self.vertexStride
+                    indexCount += 6
+                }
+            case let .crop(_, mask, contents):
+                measure(mask, vertexBytes: &vertexBytes, indexCount: &indexCount)
+                measure(contents, vertexBytes: &vertexBytes, indexCount: &indexCount)
+            case .label, .shape:
+                break
+            }
+        }
+    }
+
+    private func write(_ passes: [SpriteBatcher.Pass], into writer: inout StreamWriter) -> [SpriteBatcher.Pass] {
+        passes.map { pass in
+            switch pass {
+            case var .batches(batches):
+                for index in batches.indices where !batches[index].indices.isEmpty {
+                    batches[index].streamFirstIndex = writer.add(batches[index].vertices, batches[index].indices)
+                }
+                return .batches(batches)
+            case let .effect(bounds, transform, shader, alpha, blendMode, rasterize, owner, generation, digest, contents):
+                if rasterize, !(contents.isEmpty && skippedRaster.contains(owner)) { rasterContents[owner] = contents }
+                let staged = write(contents, into: &writer)
+                if bounds.width > 0, bounds.height > 0 {
+                    var quad = compositeQuad(bounds: bounds, transform: transform, alpha: alpha, shader: shader, blendMode: blendMode)
+                    if !quad.indices.isEmpty {
+                        quad.streamFirstIndex = writer.add(quad.vertices, quad.indices)
+                        stagedComposites[owner] = quad
+                    }
+                }
+                return .effect(
+                    bounds: bounds, transform: transform, shader: shader, alpha: alpha, blendMode: blendMode,
+                    rasterize: rasterize, owner: owner, generation: generation, digest: digest, contents: staged
+                )
+            case let .crop(transform, mask, contents):
+                return .crop(transform: transform, mask: write(mask, into: &writer), contents: write(contents, into: &writer))
+            case .label, .shape:
+                return pass
+            }
+        }
+    }
+
+    /// Writes a draw's vertices and indices after the last of what's drawn
+    /// as it comes, in buffers of its own, and hands back where its indices
+    /// start, for `drawElements`.
+    private func uploadDynamic(vertices: [Float], indices: [UInt16]) -> Int {
         let vertexBytes = vertices.count * MemoryLayout<Float>.size
-        let indexBytes = indices.count * MemoryLayout<UInt16>.size
-        glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
-        glBindBuffer(GLenum(GL_ELEMENT_ARRAY_BUFFER), ebo)
+        let indexBytes = indices.count * MemoryLayout<UInt32>.size
+        let vertexTarget = GLenum(GL_COPY_WRITE_BUFFER)
+        let indexTarget = GLenum(GL_COPY_READ_BUFFER)
+        glBindBuffer(vertexTarget, dynamicVBO)
+        glBindBuffer(indexTarget, dynamicEBO)
         if !streamIsFresh || vertexOffset + vertexBytes > vertexCapacity || indexOffset + indexBytes > indexCapacity {
             // A fresh store for each: the frame's first draw, or a frame that
             // outgrew them, which then keep the bigger size.
@@ -1340,59 +1507,50 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 vertexCapacity = max(vertexCapacity, vertexOffset + vertexBytes) * 2
                 indexCapacity = max(indexCapacity, indexOffset + indexBytes) * 2
             }
-            vertexCapacity = max(vertexCapacity, vertexBytes, Self.streamVertexBytes)
-            indexCapacity = max(indexCapacity, indexBytes, Self.streamIndexBytes)
-            glBufferData(GLenum(GL_ARRAY_BUFFER), vertexCapacity, nil, GLenum(GL_STREAM_DRAW))
-            glBufferData(GLenum(GL_ELEMENT_ARRAY_BUFFER), indexCapacity, nil, GLenum(GL_STREAM_DRAW))
+            vertexCapacity = max(vertexCapacity, vertexBytes, Self.dynamicVertexBytes)
+            indexCapacity = max(indexCapacity, indexBytes, Self.dynamicIndexBytes)
+            glBufferData(vertexTarget, vertexCapacity, nil, GLenum(GL_STREAM_DRAW))
+            glBufferData(indexTarget, indexCapacity, nil, GLenum(GL_STREAM_DRAW))
             vertexOffset = 0
             indexOffset = 0
             streamIsFresh = true
         }
-        write(vertices, into: GLenum(GL_ARRAY_BUFFER), at: vertexOffset, bytes: vertexBytes)
-        write(indices, into: GLenum(GL_ELEMENT_ARRAY_BUFFER), at: indexOffset, bytes: indexBytes)
-        pointAttributes(at: vertexOffset)
-        let indexStart = UnsafeRawPointer(bitPattern: indexOffset)
-        vertexOffset += Self.aligned(vertexBytes)
-        indexOffset += Self.aligned(indexBytes)
-        return indexStart
-    }
-
-    /// Where a frame's stream starts: enough for a busy world's frame, so
-    /// most never grow.
-    private static let streamVertexBytes = 2 << 20
-    private static let streamIndexBytes = 512 << 10
-
-    private static func aligned(_ bytes: Int) -> Int { (bytes + 15) & ~15 }
-
-    /// Copies `values` into the bound buffer's store, unsynchronised: the
-    /// region is new this frame, so nothing the GPU holds is in it.
-    private func write<Value>(_ values: [Value], into target: GLenum, at offset: Int, bytes: Int) {
-        guard bytes > 0 else { return }
+        let base = UInt32(vertexOffset / Self.vertexStride)
         let access = GLbitfield(GL_MAP_WRITE_BIT) | GLbitfield(GL_MAP_UNSYNCHRONIZED_BIT) | GLbitfield(GL_MAP_INVALIDATE_RANGE_BIT)
-        values.withUnsafeBytes { source in
-            if let mapped = glMapBufferRange(target, offset, bytes, access) {
-                mapped.copyMemory(from: source.baseAddress!, byteCount: bytes)
-                glUnmapBuffer(target)
+        streamMaps += 2
+        vertices.withUnsafeBytes { source in
+            guard vertexBytes > 0, let from = source.baseAddress else { return }
+            if let mapped = glMapBufferRange(vertexTarget, vertexOffset, vertexBytes, access) {
+                mapped.copyMemory(from: from, byteCount: vertexBytes)
+                glUnmapBuffer(vertexTarget)
             } else {
-                glBufferSubData(target, offset, bytes, source.baseAddress)
+                glBufferSubData(vertexTarget, vertexOffset, vertexBytes, from)
             }
         }
+        if indexBytes > 0 {
+            if let mapped = glMapBufferRange(indexTarget, indexOffset, indexBytes, access) {
+                StreamWriter.rebase(indices, by: base, into: mapped)
+                glUnmapBuffer(indexTarget)
+            } else {
+                var rebased = [UInt32](repeating: 0, count: indices.count)
+                rebased.withUnsafeMutableBytes { StreamWriter.rebase(indices, by: base, into: $0.baseAddress!) }
+                glBufferSubData(indexTarget, indexOffset, indexBytes, rebased)
+            }
+        }
+        glBindBuffer(vertexTarget, 0)
+        glBindBuffer(indexTarget, 0)
+        let first = indexOffset / MemoryLayout<UInt32>.size
+        vertexOffset += vertexBytes
+        indexOffset += indexBytes
+        return first
     }
 
-    /// The batcher's interleaving (x y u v r g b a blend), starting `offset`
-    /// bytes into the vertex buffer.
-    private func pointAttributes(at offset: Int) {
-        let stride = GLsizei(SpriteBatcher.floatsPerVertex * MemoryLayout<Float>.size)
-        func attribute(_ index: GLuint, _ count: GLint, _ offsetInFloats: Int) {
-            glVertexAttribPointer(
-                index, count, GLenum(GL_FLOAT), GLboolean(GL_FALSE), stride,
-                UnsafeRawPointer(bitPattern: offset + offsetInFloats * MemoryLayout<Float>.size)
-            )
-        }
-        attribute(GLDevice.Attribute.position, 2, 0)
-        attribute(GLDevice.Attribute.texCoord, 2, 2)
-        attribute(GLDevice.Attribute.colorMix, 4, 4)
-        attribute(GLDevice.Attribute.blend, 1, 8)
+    private func drawElements(count: Int, first: Int) {
+        glDrawElements(
+            GLenum(GL_TRIANGLES), GLsizei(count), GLenum(GL_UNSIGNED_INT),
+            UnsafeRawPointer(bitPattern: first * MemoryLayout<UInt32>.size)
+        )
+        drawCalls += 1
     }
 
     /// A uniform's location in `program`, asked of GL once.
@@ -1408,7 +1566,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         projection: [Float],
         time: Float,
         overrideProgram: GLuint = 0,
-        fragSpace: FragCoordSpace? = nil
+        fragSpace: FragCoordSpace? = nil,
+        texture override: GLuint = 0
     ) {
         guard !batch.indices.isEmpty else { return }
 
@@ -1422,69 +1581,140 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             program = defaultProgram
             guard program != 0 else { return }
         }
-        glUseProgram(program)
-
-        var projection = projection
-        let location = uniformLocation(program, "u_projection")
-        if location >= 0 {
-            glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &projection)
-        }
+        useProgram(program)
+        let held = state.uniforms(of: program)
+        setProjection(projection, program: program, held: held)
 
         // Which pixels `gl_FragCoord` counts. Every lit shader in the game
         // reads it, so this is pushed whether or not the batch has a shader
         // of its own — the location simply comes back -1 when it is unused.
-        let space = fragSpace ?? target.fragSpace
-        let fragLocation = uniformLocation(program, ShaderTranslator.fragCoordUniform)
-        if fragLocation >= 0 {
-            glUniform4f(fragLocation, space.offsetX, space.offsetY, space.scaleX, space.scaleY)
-        }
+        setFragSpace(fragSpace ?? target.fragSpace, program: program, held: held)
 
         if let shader = batch.shader, overrideProgram == 0 {
-            bind(shader, program: program, time: time)
+            bind(shader, program: program, held: held, time: time)
             bind(batch.attributeValues, program: program, shader: shader)
         }
 
-        glActiveTexture(GLenum(GL_TEXTURE0))
-        if let texture = batch.texture {
-            glBindTexture(GLenum(GL_TEXTURE_2D), batch.ownImage ? cache.imageName(for: texture) : cache.drawnName(for: texture))
+        let name: GLuint
+        if override != 0 {
+            name = override
+        } else if let texture = batch.texture {
+            name = batch.ownImage ? cache.imageName(for: texture) : cache.drawnName(for: texture)
         } else {
-            glBindTexture(GLenum(GL_TEXTURE_2D), cache.name(for: SceneRenderer.white))
+            name = cache.name(for: SceneRenderer.white)
         }
-        let sampler = uniformLocation(program, "u_texture")
-        if sampler >= 0 { glUniform1i(sampler, 0) }
+        bindSprite(name, program: program, held: held)
 
         // SpriteKit's blend modes over premultiplied colour. Toy Box's room
         // light is a `.multiplyX2` pass over the rug (`TownRugNode`), so a
         // grey of 0.5 leaves it as painted.
-        glEnable(GLenum(GL_BLEND))
-        glBlendEquation(GLenum(GL_FUNC_ADD))
-        switch batch.blendMode {
-        case .add:
-            glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE))
-        case .subtract:
-            glBlendEquation(GLenum(GL_FUNC_REVERSE_SUBTRACT))
-            glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE))
-        case .multiply:
-            glBlendFunc(GLenum(GL_DST_COLOR), GLenum(GL_ONE_MINUS_SRC_ALPHA))
-        case .multiplyX2:
-            glBlendFunc(GLenum(GL_DST_COLOR), GLenum(GL_SRC_COLOR))
-        case .screen:
-            glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_COLOR))
-        case .replace:
-            glDisable(GLenum(GL_BLEND))
-        case .alpha, .multiplyAlpha:
-            glBlendFunc(GLenum(GL_ONE), GLenum(GL_ONE_MINUS_SRC_ALPHA))
+        setBlend(batch.blendMode)
+
+        if batch.streamFirstIndex >= 0 {
+            bindVertexArray(vao)
+            drawElements(count: batch.indices.count, first: batch.streamFirstIndex)
+        } else {
+            let first = uploadDynamic(vertices: batch.vertices, indices: batch.indices)
+            bindVertexArray(dynamicVAO)
+            drawElements(count: batch.indices.count, first: first)
         }
-
-        let indexStart = upload(vertices: batch.vertices, indices: batch.indices)
-        glDrawElements(
-            GLenum(GL_TRIANGLES), GLsizei(batch.indices.count),
-            GLenum(GL_UNSIGNED_SHORT), indexStart
-        )
-        drawCalls += 1
         quadsDrawn += batch.quadCount
+    }
 
-        if batch.blendMode == .replace { glEnable(GLenum(GL_BLEND)) }
+    // MARK: State, set only where it changes
+
+    private func useProgram(_ program: GLuint) {
+        guard state.program != program else { return }
+        glUseProgram(program)
+        state.program = program
+    }
+
+    private func bindVertexArray(_ array: GLuint) {
+        guard state.vertexArray != array else { return }
+        glBindVertexArray(array)
+        state.vertexArray = array
+    }
+
+    private func activateUnit(_ unit: Int) {
+        guard state.activeUnit != unit else { return }
+        glActiveTexture(GLenum(GL_TEXTURE0) + GLenum(unit))
+        state.activeUnit = unit
+    }
+
+    /// The sprite's own texture, on unit 0. Always bound: uploads land on
+    /// the active unit, which is 0 between draws, and leave it unbound.
+    private func bindSprite(_ name: GLuint, program: GLuint, held: GLStateCache.ProgramUniforms) {
+        activateUnit(0)
+        glBindTexture(GLenum(GL_TEXTURE_2D), name)
+        state.textures[0] = name
+        guard !held.samplerSet else { return }
+        let sampler = uniformLocation(program, "u_texture")
+        if sampler >= 0 { glUniform1i(sampler, 0) }
+        held.samplerSet = true
+    }
+
+    /// A shader's sampler on `unit` (1 and up), left as it is when the unit
+    /// holds it already. Unit 0 is active again afterwards.
+    private func bindSampler(_ name: GLuint, unit: Int) {
+        if unit < GLStateCache.units, state.textures[unit] == name { return }
+        activateUnit(unit)
+        glBindTexture(GLenum(GL_TEXTURE_2D), name)
+        if unit < GLStateCache.units { state.textures[unit] = name }
+        activateUnit(0)
+    }
+
+    private func setProjection(_ projection: [Float], program: GLuint, held: GLStateCache.ProgramUniforms) {
+        guard held.projection != projection else { return }
+        let location = uniformLocation(program, "u_projection")
+        if location >= 0 {
+            var matrix = projection
+            glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &matrix)
+        }
+        held.projection = projection
+    }
+
+    private func setFragSpace(_ space: FragCoordSpace, program: GLuint, held: GLStateCache.ProgramUniforms) {
+        guard held.fragSpace != space else { return }
+        let location = uniformLocation(program, ShaderTranslator.fragCoordUniform)
+        if location >= 0 {
+            glUniform4f(location, space.offsetX, space.offsetY, space.scaleX, space.scaleY)
+        }
+        held.fragSpace = space
+    }
+
+    private func setBlend(_ mode: SKBlendMode) {
+        let blend: GLStateCache.Blend
+        switch mode {
+        case .add:
+            blend = .init(enabled: true, equation: GLenum(GL_FUNC_ADD), source: GLenum(GL_ONE), destination: GLenum(GL_ONE))
+        case .subtract:
+            blend = .init(enabled: true, equation: GLenum(GL_FUNC_REVERSE_SUBTRACT), source: GLenum(GL_ONE), destination: GLenum(GL_ONE))
+        case .multiply:
+            blend = .init(enabled: true, equation: GLenum(GL_FUNC_ADD), source: GLenum(GL_DST_COLOR), destination: GLenum(GL_ONE_MINUS_SRC_ALPHA))
+        case .multiplyX2:
+            blend = .init(enabled: true, equation: GLenum(GL_FUNC_ADD), source: GLenum(GL_DST_COLOR), destination: GLenum(GL_SRC_COLOR))
+        case .screen:
+            blend = .init(enabled: true, equation: GLenum(GL_FUNC_ADD), source: GLenum(GL_ONE), destination: GLenum(GL_ONE_MINUS_SRC_COLOR))
+        case .replace:
+            // The function stays as it was, or unknown (0) if it was.
+            blend = .init(enabled: false, equation: state.blend?.equation ?? 0,
+                          source: state.blend?.source ?? 0, destination: state.blend?.destination ?? 0)
+        case .alpha, .multiplyAlpha:
+            blend = .init(enabled: true, equation: GLenum(GL_FUNC_ADD), source: GLenum(GL_ONE), destination: GLenum(GL_ONE_MINUS_SRC_ALPHA))
+        }
+        let was = state.blend
+        guard was != blend else { return }
+        if was?.enabled != blend.enabled {
+            if blend.enabled { glEnable(GLenum(GL_BLEND)) } else { glDisable(GLenum(GL_BLEND)) }
+        }
+        // A disabled blend keeps whatever function it had.
+        if blend.enabled {
+            if was?.equation != blend.equation { glBlendEquation(blend.equation) }
+            if was?.source != blend.source || was?.destination != blend.destination {
+                glBlendFunc(blend.source, blend.destination)
+            }
+        }
+        state.blend = blend
     }
 
     // MARK: Touches
@@ -1585,13 +1815,39 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Pushes a shader's uniforms. `u_time` is the game's shader clock and
     /// must come from the shell's monotonic clock, not the wall clock, or the
     /// currents and lights run at the wrong pace.
-    private func bind(_ shader: SKShader, program: GLuint, time: Float) {
-        let timeLocation = uniformLocation(program, "u_time")
-        if timeLocation >= 0 { glUniform1f(timeLocation, time) }
+    ///
+    /// A program keeps its uniforms, so when it already holds this shader's
+    /// (the last drawn with it was this shader, and none of its uniforms has
+    /// been written since: a rig's dozens of sprites in a row) only its
+    /// textures are bound again, as units are shared by every program.
+    private func bind(_ shader: SKShader, program: GLuint, held: GLStateCache.ProgramUniforms, time: Float) {
+        if held.time != time {
+            let timeLocation = uniformLocation(program, "u_time")
+            if timeLocation >= 0 { glUniform1f(timeLocation, time) }
+            held.time = time
+        }
 
+        let uniforms = shader.uniforms
+        if held.holds(shader) {
+            let locations = held.locations
+            var unit = 1
+            for (index, uniform) in uniforms.enumerated() {
+                guard case let .texture(t) = uniform.value, let t, locations[index] >= 0 else { continue }
+                bindSampler(cache.samplerName(for: t), unit: unit)
+                unit += 1
+            }
+            return
+        }
+
+        var locations: [GLint] = []
+        var generations: [UInt32] = []
+        locations.reserveCapacity(uniforms.count)
+        generations.reserveCapacity(uniforms.count)
         var unit: GLint = 1
-        for uniform in shader.uniforms {
+        for uniform in uniforms {
             let location = uniformLocation(program, uniform.name)
+            locations.append(location)
+            generations.append(uniform.generation)
             guard location >= 0 else { continue }
             switch uniform.value {
             case let .float(v):
@@ -1614,12 +1870,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &v)
             case let .texture(t):
                 guard let t else { continue }
-                glActiveTexture(GLenum(GL_TEXTURE0) + GLenum(unit))
-                glBindTexture(GLenum(GL_TEXTURE_2D), cache.samplerName(for: t))
+                bindSampler(cache.samplerName(for: t), unit: Int(unit))
                 glUniform1i(location, unit)
                 unit += 1
             }
         }
+        held.shader = shader
+        held.shaderRevision = shader.revision
+        held.generations = generations
+        held.locations = locations
     }
 
     /// Pushes a node's own `SKAttribute` values.

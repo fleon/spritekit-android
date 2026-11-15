@@ -31,6 +31,10 @@ public struct SpriteBatcher {
         /// own 0…1 (`ownImage(_:)`) and the renderer binds that image alone
         /// (`ResourceCache.imageName(for:)`) rather than its packed page.
         public var ownImage: Bool { shader != nil }
+        /// Where the batch's indices start in the frame's stream once the
+        /// renderer has written it there with the rest of the frame
+        /// (`SceneRenderer.stage`), in indices; -1 until then.
+        public var streamFirstIndex: Int = -1
 
         public var quadCount: Int { indices.count / 6 }
 
@@ -83,20 +87,63 @@ public struct SpriteBatcher {
 
     public init() {}
 
+    /// Whether a rasterizing effect node's kept pixels are still good for
+    /// this generation and digest (the renderer's `RenderTargetPool`). Its
+    /// contents are then left out of the passes: they would only be batched
+    /// and thrown away, as the renderer composites what it kept.
+    public var rasterIsFresh: ((_ owner: ObjectIdentifier, _ generation: UInt64, _ digest: UInt64) -> Bool)?
+
     public func passes(for list: DrawList) -> [Pass] {
         var passes: [Pass] = []
         var current: [Batch] = []
+        add(list.commands, through: .identity, to: &passes, current: &current)
+        if !current.isEmpty { passes.append(.batches(current)) }
+        return passes
+    }
 
+    /// Whether an effect node composites to exactly what drawing its
+    /// children in place does: no shader, no cache and no fade. Its
+    /// contents then join the batches around them (`add`), as the renderer
+    /// would draw them in place anyway.
+    public static func passesThrough(_ effect: DrawList.Effect) -> Bool {
+        effect.shader == nil && !effect.shouldRasterize && effect.alpha >= 0.999
+    }
+
+    /// `commands`, carried by `transform`, onto `passes`, merging sprites
+    /// into `current` where they can. A crop with no mask clips nothing, and
+    /// an effect that passes through draws nothing of its own, so their
+    /// contents go on in the same order, merging with what's either side
+    /// rather than breaking the batch.
+    private func add(
+        _ commands: [DrawList.Command],
+        through transform: CGAffineTransform,
+        to passes: inout [Pass],
+        current: inout [Batch]
+    ) {
         func flush() {
             guard !current.isEmpty else { return }
             passes.append(.batches(current))
             current = []
         }
 
-        for command in list.commands {
+        // Moved first, all at once, where they need moving: rebinding each
+        // command on the way through copied it for every sprite.
+        guard transform.isIdentity else {
+            add(commands.map { Self.moved($0, by: transform) }, through: .identity, to: &passes, current: &current)
+            return
+        }
+        for command in commands {
             switch command {
             case let .sprite(sprite):
                 append(sprite, to: &current)
+
+            case let .effect(effect) where Self.passesThrough(effect):
+                // Its contents are in its own space (`DrawList`).
+                add(effect.contents.commands, through: effect.transform, to: &passes, current: &current)
+
+            case let .crop(crop) where crop.mask.commands.isEmpty:
+                // Its contents are in its parent's space already.
+                add(crop.contents.commands, through: .identity, to: &passes, current: &current)
 
             case let .effect(effect):
                 flush()
@@ -110,7 +157,9 @@ public struct SpriteBatcher {
                     owner: effect.owner,
                     generation: effect.rasterGeneration,
                     digest: effect.contentsDigest,
-                    contents: self.passes(for: effect.contents)
+                    contents: effect.shouldRasterize && rasterIsFresh?(effect.owner, effect.rasterGeneration, effect.contentsDigest) == true
+                        ? []
+                        : self.passes(for: effect.contents)
                 ))
 
             case let .crop(crop):
@@ -130,9 +179,31 @@ public struct SpriteBatcher {
                 passes.append(.shape(shape))
             }
         }
+    }
 
-        flush()
-        return passes
+    /// A command carried by `transform`, nested contents included where
+    /// they are in the parent's space (a crop's mask and contents); an
+    /// effect's contents are in its own, which its transform carries.
+    static func moved(_ command: DrawList.Command, by transform: CGAffineTransform) -> DrawList.Command {
+        switch command {
+        case var .sprite(sprite):
+            sprite.transform = sprite.transform.concatenating(transform)
+            return .sprite(sprite)
+        case var .shape(shape):
+            shape.transform = shape.transform.concatenating(transform)
+            return .shape(shape)
+        case var .label(label):
+            label.transform = label.transform.concatenating(transform)
+            return .label(label)
+        case var .effect(effect):
+            effect.transform = effect.transform.concatenating(transform)
+            return .effect(effect)
+        case var .crop(crop):
+            crop.transform = crop.transform.concatenating(transform)
+            crop.mask.commands = crop.mask.commands.map { moved($0, by: transform) }
+            crop.contents.commands = crop.contents.commands.map { moved($0, by: transform) }
+            return .crop(crop)
+        }
     }
 
     /// Adds one sprite, merging into the open batch where it can.

@@ -174,8 +174,15 @@ public final class RenderTargetPool {
     }
 
     private let device: RenderDevice
-    /// Free transient targets, by (width, height).
-    private var free: [Int: [RenderTargetHandle]] = [:]
+    /// Free transient targets, by (width, height), each with the frame it
+    /// was last handed back in.
+    private var free: [Int: [(target: RenderTargetHandle, frame: Int)]] = [:]
+    /// Frames ended so far.
+    private var frame = 0
+    /// How many frames a free transient target is kept unused: an effect
+    /// node whose size animates (a card zooming in) would otherwise leave
+    /// one target behind for every size it passed through, for good.
+    public static let idleFrames = 120
     /// Transient targets lent out this frame.
     private var lent: [RenderTargetHandle] = []
     private var kept: [Key: Kept] = [:]
@@ -198,10 +205,10 @@ public final class RenderTargetPool {
     /// `endFrame()`.
     public func transient(width: Int, height: Int, stencil: Bool) -> RenderTargetHandle? {
         let key = Self.sizeKey(width, height)
-        if var bucket = free[key], let target = bucket.popLast() {
-            free[key] = bucket
-            lent.append(target)
-            return target
+        if var bucket = free[key], let kept = bucket.popLast() {
+            free[key] = bucket.isEmpty ? nil : bucket
+            lent.append(kept.target)
+            return kept.target
         }
         guard let target = device.createRenderTarget(width: width, height: height, stencil: stencil) else {
             return nil
@@ -240,6 +247,13 @@ public final class RenderTargetPool {
         return (target, true)
     }
 
+    /// Whether `key`'s kept target holds what this generation and digest
+    /// draw (its size aside, which only the renderer knows).
+    public func isFresh(_ key: Key, generation: UInt64, contents: UInt64) -> Bool {
+        guard let existing = kept[key] else { return false }
+        return existing.generation == generation && existing.contents == contents
+    }
+
     public func markDrawn(_ key: Key, generation: UInt64, contents: UInt64) {
         guard var existing = kept[key] else { return }
         existing.generation = generation
@@ -247,13 +261,20 @@ public final class RenderTargetPool {
         kept[key] = existing
     }
 
-    /// Hands every transient target back. Kept ones stay.
+    /// Hands every transient target back, and deletes those no frame has
+    /// used for `idleFrames`. Kept ones stay.
     public func endFrame() {
+        frame += 1
         for target in lent {
-            free[Self.sizeKey(target.width, target.height), default: []].append(target)
+            free[Self.sizeKey(target.width, target.height), default: []].append((target, frame))
         }
         lent.removeAll(keepingCapacity: true)
         bindsThisFrame = 0
+        for (key, bucket) in free where bucket.contains(where: { frame - $0.frame > Self.idleFrames }) {
+            for idle in bucket where frame - idle.frame > Self.idleFrames { device.deleteRenderTarget(idle.target) }
+            let left = bucket.filter { frame - $0.frame <= Self.idleFrames }
+            free[key] = left.isEmpty ? nil : left
+        }
     }
 
     /// Drops kept targets whose node was not drawn this frame, so a scene
@@ -267,7 +288,7 @@ public final class RenderTargetPool {
 
     public func removeAll() {
         for bucket in free.values {
-            for target in bucket { device.deleteRenderTarget(target) }
+            for idle in bucket { device.deleteRenderTarget(idle.target) }
         }
         for target in lent { device.deleteRenderTarget(target) }
         for value in kept.values { device.deleteRenderTarget(value.target) }
