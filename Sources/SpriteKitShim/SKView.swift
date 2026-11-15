@@ -195,7 +195,8 @@ open class SKView: UIView {
     /// other one.
     public func shouldRender(atTime time: TimeInterval) -> Bool {
         guard !isPaused else { return false }
-        if preferredFramesPerSecond > 0, let last = lastFired {
+        // With a fixed step every frame is one step: the step is the rate.
+        if preferredFramesPerSecond > 0, MediaTime.fixedStep == nil, let last = lastFired {
             let interval = 1 / TimeInterval(preferredFramesPerSecond)
             guard time - last >= interval * 0.75 else { return false }
         }

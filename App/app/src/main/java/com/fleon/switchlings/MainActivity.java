@@ -75,6 +75,7 @@ public class MainActivity extends SDLActivity {
     public void loadLibraries() {
         exportVersion();
         exportDevice();
+        exportDeterministicHashing();
         String[] libraries = getLibraries();
         for (int i = 0; i < libraries.length - 1; i++) {
             System.loadLibrary(libraries[i]);
@@ -446,6 +447,23 @@ public class MainActivity extends SDLActivity {
                 }
             }
             return result;
+        }
+    }
+
+    /**
+     * {@code -FixedFrameStep} (debug builds only, as {@link #getArguments}
+     * reads them) also asks Swift for the same {@code Dictionary} and
+     * {@code Set} order every launch: it seeds its hashing afresh in each
+     * process unless {@code SWIFT_DETERMINISTIC_HASHING} is set as its
+     * runtime loads, and the world list once baked its neighbours' backdrops
+     * in a dictionary's order, so a still came out one of three ways.
+     */
+    private void exportDeterministicHashing() {
+        if (!Arrays.asList(getArguments()).contains("-FixedFrameStep")) return;
+        try {
+            android.system.Os.setenv("SWIFT_DETERMINISTIC_HASHING", "1", true);
+        } catch (Exception e) {
+            Log.w("Switchlings", "no deterministic hashing: " + e);
         }
     }
 

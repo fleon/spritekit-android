@@ -421,6 +421,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Whether the view's pause has been logged (`shouldDraw`).
     private var heldLogged = false
 
+    /// Whether the game waits on work off the main thread (`MediaClock.hold`,
+    /// with `-FixedFrameStep`); the backend sets it.
+    public var clockHold: () -> Bool = { false }
+    public var holdsClock: Bool { clockHold() }
+
     public func drawFrame(_ frame: Frame) {
         // The scene first: a transition, or a scene presenting another, can
         // change which scene the view shows, and the projection is that

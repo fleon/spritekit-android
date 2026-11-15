@@ -41,6 +41,11 @@ public protocol FrameRenderer: AnyObject {
     /// its delegate's `view(_:shouldRenderAtTime:)`.
     func shouldDraw(_ frame: Frame) -> Bool
 
+    /// With `-FixedFrameStep`, whether the game is waiting on work off the
+    /// main thread: the shell then draws nothing and holds the clock still,
+    /// asking again before each frame.
+    var holdsClock: Bool { get }
+
     /// Draw one frame. The viewport has not been set — a renderer that cares
     /// sets it from `frame.size`.
     func drawFrame(_ frame: Frame)
@@ -74,6 +79,7 @@ public extension FrameRenderer {
     func rendererDidStart(_ context: RenderContext) {}
     func drawableSizeDidChange(to size: CGSize) {}
     func shouldDraw(_ frame: Frame) -> Bool { true }
+    var holdsClock: Bool { false }
     func rendererWillStop() {}
     func receive(_ touch: TouchEvent) {}
     func receive(_ input: InputEvent) -> Bool { false }

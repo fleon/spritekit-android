@@ -233,7 +233,15 @@ public enum Shell {
             // main run loop would run it between frames (`MainActorJobs`).
             MainActorJobs.drain()
 
-            let now = ShellClock.now
+            // `-FixedFrameStep`: no frame while the game waits on work off
+            // the main thread (its clock would move on by as many frames as
+            // the machine's load let pass), then each one a step on.
+            let step = MediaTime.fixedStep
+            if step != nil, renderer.holdsClock {
+                SDL_Delay(Self.skippedFrameWait)
+                continue
+            }
+            let now = step.map { MediaTime.stepped + (index == 0 ? 0 : $0) } ?? ShellClock.now
             let frame = Frame(
                 time: now,
                 delta: index == 0 ? 0 : now - previous,
@@ -247,6 +255,7 @@ public enum Shell {
                 continue
             }
             previous = now
+            if step != nil { MediaTime.stepped = now }
             // A frame that took far longer than its share: a stall on the
             // frame thread (a page decoded, a shader compiled, a bake), the
             // freezes a phone shows and an average hides.

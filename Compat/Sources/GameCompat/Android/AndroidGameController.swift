@@ -87,6 +87,13 @@ public final class AndroidGameController {
         laterLink = links.later.flatMap(URL.init(string:)).map { ($0, links.delay ?? 0) }
     }
 
+    /// `-FixedFrameStep`'s step (`LaunchArguments.fixedFrameStep`), which the
+    /// shell's clock takes.
+    public static var fixedFrameStep: TimeInterval? { LaunchArguments.fixedFrameStep }
+
+    /// Whether frames wait on work off the main thread (`MediaClock.isHeld`).
+    public static var holdsFrameClock: Bool { MediaClock.isHeld }
+
     /// The shell's audio, once SDL has opened a device: until this the game's
     /// `AudioManager` stands on its silent backend, so its sounds load again
     /// into this one and any track already asked for starts.

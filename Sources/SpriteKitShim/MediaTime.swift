@@ -21,6 +21,16 @@ public enum MediaTime {
     /// the main one): a `static let` is initialised exactly once.
     private static let base = monotonic()
 
+    /// `-FixedFrameStep`: while set, the clock stands still between frames
+    /// and the shell moves it on by exactly this much for each frame it
+    /// draws (`stepped`), so the scene, every shader's `u_time` and
+    /// `MediaClock` see the same times however long the frames really took.
+    public nonisolated(unsafe) static var fixedStep: TimeInterval?
+
+    /// The time the clock tells while `fixedStep` is set: 0 when it's set,
+    /// then a step a frame.
+    public nonisolated(unsafe) static var stepped: TimeInterval = 0
+
     public static func defaultSource() -> TimeInterval {
         let base = self.base
         return monotonic() - base
@@ -36,6 +46,6 @@ public enum MediaTime {
 /// The game's `import QuartzCore` resolves to the module of that name in
 /// `Compat`, which re-exports this.
 public func CACurrentMediaTime() -> TimeInterval {
-    MediaTime.source()
+    MediaTime.fixedStep == nil ? MediaTime.source() : MediaTime.stepped
 }
 #endif

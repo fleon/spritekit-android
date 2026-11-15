@@ -1741,6 +1741,7 @@ each the `GameViewController` method of the same name:
 |---|---|
 | `-Markers`, `-MarkerClock` | the game's `print` reaches logcat under `Switchlings` (`switchlings_redirect_stdio` pipes stdout and stderr into it, line buffered) |
 | `-Stills` | holds the view still after each marker, as on Apple, its 2.5 s counted from the frame it paused in reaching the screen (an unoptimised build can take longer than that to draw a scene's first frame); the renderer then logs `view held: its last frame is on screen` once the frame it paused in has been swapped (an unoptimised build can take a second or two to draw it), and that's when `adb exec-out screencap -p` takes the still |
+| `-FixedFrameStep 1/30` | the shell's clock (`MediaTime`, the one behind `CACurrentMediaTime()`, every shader's `u_time` and the frames' times) stands still between frames and moves on by exactly that much for each frame drawn, and the view's frame-rate cap stands aside; while the game holds the clock (`MediaClock.hold`, around its builds off the main thread) the shell draws nothing. MainActivity also sets `SWIFT_DETERMINISTIC_HASHING` before Swift loads, so every `Dictionary` and `Set` keeps one order from launch to launch. Apple ignores it |
 | `-SnapshotEvery`, `-SnapshotLevels`, `-FrameLog` | write into the app's cache (`FileManager`'s caches directory is `XDG_CACHE_HOME`, the app's `cache/`): `adb exec-out run-as <package> cat cache/levels/garden-1.png > garden-1.png`. The frame is read back from the renderer before it's swapped (`SceneRenderer.captureNextFrame`) |
 | `-KeyScript`, `-TouchScript` (`-ScriptTimes`, `-ScriptAfter`) | as on Apple: keys to `KeyboardControllable`, taps as touches at shares of the screen, named steps to `ScriptedStepping` |
 | `-GamepadScript` | a pretend pad of `GamepadInput`'s own, connected as the script starts |
@@ -1795,10 +1796,10 @@ state is a cold launch with the same arguments, so which slot takes it
 changes nothing in its shot. Each slot goes back as soon as the queue is
 empty (its screen put back first), and every slot it still holds goes back
 on a failure, Ctrl-C or a kill, even when the guard SIGKILLs the whole tree
-(a watchdog outside it releases them once the sweep's process is gone). A
-full sweep of the 35 states took 4½ minutes on four slots against 11 on
-one (271 s and 662 s, 2026-11-15). The guard counts each emulator while it
-boots (about 2 GB each), so a four-slot sweep peaks near 9 GB of its 12.
+(a watchdog outside it releases them once the sweep's process is gone).
+The slots boot one at a time: the guard counts an emulator while it boots
+(once it's up it belongs to launchd), and one now takes about 6½ GB as it
+boots, so four at once passed the guard's 12.
 
 Every launch starts afresh: it deletes the app's saved data first (nothing to
 resume; not `pm clear`, after which Android shows its "Viewing full screen"
@@ -1821,18 +1822,30 @@ and 100 black against white, both shots stretched to one size (the two
 screens' aspects differ by 2%). `--only title,level-` captures the states
 whose names start so.
 
-Scores aren't reproducible to the last digit on any number of slots: the
-shaders' time and the hard levels' timed moves follow the wall clock while
-a still is timed on the scene's, so a launch that runs slower (four
-emulators at once, or other sessions' builds) shows cloud shadows, water
-and light further along, and now and then a timed move at another moment.
-Between a one-slot and a four-slot full sweep the mean score moved 0.33
-(most states within 0.2, the lawns' cloud shadows up to 1.8), against 0.19
-between two parallel ones; the same states led the report (seven of the
-top eight). `report.json` keeps how long each launch took to reach its still
-(`stillAfter`). To see whether a change helped, compare sweeps made the same
-way, a targeted one before and after, rather than a parallel run with a
-one-slot one.
+Scores are reproducible: two sweeps of the same build give the same score
+for every state, on one slot or four, however busy the machine. parity.json's
+`base` passes `-FixedFrameStep 1/30`, with which every frame moves the
+scene, every shader's `u_time` and `MediaClock` on by exactly a thirtieth of
+a second, however long it really took (`MediaTime.fixedStep`: the shell steps
+the one clock the port has), and no frame is drawn, so no clock moves, while
+the game waits on a build off the main thread (`MediaClock.hold`: the loading
+screen's next scene, the world list's pages, previews and backdrops, the
+title's next board and sheets, the Mainframe's floor, and anything else that holds `BuildGate` off it, which holds back the lights' updates), and Swift hashes the same way every launch (`SWIFT_DETERMINISTIC_HASHING`, set by MainActivity: the world list baked its neighbours in a dictionary's order, so its still came out one of three ways). Without it the shaders'
+time followed the wall clock while a still is timed on the scene's, so a
+slower launch showed cloud shadows, water and light further along (between a
+one-slot and a four-slot sweep the mean score moved 0.33, the lawns up to
+1.8). The shots then match byte for byte (`shots/`), so a change in a score
+is a change in the build.
+
+The price is time: a debug build draws every step, however slowly. Before
+the loading screen's warm-up left the frame thread (#462), a level drew about
+11 frames a second on an idle emulator and far fewer on four busy ones, and
+a full sweep took 76 minutes on one slot and 65 on four, which is why the
+step is a thirtieth rather than a sixtieth and a still may take up to 15
+minutes (`stillAfter` in `report.json`). Since, a lawn level reaches its
+still in about 8 seconds: three of them took 65 s on one slot and 34 s on
+two (2026-11-15). The iPhone references are taken without it, as Apple ignores it
+(SpriteKit's view can't be stepped, and hands shaders the wall clock).
 
 When to run which: every Android PR runs `swift test` and the
 cross-compiles, and one that changes how anything draws adds a targeted

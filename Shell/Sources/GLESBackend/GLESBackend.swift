@@ -34,6 +34,9 @@ public enum GLESBackend {
         // places — `MediaClock`, every shader's `u_time`,
         // `BandedLayerNode.hold` — so there has to be exactly one of it.
         MediaTime.source = { TimeInterval(SDL_GetTicksNS()) / 1_000_000_000 }
+        // `-FixedFrameStep`: the shell moves that clock on a step a frame
+        // instead, from 0, before the game reads it.
+        MediaTime.fixedStep = AndroidGameController.fixedFrameStep
 
         PNGFiles.install()
         AndroidGameController.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:)))
@@ -69,6 +72,7 @@ public enum GLESBackend {
         }
         renderer.reportLabel = "game"
         controller = AndroidGameController(view: renderer.view)
+        renderer.clockHold = { AndroidGameController.holdsFrameClock }
         if let controller {
             controller.captureFrame = { done in renderer.captureNextFrame(done) }
             renderer.onInput = { input in handle(input, controller: controller) }
