@@ -50,7 +50,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var deviceScale: CGFloat = 1
 
     /// Pixels for a packed page, by its index in `AssetIndex.pages`.
-    private let pageLoader: (Int) -> (width: Int, height: Int, pixels: Data)?
+    private let pageLoader: (Int) -> PageImage?
     /// Pages `SKTexture.preload` decoded off the frame thread, for their upload.
     private let pageDecodes: PageDecodes
     /// Shaders a build made, for their programs ahead of their first draw.
@@ -122,6 +122,25 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public private(set) var effectsDrawn = 0
     public private(set) var effectsCached = 0
     public private(set) var quadsDrawn = 0
+    /// What the GPU holds in textures (`GLDevice.liveTextureBytes`).
+    public var liveTextureBytes: Int { device.liveTextureBytes }
+    /// Nodes in the scene that aren't hidden, nor under a hidden one: what
+    /// SpriteKit's node count shows.
+    public var visibleNodeCount: Int {
+        guard let scene = view.scene else { return 0 }
+        var count = 0
+        var stack: [SKNode] = [scene]
+        while let node = stack.popLast() {
+            guard !node.isHidden else { continue }
+            count += 1
+            stack.append(contentsOf: node.children)
+        }
+        return count
+    }
+    /// The textures the cache uploaded, and what they take on the GPU
+    /// against what they'd take as RGBA8.
+    public var textureCount: Int { cache.uploadedTextureCount }
+    public var textureBytes: (gpu: Int, rgba: Int) { cache.uploadedTextureBytes }
 
     /// Where each per-node attribute sits in each program, looked up once.
     /// A rig mesh sprite carries twelve of them and there are dozens of
@@ -187,7 +206,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         scene: SKScene,
         drawableSize: CGSize,
         pointScale: CGFloat,
-        pageLoader: @escaping (Int) -> (width: Int, height: Int, pixels: Data)?
+        pageLoader: @escaping (Int) -> PageImage?
     ) {
         self.init(drawableSize: drawableSize, pointScale: pointScale, pageLoader: pageLoader) {
             $0.presentScene(scene)
@@ -199,7 +218,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public init(
         drawableSize: CGSize,
         pointScale: CGFloat,
-        pageLoader: @escaping (Int) -> (width: Int, height: Int, pixels: Data)?,
+        pageLoader: @escaping (Int) -> PageImage?,
         start: @escaping (SKView) -> Void
     ) {
         self.pageLoader = pageLoader
@@ -213,9 +232,17 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // Decoded wherever they're asked for: off the frame thread when the
         // game preloads them, as SpriteKit does (`PageDecodes`), else here
         // as they first draw. The log says which, and how long it took.
+        // A compressed page is read as it ships, unless the GPU can't
+        // sample ASTC, when it's decoded here instead (`GLDevice.supportsASTC`,
+        // asked now, on the frame thread, while the context is current).
+        let astc = GLDevice.astcSupported
+        Log.info(astc ? "texture path: ASTC, with mip levels" : "texture path: RGBA8, decoded from ASTC on the CPU (no GL_KHR_texture_compression_astc_ldr)")
         let decodes = PageDecodes { number in
             let started = DispatchTime.now().uptimeNanoseconds
-            let page = pageLoader(number).map { ($0.width, $0.height, Premultiply.rgbaFlipped($0.pixels, width: $0.width, height: $0.height)) }
+            let page = pageLoader(number).map { page -> PageImage in
+                if page.compressed != nil { return astc ? page : page.decodedForRGBA8() }
+                return PageImage(width: page.width, height: page.height, pixels: Premultiply.rgbaFlipped(page.pixels, width: page.width, height: page.height))
+            }
             let took = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             Log.info("page \(number) decoded in \(String(format: "%.0f", took)) ms on the \(Thread.isMainThread ? "frame thread" : "preloading thread")")
             return page
@@ -1419,7 +1446,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         glActiveTexture(GLenum(GL_TEXTURE0))
         if let texture = batch.texture {
-            glBindTexture(GLenum(GL_TEXTURE_2D), batch.ownImage ? cache.imageName(for: texture) : cache.name(for: texture))
+            glBindTexture(GLenum(GL_TEXTURE_2D), batch.ownImage ? cache.imageName(for: texture) : cache.drawnName(for: texture))
         } else {
             glBindTexture(GLenum(GL_TEXTURE_2D), cache.name(for: SceneRenderer.white))
         }

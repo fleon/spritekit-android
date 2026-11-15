@@ -1,5 +1,6 @@
 import CZlib
 import Foundation
+import GLESRenderer
 import SpriteKitShim
 
 /// PNG files for `UIImage`, which the shim can't inflate or compress on its
@@ -26,20 +27,30 @@ public enum PNGFiles {
     }
 
     private static let lock = NSLock()
-    /// The last page cut from, decoded: a share's avatar is one image, and
-    /// the next share's likely sits on the same page.
-    private nonisolated(unsafe) static var lastPage: (number: Int, width: Int, pixels: Data)?
+    /// The last page cut from: a share's avatar is one image, and the next
+    /// share's likely sits on the same page.
+    private nonisolated(unsafe) static var lastPage: (number: Int, page: PageImage)?
 
     /// An image set's rect of its page, premultiplied, top row first.
     private static func cut(_ entry: AssetIndex.Entry) -> RasterImage? {
         if lastPage?.number != entry.page {
             guard let page = AssetBundle.page(entry.page) else { return nil }
-            lastPage = (entry.page, page.width, page.pixels)
+            lastPage = (entry.page, page)
         }
-        guard let page = lastPage else { return nil }
+        guard let page = lastPage?.page else { return nil }
         let x = Int(entry.rect.minX), y = Int(entry.rect.minY)
         let width = Int(entry.rect.width), height = Int(entry.rect.height)
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        if let compressed = page.compressed {
+            // Premultiplied already, and bottom row first, as it ships.
+            let decoded = compressed.decode(x: x, y: page.height - y - height, width: width, height: height)
+            guard decoded.count == pixels.count else { return nil }
+            for row in 0 ..< height {
+                let from = (height - 1 - row) * width * 4
+                pixels.replaceSubrange(row * width * 4 ..< (row + 1) * width * 4, with: decoded[from ..< from + width * 4])
+            }
+            return RasterImage(width: width, height: height, pixels: pixels)
+        }
         page.pixels.withUnsafeBytes { source in
             for row in 0 ..< height {
                 let from = ((y + row) * page.width + x) * 4

@@ -84,8 +84,9 @@ public enum AssetBundle {
         }
     }
 
-    /// Pixels for one packed page, decoded to RGBA8.
-    public static func page(_ number: Int) -> (width: Int, height: Int, pixels: Data)? {
+    /// One packed page: its ASTC levels as they ship (a `.ktx`, read as it
+    /// is), or a PNG's pixels decoded to RGBA8, straight, top row first.
+    public static func page(_ number: Int) -> PageImage? {
         guard let index = AssetIndex.shared, index.pages.indices.contains(number) else { return nil }
         let page = index.pages[number]
         guard let data = load(path(page.file)) else {
@@ -93,9 +94,14 @@ public enum AssetBundle {
             return nil
         }
         do {
+            if page.compressed {
+                let compressed = try CompressedPage(ktx: data)
+                Log.info("read page \(number) (\(page.file)) \(compressed.width)x\(compressed.height) ASTC \(compressed.blockWidth)x\(compressed.blockHeight), \(compressed.levels.count) levels")
+                return PageImage(compressed)
+            }
             let image = try PNGDecoder.decode(data)
             Log.info("uploading page \(number) (\(page.file)) \(image.width)x\(image.height)")
-            return (image.width, image.height, image.pixels)
+            return PageImage(width: image.width, height: image.height, pixels: image.pixels)
         } catch {
             Log.error("page \(page.file) would not decode: \(error)")
             return nil

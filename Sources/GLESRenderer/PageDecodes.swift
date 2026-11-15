@@ -18,7 +18,7 @@ import Foundation
 /// bytes; one already uploaded is never
 /// decoded again until the GL context goes (`forgetResident`).
 public final class PageDecodes: @unchecked Sendable {
-    public typealias Page = (width: Int, height: Int, pixels: Data)
+    public typealias Page = PageImage
 
     private let load: (Int) -> Page?
     private let capacity: Int
@@ -100,10 +100,10 @@ public final class PageDecodes: @unchecked Sendable {
         if let decoded, !resident.contains(page) {
             ready[page] = decoded
             order.append(page)
-            bytes += decoded.pixels.count
+            bytes += decoded.byteCount
             while bytes > capacity, let oldest = order.first {
                 order.removeFirst()
-                bytes -= ready.removeValue(forKey: oldest)?.pixels.count ?? 0
+                bytes -= ready.removeValue(forKey: oldest)?.byteCount ?? 0
             }
         }
         condition.broadcast()
@@ -120,7 +120,7 @@ public final class PageDecodes: @unchecked Sendable {
         let decoded = ready.removeValue(forKey: page)
         if let decoded {
             order.removeAll { $0 == page }
-            bytes -= decoded.pixels.count
+            bytes -= decoded.byteCount
         }
         condition.unlock()
         return decoded ?? load(page)
@@ -134,7 +134,7 @@ public final class PageDecodes: @unchecked Sendable {
         guard !order.isEmpty else { return nil }
         let page = order.removeFirst()
         guard let decoded = ready.removeValue(forKey: page) else { return nil }
-        bytes -= decoded.pixels.count
+        bytes -= decoded.byteCount
         resident.insert(page)
         return (page, decoded)
     }

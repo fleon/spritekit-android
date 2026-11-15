@@ -183,8 +183,9 @@ with Apple TV's `@2x` renditions) and looks each one up by name through
 `txtr(_:)`. Android gets the same pixels, repacked:
 
 ```
+Tools/Art/ASTC/build-astcenc.sh   # once: Arm's ASTC encoder, built from its pinned source
 npm run art -- --android      # Tools/Art/android-art.js → Android/Assets
-npm run art:android:check     # 12 checks on the packer and the index
+npm run art:android:check     # 19 checks on the packer, the compression and the index
 ```
 
 `android-art.js` runs from `export-art.js` and takes two things from it: the
@@ -202,19 +203,83 @@ the same input always gives the same pages at the same rects — two runs are
 byte for byte identical and a rebuild reads as a diff of the index. Atlas
 pages come out 87–97% full.
 
-An image whose longest side is over 512 px takes a page of its own, copied
-byte for byte from the catalog's PNG. That is what keeps the tiling backdrop
-grounds (the smallest is 1158 px) whole textures that can be sampled with
-`GL_REPEAT` and mipped — an atlas slice can be neither. Packed images sit 2 px
-apart with their edge pixels extruded into the gap, so a linear tap or a
-9-slice stretch at a rect's edge never pulls in a neighbour.
+An image whose longest side is over 512 px takes a page of its own. That is
+what keeps the tiling backdrop grounds (the smallest is 1158 px) whole
+textures that can be sampled with `GL_REPEAT` — an atlas slice can't be.
+Each packed image sits in a cell of its own, 4 px of gutter round it and
+rounded up to whole 4 px blocks, its edge pixels extruded over the rest of
+the cell, so a linear tap, a 9-slice stretch, an ASTC block or a mip level's
+texel at a rect's edge never pulls in a neighbour. Its left and bottom edges
+fall on block boundaries, so a shader's slice of it can be cut out of the
+compressed page block for block.
+
+### Compressed pages and mip levels
+
+Every page but one ships as ASTC with its mip levels (`Tools/Art/ASTC/compress.js`,
+written by Arm's `astcenc` 5.7.1 at `-thorough`): a KTX 1.1 file of blocks,
+premultiplied (as SpriteKit's textures are, and the blend
+`ONE, ONE_MINUS_SRC_ALPHA` wants) and bottom row first, so `GLDevice` hands
+its levels to `glCompressedTexImage2D` as they are. The Galaxy M31's
+Mali-G72 is bound by fill rate and memory bandwidth; ASTC reads 4 to 16
+times fewer bytes a texel than RGBA8, and mip levels let a minified sprite
+(3x art at render scale 0.5) read a small level instead of skipping across
+a big one.
+
+- **Atlas pages** take 4×4 blocks (8 bits a texel, ASTC's best): they hold
+  the interface's pieces, hard-edged mechanisms and painted kits side by
+  side. Three levels (2048, 1024, 512 px): a level-2 texel is a 4 px cell
+  block, which the gutter covers.
+- **Whole pages** take the biggest block (8×8, 6×6, 5×5, else 4×4) whose
+  decode stays within 46 dB PSNR of the painting, with at most 0.1 channel
+  values in 10,000 more than 24 levels off, measured over every texel either
+  covers. The grounds mostly take 6×6 or 8×8; the wordmark's backings,
+  blocks and bump switches 4×4 or 5×5. Every level down to 16 px.
+- **Exact pages** stay PNGs with no mip levels: `BackdropGlassLawnStones`,
+  the map the glass lawn's shader reads value by value (`EXACT`).
+
+The index says which (`format`, `block`, `levels`) and how each page's
+level 0 decodes against the art (`quality`). 2026-11-15: 18 atlas pages at
+4×4, and whole pages at 4×4 (76), 5×5 (43), 6×6 (13) and 8×8 (11); 144 MB
+of KTX, 73 MB deflated in the APK, against 101 MB of PNGs.
+
+At run time (`GLDevice`, `ResourceCache`, `CompressedPage`):
+
+- The renderer asks once whether the GPU samples ASTC
+  (`GL_KHR_texture_compression_astc_ldr`, `GLDevice.astcSupported`) and
+  logs `texture path: ASTC` or `RGBA8`. The emulator takes ASTC (decoding it
+  in software where its host GPU can't); without it each page is decoded on
+  the CPU as it's read (`ASTCDecoder`, held to astcenc's own decoder byte
+  for byte by `ASTCDecoderTests`) and uploaded as RGBA8, its mip levels made
+  by `glGenerateMipmap`. ETC2, which GLES 3.0 guarantees, isn't shipped: it
+  would be a second set of pages for the few GPUs without ASTC.
+- Pages with levels are filtered `LINEAR_MIPMAP_LINEAR`, with
+  `GL_TEXTURE_MAX_LEVEL` at their last level. At 1:1 (the parity sweep's
+  3x screen at render scale 1) that samples level 0 alone, as before.
+- A shader never gets mip levels: a whole page a shader samples (the lawns'
+  grounds, Kitchen's gingham, the planets) or draws with is uploaded again
+  with level 0 alone (`plainName`), since a shader that tiles with `fract`
+  would read the smallest level along the seam. An atlas image a shader
+  samples is cut out of its page block for block (`CompressedPage.cut`).
+- The CPU reads an image set's pixels (ledges' mitred ends, the Mainframe's
+  floor, share avatars: `UIImage(named:)`) by decoding its rect.
+- `SKTexture.usesMipmaps` is honoured where an unshaded sprite draws the
+  image (`drawnName`): its levels come from `glGenerateMipmap`. The rigs
+  ask for it, but `RigMeshNode`'s shader picks one of four triangles a
+  pixel, so the texture coordinate's derivative jumps at every triangle's
+  edge and the GPU read the smallest level there: a dotted seam over every
+  Switchling. Their pages keep one level until a rig draws as real
+  triangles.
+- The frame report logs the textures' memory every 300 frames:
+  `[frames] game textures N  X MB on the GPU (Y MB as RGBA8)`.
 
 ```jsonc
 {
- "version": 1,
+ "version": 2,
  "scale": 3,
- "pages": [ { "file": "atlas-000.png", "width": 2048, "height": 2048 },
-            { "file": "whole/BackdropReefSeabedSand.png", "width": 1254, "height": 1254, "repeats": true } ],
+ "pages": [ { "file": "atlas-000.ktx", "width": 2048, "height": 2048, "format": "astc", "block": [4, 4], "levels": 3,
+              "quality": { "psnr": 48.9, "worst": 41, "outliers": 0.01 } },
+            { "file": "whole/BackdropReefSeabedSand.ktx", "width": 1254, "height": 1254, "repeats": true,
+              "format": "astc", "block": [8, 8], "levels": 7, "quality": { "psnr": 51.7, "worst": 45, "outliers": 0.04 } } ],
  "assets": {
   // rect is [x, y, width, height] in page pixels, top left origin;
   // size is [width, height] in points; insets are [top, left, bottom, right].
@@ -288,8 +353,7 @@ attributes passed through twelve varyings, which the emulator drew right and
 a Galaxy M31's Mali-G72 did not: every rig dropped whole triangles. Uniforms
 also spare the GPU interpolating twelve constants across every pixel.
 
-**What is not wired yet.** `SKTexture.usesMipmaps` is carried but the
-uploader ignores it, so a minified rig aliases. Lighting is stood in for
+**What is not wired yet.** Lighting is stood in for
 (`RigStubs.swift`), so every rig takes `RigMeshNode`'s unlit path — which is
 its own real code, not a lit shader with invented light in it.
 
@@ -1484,8 +1548,9 @@ with what they override.
   pass over the rug.
 - **A shader's uniform textures get their own pixels.** A packed image a
   shader samples (Kitchen's gingham, the grounds, the clearing's stones) is
-  cut out of its atlas page once into a texture of its own that wraps; the
-  page itself would show the whole atlas.
+  cut out of its atlas page once into a texture of its own that wraps
+  (its ASTC blocks copied as they are); the page itself would show the
+  whole atlas.
 - **A shaded sprite sees its own image.** SpriteKit hands a custom shader
   `v_tex_coord` in its texture's own 0…1, and on iOS each image is a texture
   of its own, so `CrumbleNode` strikes its cracks from the brick's middle

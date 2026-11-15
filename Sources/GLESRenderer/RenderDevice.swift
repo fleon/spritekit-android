@@ -47,6 +47,21 @@ public protocol RenderDevice: AnyObject {
     /// devices give more, and an effect node covering a big screen's whole
     /// backdrop needs it.
     var maximumTextureSide: Int { get }
+
+    /// Whether the GPU samples ASTC (`GL_KHR_texture_compression_astc_ldr`).
+    /// Without it a compressed page is decoded on the CPU and uploaded as
+    /// RGBA8 (`PageImage.decodedForRGBA8`).
+    var supportsASTC: Bool { get }
+
+    /// A texture of `page`'s first `levels` levels, uploaded as they are,
+    /// filtered trilinearly when there's more than one; 0 if it cannot be.
+    func createTexture(compressed page: CompressedPage, levels: Int) -> UInt32
+
+    /// Makes a texture's mip levels from its first (`levels` of them in
+    /// all, or every one with 0) and has it filtered trilinearly: a page
+    /// that shipped compressed, decoded for a GPU without ASTC, or an image
+    /// the game asked mipmaps of (`SKTexture.usesMipmaps`).
+    func generateMipmaps(_ name: UInt32, levels: Int)
 }
 
 public extension RenderDevice {
@@ -58,6 +73,9 @@ public extension RenderDevice {
     func setRepeats(_ name: UInt32) {}
     func updateTexture(_ name: UInt32, width: Int, height: Int, pixels: Data) {}
     func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32 { 0 }
+    var supportsASTC: Bool { false }
+    func createTexture(compressed page: CompressedPage, levels: Int) -> UInt32 { 0 }
+    func generateMipmaps(_ name: UInt32, levels: Int) {}
 }
 
 /// Keeps GL handles for the shim's textures and shaders.
@@ -78,11 +96,21 @@ public final class ResourceCache {
     private var sliceNames: [String: UInt32] = [:]
     /// The same, clamped, for shaded sprites' own images (`imageName(for:)`).
     private var imageNames: [String: UInt32] = [:]
-    private var lastPage: (number: Int, image: (width: Int, height: Int, pixels: Data))?
+    private var lastPage: (number: Int, image: PageImage)?
+    /// Whole compressed pages uploaded again with level 0 alone, for shaders
+    /// (`plainName(forPage:)`), by page.
+    private var plainPages: [Int: UInt32] = [:]
+    /// Pages whose texture is compressed, which `copyRegion` can't read.
+    private var compressedPages: Set<Int> = []
+    /// Images given mip levels as an unshaded sprite first drew them (`drawnName`).
+    private var mipmappedImages: Set<UInt32> = []
+    /// What each texture this cache owns takes on the GPU, and what it
+    /// would take as RGBA8 with the same levels, by GL name.
+    private var textureBytes: [UInt32: (bytes: Int, rgba: Int)] = [:]
 
     /// Pixels for one packed page, which the asset index names. Hundreds of
     /// assets share a page, so this is called once per page, not per asset.
-    public var pageSource: ((Int) -> (width: Int, height: Int, pixels: Data)?)?
+    public var pageSource: ((Int) -> PageImage?)?
 
     /// Whether `pageSource`'s rows come bottom first, as GL takes them,
     /// turned over where they decoded rather than as they upload.
@@ -90,10 +118,10 @@ public final class ResourceCache {
 
     /// A page decoded ahead of its first draw (`SKTexture.preload`) and not
     /// uploaded yet, taken for `uploadAhead`.
-    public var pageAhead: (() -> (page: Int, image: (width: Int, height: Int, pixels: Data))?)?
+    public var pageAhead: (() -> (page: Int, image: PageImage)?)?
 
     /// A page `uploadAhead` is part way through, and the rows it has written.
-    private var partial: (page: Int, name: UInt32, image: (width: Int, height: Int, pixels: Data), rows: Int)?
+    private var partial: (page: Int, name: UInt32, image: PageImage, rows: Int)?
 
     /// Rows a strip of `uploadAhead` writes: a megabyte of a 2048-pixel page,
     /// about a millisecond of a phone's frame.
@@ -122,9 +150,7 @@ public final class ResourceCache {
                 uploadAhead(while: { true }, finishingOnly: true)
                 if let existing = pageNames[page] { return existing }
             }
-            let name = pageRowsBottomFirst
-                ? uploadBottomFirst(pageSource?(page))
-                : upload(pageSource?(page))
+            let name = uploadPage(pageSource?(page), page: page)
             // A page the index marks as one whole tiling image may wrap.
             // Sky's planet maps need it: the shader reads them as a sphere's
             // surface and wraps longitude with `fract`, so a clamped map
@@ -143,7 +169,7 @@ public final class ResourceCache {
         if let mutable = root.mutablePixels {
             if root.glName == 0 {
                 root.glName = device.createTexture(width: mutable.width, height: mutable.height, pixels: nil)
-                if root.glName != 0 { ownedTextures.insert(root.glName) }
+                if root.glName != 0 { own(root.glName, width: mutable.width, height: mutable.height) }
                 root.uploadedRevision = -1
             }
             if root.glName != 0, root.uploadedRevision != root.revision {
@@ -153,8 +179,26 @@ public final class ResourceCache {
             return root.glName
         }
         if root.glName != 0 { return root.glName }
-        let name = upload(pixelSource?(root))
+        let name = upload(raw: pixelSource?(root))
         root.glName = name
+        return name
+    }
+
+    /// The GL name for a texture an unshaded sprite draws with: `name(for:)`,
+    /// with mip levels made the first time for an image the game asked them
+    /// of (`SKTexture.usesMipmaps`).
+    ///
+    /// Only here: a texture a shader draws keeps one level, as a whole page
+    /// does (`plainName`). The rigs ask for mip levels, but `RigMeshNode`'s
+    /// shader picks one of four triangles a pixel, so a texture coordinate's
+    /// derivative jumps across every triangle's edge and the GPU reads the
+    /// smallest level along it: a dotted seam over every Switchling.
+    public func drawnName(for texture: SKTexture) -> UInt32 {
+        let name = name(for: texture)
+        let root = texture.root
+        if name != 0, texture.page == nil, root.usesMipmaps, root.mutablePixels == nil, mipmappedImages.insert(name).inserted {
+            mipmap(name)
+        }
         return name
     }
 
@@ -193,7 +237,7 @@ public final class ResourceCache {
               index.pages.indices.contains(entry.page) else { return name(for: texture) }
         let page = index.pages[entry.page]
         if entry.rect.width >= page.size.width - 0.5, entry.rect.height >= page.size.height - 0.5 {
-            return name(for: texture)
+            return plainName(forPage: entry.page, texture: texture)
         }
         if let existing = (repeats ? sliceNames : imageNames)[entry.name] { return existing }
         func keep(_ name: UInt32) {
@@ -202,26 +246,53 @@ public final class ResourceCache {
         // Copied out of the page already uploaded, on the GPU, where the
         // device can: decoding a page again costs a second or more on a
         // phone, and a backdrop asks for several slices off several pages.
+        // A compressed page can't be read that way (it can't be a
+        // framebuffer's attachment); its blocks are copied instead, below.
         let pageName = name(for: texture)
         let unit = entry.textureRect
-        let copied = device.copyRegion(
-            of: pageName,
-            x: Int((unit.minX * page.size.width).rounded()), y: Int((unit.minY * page.size.height).rounded()),
-            width: Int((unit.width * page.size.width).rounded()), height: Int((unit.height * page.size.height).rounded())
-        )
-        if copied != 0 {
-            ownedTextures.insert(copied)
-            if repeats { device.setRepeats(copied) }
-            keep(copied)
-            return copied
+        if !compressedPages.contains(entry.page) {
+            let copied = device.copyRegion(
+                of: pageName,
+                x: Int((unit.minX * page.size.width).rounded()), y: Int((unit.minY * page.size.height).rounded()),
+                width: Int((unit.width * page.size.width).rounded()), height: Int((unit.height * page.size.height).rounded())
+            )
+            if copied != 0 {
+                own(copied, width: Int(entry.rect.width.rounded()), height: Int(entry.rect.height.rounded()))
+                if repeats { device.setRepeats(copied) }
+                keep(copied)
+                return copied
+            }
         }
-        // A page decodes once for the slices cut from it in a row.
+        // A page reads once for the slices cut from it in a row.
         if lastPage?.number != entry.page { lastPage = pageSource?(entry.page).map { (entry.page, $0) } }
         guard let source = lastPage?.image else { return name(for: texture) }
         let x0 = max(0, Int(entry.rect.minX.rounded())), y0 = max(0, Int(entry.rect.minY.rounded()))
         let width = min(Int(entry.rect.width.rounded()), source.width - x0)
         let height = min(Int(entry.rect.height.rounded()), source.height - y0)
         guard width > 0, height > 0 else { return name(for: texture) }
+        if let compressed = source.compressed {
+            // Its blocks as they are, where the image sits on block
+            // boundaries (the packer puts every atlas image there) and the
+            // GPU takes ASTC; else decoded on the CPU, rows bottom first.
+            let bottom = source.height - y0 - height
+            if device.supportsASTC, let cut = compressed.cut(x: x0, y: bottom, width: width, height: height) {
+                let name = device.createTexture(compressed: cut, levels: 1)
+                if name != 0 {
+                    own(name, width: width, height: height, bytes: cut.byteCount)
+                    if repeats { device.setRepeats(name) }
+                    keep(name)
+                    return name
+                }
+            }
+            let decoded = compressed.decode(x: x0, y: bottom, width: width, height: height)
+            let name = device.createTexture(width: width, height: height, bottomFirst: Data(decoded))
+            if name != 0 {
+                own(name, width: width, height: height)
+                if repeats { device.setRepeats(name) }
+            }
+            keep(name)
+            return name
+        }
         var pixels = Data(count: width * height * 4)
         pixels.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
             source.pixels.withUnsafeBytes { (from: UnsafeRawBufferPointer) in
@@ -234,16 +305,82 @@ public final class ResourceCache {
                 }
             }
         }
-        let name = upload((width, height, pixels))
+        let name = upload(PageImage(width: width, height: height, pixels: pixels))
         if name != 0, repeats { device.setRepeats(name) }
         keep(name)
         return name
     }
 
-    private func uploadBottomFirst(_ resolved: (width: Int, height: Int, pixels: Data)?) -> UInt32 {
-        guard let resolved else { return upload(nil) }
+    /// A whole page for a shader: the page itself, unless it has mip levels,
+    /// which a shader that tiles its image with `fract` would show as a seam
+    /// (the derivative jumps where the image wraps, and the GPU reads its
+    /// smallest level along it). A compressed whole page is then uploaded
+    /// again with level 0 alone, as every texture was before ASTC: whole
+    /// pages repeat, so this one does too.
+    private func plainName(forPage page: Int, texture: SKTexture) -> UInt32 {
+        let mipped = AssetIndex.shared.map { page < $0.pages.count && $0.pages[page].levels > 1 } == true
+        guard mipped else { return name(for: texture) }
+        if let existing = plainPages[page] { return existing }
+        guard let source = pageSource?(page) else { return name(for: texture) }
+        var name: UInt32 = 0
+        if let compressed = source.compressed, device.supportsASTC {
+            name = device.createTexture(compressed: compressed, levels: 1)
+            if name != 0 {
+                own(name, width: source.width, height: source.height, bytes: compressed.levels.first?.count ?? 0)
+            }
+        }
+        if name == 0 {
+            let plain = source.compressed.map { PageImage(width: source.width, height: source.height, pixels: $0.decodeLevel0()) } ?? source
+            name = pageRowsBottomFirst ? uploadBottomFirst(plain) : upload(plain)
+        }
+        if name != 0 { device.setRepeats(name) }
+        plainPages[page] = name
+        return name
+    }
+
+    /// Uploads a packed page as it arrives: its ASTC levels where the GPU
+    /// takes them, else its pixels (making the mip levels it shipped with).
+    private func uploadPage(_ image: PageImage?, page: Int) -> UInt32 {
+        guard let image else { return upload(PageImage?.none) }
+        if let compressed = image.compressed {
+            if device.supportsASTC {
+                let name = device.createTexture(compressed: compressed, levels: compressed.levels.count)
+                if name != 0 {
+                    compressedPages.insert(page)
+                    own(name, width: image.width, height: image.height, levels: compressed.levels.count, bytes: compressed.byteCount)
+                    return name
+                }
+            }
+            return uploadPage(image.decodedForRGBA8(), page: page)
+        }
+        let name = pageRowsBottomFirst ? uploadBottomFirst(image) : upload(image)
+        if name != 0, image.mipLevels > 1 { mipmap(name, levels: image.mipLevels) }
+        return name
+    }
+
+    /// Makes `name`'s mip levels, and counts them.
+    private func mipmap(_ name: UInt32, levels: Int = 0) {
+        device.generateMipmaps(name, levels: levels)
+        guard let size = textureBytes[name] else { return }
+        // A full chain adds a third; a short one, its levels' quarters.
+        var share = 1.0, step = 1.0
+        for _ in 1 ..< (levels > 0 ? levels : 16) { step /= 4; share += step }
+        textureBytes[name] = (Int(Double(size.bytes) * share), Int(Double(size.rgba) * share))
+    }
+
+    /// Counts a texture this cache owns: `bytes` on the GPU (RGBA8's if not
+    /// given), against RGBA8's for the same levels.
+    private func own(_ name: UInt32, width: Int, height: Int, levels: Int = 1, bytes: Int? = nil) {
+        ownedTextures.insert(name)
+        var rgba = 0
+        for level in 0 ..< max(1, levels) { rgba += max(1, width >> level) * max(1, height >> level) * 4 }
+        textureBytes[name] = (bytes ?? rgba, rgba)
+    }
+
+    private func uploadBottomFirst(_ resolved: PageImage?) -> UInt32 {
+        guard let resolved else { return upload(PageImage?.none) }
         let name = device.createTexture(width: resolved.width, height: resolved.height, bottomFirst: resolved.pixels)
-        if name != 0 { ownedTextures.insert(name) }
+        if name != 0 { own(name, width: resolved.width, height: resolved.height) }
         return name
     }
 
@@ -254,7 +391,7 @@ public final class ResourceCache {
         guard root.glName == 0, root.page == nil, root.mutablePixels == nil else { return }
         let name = device.createTexture(width: width, height: height, bottomFirst: pixels)
         guard name != 0 else { return }
-        ownedTextures.insert(name)
+        own(name, width: width, height: height)
         root.glName = name
     }
 
@@ -273,14 +410,25 @@ public final class ResourceCache {
             if partial == nil {
                 guard !finishingOnly, let next = pageAhead?() else { return }
                 guard pageNames[next.page] == nil else { continue }
-                let image = next.image
+                var image = next.image
+                if image.compressed != nil {
+                    // Blocks upload as they are, with no conversion: a
+                    // whole page is a few milliseconds' copy, so it goes in
+                    // one step. Pixels for a GPU without ASTC go in strips.
+                    if device.supportsASTC {
+                        pageNames[next.page] = uploadPage(image, page: next.page)
+                        markRepeats(next.page)
+                        continue
+                    }
+                    image = image.decodedForRGBA8()
+                }
                 guard image.width > 0, image.height > 0, image.pixels.count >= image.width * image.height * 4 else {
-                    pageNames[next.page] = upload(nil)
+                    pageNames[next.page] = upload(PageImage?.none)
                     continue
                 }
                 let name = device.createTexture(width: image.width, height: image.height, pixels: nil)
                 guard name != 0 else { return }
-                ownedTextures.insert(name)
+                own(name, width: image.width, height: image.height)
                 partial = (next.page, name, image, 0)
             }
             guard var strip = partial else { return }
@@ -296,15 +444,22 @@ public final class ResourceCache {
             }
             partial = nil
             pageNames[strip.page] = strip.name
-            if AssetIndex.shared.map({ strip.page < $0.pages.count && $0.pages[strip.page].repeats }) == true {
-                device.setRepeats(strip.name)
-            }
+            if strip.image.mipLevels > 1 { mipmap(strip.name, levels: strip.image.mipLevels) }
+            markRepeats(strip.page)
             if finishingOnly { return }
         }
     }
 
-    private func upload(_ resolved: (width: Int, height: Int, pixels: Data)?) -> UInt32 {
+    private func markRepeats(_ page: Int) {
+        guard let name = pageNames[page], name != 0 else { return }
+        if AssetIndex.shared.map({ page < $0.pages.count && $0.pages[page].repeats }) == true {
+            device.setRepeats(name)
+        }
+    }
+
+    private func upload(_ resolved: PageImage?) -> UInt32 {
         let name: UInt32
+        let width = resolved?.width ?? 1, height = resolved?.height ?? 1
         if let resolved {
             name = device.createTexture(
                 width: resolved.width,
@@ -316,8 +471,12 @@ public final class ResourceCache {
             // which is a legible "asset missing" rather than a black hole.
             name = device.createTexture(width: 1, height: 1, pixels: Data([255, 255, 255, 255]))
         }
-        if name != 0 { ownedTextures.insert(name) }
+        if name != 0 { own(name, width: width, height: height) }
         return name
+    }
+
+    private func upload(raw resolved: (width: Int, height: Int, pixels: Data)?) -> UInt32 {
+        upload(resolved.map { PageImage(width: $0.width, height: $0.height, pixels: $0.pixels) })
     }
 
     /// Programs built on a thread of their own, ahead of their first draw.
@@ -392,6 +551,10 @@ public final class ResourceCache {
         for name in ownedTextures { device.deleteTexture(name) }
         for name in ownedPrograms { device.deleteProgram(name) }
         ownedTextures.removeAll()
+        textureBytes.removeAll()
+        plainPages.removeAll()
+        compressedPages.removeAll()
+        mipmappedImages.removeAll()
         ownedPrograms.removeAll()
         programsBySource.removeAll()
         partial = nil
@@ -404,6 +567,11 @@ public final class ResourceCache {
     }
 
     public var uploadedTextureCount: Int { ownedTextures.count }
+    /// Bytes the textures this cache uploaded take on the GPU, and what
+    /// they'd take as RGBA8 (with the same mip levels).
+    public var uploadedTextureBytes: (gpu: Int, rgba: Int) {
+        textureBytes.values.reduce((0, 0)) { ($0.0 + $1.bytes, $0.1 + $1.rgba) }
+    }
     public var linkedProgramCount: Int { ownedPrograms.count }
 
     // MARK: Types

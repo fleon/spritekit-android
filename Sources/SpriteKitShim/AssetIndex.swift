@@ -53,6 +53,11 @@ public final class AssetIndex: Sendable {
         /// so it may be sampled with repeat wrapping and mipped — which the
         /// tiling backdrop grounds need and an atlas slice cannot have.
         public let repeats: Bool
+        /// Whether the page ships as ASTC (a KTX file, `CompressedPage`)
+        /// rather than a PNG.
+        public var compressed: Bool = false
+        /// Mip levels the page carries (1: none).
+        public var levels: Int = 1
     }
 
     /// The pixels-per-point the art was exported at (3).
@@ -76,7 +81,12 @@ public final class AssetIndex: Sendable {
         guard wire.scale > 0 else { throw Failure.malformed("scale is \(wire.scale)") }
         self.scale = CGFloat(wire.scale)
         self.directory = directory
-        pages = wire.pages.map { Page(file: $0.file, size: CGSize(width: $0.width, height: $0.height), repeats: $0.repeats ?? false) }
+        pages = wire.pages.map {
+            Page(
+                file: $0.file, size: CGSize(width: $0.width, height: $0.height), repeats: $0.repeats ?? false,
+                compressed: $0.format == "astc", levels: max(1, $0.levels ?? 1)
+            )
+        }
 
         var built: [String: Entry] = [:]
         built.reserveCapacity(wire.assets.count)
@@ -162,7 +172,7 @@ public final class AssetIndex: Sendable {
     // MARK: Details
 
     /// The index format this reads. `android-art.js` writes the same number.
-    public static let version = 1
+    public static let version = 2
     public static let fileName = "index.json"
 
     public enum Failure: Error, Equatable {
@@ -182,6 +192,8 @@ public final class AssetIndex: Sendable {
             let width: Double
             let height: Double
             let repeats: Bool?
+            let format: String?
+            let levels: Int?
         }
 
         struct Asset: Decodable {

@@ -83,6 +83,15 @@ struct FrameReport {
             label, renderer.drawCalls, renderer.targetBinds, renderer.quadsDrawn,
             renderer.effectsDrawn, renderer.effectsCached
         ))
+        Log.info(String(
+            format: "[frames] %@ nodes %d  texture memory %.1f MB",
+            label, renderer.visibleNodeCount, Double(renderer.liveTextureBytes) / 1_048_576
+        ))
+        let textures = renderer.textureBytes
+        Log.info(String(
+            format: "[frames] %@ cache textures %d  %.1f MB on the GPU (%.1f MB as RGBA8)",
+            label, renderer.textureCount, Double(textures.gpu) / 1_048_576, Double(textures.rgba) / 1_048_576
+        ))
     }
 
     private static func summary(_ values: [Double]) -> (median: Double, p95: Double, max: Double) {

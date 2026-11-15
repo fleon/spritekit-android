@@ -19,7 +19,7 @@ struct ShadedSpriteTests {
     /// stretches down below a raised tile.
     private static let index = try! AssetIndex(json: Data("""
     {
-      "version": 1, "scale": 3,
+      "version": 2, "scale": 3,
       "pages": [{"file": "p.png", "width": 2048, "height": 2048}],
       "assets": {
         "Brick1": {"page": 0, "rect": [1822, 246, 192, 240], "size": [64, 80], "caps": [67.2, 0, 4.48, 0]},

@@ -13,6 +13,18 @@ public nonisolated final class GLDevice: RenderDevice {
 
     public init() {}
 
+    /// Bytes every live texture this device made takes on the GPU (RGBA8's
+    /// four a texel, a compressed texture's blocks, levels included), by
+    /// name: the frame report's texture memory. Render targets aren't counted.
+    private var textureSizes: [UInt32: Int] = [:]
+    public private(set) var liveTextureBytes = 0
+
+    func countTexture(_ name: UInt32, bytes: Int) {
+        guard name != 0 else { return }
+        liveTextureBytes += bytes - (textureSizes[name] ?? 0)
+        textureSizes[name] = bytes
+    }
+
     // MARK: Textures
 
     public func createTexture(width: Int, height: Int, pixels: Data?) -> UInt32 {
@@ -68,6 +80,7 @@ public nonisolated final class GLDevice: RenderDevice {
         }
 
         glBindTexture(GLenum(GL_TEXTURE_2D), 0)
+        countTexture(name, bytes: width * height * 4)
         return name
     }
 
@@ -135,6 +148,7 @@ public nonisolated final class GLDevice: RenderDevice {
     }
 
     public func deleteTexture(_ name: UInt32) {
+        liveTextureBytes -= textureSizes.removeValue(forKey: name) ?? 0
         var name = name
         glDeleteTextures(1, &name)
     }
@@ -150,6 +164,89 @@ public nonisolated final class GLDevice: RenderDevice {
             glTexSubImage2D(GLenum(GL_TEXTURE_2D), 0, 0, 0, GLsizei(width), GLsizei(height), GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), raw.baseAddress)
         }
         glBindTexture(GLenum(GL_TEXTURE_2D), GLuint(bound))
+    }
+
+    // MARK: Compressed textures
+
+    /// Whether the context lists `GL_KHR_texture_compression_astc_ldr`
+    /// (or the OES extension that includes it). GLES 3.0 promises only
+    /// ETC2, but every GPU this game is likely to meet takes ASTC: Mali
+    /// since the T6xx, Adreno since the 4xx, PowerVR since Series 6XT, and
+    /// the emulator (which decodes it in software where its host can't).
+    /// Read once, on the frame thread with the context current, the first
+    /// time it's asked (`SceneRenderer.init`).
+    public static let astcSupported: Bool = {
+        var count: GLint = 0
+        glGetIntegerv(GLenum(GL_NUM_EXTENSIONS), &count)
+        var found = false
+        for index in 0 ..< max(0, count) {
+            guard let name = glGetStringi(GLenum(GL_EXTENSIONS), GLuint(index)) else { continue }
+            let text = String(cString: UnsafeRawPointer(name).assumingMemoryBound(to: CChar.self))
+            if text == "GL_KHR_texture_compression_astc_ldr" || text == "GL_OES_texture_compression_astc" { found = true }
+        }
+        Log.info("\(count) GL extensions; ASTC \(found ? "supported" : "not supported")")
+        return found
+    }()
+
+    public var supportsASTC: Bool { Self.astcSupported }
+
+    public func createTexture(compressed page: CompressedPage, levels: Int) -> UInt32 {
+        let levels = max(1, min(levels, page.levels.count))
+        var name: GLuint = 0
+        glGenTextures(1, &name)
+        guard name != 0 else {
+            Log.error("glGenTextures gave 0")
+            return 0
+        }
+        glBindTexture(GLenum(GL_TEXTURE_2D), name)
+        // Trilinear where there are levels: the art is 3x, drawn smaller on
+        // most screens and at a lower render scale smaller still, and a page
+        // sampled at one level only aliases and reads more memory than it
+        // shows. Atlas pages ship three levels and gutters a level-2 texel
+        // wide (android-art.js), so no level pulls in a neighbour.
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), levels > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAX_LEVEL), GLint(levels - 1))
+        while glGetError() != GLenum(GL_NO_ERROR) {}
+        FrameCosts.time(.uploads) {
+            for level in 0 ..< levels {
+                let size = page.size(ofLevel: level)
+                page.levels[level].withUnsafeBytes { raw in
+                    glCompressedTexImage2D(
+                        GLenum(GL_TEXTURE_2D), GLint(level), GLenum(page.format),
+                        GLsizei(size.width), GLsizei(size.height), 0,
+                        GLsizei(raw.count), raw.baseAddress
+                    )
+                }
+            }
+        }
+        let error = glGetError()
+        glBindTexture(GLenum(GL_TEXTURE_2D), 0)
+        countTexture(name, bytes: page.levels.prefix(levels).reduce(0) { $0 + $1.count })
+        guard error == GLenum(GL_NO_ERROR) else {
+            Log.error("compressed upload \(page.width)x\(page.height) (format 0x\(String(page.format, radix: 16))) failed: 0x\(String(error, radix: 16))")
+            deleteTexture(name)
+            return 0
+        }
+        return name
+    }
+
+    public func generateMipmaps(_ name: UInt32, levels: Int) {
+        glBindTexture(GLenum(GL_TEXTURE_2D), name)
+        if levels > 0 {
+            glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAX_LEVEL), GLint(levels - 1))
+        }
+        FrameCosts.time(.uploads) { glGenerateMipmap(GLenum(GL_TEXTURE_2D)) }
+        if let base = textureSizes[name] {
+            // RGBA8 levels: each a quarter of the last (a full chain, or `levels`).
+            var bytes = base, level = base
+            for _ in 1 ..< (levels > 0 ? levels : 16) { level /= 4; bytes += level }
+            countTexture(name, bytes: bytes)
+        }
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR_MIPMAP_LINEAR)
+        glBindTexture(GLenum(GL_TEXTURE_2D), 0)
     }
 
     // MARK: Render targets

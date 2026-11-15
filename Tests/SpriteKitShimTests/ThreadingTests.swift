@@ -72,7 +72,7 @@ struct ThreadingTests {
 
     nonisolated private static let index = try! AssetIndex(json: Data("""
     {
-     "version": 1, "scale": 3,
+     "version": 2, "scale": 3,
      "pages": [
       { "file": "atlas-000.png", "width": 64, "height": 64 },
       { "file": "atlas-001.png", "width": 64, "height": 64 },

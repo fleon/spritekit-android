@@ -25,7 +25,7 @@ struct PageDecodesTests {
             lock.unlock()
             started?.signal()
             gate?.wait()
-            return (side, side, Data(repeating: UInt8(page), count: side * side * 4))
+            return PageImage(width: side, height: side, pixels: Data(repeating: UInt8(page), count: side * side * 4))
         }
 
         func count(_ page: Int) -> Int { lock.lock(); defer { lock.unlock() }; return counts[page, default: 0] }
@@ -116,7 +116,7 @@ struct PageDecodesTests {
 
     @Test("The page decoded longest ago is taken for its upload ahead, and is then resident")
     func takeNextReady() {
-        let decodes = PageDecodes(width: 1) { page in (1, 1, Data([UInt8(page), 0, 0, 255])) }
+        let decodes = PageDecodes(width: 1) { page in PageImage(width: 1, height: 1, pixels: Data([UInt8(page), 0, 0, 255])) }
         decodes.decode([4, 2])
         #expect(decodes.takeNextReady()?.page == 4)
         #expect(decodes.takeNextReady()?.page == 2)
@@ -142,7 +142,7 @@ struct PageDecodesTests {
         let decodes = PageDecodes(width: 1) { page in
             count.lock.lock(); count.loads += 1; count.lock.unlock()
             Thread.sleep(forTimeInterval: 0.05)
-            return (1, 1, Data([UInt8(page), 0, 0, 255]))
+            return PageImage(width: 1, height: 1, pixels: Data([UInt8(page), 0, 0, 255]))
         }
         decodes.prefetch(3)
         decodes.prefetch(3)
@@ -156,7 +156,7 @@ struct PageDecodesTests {
     func decodeWaitsForPrefetch() {
         let decodes = PageDecodes(width: 1) { page in
             Thread.sleep(forTimeInterval: 0.1)
-            return (1, 1, Data([UInt8(page), 0, 0, 255]))
+            return PageImage(width: 1, height: 1, pixels: Data([UInt8(page), 0, 0, 255]))
         }
         decodes.prefetch(5)
         decodes.decode([5])

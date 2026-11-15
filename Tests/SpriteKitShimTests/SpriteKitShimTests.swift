@@ -434,7 +434,7 @@ struct AssetIndexTests {
     /// index for Sunny Garden.
     static let json = """
     {
-     "version": 1,
+     "version": 2,
      "scale": 3,
      "pages": [
       { "file": "atlas-000.png", "width": 2048, "height": 2048 },
@@ -515,8 +515,8 @@ struct AssetIndexTests {
 
     @Test("A newer index format, or a rect off its page, is refused")
     func refusals() throws {
-        let newer = Self.json.replacingOccurrences(of: "\"version\": 1", with: "\"version\": 2")
-        #expect(throws: AssetIndex.Failure.version(found: 2, expected: 1)) {
+        let newer = Self.json.replacingOccurrences(of: "\"version\": 2", with: "\"version\": 3")
+        #expect(throws: AssetIndex.Failure.version(found: 3, expected: 2)) {
             try AssetIndex(json: Data(newer.utf8))
         }
         let off = Self.json.replacingOccurrences(of: "[1822, 246, 192, 240]", with: "[1900, 246, 192, 240]")

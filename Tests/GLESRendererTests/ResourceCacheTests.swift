@@ -38,6 +38,20 @@ final class RecordingDevice: RenderDevice {
     private(set) var repeating: Set<UInt32> = []
     func setRepeats(_ name: UInt32) { repeating.insert(name) }
 
+    // MARK: Compressed pages
+
+    var supportsASTC = true
+    /// Each compressed upload: its size, the levels uploaded and their bytes.
+    private(set) var compressedUploads: [(name: UInt32, width: Int, height: Int, levels: Int, bytes: Int)] = []
+    func createTexture(compressed page: CompressedPage, levels: Int) -> UInt32 {
+        nextName += 1
+        compressedUploads.append((nextName, page.width, page.height, levels, page.levels.prefix(levels).reduce(0) { $0 + $1.count }))
+        return nextName
+    }
+
+    private(set) var mipmapped: [(name: UInt32, levels: Int)] = []
+    func generateMipmaps(_ name: UInt32, levels: Int) { mipmapped.append((name, levels)) }
+
     func createProgram(vertex: String, fragment: String) -> UInt32 {
         programs.append((vertex, fragment))
         guard !failsToLink else { return 0 }
@@ -137,7 +151,7 @@ struct PackedPageTests {
     func pageSharedAcrossAssets() throws {
         let index = try AssetIndex(json: Data("""
         {
-          "version": 1,
+          "version": 2,
           "scale": 3,
           "pages": [{"file": "page-0.png", "width": 1024, "height": 1024},
                     {"file": "page-1.png", "width": 1024, "height": 1024}],
@@ -154,7 +168,7 @@ struct PackedPageTests {
 
         let device = RecordingDevice()
         let cache = ResourceCache(device: device)
-        cache.pageSource = { _ in (width: 1024, height: 1024, pixels: Data(count: 16)) }
+        cache.pageSource = { _ in PageImage(width: 1024, height: 1024, pixels: Data(count: 16)) }
 
         let a = cache.name(for: SKTexture(imageNamed: "Brick1"))
         let b = cache.name(for: SKTexture(imageNamed: "Brick2"))
@@ -171,7 +185,7 @@ struct PackedPageTests {
     func ownImage() throws {
         let index = try AssetIndex(json: Data("""
         {
-          "version": 1, "scale": 3,
+          "version": 2, "scale": 3,
           "pages": [{"file": "p.png", "width": 8, "height": 8},
                     {"file": "whole.png", "width": 4, "height": 4, "repeats": true}],
           "assets": {"Brick": {"page": 0, "rect": [2, 2, 4, 4], "size": [4, 4]},
@@ -183,7 +197,7 @@ struct PackedPageTests {
 
         let device = RecordingDevice()
         let cache = ResourceCache(device: device)
-        cache.pageSource = { page in page == 0 ? (8, 8, Data(count: 8 * 8 * 4)) : (4, 4, Data(count: 4 * 4 * 4)) }
+        cache.pageSource = { page in page == 0 ? PageImage(width: 8, height: 8, pixels: Data(count: 8 * 8 * 4)) : PageImage(width: 4, height: 4, pixels: Data(count: 4 * 4 * 4)) }
 
         let page = cache.name(for: SKTexture(imageNamed: "Brick"))
         let own = cache.imageName(for: SKTexture(imageNamed: "Brick"))
@@ -202,7 +216,7 @@ struct PackedPageTests {
     func uploadAhead() throws {
         let index = try AssetIndex(json: Data("""
         {
-          "version": 1, "scale": 3,
+          "version": 2, "scale": 3,
           "pages": [{"file": "a.png", "width": 4, "height": 300},
                     {"file": "b.png", "width": 4, "height": 300}],
           "assets": {"A": {"page": 0, "rect": [0, 0, 4, 4], "size": [4, 4]},
@@ -215,8 +229,10 @@ struct PackedPageTests {
         let device = RecordingDevice()
         let cache = ResourceCache(device: device)
         cache.pageRowsBottomFirst = true
-        var ahead: [(page: Int, image: (width: Int, height: Int, pixels: Data))] =
-            [(0, (4, 300, Data(count: 4 * 300 * 4))), (1, (4, 300, Data(count: 4 * 300 * 4)))]
+        var ahead: [(page: Int, image: PageImage)] = [
+            (0, PageImage(width: 4, height: 300, pixels: Data(count: 4 * 300 * 4))),
+            (1, PageImage(width: 4, height: 300, pixels: Data(count: 4 * 300 * 4))),
+        ]
         cache.pageAhead = { ahead.isEmpty ? nil : ahead.removeFirst() }
         cache.pageSource = { _ in Issue.record("decoded again"); return nil }
 
@@ -241,7 +257,7 @@ struct PackedPageTests {
     func sizeInPoints() throws {
         let index = try AssetIndex(json: Data("""
         {
-          "version": 1, "scale": 3,
+          "version": 2, "scale": 3,
           "pages": [{"file": "p.png", "width": 1024, "height": 1024}],
           "assets": {"Brick": {"page": 0, "rect": [0, 0, 150, 150], "size": [50, 50]}}
         }
@@ -394,5 +410,96 @@ struct ContextLossTests {
         // And it re-uploads afterwards rather than reusing a dead name.
         cache.name(for: texture)
         #expect(device.uploads.count == 2)
+    }
+}
+
+/// Compressed pages: uploaded as they ship, cut out block for block, and a
+/// plain copy for shaders.
+@Suite("Compressed pages")
+@MainActor
+struct CompressedPageCacheTests {
+    /// A page of 4×4 blocks whose every block's first byte is its index.
+    static func page(width: Int, height: Int, levels: Int) -> CompressedPage {
+        var data: [Data] = []
+        for level in 0 ..< levels {
+            let w = max(1, width >> level), h = max(1, height >> level)
+            var bytes = Data(count: CompressedPage.byteCount(width: w, height: h, blockWidth: 4, blockHeight: 4))
+            for block in 0 ..< bytes.count / 16 { bytes[block * 16] = UInt8(block & 0xFF) }
+            data.append(bytes)
+        }
+        return CompressedPage(width: width, height: height, blockWidth: 4, blockHeight: 4, format: 0x93B0, levels: data)
+    }
+
+    static let index = """
+    {
+      "version": 2, "scale": 3,
+      "pages": [{"file": "atlas-000.ktx", "width": 64, "height": 64, "format": "astc", "block": [4, 4], "levels": 3},
+                {"file": "whole/Ground.ktx", "width": 40, "height": 40, "repeats": true, "format": "astc", "block": [4, 4], "levels": 2}],
+      "assets": {"Brick": {"page": 0, "rect": [8, 20, 10, 12], "size": [3.33, 4]},
+                 "Ground": {"page": 1, "rect": [0, 0, 40, 40], "size": [13.33, 13.33]}}
+    }
+    """
+
+    @Test("A compressed page uploads its levels as they ship, and counts its bytes")
+    func uploadsLevels() throws {
+        AssetIndex.shared = try AssetIndex(json: Data(Self.index.utf8))
+        defer { AssetIndex.shared = nil }
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        cache.pageSource = { $0 == 0 ? PageImage(Self.page(width: 64, height: 64, levels: 3)) : PageImage(Self.page(width: 40, height: 40, levels: 2)) }
+        let name = cache.name(for: SKTexture(imageNamed: "Brick"))
+        #expect(device.compressedUploads.count == 1)
+        #expect(device.compressedUploads.first?.name == name && device.compressedUploads.first?.levels == 3)
+        #expect(device.uploads.isEmpty, "no RGBA8 upload for a page the GPU samples as ASTC")
+        let bytes = cache.uploadedTextureBytes
+        #expect(bytes.gpu == (256 + 64 + 16) * 16)
+        #expect(bytes.rgba == (64 * 64 + 32 * 32 + 16 * 16) * 4)
+    }
+
+    @Test("An atlas image cuts out of its compressed page block for block")
+    func cutsBlocks() throws {
+        AssetIndex.shared = try AssetIndex(json: Data(Self.index.utf8))
+        defer { AssetIndex.shared = nil }
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        cache.pageRowsBottomFirst = true
+        cache.pageSource = { $0 == 0 ? PageImage(Self.page(width: 64, height: 64, levels: 3)) : PageImage(Self.page(width: 40, height: 40, levels: 2)) }
+        let wrapping = cache.samplerName(for: SKTexture(imageNamed: "Brick"))
+        // Brick is at x 8, and its bottom 64 - 20 - 12 = 32 up: blocks 2…4 across, 8…10 up.
+        let cut = try #require(device.compressedUploads.last)
+        #expect(cut.name == wrapping && cut.width == 10 && cut.height == 12 && cut.levels == 1)
+        #expect(cut.bytes == 3 * 3 * 16)
+        #expect(device.repeating.contains(wrapping))
+        #expect(device.uploads.isEmpty, "decoded on the CPU when blocks would do")
+    }
+
+    @Test("A shader gets a whole page without its mip levels, which would seam where it tiles")
+    func plainForShaders() throws {
+        AssetIndex.shared = try AssetIndex(json: Data(Self.index.utf8))
+        defer { AssetIndex.shared = nil }
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        cache.pageSource = { $0 == 0 ? PageImage(Self.page(width: 64, height: 64, levels: 3)) : PageImage(Self.page(width: 40, height: 40, levels: 2)) }
+        let drawn = cache.name(for: SKTexture(imageNamed: "Ground"))
+        let sampled = cache.samplerName(for: SKTexture(imageNamed: "Ground"))
+        let shaded = cache.imageName(for: SKTexture(imageNamed: "Ground"))
+        #expect(drawn != sampled && sampled == shaded)
+        #expect(device.compressedUploads.map(\.levels) == [2, 1])
+        #expect(device.repeating.contains(sampled))
+    }
+
+    @Test("Without ASTC a page decodes to RGBA8 and makes the levels it shipped with")
+    func fallsBackToRGBA8() throws {
+        AssetIndex.shared = try AssetIndex(json: Data(Self.index.utf8))
+        defer { AssetIndex.shared = nil }
+        let device = RecordingDevice()
+        device.supportsASTC = false
+        let cache = ResourceCache(device: device)
+        cache.pageRowsBottomFirst = true
+        cache.pageSource = { $0 == 0 ? PageImage(Self.page(width: 64, height: 64, levels: 3)) : PageImage(Self.page(width: 40, height: 40, levels: 2)) }
+        let name = cache.name(for: SKTexture(imageNamed: "Brick"))
+        #expect(device.compressedUploads.isEmpty)
+        #expect(device.uploads.last?.width == 64 && device.uploads.last?.byteCount == 64 * 64 * 4)
+        #expect(device.mipmapped.first?.name == name && device.mipmapped.first?.levels == 3)
     }
 }
