@@ -1288,16 +1288,20 @@ the port runs that as the game wrote it: the builds really do run on
 libdispatch's workers (`offMainActor` is the game's own, an unchecked call
 on the calling thread; `Task.detached`, `DispatchQueue.global` and
 `Thread` all start threads here: `top -H` shows `DispatchWorker` threads
-busy while a scene builds). They run near the frame thread's priority,
-though: a Linux thread takes the niceness of whoever started it, so the
-workers sit at -2 or -4 beside `SDLThread`'s -4, where Apple would run
-them below the main thread. What the audit found was the shim putting
+busy while a scene builds). A Linux thread takes the niceness of whoever
+started it, so the workers came up at -2 or -4 beside `SDLThread`'s -4,
+where Apple's QoS runs them below the main thread; libdispatch on Linux has
+no QoS to ask for and no hook as a worker starts, so the frame loop watches
+for new threads (`/proc/self/stat`'s count, then `/proc/self/task` when it
+grows) and sets each `DispatchWorker` to niceness 9, an `AsyncTask`'s
+(`WorkerPriority`; `adb shell setprop debug.switchlings.workernice off`, or
+another value, for measuring). What the audit found was the shim putting
 work back on the frame thread, or racing it:
 
 | site | threads | on Android | verdict |
 |---|---|---|---|
 | `LoadingScene` builds the next scene (`DispatchQueue.global` + `offMainActor`, back with `Task { @MainActor }`) | worker, then main | builds on a worker; the main actor's jobs run on the frame loop (`MainActorJobs`) | OK |
-| `SKTexture.preload` (the loading screen, `WorldTextures` for the world list and the title's tour, backdrops, the Level Designer) | the caller's | was a no-op: every 2048-pixel page was read, inflated and premultiplied on the frame thread the first time it drew, most of them in the loading screen's warm-up draw (`view.texture(from:)` of the next scene). Now decoded on the preloading thread, three at a time (`PageDecodes`, an eighth of the device's memory at most, 384 MB), the frame thread only uploading them. On a Galaxy M31, into the world list: 24–25 pages decoded on the frame thread before, 8 after; the longest frame 3.7–4.8 s before, 2.6–3.3 s after, and all frames over 50 ms 14–17 s before, 11–14 s after; the world list arrives about a second later, the decoding done before it shows rather than in its first frames. The rest of that longest frame is GL's (uploads, shader compiles) | fixed |
+| `SKTexture.preload` (the loading screen, `WorldTextures` for the world list and the title's tour, backdrops, the Level Designer) | the caller's | decodes the pages it names on the preloading thread (`PageDecodes`), turned bottom row first as it premultiplies; the frame thread uploads them a strip at a time ahead of their first draw (`ResourceCache.uploadAhead`), and builds the shaders the preloading thread made (below) | fixed |
 | PNG unfiltering (`PNGDecoder`) | the frame thread | a byte-at-a-time `switch`; now a row at a time through pointers, byte-identical on all of the art's PNGs and 2.7× faster | fixed |
 | `UIGraphicsImageRenderer` (`SurfaceTexture`, carets, credits, the circuit floor and lawns' masks off the main thread) | main and builds at once | **one context stack for every thread**: an image drawn on one could land in another's bitmap, and concurrent pushes tore the array (a crash in `ThreadingTests`); now per thread, as UIKit's is | fixed |
 | `SKView.texture(from:)`, a baked texture's `cgImage()` | main | GL calls, current on the frame thread alone; any other thread is now refused with an error in the log rather than drawing into whatever was bound | guarded |
@@ -1310,6 +1314,56 @@ work back on the frame thread, or racing it:
 | `PlayBilling`, `PlayGamesAchievements`' `async` calls | **were** a libdispatch worker | Play's answers arrive on the frame thread, so the waiters raced it and Java was called from a worker; now on the main actor | fixed |
 | `MediaTime`'s start | any | a `static let` | fixed |
 | Text (`TextEngine`, `FontLibrary`, each face, `GlyphAtlas`) | main and builds | locked, each FreeType face behind its own lock | OK |
+
+### The loading screen's warm-up, on a Galaxy M31
+
+`LoadingScene` draws the next scene once offscreen before it fades to it
+(`view.texture(from:)`), so its textures are on the GPU and its programs
+built. On the M31 that one draw held the frame thread for 2.8–2.9 s going
+into the world list, and the frames after it, a world list flick and opening
+a level each froze for 0.5–2 s more. Broken down (`frame cost` lines and
+simpleperf), it was mostly not GL at all:
+
+- **Translating shaders**: `ShaderTranslator` broke each shader into
+  `Character`s for every one of thirty words it checks, about a quarter of
+  the frame thread's time; it works on UTF-8 bytes now (identical output,
+  56 times faster), and shaders made from the same source and inputs share
+  one program (`ResourceCache.programKey`), where every `SKShader` the game
+  made (each tile's, each band's) was translated and linked again.
+- **Batching**: the open batch was copied and written back for every
+  sprite, its whole vertex array with it; the game primes its rig shaders
+  behind 8,000 sprites (`AttributeShaders`), which took 1.2 s a time. Now
+  in place: 8,000 sprites batch in 1 ms on a Mac, from 68.
+- **Linking**: up to 220 ms a program on a cold shader cache (Mali keeps
+  linked programs across launches, so a second launch barely links). The
+  shaders a build makes on its thread are handed over as it preloads
+  (`SKShader.programWarmer`) and linked on a second EGL context sharing the
+  frame thread's (`GLBuilderThread`, `ProgramBuilds`), at niceness 0: the
+  warm-up only waits for one still being linked. Where EGL can't share a
+  context they're built a few a frame on the frame thread instead
+  (`ShaderWarmQueue`). A shader whose uniforms change after its program was
+  built is built again (`SKShader.revision`).
+- **Pages**: turned over on the frame thread as they uploaded (150 ms of the
+  warm-up); now as they decode. A page starts decoding as soon as a texture
+  is made on it (`SKTexture.pageWanted`, `PageDecodes.prefetch`), which took
+  the loading screen's own first frame from 0.9 s to 0.3 s.
+
+Before (main) and after, optimised builds, launching into the world list,
+four flicks and into a level (worst frame-thread stall, in ms):
+
+| | cold shader cache, before | after | second launch, before | after |
+|---|---|---|---|---|
+| splash to loading screen | 2,163 | 299 | 2,658 | 276 |
+| into the world list (warm-up and the frames after) | 2,791, 1,569, 916 | 223, 321, 378 | 2,889, 2,019, 565 | 255, 164, 144 |
+| a world list flick | 516 | 153 | 569 | 93 |
+| into a level | 819 | 105 | 1,064 | 89 |
+| the loading screen up for | 10.4 s | 7.7 s | 12.4 s | 7.7 s |
+
+What's left over 100 ms: the warm-up's CPU (the rig priming's 8,000 sprites
+flattened, about 60 ms, which Android doesn't need: a game change), the
+programs the game makes on the main thread as the world list shows (cold
+cache only) and its own main-thread work there, and the loading screen's
+pages decoding as it first shows.
 
 Thread Sanitizer runs the host tests clean (`swift test --sanitize=thread
 --scratch-path .build/tsan`); before these fixes it reported eight races.

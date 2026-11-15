@@ -14,6 +14,16 @@ public protocol RenderDevice: AnyObject {
     /// was made (a mutable texture, `SKTexture.modifyPixelData`).
     func updateTexture(_ name: UInt32, width: Int, height: Int, pixels: Data)
 
+    /// Makes a texture from RGBA8 rows already bottom first, as GL takes
+    /// them, uploading them as they are.
+    func createTexture(width: Int, height: Int, bottomFirst pixels: Data) -> UInt32
+
+    /// Writes `rowCount` rows from row `y` (counting from the bottom, as GL
+    /// does) of a texture `createTexture(pixels: nil)` made, from `pixels`
+    /// (bottom first) at `byteOffset`: one strip of an upload spread over
+    /// frames.
+    func writeRows(_ name: UInt32, width: Int, y: Int, rowCount: Int, pixels: Data, byteOffset: Int)
+
     /// Compiles and links a program. Returns 0 on failure, having logged it.
     func createProgram(vertex: String, fragment: String) -> UInt32
     func deleteProgram(_ name: UInt32)
@@ -41,6 +51,10 @@ public protocol RenderDevice: AnyObject {
 
 public extension RenderDevice {
     var maximumTextureSide: Int { 2048 }
+    func createTexture(width: Int, height: Int, bottomFirst pixels: Data) -> UInt32 {
+        createTexture(width: width, height: height, pixels: Premultiply.flippedRows(pixels, width: width, height: height))
+    }
+    func writeRows(_ name: UInt32, width: Int, y: Int, rowCount: Int, pixels: Data, byteOffset: Int) {}
     func setRepeats(_ name: UInt32) {}
     func updateTexture(_ name: UInt32, width: Int, height: Int, pixels: Data) {}
     func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32 { 0 }
@@ -55,6 +69,8 @@ public final class ResourceCache {
     private let device: RenderDevice
     private var ownedTextures: Set<UInt32> = []
     private var ownedPrograms: Set<UInt32> = []
+    /// Programs by the shader source and inputs they were translated from.
+    private var programsBySource: [String: UInt32] = [:]
     /// GL names for packed pages, keyed by their index in `AssetIndex.pages`.
     private var pageNames: [Int: UInt32] = [:]
     /// Packed images cut out of their pages for shaders that sample them
@@ -67,6 +83,21 @@ public final class ResourceCache {
     /// Pixels for one packed page, which the asset index names. Hundreds of
     /// assets share a page, so this is called once per page, not per asset.
     public var pageSource: ((Int) -> (width: Int, height: Int, pixels: Data)?)?
+
+    /// Whether `pageSource`'s rows come bottom first, as GL takes them,
+    /// turned over where they decoded rather than as they upload.
+    public var pageRowsBottomFirst = false
+
+    /// A page decoded ahead of its first draw (`SKTexture.preload`) and not
+    /// uploaded yet, taken for `uploadAhead`.
+    public var pageAhead: (() -> (page: Int, image: (width: Int, height: Int, pixels: Data))?)?
+
+    /// A page `uploadAhead` is part way through, and the rows it has written.
+    private var partial: (page: Int, name: UInt32, image: (width: Int, height: Int, pixels: Data), rows: Int)?
+
+    /// Rows a strip of `uploadAhead` writes: a megabyte of a 2048-pixel page,
+    /// about a millisecond of a phone's frame.
+    static let stripRows = 128
 
     /// Pixels for a texture that the asset index does not back — one built
     /// from raw data, or a stand-in in a test.
@@ -86,7 +117,14 @@ public final class ResourceCache {
     public func name(for texture: SKTexture) -> UInt32 {
         if let page = texture.page {
             if let existing = pageNames[page] { return existing }
-            let name = upload(pageSource?(page))
+            // Drawn before `uploadAhead` finished it: the rest goes now.
+            if partial?.page == page {
+                uploadAhead(while: { true }, finishingOnly: true)
+                if let existing = pageNames[page] { return existing }
+            }
+            let name = pageRowsBottomFirst
+                ? uploadBottomFirst(pageSource?(page))
+                : upload(pageSource?(page))
             // A page the index marks as one whole tiling image may wrap.
             // Sky's planet maps need it: the shader reads them as a sphere's
             // surface and wraps longitude with `fract`, so a clamped map
@@ -188,7 +226,9 @@ public final class ResourceCache {
         pixels.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) in
             source.pixels.withUnsafeBytes { (from: UnsafeRawBufferPointer) in
                 for row in 0..<height {
-                    let start = ((y0 + row) * source.width + x0) * 4
+                    // The slice comes out top row first, whichever way the page's rows run.
+                    let pageRow = pageRowsBottomFirst ? source.height - 1 - (y0 + row) : y0 + row
+                    let start = (pageRow * source.width + x0) * 4
                     out.baseAddress!.advanced(by: row * width * 4)
                         .copyMemory(from: from.baseAddress!.advanced(by: start), byteCount: width * 4)
                 }
@@ -198,6 +238,58 @@ public final class ResourceCache {
         if name != 0, repeats { device.setRepeats(name) }
         keep(name)
         return name
+    }
+
+    private func uploadBottomFirst(_ resolved: (width: Int, height: Int, pixels: Data)?) -> UInt32 {
+        guard let resolved else { return upload(nil) }
+        let name = device.createTexture(width: resolved.width, height: resolved.height, bottomFirst: resolved.pixels)
+        if name != 0 { ownedTextures.insert(name) }
+        return name
+    }
+
+    /// Uploads pages decoded ahead of their first draw a strip at a time,
+    /// while `hasTime` says the frame has room, so a scene's art reaches the
+    /// GPU over the frames the loading screen shows while it builds rather
+    /// than all at once in its warm-up draw. A page drawn before it's done
+    /// is finished then (`name(for:)`).
+    public func uploadAhead(while hasTime: () -> Bool) {
+        uploadAhead(while: hasTime, finishingOnly: false)
+    }
+
+    private func uploadAhead(while hasTime: () -> Bool, finishingOnly: Bool) {
+        guard pageRowsBottomFirst else { return }
+        while hasTime() {
+            if partial == nil {
+                guard !finishingOnly, let next = pageAhead?() else { return }
+                guard pageNames[next.page] == nil else { continue }
+                let image = next.image
+                guard image.width > 0, image.height > 0, image.pixels.count >= image.width * image.height * 4 else {
+                    pageNames[next.page] = upload(nil)
+                    continue
+                }
+                let name = device.createTexture(width: image.width, height: image.height, pixels: nil)
+                guard name != 0 else { return }
+                ownedTextures.insert(name)
+                partial = (next.page, name, image, 0)
+            }
+            guard var strip = partial else { return }
+            let count = min(Self.stripRows, strip.image.height - strip.rows)
+            device.writeRows(
+                strip.name, width: strip.image.width, y: strip.rows, rowCount: count,
+                pixels: strip.image.pixels, byteOffset: strip.rows * strip.image.width * 4
+            )
+            strip.rows += count
+            guard strip.rows >= strip.image.height else {
+                partial = strip
+                continue
+            }
+            partial = nil
+            pageNames[strip.page] = strip.name
+            if AssetIndex.shared.map({ strip.page < $0.pages.count && $0.pages[strip.page].repeats }) == true {
+                device.setRepeats(strip.name)
+            }
+            if finishingOnly { return }
+        }
     }
 
     private func upload(_ resolved: (width: Int, height: Int, pixels: Data)?) -> UInt32 {
@@ -217,23 +309,68 @@ public final class ResourceCache {
         return name
     }
 
+    /// Programs built on a thread of their own, ahead of their first draw.
+    public var programBuilds: ProgramBuilds?
+
+    /// What a shader's program is built from: its source and the inputs
+    /// declared for it. The game makes a new `SKShader` for many a node from
+    /// the same source (each tile's, each band's), and those share a program.
+    public static func programKey(for shader: SKShader) -> String {
+        var key = shader.source ?? ""
+        for uniform in shader.uniforms { key += "\u{1}u \(glslType(for: uniform.value)) \(uniform.name)" }
+        for attribute in shader.attributes { key += "\u{1}a \(glslType(for: attribute.type)) \(attribute.name)" }
+        return key
+    }
+
+    /// The program's fragment shader, translated.
+    public static func fragmentSource(for shader: SKShader) -> String {
+        ShaderTranslator.fragmentShader(
+            from: shader.source ?? "",
+            inputs: ShaderTranslator.Inputs(
+                uniforms: shader.uniforms.map { (name: $0.name, type: glslType(for: $0.value)) },
+                attributes: shader.attributes.map { (name: $0.name, type: glslType(for: $0.type)) }
+            )
+        )
+    }
+
+    /// Hands `shaders` to `programBuilds` to build ahead of their first
+    /// draw, from the thread that made them.
+    public static func buildAhead(_ shaders: [SKShader], in builds: ProgramBuilds) {
+        let vertex = ShaderTranslator.spriteVertexShader()
+        for shader in shaders {
+            let key = programKey(for: shader)
+            guard !builds.knows(key) else { continue }
+            builds.submit(key: key, vertex: vertex, fragment: fragmentSource(for: shader))
+        }
+    }
+
     /// The GL program for a shader, translating and linking it the first time.
     @discardableResult
     public func program(for shader: SKShader) -> UInt32 {
-        if shader.glProgram != 0 { return shader.glProgram }
+        if shader.glProgram != 0, shader.glProgramRevision == shader.revision { return shader.glProgram }
+        shader.glProgramRevision = shader.revision
 
-        let attributes = shader.attributes.map { (name: $0.name, type: glslType(for: $0.type)) }
-        let uniforms = shader.uniforms.map { (name: $0.name, type: glslType(for: $0.value)) }
+        // Shared by every draw, which sets its own shader's uniforms
+        // (`SceneRenderer.bind`).
+        let key = Self.programKey(for: shader)
+        if let shared = programsBySource[key] {
+            shader.glProgram = shared
+            return shared
+        }
+        if let built = programBuilds?.take(key) {
+            ownedPrograms.insert(built)
+            programsBySource[key] = built
+            shader.glProgram = built
+            return built
+        }
 
-        let fragment = ShaderTranslator.fragmentShader(
-            from: shader.source ?? "",
-            inputs: ShaderTranslator.Inputs(uniforms: uniforms, attributes: attributes)
-        )
-        let vertex = ShaderTranslator.spriteVertexShader()
-
-        let name = device.createProgram(vertex: vertex, fragment: fragment)
+        let name = device.createProgram(vertex: ShaderTranslator.spriteVertexShader(), fragment: Self.fragmentSource(for: shader))
         shader.glProgram = name
-        if name != 0 { ownedPrograms.insert(name) }
+        if name != 0 {
+            ownedPrograms.insert(name)
+            programsBySource[key] = name
+            programBuilds?.hold(key)
+        }
         return name
     }
 
@@ -245,6 +382,8 @@ public final class ResourceCache {
         for name in ownedPrograms { device.deleteProgram(name) }
         ownedTextures.removeAll()
         ownedPrograms.removeAll()
+        programsBySource.removeAll()
+        partial = nil
         pageNames.removeAll()
         sliceNames.removeAll()
         imageNames.removeAll()
@@ -258,7 +397,7 @@ public final class ResourceCache {
 
     // MARK: Types
 
-    func glslType(for value: SKUniform.Value) -> String {
+    static func glslType(for value: SKUniform.Value) -> String {
         switch value {
         case .float: return "float"
         case .vector2: return "vec2"
@@ -271,7 +410,7 @@ public final class ResourceCache {
         }
     }
 
-    func glslType(for type: SKAttributeType) -> String {
+    static func glslType(for type: SKAttributeType) -> String {
         switch type {
         case .float, .halfFloat: return "float"
         case .vectorFloat2, .vectorHalfFloat2: return "vec2"

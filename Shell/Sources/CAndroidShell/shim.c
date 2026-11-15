@@ -352,3 +352,78 @@ bool switchlings_offer_paste(float x, float y) {
     (*env)->DeleteLocalRef(env, activity);
     return ok;
 }
+
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct {
+    EGLDisplay display;
+    EGLContext context;
+    EGLSurface surface;
+} switchlings_gl_share;
+
+static void *switchlings_gl_share_fail(const char *step) {
+    char message[160];
+    snprintf(message, sizeof message, "no shared GL context: %s failed (EGL error 0x%x)", step, eglGetError());
+    switchlings_log(ANDROID_LOG_WARN, "Switchlings", message);
+    return NULL;
+}
+
+void *switchlings_gl_share_create(void) {
+    EGLDisplay display = eglGetCurrentDisplay();
+    EGLContext current = eglGetCurrentContext();
+    if (display == EGL_NO_DISPLAY || current == EGL_NO_CONTEXT) { return switchlings_gl_share_fail("finding the current context"); }
+    EGLint configID = 0;
+    if (!eglQueryContext(display, current, EGL_CONFIG_ID, &configID)) { return switchlings_gl_share_fail("eglQueryContext"); }
+    const EGLint configAttributes[] = { EGL_CONFIG_ID, configID, EGL_NONE };
+    EGLConfig config;
+    EGLint found = 0;
+    if (!eglChooseConfig(display, configAttributes, &config, 1, &found) || found < 1) { return switchlings_gl_share_fail("eglChooseConfig"); }
+    const EGLint contextAttributes[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    EGLContext context = eglCreateContext(display, config, current, contextAttributes);
+    if (context == EGL_NO_CONTEXT) { return switchlings_gl_share_fail("eglCreateContext"); }
+    // No surface where the driver allows it; a pixel of pbuffer where not.
+    EGLSurface surface = EGL_NO_SURFACE;
+    const char *extensions = eglQueryString(display, EGL_EXTENSIONS);
+    if (!extensions || !strstr(extensions, "EGL_KHR_surfaceless_context")) {
+        const EGLint surfaceAttributes[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
+        surface = eglCreatePbufferSurface(display, config, surfaceAttributes);
+        if (surface == EGL_NO_SURFACE) {
+            switchlings_gl_share_fail("eglCreatePbufferSurface");
+            eglDestroyContext(display, context);
+            return NULL;
+        }
+    }
+    switchlings_gl_share *share = calloc(1, sizeof(switchlings_gl_share));
+    if (!share) {
+        if (surface != EGL_NO_SURFACE) { eglDestroySurface(display, surface); }
+        eglDestroyContext(display, context);
+        return NULL;
+    }
+    share->display = display;
+    share->context = context;
+    share->surface = surface;
+    return share;
+}
+
+int switchlings_gl_share_make_current(void *handle) {
+    switchlings_gl_share *share = handle;
+    if (!share) { return 0; }
+    return eglMakeCurrent(share->display, share->surface, share->surface, share->context) ? 1 : 0;
+}
+
+void switchlings_gl_share_release(void *handle) {
+    switchlings_gl_share *share = handle;
+    if (!share) { return; }
+    eglMakeCurrent(share->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+}
+
+void switchlings_gl_share_destroy(void *handle) {
+    switchlings_gl_share *share = handle;
+    if (!share) { return; }
+    if (share->surface != EGL_NO_SURFACE) { eglDestroySurface(share->display, share->surface); }
+    eglDestroyContext(share->display, share->context);
+    free(share);
+}

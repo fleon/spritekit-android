@@ -113,4 +113,42 @@ struct PageDecodesTests {
             #expect(decodes.take(page) != nil)
         }
     }
+
+    @Test("The page decoded longest ago is taken for its upload ahead, and is then resident")
+    func takeNextReady() {
+        let decodes = PageDecodes(width: 1) { page in (1, 1, Data([UInt8(page), 0, 0, 255])) }
+        decodes.decode([4, 2])
+        #expect(decodes.takeNextReady()?.page == 4)
+        #expect(decodes.takeNextReady()?.page == 2)
+        #expect(decodes.takeNextReady() == nil)
+        #expect(decodes.waitingBytes == 0)
+        // Resident: preloading it again decodes nothing.
+        decodes.decode([4])
+        #expect(!decodes.isWaiting(4))
+    }
+
+    @Test("Premultiplying and turning a page over at once matches doing each in turn")
+    func flippedPremultiply() {
+        var random = SystemRandomNumberGenerator()
+        let pixels = Data((0 ..< 5 * 3 * 4).map { _ in UInt8.random(in: 0 ... 255, using: &random) })
+        #expect(Premultiply.rgbaFlipped(pixels, width: 5, height: 3)
+            == Premultiply.flippedRows(Premultiply.rgba(pixels), width: 5, height: 3))
+    }
+
+    @Test("A page prefetched as its texture is made is decoded once, and taking it waits for that")
+    func prefetch() {
+        final class Count: @unchecked Sendable { let lock = NSLock(); var loads = 0 }
+        let count = Count()
+        let decodes = PageDecodes(width: 1) { page in
+            count.lock.lock(); count.loads += 1; count.lock.unlock()
+            Thread.sleep(forTimeInterval: 0.05)
+            return (1, 1, Data([UInt8(page), 0, 0, 255]))
+        }
+        decodes.prefetch(3)
+        decodes.prefetch(3)
+        #expect(decodes.take(3)?.pixels.first == 3)
+        decodes.prefetch(3)
+        count.lock.lock(); defer { count.lock.unlock() }
+        #expect(count.loads == 1)
+    }
 }

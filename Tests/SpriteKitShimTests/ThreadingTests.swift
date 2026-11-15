@@ -160,4 +160,23 @@ struct ThreadingTests {
         }
         for index in 0 ..< 8 { #expect(readings.get(index) == [1]) }
     }
+
+    @Test("Preloading on a building thread hands over the shaders that thread made, and only those")
+    func shadersHandedOver() async {
+        final class Box: @unchecked Sendable { var handed: [[SKShader]] = [] }
+        let box = Box()
+        let lock = NSLock()
+        SKShader.programWarmer = { shaders in lock.lock(); box.handed.append(shaders); lock.unlock() }
+        defer { SKShader.programWarmer = nil }
+        let made: [SKShader] = await withCheckedContinuation { done in
+            Thread {
+                let shaders = [SKShader(source: "a"), SKShader(source: "b")]
+                SKTexture.preload([]) { done.resume(returning: shaders) }
+            }.start()
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        #expect(box.handed.count == 1)
+        #expect(box.handed.first?.map(ObjectIdentifier.init) == made.map(ObjectIdentifier.init))
+    }
 }

@@ -255,6 +255,7 @@ public enum Shell {
             }
 
             probe?.tick(at: now)
+            WorkerPriority.update()
             renderer.drawFrame(frame)
             SDL_GL_SwapWindow(window)
             index += 1

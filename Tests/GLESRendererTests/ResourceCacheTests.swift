@@ -29,6 +29,12 @@ final class RecordingDevice: RenderDevice {
 
     func deleteTexture(_ name: UInt32) { deletedTextures.append(name) }
 
+    /// Each strip `writeRows` wrote: the texture, its first row and how many.
+    private(set) var strips: [(name: UInt32, y: Int, rows: Int)] = []
+    func writeRows(_ name: UInt32, width: Int, y: Int, rowCount: Int, pixels: Data, byteOffset: Int) {
+        strips.append((name, y, rowCount))
+    }
+
     private(set) var repeating: Set<UInt32> = []
     func setRepeats(_ name: UInt32) { repeating.insert(name) }
 
@@ -192,6 +198,45 @@ struct PackedPageTests {
         #expect(cache.imageName(for: SKTexture(imageNamed: "Ground")) == cache.name(for: SKTexture(imageNamed: "Ground")))
     }
 
+    @Test("Pages decoded ahead upload a strip at a time, and a page drawn part way is finished")
+    func uploadAhead() throws {
+        let index = try AssetIndex(json: Data("""
+        {
+          "version": 1, "scale": 3,
+          "pages": [{"file": "a.png", "width": 4, "height": 300},
+                    {"file": "b.png", "width": 4, "height": 300}],
+          "assets": {"A": {"page": 0, "rect": [0, 0, 4, 4], "size": [4, 4]},
+                     "B": {"page": 1, "rect": [0, 0, 4, 4], "size": [4, 4]}}
+        }
+        """.utf8))
+        AssetIndex.shared = index
+        defer { AssetIndex.shared = nil }
+
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        cache.pageRowsBottomFirst = true
+        var ahead: [(page: Int, image: (width: Int, height: Int, pixels: Data))] =
+            [(0, (4, 300, Data(count: 4 * 300 * 4))), (1, (4, 300, Data(count: 4 * 300 * 4)))]
+        cache.pageAhead = { ahead.isEmpty ? nil : ahead.removeFirst() }
+        cache.pageSource = { _ in Issue.record("decoded again"); return nil }
+
+        // Three strips: page 0 whole (128 + 128 + 44 rows).
+        var budget = 3
+        cache.uploadAhead(while: { budget -= 1; return budget >= 0 })
+        #expect(device.strips.map(\.rows) == [128, 128, 44])
+        #expect(device.strips.map(\.y) == [0, 128, 256])
+        let a = cache.name(for: SKTexture(imageNamed: "A"))
+        #expect(device.strips.allSatisfy { $0.name == a })
+
+        // One strip of page 1, then it's drawn: the rest goes at once.
+        budget = 1
+        cache.uploadAhead(while: { budget -= 1; return budget >= 0 })
+        let b = cache.name(for: SKTexture(imageNamed: "B"))
+        #expect(b != a)
+        #expect(device.strips.filter { $0.name == b }.map(\.y) == [0, 128, 256])
+        #expect(cache.name(for: SKTexture(imageNamed: "B")) == b)
+    }
+
     @Test("A named texture reports its art's size in points, not pixels")
     func sizeInPoints() throws {
         let index = try AssetIndex(json: Data("""
@@ -262,6 +307,38 @@ struct ProgramCacheTests {
 
         #expect(!device.programs[0].vertex.contains("a_run"))
         #expect(device.programs[0].fragment.contains("uniform vec4 a_run;"))
+    }
+
+    @Test("Shaders made from the same source and inputs share one program")
+    func sharedPrograms() {
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        let source = "void main() { gl_FragColor = vec4(u_level); }"
+        let a = SKShader(source: source, uniforms: [SKUniform(name: "u_level", float: 0.2)])
+        let b = SKShader(source: source, uniforms: [SKUniform(name: "u_level", float: 0.7)])
+        let other = SKShader(source: source, uniforms: [SKUniform(name: "u_level", vectorFloat2: .zero)])
+
+        let first = cache.program(for: a)
+        #expect(cache.program(for: b) == first)
+        #expect(b.glProgram == first)
+        #expect(device.programs.count == 1)
+        // A uniform of another type declares another program.
+        #expect(cache.program(for: other) != first)
+        #expect(device.programs.count == 2)
+    }
+
+    @Test("A shader whose uniforms change after its program was built is built again")
+    func rebuiltOnChange() {
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        let shader = SKShader(source: "void main() { gl_FragColor = vec4(u_level); }")
+        cache.program(for: shader)
+        shader.addUniform(SKUniform(name: "u_level", float: 1))
+        cache.program(for: shader)
+        #expect(device.programs.count == 2)
+        #expect(device.programs[1].fragment.contains("uniform float u_level;"))
+        cache.program(for: shader)
+        #expect(device.programs.count == 2)
     }
 
     @Test("A shader that fails to link is not cached as linked")

@@ -9,22 +9,74 @@ import Foundation
 /// renderer rewrites the preamble to GLSL ES 3.0 at upload — the dialect
 /// change is textual and belongs in one place, not in 31 files.
 public final class SKShader: @unchecked Sendable {
-    public var source: String?
-    public var uniforms: [SKUniform]
-    public var attributes: [SKAttribute] = []
+    public var source: String? { didSet { revision &+= 1 } }
+    public var uniforms: [SKUniform] { didSet { revision &+= 1 } }
+    public var attributes: [SKAttribute] = [] { didSet { revision &+= 1 } }
 
     /// Set by the renderer once compiled and linked.
     public var glProgram: UInt32 = 0
+    /// Counts changes to what the program is built from (its source, which
+    /// uniforms and attributes it declares), so a program built ahead of the
+    /// first draw is built again if they change before it.
+    public private(set) var revision = 0
+    /// `revision` as it stood when `glProgram` was built.
+    public var glProgramRevision = 0
 
     public init(source: String) {
         self.source = source
         uniforms = []
+        Self.noteMade(self)
     }
 
     public init(source: String, uniforms: [SKUniform]) {
         self.source = source
         self.uniforms = uniforms
+        Self.noteMade(self)
     }
+
+    // MARK: Shaders a build made, for their programs ahead of the first draw
+    //
+    // SpriteKit compiles a shader the first time it draws, as the renderer
+    // here does; a phone's driver takes up to a fifth of a second a program
+    // the first time, so a scene's dozens stalled its warm-up draw for
+    // seconds. A scene builds on a thread of its own and preloads its
+    // textures there once it's built (`LoadingScene`), so the shaders made on
+    // that thread are finished by then: `SKTexture.preload` hands them to the
+    // renderer (`programWarmer`), which builds their programs a few a frame
+    // while the loading screen still shows.
+
+    private static let madeLock = NSLock()
+    private nonisolated(unsafe) static var made: [UInt: [Weak]] = [:]
+    /// What one thread may hold before its oldest are let go: a thread that
+    /// makes shaders and never preloads mustn't keep them all.
+    static let madeLimit = 4096
+
+    private struct Weak { weak var shader: SKShader? }
+
+    private static func noteMade(_ shader: SKShader) {
+        guard !Thread.isMainThread else { return }
+        let thread = UInt(bitPattern: pthread_self())
+        madeLock.lock()
+        var list = made[thread] ?? []
+        if list.count >= madeLimit { list.removeAll { $0.shader == nil } }
+        if list.count >= madeLimit { list.removeFirst(list.count - madeLimit + 1) }
+        list.append(Weak(shader: shader))
+        made[thread] = list
+        madeLock.unlock()
+    }
+
+    /// The shaders made on the calling thread since it last asked, still alive.
+    public static func takeMadeOnThisThread() -> [SKShader] {
+        let thread = UInt(bitPattern: pthread_self())
+        madeLock.lock()
+        let list = made.removeValue(forKey: thread) ?? []
+        madeLock.unlock()
+        return list.compactMap(\.shader)
+    }
+
+    /// Builds the programs of shaders a build made, ahead of their first
+    /// draw; the renderer installs it. Called on the building thread.
+    public nonisolated(unsafe) static var programWarmer: (([SKShader]) -> Void)?
 
     public convenience init(fileNamed name: String) {
         self.init(source: "")

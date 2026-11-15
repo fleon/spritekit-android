@@ -97,7 +97,7 @@ struct FrameReport {
 
 /// Reads an Android system property, so a measuring run can be set up with
 /// `adb shell setprop` and no rebuild.
-enum DebugProperty {
+nonisolated enum DebugProperty {
     static func string(_ name: String) -> String? {
         var buffer = [CChar](repeating: 0, count: 128)
         let length = switchlings_property(name, &buffer, Int32(buffer.count))

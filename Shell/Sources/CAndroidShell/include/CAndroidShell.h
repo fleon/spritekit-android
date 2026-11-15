@@ -115,4 +115,15 @@ bool switchlings_offer_paste(float x, float y);
 /// Line buffered, so `print` reaches logcat as each line ends.
 bool switchlings_redirect_stdio(const char *tag);
 
+/// A GL context sharing the current one's objects, current on another
+/// thread: what `GLBuilderThread` builds programs in. Made on the thread
+/// whose context it shares (the frame thread), with that context current;
+/// returns NULL if EGL can't give one.
+void *switchlings_gl_share_create(void);
+/// Makes it current on the calling thread; 1 on success.
+int switchlings_gl_share_make_current(void *share);
+/// Lets go of it on the calling thread, before it's destroyed.
+void switchlings_gl_share_release(void *share);
+void switchlings_gl_share_destroy(void *share);
+
 #endif /* CANDROIDSHELL_H */

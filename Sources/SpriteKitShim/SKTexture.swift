@@ -65,7 +65,14 @@ public final class SKTexture: @unchecked Sendable {
     public init(imageNamed name: String, in index: AssetIndex?) {
         source = .named(name)
         asset = index?.entry(name)
+        if let page = asset?.page { Self.pageWanted?(page) }
     }
+
+    /// Told each packed page a named texture is made on, so it can start
+    /// decoding before the texture first draws (`PageDecodes.prefetch`):
+    /// a scene made on the main thread, as the loading screen is, draws the
+    /// next frame. The renderer installs it.
+    public nonisolated(unsafe) static var pageWanted: ((Int) -> Void)?
 
     /// An encoded image file (a PNG), decoded by the renderer on upload.
     /// `size` is in points.

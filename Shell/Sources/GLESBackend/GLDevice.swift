@@ -9,7 +9,7 @@ import ShellCore
 /// Every GL call in the port lives in this module. `GLESRenderer` next door
 /// stays free of them, which is why its batching, shader translation and
 /// projection can be tested on a Mac with no context at all.
-public final class GLDevice: RenderDevice {
+public nonisolated final class GLDevice: RenderDevice {
 
     public init() {}
 
@@ -49,13 +49,15 @@ public final class GLDevice: RenderDevice {
             // rows as they come would flip the page a second time and every
             // quad would sample a mirrored patch of the atlas — plausible
             // looking art, from the wrong asset.
-            let upright = Self.flippedVertically(pixels, width: width, height: height)
-            upright.withUnsafeBytes { raw in
-                glTexImage2D(
-                    GLenum(GL_TEXTURE_2D), 0, GL_RGBA8,
-                    GLsizei(width), GLsizei(height), 0,
-                    GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), raw.baseAddress
-                )
+            let upright = Premultiply.flippedRows(pixels, width: width, height: height)
+            FrameCosts.time(.uploads) {
+                upright.withUnsafeBytes { raw in
+                    glTexImage2D(
+                        GLenum(GL_TEXTURE_2D), 0, GL_RGBA8,
+                        GLsizei(width), GLsizei(height), 0,
+                        GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), raw.baseAddress
+                    )
+                }
             }
         } else {
             glTexImage2D(
@@ -69,25 +71,26 @@ public final class GLDevice: RenderDevice {
         return name
     }
 
-    /// Reverses the row order of an RGBA8 image, turning PNG's top-row-first
-    /// layout into the bottom-row-first one GL expects.
-    static func flippedVertically(_ pixels: Data, width: Int, height: Int) -> Data {
-        let stride = width * 4
-        guard stride > 0, height > 0, pixels.count >= stride * height else { return pixels }
-        var out = Data(count: stride * height)
-        pixels.withUnsafeBytes { source in
-            out.withUnsafeMutableBytes { destination in
-                guard let from = source.baseAddress, let to = destination.baseAddress else { return }
-                for row in 0 ..< height {
-                    memcpy(
-                        to.advanced(by: (height - 1 - row) * stride),
-                        from.advanced(by: row * stride),
-                        stride
-                    )
-                }
+    public func createTexture(width: Int, height: Int, bottomFirst pixels: Data) -> UInt32 {
+        let name = createTexture(width: width, height: height, pixels: nil)
+        guard name != 0 else { return 0 }
+        writeRows(name, width: width, y: 0, rowCount: height, pixels: pixels, byteOffset: 0)
+        return name
+    }
+
+    public func writeRows(_ name: UInt32, width: Int, y: Int, rowCount: Int, pixels: Data, byteOffset: Int) {
+        guard rowCount > 0, byteOffset >= 0, pixels.count >= byteOffset + width * rowCount * 4 else { return }
+        FrameCosts.time(.uploads) {
+            glBindTexture(GLenum(GL_TEXTURE_2D), name)
+            glPixelStorei(GLenum(GL_UNPACK_ALIGNMENT), 1)
+            pixels.withUnsafeBytes { raw in
+                glTexSubImage2D(
+                    GLenum(GL_TEXTURE_2D), 0, 0, GLint(y), GLsizei(width), GLsizei(rowCount),
+                    GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), raw.baseAddress?.advanced(by: byteOffset)
+                )
             }
+            glBindTexture(GLenum(GL_TEXTURE_2D), 0)
         }
-        return out
     }
 
     /// Switches a page to repeat wrapping. The asset index marks the pages
@@ -243,6 +246,10 @@ public final class GLDevice: RenderDevice {
     // MARK: Programs
 
     public func createProgram(vertex: String, fragment: String) -> UInt32 {
+        FrameCosts.time(.programs) { build(vertex: vertex, fragment: fragment) }
+    }
+
+    private func build(vertex: String, fragment: String) -> UInt32 {
         guard let vs = compile(vertex, kind: GLenum(GL_VERTEX_SHADER), label: "vertex") else { return 0 }
         defer { glDeleteShader(vs) }
         guard let fs = compile(fragment, kind: GLenum(GL_FRAGMENT_SHADER), label: "fragment") else { return 0 }

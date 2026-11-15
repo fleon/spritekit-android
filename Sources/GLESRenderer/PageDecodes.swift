@@ -72,6 +72,23 @@ public final class PageDecodes: @unchecked Sendable {
         }
     }
 
+    /// Starts decoding `page` on a queue of its own unless it's uploaded,
+    /// waiting or being decoded, returning at once: a page a texture was
+    /// just made on, which may well draw next frame (`take` waits for it
+    /// then, rather than decoding it again).
+    public func prefetch(_ page: Int) {
+        condition.lock()
+        guard !resident.contains(page), ready[page] == nil, !inFlight.contains(page) else {
+            condition.unlock()
+            return
+        }
+        inFlight.insert(page)
+        condition.unlock()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            finish(page, load(page))
+        }
+    }
+
     private func finish(_ page: Int, _ decoded: Page?) {
         condition.lock()
         inFlight.remove(page)
@@ -102,6 +119,19 @@ public final class PageDecodes: @unchecked Sendable {
         }
         condition.unlock()
         return decoded ?? load(page)
+    }
+
+    /// The page decoded longest ago and not drawn yet, for its upload ahead
+    /// of its first draw (`ResourceCache.uploadAhead`), marking it resident.
+    public func takeNextReady() -> (page: Int, image: Page)? {
+        condition.lock()
+        defer { condition.unlock() }
+        guard !order.isEmpty else { return nil }
+        let page = order.removeFirst()
+        guard let decoded = ready.removeValue(forKey: page) else { return nil }
+        bytes -= decoded.pixels.count
+        resident.insert(page)
+        return (page, decoded)
     }
 
     /// Every upload went with the GL context: pages decode again on demand.

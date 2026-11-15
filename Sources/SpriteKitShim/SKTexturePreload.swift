@@ -14,6 +14,12 @@ extension SKTexture {
     /// thread when that's a background one, as the game's are, else on a
     /// queue of its own, the handler following once they're done.
     public class func preload(_ textures: [SKTexture], withCompletionHandler completionHandler: @escaping () -> Void) {
+        // What this thread built is finished once it preloads: its shaders'
+        // programs can be built ahead of their first draw (`SKShader.programWarmer`).
+        if !Thread.isMainThread, let warm = SKShader.programWarmer {
+            let shaders = SKShader.takeMadeOnThisThread()
+            if !shaders.isEmpty { warm(shaders) }
+        }
         let pages = Set(textures.compactMap(\.page))
         guard !pages.isEmpty, let decode = pageDecoder else {
             completionHandler()

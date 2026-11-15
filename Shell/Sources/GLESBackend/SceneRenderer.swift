@@ -53,6 +53,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private let pageLoader: (Int) -> (width: Int, height: Int, pixels: Data)?
     /// Pages `SKTexture.preload` decoded off the frame thread, for their upload.
     private let pageDecodes: PageDecodes
+    /// Shaders a build made, for their programs ahead of their first draw.
+    private let warmQueue = ShaderWarmQueue()
+    /// Where programs are linked off the frame thread, while the context lasts.
+    private var builder: GLBuilderThread?
+    /// How much of a frame building programs and uploading pages ahead of
+    /// their first draw may take (`warmAhead`): a scene's GPU work spread
+    /// over the frames the loading screen shows while it builds, rather
+    /// than seconds of it in one warm-up draw.
+    static let warmBudget: TimeInterval = 0.004
 
     /// Set once the first frame has been drawn, so the log says it happened
     /// exactly once rather than every frame.
@@ -200,13 +209,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // as they first draw. The log says which, and how long it took.
         let decodes = PageDecodes { number in
             let started = DispatchTime.now().uptimeNanoseconds
-            let page = pageLoader(number).map { ($0.width, $0.height, Premultiply.rgba($0.pixels)) }
+            let page = pageLoader(number).map { ($0.width, $0.height, Premultiply.rgbaFlipped($0.pixels, width: $0.width, height: $0.height)) }
             let took = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             Log.info("page \(number) decoded in \(String(format: "%.0f", took)) ms on the \(Thread.isMainThread ? "frame thread" : "preloading thread")")
             return page
         }
         pageDecodes = decodes
-        cache.pageSource = { decodes.take($0) }
+        cache.pageRowsBottomFirst = true
+        cache.pageAhead = { decodes.takeNextReady() }
+        cache.pageSource = { page in FrameCosts.time(.pageWaits) { decodes.take(page) } }
         // Textures the asset index does not back: the noise lattices the
         // shaders sample (`Starlight.noise` is an `SKTexture(data:size:)`
         // the sky's nebula, its clouds and its mottled blue all read through
@@ -311,6 +322,25 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             return self?.bake(node, crop: crop)
         }
         SKTexture.pageDecoder = { [pageDecodes] in pageDecodes.decode($0.sorted()) }
+        SKTexture.pageWanted = { [pageDecodes] in pageDecodes.prefetch($0) }
+        // Programs are linked on a context of their own, off the frame
+        // thread, where EGL can share one; else a few a frame here.
+        if let builder = GLBuilderThread() {
+            let device = device
+            let builds = ProgramBuilds(schedule: { builder.async($0) }) { vertex, fragment in
+                let name = device.createProgram(vertex: vertex, fragment: fragment)
+                // Complete before the frame thread's context uses it.
+                glFinish()
+                return name
+            }
+            builds.waited = { FrameCosts.add(.programWaits, $0) }
+            self.builder = builder
+            cache.programBuilds = builds
+            SKShader.programWarmer = { ResourceCache.buildAhead($0, in: builds) }
+            Log.info("programs build on a shared context")
+        } else {
+            SKShader.programWarmer = { [warmQueue] in warmQueue.add($0) }
+        }
 
         // `SKRenderer`'s command buffers (a share film) draw here, on this
         // context, at the top of each frame.
@@ -334,6 +364,13 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         SKView.snapshot = nil
         SKTexture.readBack = nil
         SKTexture.pageDecoder = nil
+        SKTexture.pageWanted = nil
+        SKShader.programWarmer = nil
+        _ = warmQueue.removeAll()
+        builder?.stop()
+        builder = nil
+        for name in cache.programBuilds?.removeAll() ?? [] { device.deleteProgram(name) }
+        cache.programBuilds = nil
         if MetalExecution.executor === self { MetalExecution.executor = nil }
         films.failAll()
         if let filmTarget { device.deleteRenderTarget(filmTarget) }
@@ -389,9 +426,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // change which scene the view shows, and the projection is that
         // scene's.
         let started = MediaTime.source()
+        FrameCosts.reset()
         let list = view.tick(currentTime: frame.time, delta: frame.delta / max(slowdown, 1))
         SceneDump.check(view, at: frame.time)
         noteSceneChange(at: frame.time)
+        let ticked = MediaTime.source()
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
         // the port's own cost, with no GL in it. Worth separating, because
@@ -460,6 +499,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         targets.evictKept(except: liveKept)
         targets.endFrame()
+        warmAhead()
 
         if !pendingCaptures.isEmpty {
             let image = readScreen(width: Int(frame.size.width), height: Int(frame.size.height))
@@ -472,6 +512,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             reportedFirstFrame = true
             Log.info("first frame: \(quadsDrawn) quads, \(drawCalls) draw calls, \(targetBinds) target binds")
         }
+        FrameCosts.report(tick: ticked - started, draw: MediaTime.source() - ticked)
         report.add(
             delta: frame.delta,
             cpu: MediaTime.source() - started,
@@ -492,6 +533,21 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     + "\(shapeMasks.rasterised) masks rasterised"
             )
         }
+    }
+
+    /// Builds programs, then uploads pages, that something will draw soon,
+    /// for `warmBudget` of the frame. One program is built whatever it takes
+    /// (a link can't be split), so a frame never builds none.
+    private func warmAhead() {
+        let started = MediaTime.source()
+        func hasTime() -> Bool { MediaTime.source() - started < Self.warmBudget }
+        var built = false
+        while !built || hasTime(), let shader = warmQueue.next() {
+            guard shader.glProgram == 0 else { continue }
+            cache.program(for: shader)
+            built = true
+        }
+        cache.uploadAhead(while: hasTime)
     }
 
     private func draw(_ passes: [SpriteBatcher.Pass], projection: [Float], time: Float) {
@@ -866,6 +922,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     nonisolated(unsafe) private static var offThreadCalls: Set<String> = []
 
     private func bake(_ node: SKNode, crop: CGRect?) -> SKTexture? {
+        FrameCosts.time(.bakes) { bakeNow(node, crop: crop) }
+    }
+
+    private func bakeNow(_ node: SKNode, crop: CGRect?) -> SKTexture? {
         // The subtree draws with the node's own transform (a crop is given
         // in that space too: the lawn bakes a root scaled by its floor's
         // scale, cropped to the scaled rect), so its frame is measured there,
@@ -1576,7 +1636,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 Log.error("raw texture data is \(data.count) bytes, too few for \(width)x\(height) RGBA")
                 return nil
             }
-            return (width, height, GLDevice.flippedVertically(data, width: width, height: height))
+            return (width, height, Premultiply.flippedRows(data, width: width, height: height))
 
         case let .encoded(data):
             do {

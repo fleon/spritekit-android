@@ -139,16 +139,16 @@ public struct SpriteBatcher {
     private func append(_ sprite: DrawList.Sprite, to batches: inout [Batch]) {
         let mergeable = sprite.attributeValues.isEmpty
 
-        if var last = batches.last,
-           mergeable,
-           last.vertices.count / Self.floatsPerVertex + Self.vertexCount(of: sprite) <= Int(UInt16.max) + 1,
-           last.attributeValues.isEmpty,
-           last.shader === sprite.shader,
-           sprite.shader == nil ? sameTexture(last.texture, sprite.texture) : sameImage(last.texture, sprite.texture),
-           last.blendMode == sprite.blendMode
+        // Merged in place: a copy of the open batch, written back, copied
+        // its whole vertex array for every sprite added.
+        if mergeable, let last = batches.indices.last,
+           batches[last].vertices.count / Self.floatsPerVertex + Self.vertexCount(of: sprite) <= Int(UInt16.max) + 1,
+           batches[last].attributeValues.isEmpty,
+           batches[last].shader === sprite.shader,
+           sprite.shader == nil ? sameTexture(batches[last].texture, sprite.texture) : sameImage(batches[last].texture, sprite.texture),
+           batches[last].blendMode == sprite.blendMode
         {
-            addQuad(sprite, to: &last)
-            batches[batches.count - 1] = last
+            addQuad(sprite, to: &batches[last])
             return
         }
 
@@ -229,20 +229,15 @@ public struct SpriteBatcher {
         )
 
         // Corners in the node's own space, then into the scene's.
-        let corners = [
-            CGPoint(x: frame.minX, y: frame.minY),
-            CGPoint(x: frame.maxX, y: frame.minY),
-            CGPoint(x: frame.maxX, y: frame.maxY),
-            CGPoint(x: frame.minX, y: frame.maxY),
-        ].map { $0.applying(sprite.transform) }
+        let t = sprite.transform
+        func corner(_ x: CGFloat, _ y: CGFloat) -> (Float, Float) {
+            (Float(t.a * x + t.c * y + t.tx), Float(t.b * x + t.d * y + t.ty))
+        }
+        let c0 = corner(frame.minX, frame.minY), c1 = corner(frame.maxX, frame.minY)
+        let c2 = corner(frame.maxX, frame.maxY), c3 = corner(frame.minX, frame.maxY)
 
         let uv = sprite.shader == nil ? sprite.textureRect : Self.ownImage(sprite.textureRect, of: sprite.texture)
-        let uvs = [
-            CGPoint(x: uv.minX, y: uv.minY),
-            CGPoint(x: uv.maxX, y: uv.minY),
-            CGPoint(x: uv.maxX, y: uv.maxY),
-            CGPoint(x: uv.minX, y: uv.maxY),
-        ]
+        let u0 = Float(uv.minX), u1 = Float(uv.maxX), v0 = Float(uv.minY), v1 = Float(uv.maxY)
 
         // v_color_mix carries the tint in rgb and the node's alpha in a.
         // The game reads `v_color_mix.a` as a fade multiplier in 12 places
@@ -250,24 +245,32 @@ public struct SpriteBatcher {
         // contract here. colorBlendFactor rides as its own attribute because
         // it varies per node and batches merge nodes.
         let colour = sprite.color
-        let base: [Float] = [
-            Float(colour.red), Float(colour.green), Float(colour.blue),
-            Float(sprite.alpha),
-            Float(sprite.colorBlendFactor),
-        ]
+        let r = Float(colour.red), g = Float(colour.green), b = Float(colour.blue)
+        let a = Float(sprite.alpha), blend = Float(sprite.colorBlendFactor)
 
         let first = UInt16(batch.vertices.count / Self.floatsPerVertex)
-        for i in 0 ..< 4 {
-            batch.vertices.append(Float(corners[i].x))
-            batch.vertices.append(Float(corners[i].y))
-            batch.vertices.append(Float(uvs[i].x))
-            batch.vertices.append(Float(uvs[i].y))
-            batch.vertices.append(contentsOf: base)
+        batch.vertices.reserveCapacity(batch.vertices.count + 4 * Self.floatsPerVertex)
+        func vertex(_ c: (Float, Float), _ u: Float, _ v: Float) {
+            batch.vertices.append(c.0)
+            batch.vertices.append(c.1)
+            batch.vertices.append(u)
+            batch.vertices.append(v)
+            batch.vertices.append(r)
+            batch.vertices.append(g)
+            batch.vertices.append(b)
+            batch.vertices.append(a)
+            batch.vertices.append(blend)
         }
-        batch.indices.append(contentsOf: [
-            first, first + 1, first + 2,
-            first, first + 2, first + 3,
-        ])
+        vertex(c0, u0, v0)
+        vertex(c1, u1, v0)
+        vertex(c2, u1, v1)
+        vertex(c3, u0, v1)
+        batch.indices.append(first)
+        batch.indices.append(first + 1)
+        batch.indices.append(first + 2)
+        batch.indices.append(first)
+        batch.indices.append(first + 2)
+        batch.indices.append(first + 3)
     }
 }
 

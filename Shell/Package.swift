@@ -145,6 +145,9 @@ let package = Package(
             linkerSettings: [
                 .linkedLibrary("SDL3", .when(platforms: [.android])),
                 .linkedLibrary("GLESv3", .when(platforms: [.android])),
+                // A second context sharing the frame thread's, for building
+                // programs on a thread of their own (`GLBuilderThread`).
+                .linkedLibrary("EGL", .when(platforms: [.android])),
                 .linkedLibrary("log", .when(platforms: [.android])),
                 // Android's own media stack, for decoding the soundtrack's AAC.
                 .linkedLibrary("mediandk", .when(platforms: [.android])),

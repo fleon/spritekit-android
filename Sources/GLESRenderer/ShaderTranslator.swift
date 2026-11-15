@@ -343,9 +343,48 @@ public enum ShaderTranslator {
     // Done by hand rather than with NSRegularExpression: this runs for every
     // shader at load, and corelibs-foundation's regex is markedly slower than
     // Darwin's. It also keeps the behaviour identical on both platforms.
+    // Over UTF-8 bytes, not `Character`s: GLSL is ASCII, and breaking a
+    // shader into graphemes for each of the thirty or so words checked took
+    // tens of milliseconds a shader on a phone, on the frame thread. Any
+    // byte past ASCII counts as part of a word, as a letter would.
 
     static func isWordCharacter(_ c: Character) -> Bool {
         c.isLetter || c.isNumber || c == "_"
+    }
+
+    static func isWordByte(_ b: UInt8) -> Bool {
+        switch b {
+        case UInt8(ascii: "0") ... UInt8(ascii: "9"), UInt8(ascii: "a") ... UInt8(ascii: "z"),
+             UInt8(ascii: "A") ... UInt8(ascii: "Z"), UInt8(ascii: "_"), 0x80...:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Where `needle` stands as a whole identifier in `bytes`, in order.
+    static func identifierOffsets(_ needle: [UInt8], in bytes: UnsafeBufferPointer<UInt8>) -> [Int] {
+        guard let first = needle.first, needle.count <= bytes.count else { return [] }
+        var found: [Int] = []
+        var i = 0
+        let last = bytes.count - needle.count
+        while i <= last {
+            if bytes[i] == first, (i == 0 || !isWordByte(bytes[i - 1])) {
+                var matches = true
+                for k in 1 ..< needle.count where bytes[i + k] != needle[k] {
+                    matches = false
+                    break
+                }
+                let after = i + needle.count
+                if matches, after == bytes.count || !isWordByte(bytes[after]) {
+                    found.append(i)
+                    i = after
+                    continue
+                }
+            }
+            i += 1
+        }
+        return found
     }
 
     /// Replaces `needle` only where it stands as a whole identifier.
@@ -354,51 +393,55 @@ public enum ShaderTranslator {
         with replacement: String,
         in source: String
     ) -> String {
-        guard !needle.isEmpty, source.contains(needle) else { return source }
-        var result = ""
-        result.reserveCapacity(source.count)
-
-        let characters = Array(source)
-        let target = Array(needle)
-        var i = 0
-        while i < characters.count {
-            if characters[i] == target[0],
-               i + target.count <= characters.count,
-               Array(characters[i ..< i + target.count]) == target {
-                let before = i == 0 ? nil : characters[i - 1]
-                let afterIndex = i + target.count
-                let after = afterIndex < characters.count ? characters[afterIndex] : nil
-                let boundedBefore = before.map { !isWordCharacter($0) } ?? true
-                let boundedAfter = after.map { !isWordCharacter($0) } ?? true
-                if boundedBefore, boundedAfter {
-                    result += replacement
-                    i = afterIndex
-                    continue
-                }
+        guard !needle.isEmpty else { return source }
+        var source = source
+        return source.withUTF8 { bytes in
+            let offsets = identifierOffsets(Array(needle.utf8), in: bytes)
+            guard !offsets.isEmpty else { return String(decoding: bytes, as: UTF8.self) }
+            let width = needle.utf8.count
+            var result: [UInt8] = []
+            result.reserveCapacity(bytes.count + offsets.count * max(0, replacement.utf8.count - width))
+            var from = 0
+            for offset in offsets {
+                result.append(contentsOf: bytes[from ..< offset])
+                result.append(contentsOf: replacement.utf8)
+                from = offset + width
             }
-            result.append(characters[i])
-            i += 1
+            result.append(contentsOf: bytes[from...])
+            return String(decoding: result, as: UTF8.self)
         }
-        return result
     }
 
     static func usesIdentifier(_ needle: String, in source: String) -> Bool {
-        replacingIdentifier(needle, with: "\u{0}", in: source).contains("\u{0}")
+        guard !needle.isEmpty else { return false }
+        var source = source
+        return source.withUTF8 { !identifierOffsets(Array(needle.utf8), in: $0).isEmpty }
     }
+
+    private static let declarationPrefixes = ["uniform ", "in ", "attribute ", "varying "].map { Array($0.utf8) }
 
     /// Whether the source already declares `name` itself, so the preamble
     /// does not declare it twice. A composed shader (a world's light function
     /// spliced in) may bring its own.
     static func declares(_ name: String, in source: String) -> Bool {
-        for line in source.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("uniform ")
-                    || trimmed.hasPrefix("in ")
-                    || trimmed.hasPrefix("attribute ")
-                    || trimmed.hasPrefix("varying ")
-            else { continue }
-            if usesIdentifier(name, in: trimmed) { return true }
+        guard !name.isEmpty else { return false }
+        let needle = Array(name.utf8)
+        var source = source
+        return source.withUTF8 { bytes in
+            var start = 0
+            while start < bytes.count {
+                var end = start
+                while end < bytes.count, bytes[end] != UInt8(ascii: "\n") { end += 1 }
+                var lead = start
+                while lead < end, bytes[lead] == UInt8(ascii: " ") || bytes[lead] == UInt8(ascii: "\t") { lead += 1 }
+                let line = UnsafeBufferPointer(rebasing: bytes[lead ..< end])
+                if declarationPrefixes.contains(where: { line.starts(with: $0) }),
+                   !identifierOffsets(needle, in: line).isEmpty {
+                    return true
+                }
+                start = end + 1
+            }
+            return false
         }
-        return false
     }
 }
