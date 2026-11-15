@@ -1155,6 +1155,24 @@ Three things in the renderer are decided rather than inherited:
   the draw list carries a digest of what the subtree draws — transforms and
   textures, deliberately *not* shader uniform values, or a band would redraw
   every frame as `u_time` moved and the cache would be a loss.
+- **The edge blur blurs only its bands.** SpriteKit's way, the whole
+  backdrop through a texture of its own and then onto the screen through
+  `EdgeShade.Blur`, is a full-screen store and reload a frame on a tiler.
+  `BandBlurPlan` reads the blur's uniforms and plans it instead: each band
+  (and as far round it as the taps reach) drawn as a strip on the target's
+  own pixel grid, the strips sharing one texture drawn in one pass (each its
+  own viewport: a pass a strip cost the M31 more than the full-screen pass
+  saved), the backdrop drawn straight into the target, scissored to the
+  pixels outside the bands, and each strip composited onto its band through
+  the same shader, `u_span` rescaled to the strip. The contents report the
+  effect texture's `gl_FragCoord` wherever they draw. On the M31 (Starry Sky,
+  render scale 0.5) it's within run-to-run noise of the full-screen pass, a
+  millisecond or two faster at best.
+  The full-screen pass stays where that can't draw the same picture: an
+  effect node that fades, blends otherwise or is scaled, one inside a crop
+  node or holding crops or shaded effect nodes of its own, bands covering
+  most of the screen (`-BlurBackdrop`), films and bakes, and
+  `debug.switchlings.bandblur off`.
 
 ### What the emulator says, and what it does not
 

@@ -101,6 +101,26 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         /// The scene (or node) rect the target shows.
         var visible: CGRect
         var fragSpace: FragCoordSpace
+        /// Pixels per scene point, which an effect node inside renders at.
+        var density: CGFloat
+        /// The only pixels drawn, if not all (`drawBandBlur`).
+        var scissor: BandBlurPlan.PixelRect?
+        /// The pixels the scene rect maps onto, if not the whole target: a
+        /// band's strip in the strips' shared texture (`drawBandBlur`).
+        var viewport: BandBlurPlan.PixelRect?
+
+        init(
+            framebuffer: GLuint, widthInPixels: Int, heightInPixels: Int, visible: CGRect,
+            fragSpace: FragCoordSpace, density: CGFloat? = nil, scissor: BandBlurPlan.PixelRect? = nil
+        ) {
+            self.framebuffer = framebuffer
+            self.widthInPixels = widthInPixels
+            self.heightInPixels = heightInPixels
+            self.visible = visible
+            self.fragSpace = fragSpace
+            self.density = density ?? (visible.height > 0 ? CGFloat(heightInPixels) / visible.height : 1)
+            self.scissor = scissor
+        }
     }
 
     private var target = Target(
@@ -111,6 +131,14 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// How deep the crop nodes are nested, which is also the stencil value
     /// the contents at this level must match.
     private var cropDepth: Int32 = 0
+    /// The scissor GL holds now (nil: off).
+    private var appliedScissor: BandBlurPlan.PixelRect?
+    /// Whether the edge blur blurs only its bands (`drawBandBlur`), rather
+    /// than passing the whole backdrop through a texture of its own.
+    public var blursBandsOnly = true
+    /// Set while the frame on screen draws: films and bakes keep the
+    /// effect node as it is.
+    private var drawingScreen = false
     /// Rasterizing effect nodes drawn this frame, so the pool can drop the
     /// targets of ones that went away.
     private var liveKept: Set<RenderTargetPool.Key> = []
@@ -589,7 +617,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         state.forgetTextures()
         streamIsFresh = false
         let staged = stage(passes)
+        drawingScreen = true
         draw(staged, projection: projection, time: Float(frame.time))
+        drawingScreen = false
         stagedComposites.removeAll(keepingCapacity: true)
         bindVertexArray(0)
 
@@ -758,9 +788,14 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // target need it again after all.
         let contents = contents.isEmpty && skippedRaster.contains(owner) ? rasterContents[owner] ?? [] : contents
 
-        let density = target.visible.height > 0
-            ? CGFloat(target.heightInPixels) / target.visible.height
-            : 1
+        if drawingScreen, blursBandsOnly, !rasterize, let shader, drawBandBlur(
+            bounds: bounds, transform: transform, shader: shader, alpha: alpha, blendMode: blendMode,
+            contents: contents, projection: projection, time: time
+        ) {
+            return
+        }
+
+        let density = target.density
         let texture = EffectTexture(
             bounds: bounds, density: density, maximumSide: device.maximumTextureSide
         )
@@ -1258,8 +1293,198 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     private func bindTarget() {
         glBindFramebuffer(GLenum(GL_FRAMEBUFFER), target.framebuffer)
-        glViewport(0, 0, GLsizei(target.widthInPixels), GLsizei(target.heightInPixels))
         targetBinds += 1
+        applyViewport()
+        applyScissor()
+    }
+
+    private func applyViewport() {
+        if let rect = target.viewport {
+            glViewport(GLint(rect.x0), GLint(rect.y0), GLsizei(rect.width), GLsizei(rect.height))
+        } else {
+            glViewport(0, 0, GLsizei(target.widthInPixels), GLsizei(target.heightInPixels))
+        }
+    }
+
+    /// GL's scissor as the bound target asks.
+    private func applyScissor() {
+        guard appliedScissor != target.scissor else { return }
+        if let rect = target.scissor {
+            if appliedScissor == nil { glEnable(GLenum(GL_SCISSOR_TEST)) }
+            glScissor(GLint(rect.x0), GLint(rect.y0), GLsizei(rect.width), GLsizei(rect.height))
+        } else {
+            glDisable(GLenum(GL_SCISSOR_TEST))
+        }
+        appliedScissor = target.scissor
+    }
+
+    /// The edge blur (`EdgeShade.Blur`) drawn without a texture of the
+    /// whole backdrop (`BandBlurPlan`): each band's strip into a small
+    /// texture of its own first, then the backdrop straight into the target
+    /// outside the bands, then each strip onto its band through the blur.
+    /// The contents report the `gl_FragCoord` they would have in the
+    /// effect's texture, so lit shaders inside see what they always did.
+    ///
+    /// Returns false, having drawn nothing that shows, where it can't draw
+    /// the same picture: an effect node that fades, blends otherwise, is
+    /// scaled, turned or cropped, holds crops or shaded effect nodes of its
+    /// own, or whose bands cover most of the target (`-BlurBackdrop`).
+    private func drawBandBlur(
+        bounds: CGRect,
+        transform: CGAffineTransform,
+        shader: SKShader,
+        alpha: CGFloat,
+        blendMode: SKBlendMode,
+        contents: [SpriteBatcher.Pass],
+        projection: [Float],
+        time: Float
+    ) -> Bool {
+        guard alpha >= 0.999, blendMode == .alpha, cropDepth == 0, target.scissor == nil,
+              transform.a == 1, transform.d == 1, transform.b == 0, transform.c == 0,
+              bounds.width > 0, bounds.height > 0,
+              target.visible.width > 0, target.visible.height > 0,
+              let uniforms = BandBlurPlan.Uniforms(shader),
+              Self.drawsAnywhere(contents)
+        else { return false }
+        let dx = Double(target.widthInPixels) / Double(target.visible.width)
+        let dy = Double(target.heightInPixels) / Double(target.visible.height)
+        guard abs(dx - dy) <= 0.01 * dy else { return false }
+        let texture = EffectTexture(bounds: bounds, density: target.density, maximumSide: device.maximumTextureSide)
+        guard !texture.isClamped else { return false }
+        let offset = CGPoint(x: transform.tx, y: transform.ty)
+        guard let plan = BandBlurPlan(
+            uniforms: uniforms,
+            width: target.widthInPixels, height: target.heightInPixels,
+            visible: target.visible, fragSpace: target.fragSpace,
+            bounds: bounds, offset: offset
+        ) else { return false }
+
+        /// Where a pixel's corner of the target the effect lands in lies in
+        /// the effect's coordinates (that target's, not the strips').
+        let shown = target.visible
+        func local(_ x: Int, _ y: Int) -> CGPoint {
+            CGPoint(
+                x: shown.minX + CGFloat(Double(x) / dx) - offset.x,
+                y: shown.minY + CGFloat(Double(y) / dy) - offset.y
+            )
+        }
+        func contentsSpace(at origin: CGPoint) -> FragCoordSpace {
+            BandBlurPlan.contentsSpace(
+                origin: origin, dx: dx, dy: dy, bounds: bounds,
+                textureWidth: texture.widthInPixels, textureHeight: texture.heightInPixels
+            )
+        }
+
+        // The strips first, all in one texture drawn in one pass (each its
+        // own viewport), so the target is left once, before it draws any of
+        // the backdrop: side by side when they're tall (landscape), stacked
+        // when they're wide.
+        let wide = plan.strips.allSatisfy { $0.strip.width >= $0.strip.height }
+        var places: [(x: Int, y: Int)] = []
+        var atlasWidth = 0, atlasHeight = 0
+        for strip in plan.strips {
+            if wide {
+                places.append((0, atlasHeight))
+                atlasWidth = max(atlasWidth, strip.strip.width)
+                atlasHeight += strip.strip.height
+            } else {
+                places.append((atlasWidth, 0))
+                atlasWidth += strip.strip.width
+                atlasHeight = max(atlasHeight, strip.strip.height)
+            }
+        }
+        var strips: [(rect: CGRect, textureRect: CGRect, span: SIMD2<Float>, band: BandBlurPlan.PixelRect)] = []
+        var atlas: GLuint = 0
+        if !plan.strips.isEmpty {
+            guard atlasWidth <= device.maximumTextureSide, atlasHeight <= device.maximumTextureSide,
+                  let handle = targets.transient(width: atlasWidth, height: atlasHeight, stencil: false)
+            else { return false }
+            atlas = handle.texture
+            effectsDrawn += 1
+            let outer = target
+            target = Target(
+                framebuffer: handle.framebuffer,
+                widthInPixels: handle.width,
+                heightInPixels: handle.height,
+                visible: .zero,
+                fragSpace: outer.fragSpace,
+                density: outer.density
+            )
+            bindTarget()
+            glClearColor(0, 0, 0, 0)
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+            for (strip, place) in zip(plan.strips, places) {
+                let pixels = strip.strip
+                let origin = local(pixels.x0, pixels.y0)
+                let rect = CGRect(origin: origin, size: CGSize(width: Double(pixels.width) / dx, height: Double(pixels.height) / dy))
+                let area = BandBlurPlan.PixelRect(
+                    x0: place.x, y0: place.y, x1: place.x + pixels.width, y1: place.y + pixels.height
+                )
+                target.visible = rect
+                // The atlas's pixel (0, 0), where this strip's contents would put it.
+                target.fragSpace = contentsSpace(at: local(pixels.x0 - place.x, pixels.y0 - place.y))
+                target.viewport = area
+                target.scissor = area
+                applyViewport()
+                applyScissor()
+                draw(contents, projection: BandBlurPlan.projection(showing: rect), time: time)
+                strips.append((
+                    rect: rect,
+                    textureRect: CGRect(
+                        x: CGFloat(place.x) / CGFloat(atlasWidth), y: CGFloat(place.y) / CGFloat(atlasHeight),
+                        width: CGFloat(pixels.width) / CGFloat(atlasWidth), height: CGFloat(pixels.height) / CGFloat(atlasHeight)
+                    ),
+                    span: SIMD2(
+                        strip.span.x * Float(pixels.width) / Float(atlasWidth),
+                        strip.span.y * Float(pixels.height) / Float(atlasHeight)
+                    ),
+                    band: strip.band
+                ))
+            }
+            target = outer
+            bindTarget()
+            glClearColor(0, 0, 0, 1)
+        }
+
+        let outer = target
+        if !plan.direct.isEmpty {
+            target.fragSpace = contentsSpace(at: local(0, 0))
+            target.scissor = plan.direct
+            applyScissor()
+            draw(contents, projection: Self.concatenate(projection, transform), time: time)
+            target = outer
+        }
+        for strip in strips {
+            target.scissor = strip.band
+            applyScissor()
+            let quad = compositeQuad(
+                bounds: strip.rect, transform: transform, alpha: alpha, shader: shader, blendMode: blendMode,
+                textureRect: strip.textureRect
+            )
+            draw(quad, projection: projection, time: time, fragSpace: outer.fragSpace,
+                 texture: atlas, span: strip.span)
+        }
+        target = outer
+        applyScissor()
+        return true
+    }
+
+    /// Whether `passes` draw the same wherever their target's pixels lie,
+    /// and cheaply enough to draw more than once: no crops (whose stencil an
+    /// offscreen target lacks) and no effect node that redraws every frame.
+    private static func drawsAnywhere(_ passes: [SpriteBatcher.Pass]) -> Bool {
+        for pass in passes {
+            switch pass {
+            case .crop:
+                return false
+            case let .effect(_, _, shader, alpha, _, rasterize, _, _, _, contents):
+                if !rasterize, shader != nil || alpha < 0.999 { return false }
+                if !rasterize, !drawsAnywhere(contents) { return false }
+            case .batches, .label, .shape:
+                continue
+            }
+        }
+        return true
     }
 
     /// A quad covering `bounds` under `transform`, carrying the effect's
@@ -1273,7 +1498,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         transform: CGAffineTransform,
         alpha: CGFloat,
         shader: SKShader?,
-        blendMode: SKBlendMode
+        blendMode: SKBlendMode,
+        textureRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
     ) -> SpriteBatcher.Batch {
         let sprite = DrawList.Sprite(
             transform: CGAffineTransform(translationX: bounds.midX, y: bounds.midY)
@@ -1281,7 +1507,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             size: bounds.size,
             anchorPoint: CGPoint(x: 0.5, y: 0.5),
             texture: nil,
-            textureRect: CGRect(x: 0, y: 0, width: 1, height: 1),
+            textureRect: textureRect,
             color: .white,
             colorBlendFactor: 0,
             alpha: alpha,
@@ -1622,7 +1848,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         time: Float,
         overrideProgram: GLuint = 0,
         fragSpace: FragCoordSpace? = nil,
-        texture override: GLuint = 0
+        texture override: GLuint = 0,
+        span: SIMD2<Float>? = nil
     ) {
         guard !batch.indices.isEmpty else { return }
 
@@ -1648,6 +1875,14 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if let shader = batch.shader, overrideProgram == 0 {
             bind(shader, program: program, held: held, time: time)
             bind(batch.attributeValues, program: program, shader: shader)
+            if let span {
+                // A band's strip in place of the whole backdrop's texture
+                // (`drawBandBlur`): the program no longer holds the shader's
+                // own values.
+                let location = uniformLocation(program, "u_span")
+                if location >= 0 { glUniform2f(location, span.x, span.y) }
+                held.shader = nil
+            }
         }
 
         let name: GLuint

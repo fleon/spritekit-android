@@ -131,6 +131,10 @@ public enum GLESBackend {
             renderer.slowdown = slowdown
             Log.info("everything \(slowdown)x slower")
         }
+        if DebugProperty.string("debug.switchlings.bandblur") == "off" {
+            renderer.blursBandsOnly = false
+            Log.info("edge blur through the whole backdrop")
+        }
         return renderer
     }
 
