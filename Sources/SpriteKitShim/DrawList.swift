@@ -151,32 +151,44 @@ public struct DrawList {
     /// The same, drawn through `transform`: how the view puts a scene behind
     /// its camera (`SKScene.cameraTransform`).
     @MainActor public init(scene: SKNode, transform: CGAffineTransform) {
-        commands = DrawList.ordered(
-            DrawList.collect(scene, parentTransform: transform, parentAlpha: 1, parentZ: 0)
-        )
+        var entries: [(CGFloat, Command)] = []
+        DrawList.collect(scene, parentTransform: transform, parentAlpha: 1, parentZ: 0, into: &entries)
+        commands = DrawList.ordered(entries)
     }
 
     /// Stable sort by accumulated z: ties keep tree order.
+    /// The commands are big, so their places are sorted rather than they
+    /// are, and not at all when the depths already rise in tree order.
     private static func ordered(_ entries: [(CGFloat, Command)]) -> [Command] {
-        entries
-            .enumerated()
-            .sorted { lhs, rhs in
-                lhs.element.0 == rhs.element.0
-                    ? lhs.offset < rhs.offset
-                    : lhs.element.0 < rhs.element.0
+        var inOrder = true
+        var index = 1
+        while index < entries.count {
+            if entries[index].0 < entries[index - 1].0 {
+                inOrder = false
+                break
             }
-            .map(\.element.1)
+            index += 1
+        }
+        if inOrder { return entries.map(\.1) }
+        var places = [(z: CGFloat, offset: Int)]()
+        places.reserveCapacity(entries.count)
+        for (offset, entry) in entries.enumerated() { places.append((entry.0, offset)) }
+        places.sort { $0.z == $1.z ? $0.offset < $1.offset : $0.z < $1.z }
+        return places.map { entries[$0.offset].1 }
     }
 
     /// Every command under `node`, each with its **own** accumulated z, in
     /// tree order and unsorted — sorting happens once, over the whole list.
+    /// Appended to one list for the whole walk: returning a list from each
+    /// node copied every command once for each level above it.
     @MainActor private static func collect(
         _ node: SKNode,
         parentTransform: CGAffineTransform,
         parentAlpha: CGFloat,
-        parentZ: CGFloat
-    ) -> [(CGFloat, Command)] {
-        guard !node.isHidden, node.alpha > 0 else { return [] }
+        parentZ: CGFloat,
+        into entries: inout [(CGFloat, Command)]
+    ) {
+        guard !node.isHidden, node.alpha > 0 else { return }
 
         let transform = node.localTransform.concatenating(parentTransform)
         let alpha = node.alpha * parentAlpha
@@ -188,7 +200,7 @@ public struct DrawList {
             // Ordered before it is digested: draw order is part of what a
             // rasterized node's cached pixels depend on.
             let contents = wrap(ordered(children(of: node, transform: .identity, alpha: 1, z: 0)))
-            return [(z, Command.effect(Effect(
+            entries.append((z, Command.effect(Effect(
                 bounds: effect.effectBounds,
                 transform: transform,
                 shader: effect.shader,
@@ -199,7 +211,8 @@ public struct DrawList {
                 rasterGeneration: effect.rasterGeneration,
                 contentsDigest: effect.shouldRasterize ? contents.digest : 0,
                 contents: contents
-            )))]
+            ))))
+            return
         }
 
         if let crop = node as? SKCropNode {
@@ -209,18 +222,18 @@ public struct DrawList {
             // the renderer draws a crop's mask and contents where they
             // stand, through the stencil, with no composite of its own to
             // put them back in place.
-            let mask = crop.maskNode.map {
-                collect($0, parentTransform: transform, parentAlpha: 1, parentZ: 0)
-            } ?? []
+            var mask: [(CGFloat, Command)] = []
+            if let maskNode = crop.maskNode {
+                collect(maskNode, parentTransform: transform, parentAlpha: 1, parentZ: 0, into: &mask)
+            }
             let contents = children(of: node, transform: transform, alpha: alpha, z: 0)
-            return [(z, Command.crop(Crop(
+            entries.append((z, Command.crop(Crop(
                 transform: transform,
                 mask: wrap(ordered(mask)),
                 contents: wrap(ordered(contents))
-            )))]
+            ))))
+            return
         }
-
-        var entries: [(CGFloat, Command)] = []
 
         if let sprite = node as? SKSpriteNode, sprite.size != .zero {
             // A 9-sliced sprite becomes nine ordinary sprite commands, each
@@ -293,11 +306,8 @@ public struct DrawList {
         // Each descendant keeps its own accumulated z. Re-keying a whole
         // subtree by the child's z here is what used to keep it in one block.
         for child in node.children {
-            entries.append(contentsOf: collect(
-                child, parentTransform: transform, parentAlpha: alpha, parentZ: z
-            ))
+            collect(child, parentTransform: transform, parentAlpha: alpha, parentZ: z, into: &entries)
         }
-        return entries
     }
 
     /// One sprite's quads: just itself, or the nine a sliced one draws as.
@@ -336,9 +346,11 @@ public struct DrawList {
         alpha: CGFloat,
         z: CGFloat
     ) -> [(CGFloat, Command)] {
-        node.children.flatMap {
-            collect($0, parentTransform: transform, parentAlpha: alpha, parentZ: z)
+        var entries: [(CGFloat, Command)] = []
+        for child in node.children {
+            collect(child, parentTransform: transform, parentAlpha: alpha, parentZ: z, into: &entries)
         }
+        return entries
     }
 
     private static func wrap(_ commands: [Command]) -> DrawList {

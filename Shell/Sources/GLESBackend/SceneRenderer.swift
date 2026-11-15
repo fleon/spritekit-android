@@ -55,6 +55,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private let pageDecodes: PageDecodes
     /// Shaders a build made, for their programs ahead of their first draw.
     private let warmQueue = ShaderWarmQueue()
+    /// Drawn surfaces and rig pages readied off the frame thread, for their upload.
+    private let textureQueue = TextureWarmQueue()
+    /// The pages a launch's first seconds draw, for the next to decode early.
+    private var launchPages: LaunchPages?
+    /// When the renderer was made: the launch, near enough.
+    private let launchStart = MediaTime.source()
     /// Where programs are linked off the frame thread, while the context lasts.
     private var builder: GLBuilderThread?
     /// How much of a frame building programs and uploading pages ahead of
@@ -217,7 +223,16 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         pageDecodes = decodes
         cache.pageRowsBottomFirst = true
         cache.pageAhead = { decodes.takeNextReady() }
-        cache.pageSource = { page in FrameCosts.time(.pageWaits) { decodes.take(page) } }
+        let launchPages = LaunchPages()
+        self.launchPages = launchPages
+        let launched = MediaTime.source()
+        cache.pageSource = { page in
+            launchPages.note(page, at: MediaTime.source() - launched)
+            return FrameCosts.time(.pageWaits) { decodes.take(page) }
+        }
+        // What the last launch's splash and first loading screen drew starts
+        // decoding now, while the splash shows.
+        for page in launchPages.remembered { decodes.prefetch(page) }
         // Textures the asset index does not back: the noise lattices the
         // shaders sample (`Starlight.noise` is an `SKTexture(data:size:)`
         // the sky's nebula, its clouds and its mottled blue all read through
@@ -323,6 +338,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         }
         SKTexture.pageDecoder = { [pageDecodes] in pageDecodes.decode($0.sorted()) }
         SKTexture.pageWanted = { [pageDecodes] in pageDecodes.prefetch($0) }
+        SKTexture.imageWarmer = { [textureQueue] textures in
+            for texture in textures {
+                guard let image = Self.pixels(of: texture) else { continue }
+                textureQueue.add((texture, image.width, image.height, Premultiply.flippedRows(image.pixels, width: image.width, height: image.height)))
+            }
+        }
         // Programs are linked on a context of their own, off the frame
         // thread, where EGL can share one; else a few a frame here.
         if let builder = GLBuilderThread() {
@@ -365,6 +386,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         SKTexture.readBack = nil
         SKTexture.pageDecoder = nil
         SKTexture.pageWanted = nil
+        SKTexture.imageWarmer = nil
+        textureQueue.removeAll()
         SKShader.programWarmer = nil
         _ = warmQueue.removeAll()
         builder?.stop()
@@ -505,6 +528,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         targets.evictKept(except: liveKept)
         targets.endFrame()
         warmAhead()
+        launchPages?.writeIfDue(at: MediaTime.source() - launchStart)
 
         if !pendingCaptures.isEmpty {
             let image = readScreen(width: Int(frame.size.width), height: Int(frame.size.height))
@@ -551,6 +575,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             guard shader.glProgram == 0 else { continue }
             cache.program(for: shader)
             built = true
+        }
+        while hasTime(), let item = textureQueue.next() {
+            cache.adopt(item.texture, width: item.width, height: item.height, bottomFirst: item.pixels)
         }
         cache.uploadAhead(while: hasTime)
     }
@@ -1631,7 +1658,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     ///    whole pipeline blends that way.
     ///  - **A drawn image** (`.image`): what the game painted through a
     ///    `CGContext` — every chunky surface — already premultiplied RGBA8.
-    private static func pixels(of texture: SKTexture) -> (width: Int, height: Int, pixels: Data)? {
+    nonisolated private static func pixels(of texture: SKTexture) -> (width: Int, height: Int, pixels: Data)? {
         switch texture.source {
         case let .data(data):
             let size = texture.size()

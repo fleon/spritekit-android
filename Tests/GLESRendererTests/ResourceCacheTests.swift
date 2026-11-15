@@ -341,6 +341,20 @@ struct ProgramCacheTests {
         #expect(device.programs.count == 2)
     }
 
+    @Test("A drawn texture readied off the frame thread is uploaded once, and drawing it uploads nothing more")
+    func adoptedTexture() {
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        cache.pixelSource = { _ in Issue.record("readied again"); return nil }
+        let texture = SKTexture(data: Data(count: 2 * 2 * 4), size: CGSize(width: 2, height: 2))
+        cache.adopt(texture, width: 2, height: 2, bottomFirst: Data(count: 2 * 2 * 4))
+        let name = texture.glName
+        #expect(name != 0)
+        #expect(cache.name(for: texture) == name)
+        cache.adopt(texture, width: 2, height: 2, bottomFirst: Data(count: 2 * 2 * 4))
+        #expect(device.uploads.count == 1)
+    }
+
     @Test("A shader that fails to link is not cached as linked")
     func failedLink() {
         let device = RecordingDevice()

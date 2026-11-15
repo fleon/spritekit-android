@@ -179,4 +179,18 @@ struct ThreadingTests {
         #expect(box.handed.count == 1)
         #expect(box.handed.first?.map(ObjectIdentifier.init) == made.map(ObjectIdentifier.init))
     }
+
+    @Test("Preloading hands over the drawn textures it names, once each, and no packed ones")
+    func drawnTexturesHandedOver() async {
+        final class Box: @unchecked Sendable { var handed: [SKTexture] = [] }
+        let box = Box()
+        SKTexture.imageWarmer = { box.handed += $0 }
+        defer { SKTexture.imageWarmer = nil }
+        let drawn = SKTexture(data: Data(count: 4), size: CGSize(width: 1, height: 1))
+        let slice = SKTexture(rect: CGRect(x: 0, y: 0, width: 0.5, height: 0.5), in: drawn)
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            Thread { SKTexture.preload([drawn, slice]) { done.resume() } }.start()
+        }
+        #expect(box.handed.map(ObjectIdentifier.init) == [ObjectIdentifier(drawn)])
+    }
 }

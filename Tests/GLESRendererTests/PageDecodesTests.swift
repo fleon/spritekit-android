@@ -151,4 +151,15 @@ struct PageDecodesTests {
         count.lock.lock(); defer { count.lock.unlock() }
         #expect(count.loads == 1)
     }
+
+    @Test("Preloading a page another thread is prefetching returns once it's decoded")
+    func decodeWaitsForPrefetch() {
+        let decodes = PageDecodes(width: 1) { page in
+            Thread.sleep(forTimeInterval: 0.1)
+            return (1, 1, Data([UInt8(page), 0, 0, 255]))
+        }
+        decodes.prefetch(5)
+        decodes.decode([5])
+        #expect(decodes.isWaiting(5))
+    }
 }

@@ -1359,11 +1359,36 @@ four flicks and into a level (worst frame-thread stall, in ms):
 | into a level | 819 | 105 | 1,064 | 89 |
 | the loading screen up for | 10.4 s | 7.7 s | 12.4 s | 7.7 s |
 
-What's left over 100 ms: the warm-up's CPU (the rig priming's 8,000 sprites
-flattened, about 60 ms, which Android doesn't need: a game change), the
-programs the game makes on the main thread as the world list shows (cold
-cache only) and its own main-thread work there, and the loading screen's
-pages decoding as it first shows.
+A second pass, against every scene change (title to world list, world list
+to a level, a level to its win card, the Level Designer):
+
+- **Drawn surfaces and rig pages** (`SKTexture(image:)`, the game's
+  `CGContext` drawings) the next scene shows are readied on the preloading
+  thread and uploaded a few a frame before the warm-up (`TextureWarmQueue`,
+  `ResourceCache.adopt`), as pages are, rather than decoded, turned over and
+  uploaded in it.
+- **Preloads waited for pages already decoding**: a page a texture's
+  `pageWanted` had started was skipped by `PageDecodes.decode`, which
+  returned before it was done, so the warm-up waited for it on the frame
+  thread (the Level Designer's editor, a third of a second or more). It now
+  waits on the preloading thread.
+- **The launch's pages**: the pages the splash and first loading screen draw
+  are kept (`LaunchPages`, in the app's cache) and start decoding as the next
+  launch starts.
+- **The software CoreGraphics** (`BitmapContext`), which draws every chunky
+  panel, ran a closure, a blend switch, two colours and a division a channel
+  for every pixel, and a gradient made a colour object a pixel: the win card's
+  panels took most of its first frame. One colour laid down source-over, rows
+  of a vertical gradient, the blur's columns and the divisions now take
+  shortcuts with the same arithmetic, so the same bytes (a panel 1.8 times
+  faster on a Mac).
+- **Flattening** (`DrawList`) appends into one list for the whole walk, and
+  sorts places rather than commands (a deep tree 2.3 times faster).
+
+What's still over 100 ms: the warm-up's CPU (the rig priming's 8,000 sprites,
+which Android doesn't need: a game change), the programs the game makes on the
+main thread as the world list shows (cold cache only) and its own main-thread
+work there.
 
 Thread Sanitizer runs the host tests clean (`swift test --sanitize=thread
 --scratch-path .build/tsan`); before these fixes it reported eight races.

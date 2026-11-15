@@ -247,6 +247,17 @@ public final class ResourceCache {
         return name
     }
 
+    /// Uploads a texture the asset index doesn't back from pixels readied
+    /// off the frame thread (rows bottom first), unless it has its upload.
+    public func adopt(_ texture: SKTexture, width: Int, height: Int, bottomFirst pixels: Data) {
+        let root = texture.root
+        guard root.glName == 0, root.page == nil, root.mutablePixels == nil else { return }
+        let name = device.createTexture(width: width, height: height, bottomFirst: pixels)
+        guard name != 0 else { return }
+        ownedTextures.insert(name)
+        root.glName = name
+    }
+
     /// Uploads pages decoded ahead of their first draw a strip at a time,
     /// while `hasTime` says the frame has room, so a scene's art reaches the
     /// GPU over the frames the loading screen shows while it builds rather

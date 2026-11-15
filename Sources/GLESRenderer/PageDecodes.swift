@@ -50,8 +50,11 @@ public final class PageDecodes: @unchecked Sendable {
     }
 
     /// Decodes each of `pages` not uploaded, waiting or being decoded yet,
-    /// a few at a time, returning once they're done, and keeps them for `take`.
+    /// a few at a time, and keeps them for `take`; returns once every one of
+    /// them is decoded, those another thread was decoding (`prefetch`)
+    /// included, so the frame thread never waits for one the preload named.
     public func decode(_ pages: some Sequence<Int>) {
+        let pages = Array(pages)
         condition.lock()
         var wanted: [Int] = []
         for page in pages where !resident.contains(page) && ready[page] == nil && !inFlight.contains(page) {
@@ -59,17 +62,19 @@ public final class PageDecodes: @unchecked Sendable {
             wanted.append(page)
         }
         condition.unlock()
-        guard !wanted.isEmpty else { return }
         let threads = min(width, wanted.count)
-        guard threads > 1 else {
+        if threads == 1 {
             for page in wanted { finish(page, load(page)) }
-            return
-        }
-        DispatchQueue.concurrentPerform(iterations: threads) { lane in
-            for index in stride(from: lane, to: wanted.count, by: threads) {
-                finish(wanted[index], load(wanted[index]))
+        } else if threads > 1 {
+            DispatchQueue.concurrentPerform(iterations: threads) { lane in
+                for index in stride(from: lane, to: wanted.count, by: threads) {
+                    finish(wanted[index], load(wanted[index]))
+                }
             }
         }
+        condition.lock()
+        while pages.contains(where: { inFlight.contains($0) }) { condition.wait() }
+        condition.unlock()
     }
 
     /// Starts decoding `page` on a queue of its own unless it's uploaded,

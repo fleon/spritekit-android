@@ -604,6 +604,48 @@ public final class BitmapContext {
         let lengthSquared = dx * dx + dy * dy
         guard lengthSquared > 1e-12 else { return }
 
+        // A gradient straight down (or across) is the same along each row
+        // (or column): sampled once a row, or once a column, not a pixel.
+        if dx == 0, state.blend == .normal {
+            // A row at a time, through the solid-colour path.
+            let box = (state.clip?.box ?? canvasBox).intersection(canvasBox)
+            guard !box.isEmpty else { return }
+            let alpha = state.alpha
+            for y in box.y ..< box.maxY {
+                let py = CGFloat(y) + 0.5 - a.y
+                guard var colour = gradient.sample(at: (0 + py * dy) / lengthSquared, options: options) else { continue }
+                if alpha < 1 { colour.r *= alpha; colour.g *= alpha; colour.b *= alpha; colour.a *= alpha }
+                let row = PathRasteriser.PixelBox(x: box.x, y: y, width: box.width, height: 1)
+                compositeSolid(box: row, coverage: nil, coverageBox: row, colour: colour)
+            }
+            return
+        }
+        if dx == 0 {
+            var row = Int.min
+            var colour: Premultiplied?
+            paintEverywhere { _, y in
+                if y != row {
+                    row = y
+                    let py = CGFloat(y) + 0.5 - a.y
+                    colour = gradient.sample(at: (0 + py * dy) / lengthSquared, options: options)
+                }
+                return colour
+            }
+            return
+        }
+        if dy == 0 {
+            var columns = [Premultiplied?](repeating: nil, count: width)
+            var known = [Bool](repeating: false, count: width)
+            paintEverywhere { x, _ in
+                if known[x] { return columns[x] }
+                let px = CGFloat(x) + 0.5 - a.x
+                let colour = gradient.sample(at: (px * dx + 0) / lengthSquared, options: options)
+                columns[x] = colour
+                known[x] = true
+                return colour
+            }
+            return
+        }
         paintEverywhere { x, y in
             let px = CGFloat(x) + 0.5 - a.x
             let py = CGFloat(y) + 0.5 - a.y
@@ -917,6 +959,10 @@ public final class BitmapContext {
         switch paint {
         case let .solid(colour):
             guard colour.a > 0 || affectsTransparentSource else { return }
+            if state.blend == .normal {
+                compositeSolid(box: coverage.box, coverage: coverage.alpha, coverageBox: coverage.box, colour: colour)
+                return
+            }
             composite(box: coverage.box, coverage: coverage.alpha, coverageBox: coverage.box) { _, _ in colour }
         }
     }
@@ -941,6 +987,8 @@ public final class BitmapContext {
         let coverageBox = coverageBox ?? box
         let clip = state.clip
         let blend = state.blend
+        let isNormal = blend == .normal
+        let unit = Self.unit
 
         for y in box.y ..< box.maxY {
             let row = storage + y * bytesPerRow
@@ -957,11 +1005,17 @@ public final class BitmapContext {
 
                 let p = row + x * 4
                 let dst = Premultiplied(
-                    r: CGFloat(p[0]) / 255, g: CGFloat(p[1]) / 255,
-                    b: CGFloat(p[2]) / 255, a: CGFloat(p[3]) / 255
+                    r: unit[Int(p[0])], g: unit[Int(p[1])],
+                    b: unit[Int(p[2])], a: unit[Int(p[3])]
                 )
-                let blended = BitmapContext.blend(blend, src: src, dst: dst)
-                let c = CGFloat(mask) / 255
+                // Source-over inline, as `blend` works it out.
+                let blended = isNormal
+                    ? Premultiplied(
+                        r: src.r * 1 + dst.r * (1 - src.a), g: src.g * 1 + dst.g * (1 - src.a),
+                        b: src.b * 1 + dst.b * (1 - src.a), a: src.a * 1 + dst.a * (1 - src.a)
+                    )
+                    : BitmapContext.blend(blend, src: src, dst: dst)
+                let c = unit[mask]
                 // Coverage as a mask over the *result*, not over the source's
                 // alpha. That is what makes `.clear` erase the path and leave
                 // everything round it, which is how the game punches holes.
@@ -972,6 +1026,47 @@ public final class BitmapContext {
             }
         }
     }
+
+    /// `composite` for one colour laid down source-over (`.normal`), the
+    /// case nearly every fill and every shadow is: the same arithmetic, so
+    /// the same bytes, without a closure, a blend switch and two colours
+    /// built for every pixel, which made a panel's surfaces take most of a
+    /// second on a phone.
+    private func compositeSolid(
+        box: PathRasteriser.PixelBox,
+        coverage: [UInt8]?,
+        coverageBox: PathRasteriser.PixelBox,
+        colour src: Premultiplied
+    ) {
+        let box = box.intersection(canvasBox).intersection(coverageBox)
+        guard !box.isEmpty else { return }
+        let clip = state.clip
+        let keep = 1 - src.a
+        let unit = Self.unit
+        (coverage ?? []).withUnsafeBufferPointer { cover in
+            for y in box.y ..< box.maxY {
+                let row = storage + y * bytesPerRow
+                let coverRow = (y - coverageBox.y) * coverageBox.width - coverageBox.x
+                for x in box.x ..< box.maxX {
+                    var mask = coverage == nil ? 255 : Int(cover[coverRow + x])
+                    if let clip { mask = (mask * Int(clip.coverage(x: x, y: y)) + 127) / 255 }
+                    guard mask > 0 else { continue }
+                    let p = row + x * 4
+                    let dr = unit[Int(p[0])], dg = unit[Int(p[1])]
+                    let db = unit[Int(p[2])], da = unit[Int(p[3])]
+                    let c = unit[mask]
+                    p[0] = byte(dr + ((src.r * 1 + dr * keep) - dr) * c)
+                    p[1] = byte(dg + ((src.g * 1 + dg * keep) - dg) * c)
+                    p[2] = byte(db + ((src.b * 1 + db * keep) - db) * c)
+                    p[3] = byte(da + ((src.a * 1 + da * keep) - da) * c)
+                }
+            }
+        }
+    }
+
+    /// Each byte's value over 255, worked out once: the same values a
+    /// division a channel gave, without the divisions.
+    private static let unit: [CGFloat] = (0 ... 255).map { CGFloat($0) / 255 }
 
     private func byte(_ value: CGFloat) -> UInt8 {
         UInt8(max(0, min(255, (value * 255).rounded())))
@@ -1001,7 +1096,7 @@ public final class BitmapContext {
         let saved = state.shadow
         state.shadow = nil
         state.blend = .normal
-        composite(box: box.intersection(canvasBox), coverage: blurred.alpha, coverageBox: box) { _, _ in colour }
+        compositeSolid(box: box.intersection(canvasBox), coverage: blurred.alpha, coverageBox: box, colour: colour)
         state.shadow = saved
         state.blend = blend
     }
@@ -1026,9 +1121,12 @@ public final class BitmapContext {
         let grownWidth = width + margin * 2
         let grownHeight = height + margin * 2
         var buffer = [UInt16](repeating: 0, count: grownWidth * grownHeight)
-        for y in 0 ..< height {
-            for x in 0 ..< width {
-                buffer[(y + margin) * grownWidth + x + margin] = UInt16(alpha[y * width + x])
+        buffer.withUnsafeMutableBufferPointer { out in
+            alpha.withUnsafeBufferPointer { from in
+                for y in 0 ..< height {
+                    let to = (y + margin) * grownWidth + margin, start = y * width
+                    for x in 0 ..< width { out[to + x] = UInt16(from[start + x]) }
+                }
             }
         }
         var scratch = [UInt16](repeating: 0, count: grownWidth * grownHeight)
@@ -1036,10 +1134,13 @@ public final class BitmapContext {
             box(&buffer, into: &scratch, width: grownWidth, height: grownHeight, radius: radius, horizontal: true)
             box(&scratch, into: &buffer, width: grownWidth, height: grownHeight, radius: radius, horizontal: false)
         }
-        return Blurred(
-            alpha: buffer.map { UInt8(min(255, Int($0))) },
-            width: grownWidth, height: grownHeight, margin: margin
-        )
+        let result = [UInt8](unsafeUninitializedCapacity: buffer.count) { out, count in
+            buffer.withUnsafeBufferPointer { from in
+                for i in 0 ..< from.count { out[i] = UInt8(min(255, Int(from[i]))) }
+            }
+            count = buffer.count
+        }
+        return Blurred(alpha: result, width: grownWidth, height: grownHeight, margin: margin)
     }
 
     /// Box widths for three passes that together approximate a Gaussian of
@@ -1063,9 +1164,36 @@ public final class BitmapContext {
         width: Int, height: Int, radius: Int, horizontal: Bool
     ) {
         let span = radius * 2 + 1
+        guard horizontal else {
+            // Down the columns a row at a time, a running total for each:
+            // the same sums as walking each column, in the order memory lies.
+            source.withUnsafeBufferPointer { source in
+            destination.withUnsafeMutableBufferPointer { destination in
+                var totals = [Int](repeating: 0, count: width)
+                totals.withUnsafeMutableBufferPointer { totals in
+                    for i in -radius ... radius {
+                        let row = min(max(i, 0), height - 1) * width
+                        for x in 0 ..< width { totals[x] += Int(source[row + x]) }
+                    }
+                    for y in 0 ..< height {
+                        let row = y * width
+                        let leaving = min(max(y - radius, 0), height - 1) * width
+                        let arriving = min(max(y + radius + 1, 0), height - 1) * width
+                        for x in 0 ..< width {
+                            destination[row + x] = UInt16(totals[x] / span)
+                            totals[x] += Int(source[arriving + x]) - Int(source[leaving + x])
+                        }
+                    }
+                }
+            }
+            }
+            return
+        }
         let outer = horizontal ? height : width
         let inner = horizontal ? width : height
         let step = horizontal ? 1 : width
+        source.withUnsafeBufferPointer { source in
+        destination.withUnsafeMutableBufferPointer { destination in
         for line in 0 ..< outer {
             let base = horizontal ? line * width : line
             var total = 0
@@ -1080,6 +1208,8 @@ public final class BitmapContext {
                 let arriving = min(max(i + radius + 1, 0), inner - 1)
                 total += Int(source[base + arriving * step]) - Int(source[base + leaving * step])
             }
+        }
+        }
         }
     }
 
@@ -1313,12 +1443,14 @@ public struct Gradient: Sendable {
         let a = stops[index], b = stops[min(index + 1, stops.count - 1)]
         let span = b.location - a.location
         let f = span > 1e-9 ? (t - a.location) / span : 0
-        return BitmapContext.Premultiplied(SKColor(
-            red: a.colour.red + (b.colour.red - a.colour.red) * f,
-            green: a.colour.green + (b.colour.green - a.colour.green) * f,
-            blue: a.colour.blue + (b.colour.blue - a.colour.blue) * f,
-            alpha: a.colour.alpha + (b.colour.alpha - a.colour.alpha) * f
-        ))
+        // As `Premultiplied(SKColor(...))` would, without a colour object a pixel.
+        let alpha = max(0, min(1, (a.colour.alpha + (b.colour.alpha - a.colour.alpha) * f) * 1))
+        return BitmapContext.Premultiplied(
+            r: max(0, min(1, a.colour.red + (b.colour.red - a.colour.red) * f)) * alpha,
+            g: max(0, min(1, a.colour.green + (b.colour.green - a.colour.green) * f)) * alpha,
+            b: max(0, min(1, a.colour.blue + (b.colour.blue - a.colour.blue) * f)) * alpha,
+            a: alpha
+        )
     }
 }
 
