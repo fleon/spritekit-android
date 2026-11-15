@@ -38,6 +38,18 @@ public enum GLESBackend {
         // instead, from 0, before the game reads it.
         MediaTime.fixedStep = AndroidGameController.fixedFrameStep
 
+        // Banded layers (`BandedLayerNode`): `debug.switchlings.bands`
+        // `whole` draws them unbanded, a number in that many bands, for
+        // measuring.
+        if let bands = DebugProperty.string("debug.switchlings.bands") {
+            if bands == "whole" {
+                AndroidGameController.drawsBandedLayersWhole = true
+            } else if let count = Int(bands), count > 0 {
+                AndroidGameController.bandedLayerBands = count
+            }
+            Log.info("banded layers: \(bands)")
+        }
+
         PNGFiles.install()
         AndroidGameController.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:)))
     }

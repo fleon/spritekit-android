@@ -1126,9 +1126,10 @@ The scene graph can be dumped on a device to find what draws where:
 
 `SKEffectNode` and `SKCropNode` composite for real, and Starry Sky's
 backdrop draws on a device — `Source/Common/Components/NightSkyNode.swift`
-(972 lines) and `BandedLayerNode.swift`, symlinked into `Compat` and
-compiled unmodified, with `Theme.swift`, `WorldTheme.swift` and
-`ColorHelpers.swift` beside them.
+(972 lines), symlinked into `Compat` and compiled unmodified, with
+`Theme.swift`, `WorldTheme.swift` and `ColorHelpers.swift` beside it, and
+`BandedLayerNode`, which is the game's line for line but for its band count
+(`Compat/Sources/GameCompat/Android/BandedLayerNode.swift`: 8 bands, below).
 
 Three things in the renderer are decided rather than inherited:
 
@@ -1173,10 +1174,45 @@ Read these as: the port's own CPU cost is **under a millisecond** and is not
 the problem; the sky's shader is the whole of it. And `BandedLayerNode` is a
 **loss** here — four bands cost 4 extra draw calls, 2 extra target binds and
 a composite each, to save three quarters of a shader that this GPU runs
-easily. On an A14 iPad, where the shader is the bottleneck, it wins; the
-band count wants to follow the hardware rather than being 4 everywhere, and
-nothing short of a real Mali-G57 / Adreno 610 can say where the crossover
-sits.
+easily. On an A14 iPad, where the shader is the bottleneck, it wins, and on
+a real phone it wins by far more (below): the emulator's verdict was the
+host GPU's, not a phone's.
+
+### Banded layers on the M31
+
+On the Galaxy M31 (Mali-G72 MP3, optimised build, render scale held at 0.5,
+each world's 12th level auto-solving a move every 1.5 s), banding is the
+biggest single saving the port has: drawn whole, Castle and Reef run at
+under half their frame rate and Ruins at not much more. More bands win more, since the GPU is the
+whole of a frame and a band switch costs next to nothing beside an eighth of
+a full-screen lit shader, so the port draws every banded layer in **8**
+(`BandedLayerNode.bandCount`), where the game draws 4 (Castle's sea behind
+gameplay 6). Frame p50 in milliseconds, the median of every 300-frame window
+wholly inside the level over the runs counted (alternating modes, the same
+build); 16.7 ms is the screen's 60 fps:
+
+| world | whole | 4 bands | 6 bands | 8 bands |
+|---|---|---|---|---|
+| Starry Sky | 48.2 (4 runs) | 36.2 (4) | 37.9 (1) | **34.2** (3) |
+| Cloud Castle | 43.1 (4) | — | 18.4 (4, its default) | **17.2** (3) |
+| Coral Reef | 49.8 (4) | 18.6 (4) | 16.7 (1) | **16.7** (3) |
+| Bug Woods | 20.1 (3) | — | — | **16.7** (3) |
+| Flooded Ruins | 29.4 (3) | — | — | **16.7** (3) |
+
+Against 4 or 6 bands, 8 cost 1–12 more draw calls and up to 20 more nodes a frame,
+with the same target binds (Sky 152 → 157 calls, Reef 115 → 126) and the
+same texture memory (the bands still add up to the layer). Drawn whole,
+they take 3–12 fewer calls and 2–6 fewer binds than in 4 bands, and the
+frame thread's CPU time is 0.2–3 ms *higher* (the GPU it waits on is
+busier). Sky's runs
+swing about 2 ms, so 8 bands there is likely, not surely, faster than 4; the
+rest repeat to a tenth of a millisecond. Each band redraws every 8th frame,
+under 0.15 s apart at 60 fps; what these layers show drifts slowly enough
+that it can't be seen, as Castle's 6 already showed on iOS.
+
+`adb shell setprop debug.switchlings.bands whole` draws them whole, and a
+number in that many bands (read at launch; `''` for the default), for
+measuring.
 
 ## Warps
 
@@ -1646,9 +1682,9 @@ Starry Sky and Cloud Castle drop to under 30 ms with the light nodes not
 started (`-WorldHide lights`): their lit shaders loop over a handful of
 lights held in `mat4`s, indexed per pixel, which the emulator's GL-to-Metal
 translator runs badly. Only a real mid-range device (Mali-G57 / Adreno 610)
-can say whether that is the translator or the shader, and the same goes for
-whether `BandedLayerNode` pays (Reef, Bug Woods and Ruins band; #396 found
-bands a loss on the emulator). Reef also shows a faint seam where two of its
+can say whether that is the translator or the shader. (Whether
+`BandedLayerNode` pays, which #396 found a loss on the emulator, the M31
+settled: it wins by far, under "Banded layers on the M31".) Reef also shows a faint seam where two of its
 caustic bands meet, which wants the same device to tell timing from a bug.
 
 ### On a real phone: a Galaxy M31

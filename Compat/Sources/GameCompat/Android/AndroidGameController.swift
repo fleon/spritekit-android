@@ -120,6 +120,21 @@ public final class AndroidGameController {
         }
     }
 
+    /// Whether the backdrops' costliest shaders draw whole, one sprite
+    /// redrawn every frame, instead of in `BandedLayerNode`'s cached bands.
+    /// Set before the first backdrop builds.
+    public static var drawsBandedLayersWhole: Bool {
+        get { BandedLayerNode.drawsWhole }
+        set { BandedLayerNode.drawsWhole = newValue }
+    }
+
+    /// The bands each of them draws in otherwise (8). Set before the first
+    /// backdrop builds.
+    public static var bandedLayerBands: Int {
+        get { BandedLayerNode.bandCount }
+        set { BandedLayerNode.bandCount = max(newValue, 1) }
+    }
+
     /// The scale the renderer settled on for a while, which measures the
     /// setting shown until the player picks one.
     public static func noteRenderScale(_ scale: Double) {
