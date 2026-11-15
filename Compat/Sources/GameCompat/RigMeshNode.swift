@@ -1,1 +1,0 @@
-../../../../Source/Game/Components/Rig/RigMeshNode.swift

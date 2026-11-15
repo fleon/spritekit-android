@@ -23,6 +23,10 @@ open class SKSpriteNode: SKNode {
     open var warpGeometry: SKWarpGeometry?
     open var subdivisionLevels: Int = 2
 
+    /// Triangles drawn instead of the quad (SKTriangleMesh.swift): the
+    /// shim's own, for the port's `RigMeshNode`.
+    open var triangleMesh: SKTriangleMesh?
+
     /// Backs `centerRect` (see NineSlice.swift), which 9-slices the texture.
     var sliceCenterRect = NineSlice.whole
 

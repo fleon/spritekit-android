@@ -62,6 +62,9 @@ public struct DrawList {
         /// the renderer draws it as `WarpMesh` rather than one quad.
         public var warp: SKWarpGeometryGrid? = nil
         public var subdivisionLevels: Int = 2
+        /// The node's triangles, if it draws a mesh rather than its quad
+        /// (`SKSpriteNode.triangleMesh`).
+        public var mesh: SKTriangleMesh? = nil
     }
 
     public struct Shape {
@@ -316,6 +319,8 @@ public struct DrawList {
                     command.warp = grid
                     command.subdivisionLevels = sprite.subdivisionLevels
                 }
+                // A mesh's frame bounds it (`SKTriangleMesh`), so it culls as a quad.
+                if pieces.count == 1, let mesh = sprite.triangleMesh { command.mesh = mesh }
                 if isCulled(command, by: cull) { continue }
                 entries.append((z, .sprite(command)))
             }
@@ -453,6 +458,7 @@ public struct DrawList {
                 mix(sprite.texture); mix(sprite.shader)
                 // A warp pose is a new grid each time it changes.
                 mix(sprite.warp); mix(UInt64(sprite.subdivisionLevels))
+                mix(sprite.mesh?.generation ?? 0)
             case let .shape(shape):
                 mix(UInt64(2))
                 mix(shape.transform); mix(shape.fillColor); mix(shape.strokeColor)

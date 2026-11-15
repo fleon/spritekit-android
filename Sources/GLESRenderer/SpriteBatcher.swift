@@ -292,6 +292,10 @@ public struct SpriteBatcher {
             addWarp(grid, sprite, to: &batch)
             return
         }
+        if let mesh = sprite.mesh {
+            addMesh(mesh, sprite, to: &batch)
+            return
+        }
         let frame = CGRect(
             x: -sprite.size.width * sprite.anchorPoint.x,
             y: -sprite.size.height * sprite.anchorPoint.y,

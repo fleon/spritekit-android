@@ -168,8 +168,9 @@ against the documented stubs in `Compat/Sources/GameCompat/Stubs.swift` and
 `RigStubs.swift` — each one a seam that belongs to a later ring.
 
 The rigs are the second useful case, and the one that runs: `RigData`,
-`RigPose`, `RigNode`, `RigMeshNode` and `LedGlowNode` compile unchanged and
-**Switchlings animate on a device**. See **Rigs** below.
+`RigPose`, `RigNode` and `LedGlowNode` compile unchanged and **Switchlings
+animate on a device**; `RigMeshNode` has a port of its own that draws real
+triangles. See **Rigs** below.
 
 `ArrowTileNode` is the useful case: a real `SKNode` subclass that runs a keyed
 `pingPong` action built from `customAction` + `sequence` + `repeatForever`,
@@ -264,11 +265,11 @@ At run time (`GLDevice`, `ResourceCache`, `CompressedPage`):
   floor, share avatars: `UIImage(named:)`) by decoding its rect.
 - `SKTexture.usesMipmaps` is honoured where an unshaded sprite draws the
   image (`drawnName`): its levels come from `glGenerateMipmap`. The rigs
-  ask for it, but `RigMeshNode`'s shader picks one of four triangles a
-  pixel, so the texture coordinate's derivative jumps at every triangle's
-  edge and the GPU read the smallest level there: a dotted seam over every
-  Switchling. Their pages keep one level until a rig draws as real
-  triangles.
+  ask for it, and get it now that their meshes draw as real triangles
+  (**Rigs**): the game's `RigMeshNode` shader picked one of four triangles a
+  pixel, so the texture coordinate's derivative jumped at every triangle's
+  edge and the GPU read the smallest level there, a dotted seam over every
+  Switchling. Interpolated across a triangle, it doesn't.
 - The frame report logs the textures' memory every 300 frames:
   `[frames] game textures N  X MB on the GPU (Y MB as RGBA8)`.
 
@@ -309,9 +310,9 @@ existed, so the other 34 tests need no art.
 
 The whole rig runtime is here: `RigData` reads a packed Spine 4.2 skeleton,
 `RigPose` poses it the way Spine's runtime does (crossfades, physics step for
-step), `RigNode` draws it and `RigMeshNode` cuts each mesh attachment into
-runs of four triangles, one sprite each, whose shader tests every pixel
-against them. All five files compile for both ABIs unmodified.
+step) and `RigNode` draws it. Those, and `LedGlowNode`, compile for both ABIs
+unmodified. `RigMeshNode` is the port's own
+(`Compat/Sources/GameCompat/Android/RigMeshNode.swift`, below).
 
 ```
 npm run art -- --android      # stages Android/Assets/rigs as well
@@ -344,18 +345,50 @@ takes over CoreFoundation's `_CFIsMainThread` and moves "main" to the thread
 that calls `claim()`; the shell calls it first thing in `SDL_main`. Any
 later ring that asserts the main thread needs this too.
 
-**The attributes.** A rig mesh sprite carries twelve `vec4`s — four
-triangles, three each. They are *per node*, which is why `SpriteBatcher`
-never merges a sprite that carries them, so the translator makes each a
-uniform of the fragment stage (`ShaderTranslator`) and `SceneRenderer` sets
-it before the sprite's draw (`glUniform4f`). They began as constant vertex
-attributes passed through twelve varyings, which the emulator drew right and
-a Galaxy M31's Mali-G72 did not: every rig dropped whole triangles. Uniforms
-also spare the GPU interpolating twelve constants across every pixel.
+**Meshes as triangles.** SpriteKit has no meshes, so the game's
+`RigMeshNode` cuts each mesh attachment into runs of four triangles, one
+sprite each, carrying twelve `vec4` attributes whose shader tests every pixel
+of the sprite's quad against them and discards the rest. Here that cost a
+draw call for every four triangles (a sprite with attributes never merges),
+twelve `glUniform4f`s before each, and fragments over every quad's whole
+bounding box. So the port has a `RigMeshNode` of its own, in the same shape
+(`RigNode`, `SceneLighting` and the films call it as they call the game's),
+that hands its triangles over as they are: one sprite a mesh, carrying an
+`SKTriangleMesh` (the shim's own, not SpriteKit's: positions, texture
+coordinates and indices), which `DrawList` carries on the sprite's command
+and `SpriteBatcher` writes into the batch as geometry (`MeshBatching`), as it
+does a warp's grid. A rig's meshes and regions sample its one texture with no
+shader, so a Switchling draws in one call where nothing comes between its
+parts (its eyes and painted faces are another texture, its clipping masks
+crop nodes).
+
+It draws what the game's does: the texture times the node's alpha
+(`SKDefaultShading` untinted), premultiplied, in Spine's order (triangles
+draw in index order within a call, and over is associative, so compositing
+them one by one is compositing the run); dimmed while asleep by the sums
+`RigNode`'s regions use (linear in the colour, so dimming each triangle is
+dimming the run); and a mechanism's rig flat-lit by its world's light with
+`WorldLight.flatShader(.floor)`, the shader every flat-lit piece shares,
+whose sums are the ones the game's mesh writes out for that case. A mesh lit by a normal page isn't ported, as no normal page
+ships (below). The game's mesh read an edge a ten-thousandth wide on either
+side of each triangle, so a pixel centred on a shared edge took both; GL's
+rasterisation rules give it to one.
+
+The replacement is the one game file the port doesn't compile as written,
+for the CPU it saves as much as the GPU: the game's version works out three
+planes for every triangle each frame and writes them as attribute values,
+which the renderer would then have had to work back into vertices.
+
+*Before that:* the attributes were per node, so the translator made each a
+uniform of the fragment stage (`ShaderTranslator`) and `SceneRenderer` set
+it before the sprite's draw. They began as constant vertex attributes
+passed through twelve varyings, which the emulator drew right and a Galaxy
+M31's Mali-G72 did not: every rig dropped whole triangles. The translator
+still handles them, for anything else that carries attributes.
 
 **What is not wired yet.** Lighting is stood in for
-(`RigStubs.swift`), so every rig takes `RigMeshNode`'s unlit path — which is
-its own real code, not a lit shader with invented light in it.
+(`RigStubs.swift`), so every Switchling's rig takes `RigMeshNode`'s unlit
+path — which is its own real code, not a lit shader with invented light in it.
 
 ## Particles
 

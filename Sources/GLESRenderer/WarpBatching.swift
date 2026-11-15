@@ -8,6 +8,7 @@ extension SpriteBatcher {
     /// Vertices a sprite adds to a batch, so a batch never outgrows its
     /// 16-bit indices.
     static func vertexCount(of sprite: DrawList.Sprite) -> Int {
+        if let mesh = sprite.mesh { return mesh.positions.count }
         guard let grid = sprite.warp else { return 4 }
         let split = 1 << min(max(sprite.subdivisionLevels, 0), WarpMesh.deepestLevel)
         return (grid.numberOfColumns * split + 1) * (grid.numberOfRows * split + 1)

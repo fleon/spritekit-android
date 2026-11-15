@@ -189,10 +189,12 @@ public final class ResourceCache {
     /// of (`SKTexture.usesMipmaps`).
     ///
     /// Only here: a texture a shader draws keeps one level, as a whole page
-    /// does (`plainName`). The rigs ask for mip levels, but `RigMeshNode`'s
-    /// shader picks one of four triangles a pixel, so a texture coordinate's
-    /// derivative jumps across every triangle's edge and the GPU reads the
-    /// smallest level along it: a dotted seam over every Switchling.
+    /// does (`plainName`). The rigs ask for mip levels, and their meshes now
+    /// draw here as real triangles (`SKTriangleMesh`): the game's
+    /// `RigMeshNode` shader picked one of four triangles a pixel, so a texture
+    /// coordinate's derivative jumped across every triangle's edge and the
+    /// GPU read the smallest level along it, a dotted seam over every
+    /// Switchling.
     public func drawnName(for texture: SKTexture) -> UInt32 {
         let name = name(for: texture)
         let root = texture.root
