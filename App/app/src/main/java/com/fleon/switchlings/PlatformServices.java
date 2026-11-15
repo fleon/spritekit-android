@@ -106,8 +106,8 @@ final class PlatformServices {
         games.onResume();
     }
 
-    void onPause() {
-        device.onPause();
+    void onStop() {
+        device.onStop();
     }
 
     void onDestroy() {

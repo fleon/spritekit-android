@@ -677,7 +677,14 @@ and saved data stays on the device.
   game takes no focus and keeps its soundtrack quiet (its sounds still mix
   in); otherwise it takes focus for the soundtrack and steps aside when
   another app takes it, and everything waits through a call
-  (`AudioManager.audioFocusDidChange`).
+  (`AudioManager.audioFocusDidChange`). "Another app's music" is
+  `isMusicActive()`, which counts the game's own stream too, so it's read
+  only as the game comes back from a stop, when SDL has paused that stream;
+  through a pause without a stop (a dialog or the shade's device controls
+  over the game, a second launch intent) the game keeps its focus
+  (`AudioFocusPolicy`, tested by `./gradlew testDebugUnitTest`). Asking on
+  every resume once took the game's own soundtrack for another app's and
+  faded it out until the app next went to the background.
 - **Background and foreground**: the shell suspends audio, saves and pauses
   the frame loop as Android takes the window, and resumes them after; the
   soundtrack stops with the game.

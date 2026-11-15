@@ -378,9 +378,9 @@ public class MainActivity extends SDLActivity {
     }
 
     @Override
-    protected void onPause() {
-        super.onPause();
-        if (services != null) services.onPause();
+    protected void onStop() {
+        super.onStop();
+        if (services != null) services.onStop();
     }
 
     @Override

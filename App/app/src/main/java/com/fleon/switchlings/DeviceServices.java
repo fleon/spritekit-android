@@ -41,7 +41,8 @@ import java.io.ByteArrayOutputStream;
  * own music wins. If something else is playing music as the game comes to
  * the front, the game asks for no focus and keeps its soundtrack quiet
  * (its sounds still mix in); otherwise it takes focus for the soundtrack and
- * steps aside the moment another app takes it, and pauses for a call.
+ * steps aside the moment another app takes it, and pauses for a call. It
+ * holds focus until it stops, not merely pauses ({@link AudioFocusPolicy}).
  * Events: {@code audio} with {@code otherAudio} and {@code interrupted}.
  *
  * <p><b>Battery saver</b> is iOS's Low Power Mode: the game holds its frame
@@ -57,6 +58,7 @@ final class DeviceServices implements AudioManager.OnAudioFocusChangeListener {
     private final PowerManager power;
     private AudioFocusRequest focusRequest;
     private boolean hasFocus;
+    private final AudioFocusPolicy focusPolicy = new AudioFocusPolicy();
 
     private final BroadcastReceiver powerSaveReceiver = new BroadcastReceiver() {
         @Override
@@ -137,16 +139,23 @@ final class DeviceServices implements AudioManager.OnAudioFocusChangeListener {
 
     void onResume() {
         postPowerSave();
-        // Before SDL resumes the game's own stream, so only another app's
-        // music counts here.
-        if (audio != null && audio.isMusicActive()) {
-            services.post(SERVICE, "audio", PlatformServices.object("otherAudio", true, "interrupted", false));
-        } else {
-            requestFocus();
+        if (audio == null) return;
+        // Before SDL resumes the game's own stream, which is stopped only
+        // after a stop (`AudioFocusPolicy`).
+        switch (focusPolicy.onResume(hasFocus, audio.isMusicActive())) {
+            case OTHER_AUDIO:
+                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", true, "interrupted", false));
+                break;
+            case REQUEST:
+                requestFocus();
+                break;
+            case KEEP:
+                break;
         }
     }
 
-    void onPause() {
+    void onStop() {
+        focusPolicy.onStop();
         abandonFocus();
     }
 

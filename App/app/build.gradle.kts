@@ -342,6 +342,8 @@ dependencies {
     implementation("com.android.billingclient:billing:9.1.0")
     // Play Games Services v2: sign-in, achievements, the player, Saved Games.
     implementation("com.google.android.gms:play-services-games-v2:22.1.0")
+    // `./gradlew testDebugUnitTest`: the Java side's decisions, on the JVM.
+    testImplementation("junit:junit:4.13.2")
 }
 
 val stageFonts = tasks.register<Copy>("stageFonts") {
