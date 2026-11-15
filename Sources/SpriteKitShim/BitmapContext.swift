@@ -1043,6 +1043,13 @@ public final class BitmapContext {
         let clip = state.clip
         let keep = 1 - src.a
         let unit = Self.unit
+        // Over an empty pixel the result depends on the coverage alone (most
+        // of a shadow), so each coverage's is worked out once; and a pixel
+        // like the one before, under the same coverage (a panel's even
+        // middle), takes the same result. Both by the arithmetic below.
+        var overEmpty = [UInt32](repeating: 0, count: 256)
+        var knownOverEmpty = [Bool](repeating: false, count: 256)
+        var lastIn: UInt32 = 0, lastMask = -1, lastOut: UInt32 = 0
         (coverage ?? []).withUnsafeBufferPointer { cover in
             for y in box.y ..< box.maxY {
                 let row = storage + y * bytesPerRow
@@ -1052,6 +1059,15 @@ public final class BitmapContext {
                     if let clip { mask = (mask * Int(clip.coverage(x: x, y: y)) + 127) / 255 }
                     guard mask > 0 else { continue }
                     let p = row + x * 4
+                    let pixel = UnsafeMutableRawPointer(p).loadUnaligned(as: UInt32.self)
+                    if pixel == 0, knownOverEmpty[mask] {
+                        UnsafeMutableRawPointer(p).storeBytes(of: overEmpty[mask], as: UInt32.self)
+                        continue
+                    }
+                    if pixel == lastIn, mask == lastMask {
+                        UnsafeMutableRawPointer(p).storeBytes(of: lastOut, as: UInt32.self)
+                        continue
+                    }
                     let dr = unit[Int(p[0])], dg = unit[Int(p[1])]
                     let db = unit[Int(p[2])], da = unit[Int(p[3])]
                     let c = unit[mask]
@@ -1059,6 +1075,14 @@ public final class BitmapContext {
                     p[1] = byte(dg + ((src.g * 1 + dg * keep) - dg) * c)
                     p[2] = byte(db + ((src.b * 1 + db * keep) - db) * c)
                     p[3] = byte(da + ((src.a * 1 + da * keep) - da) * c)
+                    let result = UnsafeMutableRawPointer(p).loadUnaligned(as: UInt32.self)
+                    if pixel == 0 {
+                        overEmpty[mask] = result
+                        knownOverEmpty[mask] = true
+                    }
+                    lastIn = pixel
+                    lastMask = mask
+                    lastOut = result
                 }
             }
         }
@@ -1202,12 +1226,20 @@ public final class BitmapContext {
             for i in -radius ... radius {
                 total += Int(source[base + min(max(i, 0), inner - 1) * step])
             }
-            for i in 0 ..< inner {
+            // Clamped only near the ends; straight through between them.
+            let first = min(radius, inner), last = max(first, inner - radius - 1)
+            func advance(_ i: Int) {
                 destination[base + i * step] = UInt16(total / span)
                 let leaving = min(max(i - radius, 0), inner - 1)
                 let arriving = min(max(i + radius + 1, 0), inner - 1)
                 total += Int(source[base + arriving * step]) - Int(source[base + leaving * step])
             }
+            for i in 0 ..< first { advance(i) }
+            for i in first ..< last {
+                destination[base + i * step] = UInt16(total / span)
+                total += Int(source[base + (i + radius + 1) * step]) - Int(source[base + (i - radius) * step])
+            }
+            for i in last ..< inner { advance(i) }
         }
         }
         }
