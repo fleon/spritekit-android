@@ -148,7 +148,7 @@ final class PlaytestLog {
         fields.append(("log", JSONText.Raw(text: "[" + play.log.entries.joined(separator: ",") + "]")))
         if play.log.isTruncated { fields.append(("logTruncated", true)) }
         fields += [
-            ("player", isSignedIn ? "gc:\(player.gamePlayerID)" : "anon:\(anonymousID)"),
+            ("player", isSignedIn ? "pg:\(player.gamePlayerID)" : "anon:\(anonymousID)"),
             ("alias", Self.nullable(isSignedIn ? player.alias : nil)),
             ("platform", Self.platform),
             ("device", Self.device),

@@ -157,6 +157,7 @@ final class PlayGamesServices {
             if (!done.isSuccessful()) Log.w(PlatformServices.TAG, "Play Games sign-in failed", done.getException());
             signedIn = authenticated;
             services.post(SERVICE, "signIn", PlatformServices.object("signedIn", authenticated, "configured", true));
+            if (authenticated) loadIdentity();
             if (authenticated && then != null) then.run();
         });
     }
@@ -231,6 +232,18 @@ final class PlayGamesServices {
         PlayGames.getAchievementsClient(activity).getAchievementsIntent()
             .addOnSuccessListener(intent -> activity.startActivityForResult(intent, DASHBOARD_REQUEST))
             .addOnFailureListener(error -> Log.w(PlatformServices.TAG, "could not open achievements", error));
+    }
+
+    /** The signed-in player's ID and name, which the beta's solve log names them by. */
+    private void loadIdentity() {
+        PlayGames.getPlayersClient(activity).getCurrentPlayer().addOnCompleteListener(done -> {
+            if (!done.isSuccessful() || done.getResult() == null) {
+                Log.w(PlatformServices.TAG, "could not load the Play Games player", done.getException());
+                return;
+            }
+            services.post(SERVICE, "identity", PlatformServices.object(
+                "id", done.getResult().getPlayerId(), "name", done.getResult().getDisplayName()));
+        });
     }
 
     /** The signed-in player's name and picture (a PNG, base64), for a shared level's credit. */

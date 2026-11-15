@@ -93,6 +93,12 @@ public final class PlayGamesAchievements: AchievementsBackend {
     /// Called whenever sign-in changes, for anything else riding on it
     /// (Saved Games).
     public var signInChanged: ((Bool) -> Void)?
+    /// The signed-in player's Play Games ID and name, which Java sends just
+    /// after each sign-in; nil while signed out. The beta's solve log names
+    /// its records by them (`GKLocalPlayer` on Android).
+    public private(set) var identity: (id: String, name: String)?
+    /// Called whenever `identity` changes.
+    public var identityChanged: (((id: String, name: String)?) -> Void)?
 
     public init(channel: PlatformChannel, mapping: PlayGamesMapping) {
         self.channel = channel
@@ -168,6 +174,10 @@ public final class PlayGamesAchievements: AchievementsBackend {
             let changed = signedIn != isSignedIn
             isSignedIn = signedIn
             if changed { signInChanged?(signedIn) }
+            if !signedIn, identity != nil {
+                identity = nil
+                identityChanged?(nil)
+            }
             // The first answer, whatever it is, and every sign-in after it.
             if let answered, changed || !hasAnswered {
                 hasAnswered = true
@@ -188,6 +198,10 @@ public final class PlayGamesAchievements: AchievementsBackend {
         case "reported":
             guard let request = body.int("request"), let waiter = reportWaiters.removeValue(forKey: request) else { return }
             waiter.resume(returning: body.bool("ok") ?? false)
+        case "identity":
+            guard isSignedIn, let id = body["id"] as? String, !id.isEmpty else { return }
+            identity = (id, body["name"] as? String ?? "")
+            identityChanged?(identity)
         case "player":
             var player: (name: String, photo: Data?)?
             if body.bool("ok") == true, let name = body["name"] as? String {

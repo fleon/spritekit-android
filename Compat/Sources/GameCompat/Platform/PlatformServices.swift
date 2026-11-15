@@ -1,4 +1,5 @@
 import Foundation
+import GameKit
 import PlatformShim
 import UIKit
 
@@ -32,6 +33,10 @@ enum AndroidPlatformServices {
               let mapping = PlayGamesMapping(data: data)
         else { return }
         let games = PlayGamesAchievements(channel: channel, mapping: mapping)
+        // The beta's solve log names a signed-in player by their Play Games ID.
+        games.identityChanged = { identity in
+            Task { @MainActor in GKLocalPlayer.local.update(identity) }
+        }
         if !LaunchArguments.keepsGameCenterOff { GameCenterManager.service = games }
         guard !LaunchArguments.keepsICloudOff else { return }
         let cloud = PlaySavedGamesCloud(channel: channel)

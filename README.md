@@ -831,9 +831,12 @@ see all of it; keep them in step.
   "Google Pixel 6", `platform` "Android", `os` "17" (the designer shows
   "Android 17"), `simulator` for an emulator; the battery and the connection
   come from `DeviceServices.java` (`ACCESS_NETWORK_STATE`, a normal
-  permission), the version and build from the APK. Play Games hands the port
-  no player id, so records name an install (`anon:<id>`), as a signed-out
-  iOS build does.
+  permission), the version and build from the APK. A player signed in to
+  Play Games is named by their Play Games ID and name (`player` `pg:<id>`,
+  `alias` their name: Java sends both just after each sign-in, `identity`,
+  and `GKLocalPlayer` holds them), as Game Center's are on iOS (`gc:<id>`);
+  signed out, a record names its install (`anon:<id>`), as a signed-out iOS
+  build does.
 - **FoundationNetworking and CoreFoundation.** `URLSession` comes in through
   Compat's `CryptoKit` (the feed's only other import), and the `CFBoolean`
   check `JSONText` uses for a level's fingerprint through PlatformShim

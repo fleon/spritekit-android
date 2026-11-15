@@ -103,6 +103,24 @@ struct PlayGamesTests {
         #expect(await held.value == ["gc.levels.1": 100, "gc.world.garden": 50])
     }
 
+    @Test("The player's ID and name follow sign-in, for the solve log")
+    func identity() {
+        let java = FakeJava()
+        let games = PlayGamesAchievements(channel: java.channel, mapping: mapping)
+        var changes: [String?] = []
+        games.identityChanged = { changes.append($0?.id) }
+        games.start {}
+        java.send("games", "identity", ["id": "early", "name": "Nobody"])
+        #expect(games.identity == nil)
+        java.send("games", "signIn", ["signedIn": true])
+        java.send("games", "identity", ["id": "g123", "name": "Zoë 🦊"])
+        #expect(games.identity?.id == "g123")
+        #expect(games.identity?.name == "Zoë 🦊")
+        java.send("games", "signIn", ["signedIn": false])
+        #expect(games.identity == nil)
+        #expect(changes == ["g123", nil])
+    }
+
     @Test("The player's name and picture come through for a credit")
     func player() async {
         let java = FakeJava()
