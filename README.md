@@ -1711,8 +1711,8 @@ For a quick build of just the emulators' ABI,
 ### The parity sweep
 
 `Tools/Capture/parity.js` captures the states in `Tools/Capture/parity.json`
-on one pool emulator, each at a still, and compares it with the iPhone 17
-Pro's shot of the same state with the same arguments, kept as a reference
+on up to four pool emulators at once, each at a still, and compares it with
+the iPhone 17 Pro's shot of the same state with the same arguments, kept as a reference
 set; it ranks the pairs by how much they differ:
 
 ```bash
@@ -1728,8 +1728,25 @@ node Tools/guard.js 12 -- node Tools/Capture/parity.js
 `com.fleon.switchlings.parity`. The sweep boots no simulator: the iPhone's
 side is `~/.switchlings/parity-reference/iphone/<state>.png` (outside every
 checkout; `--reference <dir>` for another), and a state with no reference is
-listed as such. It takes one pool slot and releases it as soon as its shots
-are taken, deletes the app's saved data before every launch (nothing to
+listed as such. It takes as many pool slots as are free, up to `--slots N`
+(unless told, 4, and one for every four states, so a targeted sweep of two
+to four takes one), each through `Android/Scripts/emulators.sh acquire
+parity-<pid>-<n>` (a sweep's own owners, so two sweeps never share a slot,
+and a fresh lease, so each starts clean: screen size and density reset,
+`debug.switchlings.*` cleared), and installs the APK on each. With fewer
+free it uses what's free; with none, it looks again every 20 seconds. The
+states wait in one queue in parity.json's order and each slot takes the next
+as it finishes the last, so a slow state holds up only its own slot; every
+state is a cold launch with the same arguments, so which slot takes it
+changes nothing in its shot. Each slot goes back as soon as the queue is
+empty (its screen put back first), and every slot it still holds goes back
+on a failure, Ctrl-C or a kill, even when the guard SIGKILLs the whole tree
+(a watchdog outside it releases them once the sweep's process is gone). A
+full sweep of the 35 states took 4½ minutes on four slots against 11 on
+one (271 s and 662 s, 2026-11-15). The guard counts each emulator while it
+boots (about 2 GB each), so a four-slot sweep peaks near 9 GB of its 12.
+
+Every launch starts afresh: it deletes the app's saved data first (nothing to
 resume; not `pm clear`, after which Android shows its "Viewing full screen"
 notice over the next launch), tells the emulator that notice has been seen,
 resets any screen size or density another session left on the slot (an
@@ -1741,7 +1758,8 @@ area there too (`androidSafeArea`, as `-SafeAreaInsets`), launches both with par
 `base`, whose `-RandomSeed 7` makes every random draw the game makes the same
 on both (`Random`: scenery life, the title tour, petals, sparks, blinks…),
 keeps sound and music off, takes a still again if it came while a scene
-transition was still playing (a busy host can stall one frame for seconds),
+transition was still playing (a busy host can stall one frame for seconds;
+four emulators at once make that likelier, and the retry covers it),
 and writes `Tools/Capture/Out/parity/`: `pairs/<state>.png` (Android, iPhone,
 where they differ), `report.json` and `report.html`, worst first. The score
 is the mean difference of every channel on a 90-point-wide grid, 0 the same
@@ -1749,11 +1767,33 @@ and 100 black against white, both shots stretched to one size (the two
 screens' aspects differ by 2%). `--only title,level-` captures the states
 whose names start so.
 
+Scores aren't reproducible to the last digit on any number of slots: the
+shaders' time and the hard levels' timed moves follow the wall clock while
+a still is timed on the scene's, so a launch that runs slower (four
+emulators at once, or other sessions' builds) shows cloud shadows, water
+and light further along, and now and then a timed move at another moment.
+Between a one-slot and a four-slot full sweep the mean score moved 0.33
+(most states within 0.2, the lawns' cloud shadows up to 1.8), against 0.19
+between two parallel ones; the same states led the report (seven of the
+top eight). `report.json` keeps how long each launch took to reach its still
+(`stillAfter`). To see whether a change helped, compare sweeps made the same
+way, a targeted one before and after, rather than a parallel run with a
+one-slot one.
+
+When to run which: every Android PR runs `swift test` and the
+cross-compiles, and one that changes how anything draws adds a targeted
+sweep of the states it touches (`--only level-reef,help`, a slot and a few
+minutes); the full sweep runs nightly, or before an Android release build.
+
+```bash
+node Tools/guard.js 12 -- node Tools/Capture/parity.js --only level-reef,help
+```
+
 Re-capturing the references is explicit and opt-in: `--boot-simulator`
 boots one iPhone 17 Pro simulator of its own while the sweep's pool emulator
 runs, shoots the selected states into the reference directory, and deletes
-it before the Android shots (the machine's rule: Android only on the four
-pool slots, and at most one iPhone simulator a session, booted only beside a
+it before the Android shots, on one slot (the machine's rule: Android only
+on the four pool slots, and at most one iPhone simulator a session, booted only beside a
 running pool emulator, four at most on the machine, which the sweep checks
 before it boots one). Each launch is given empty seen-collectible and
 seen-guide lists, since the simulator keeps its preferences from one state
