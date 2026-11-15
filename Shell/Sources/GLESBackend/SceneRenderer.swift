@@ -51,6 +51,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// Pixels for a packed page, by its index in `AssetIndex.pages`.
     private let pageLoader: (Int) -> (width: Int, height: Int, pixels: Data)?
+    /// Pages `SKTexture.preload` decoded off the frame thread, for their upload.
+    private let pageDecodes: PageDecodes
 
     /// Set once the first frame has been drawn, so the log says it happened
     /// exactly once rather than every frame.
@@ -193,15 +195,18 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // The pages decode straight, as PNGs hold them; SpriteKit's
         // textures, and so the blend and the game's shaders, are
         // premultiplied (`Premultiply`).
-        // Each page decodes on the frame thread as it first draws: the log
-        // says how long it held the frame, the loading screen's stalls.
-        cache.pageSource = { number in
+        // Decoded wherever they're asked for: off the frame thread when the
+        // game preloads them, as SpriteKit does (`PageDecodes`), else here
+        // as they first draw. The log says which, and how long it took.
+        let decodes = PageDecodes { number in
             let started = DispatchTime.now().uptimeNanoseconds
             let page = pageLoader(number).map { ($0.width, $0.height, Premultiply.rgba($0.pixels)) }
             let took = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-            Log.info("page \(number) decoded in \(String(format: "%.0f", took)) ms")
+            Log.info("page \(number) decoded in \(String(format: "%.0f", took)) ms on the \(Thread.isMainThread ? "frame thread" : "preloading thread")")
             return page
         }
+        pageDecodes = decodes
+        cache.pageSource = { decodes.take($0) }
         // Textures the asset index does not back: the noise lattices the
         // shaders sample (`Starlight.noise` is an `SKTexture(data:size:)`
         // the sky's nebula, its clouds and its mottled blue all read through
@@ -305,6 +310,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             guard Self.onGLThread("SKView.texture(from:)") else { return nil }
             return self?.bake(node, crop: crop)
         }
+        SKTexture.pageDecoder = { [pageDecodes] in pageDecodes.decode($0.sorted()) }
 
         // `SKRenderer`'s command buffers (a share film) draw here, on this
         // context, at the top of each frame.
@@ -327,6 +333,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public func rendererWillStop() {
         SKView.snapshot = nil
         SKTexture.readBack = nil
+        SKTexture.pageDecoder = nil
         if MetalExecution.executor === self { MetalExecution.executor = nil }
         films.failAll()
         if let filmTarget { device.deleteRenderTarget(filmTarget) }
@@ -334,6 +341,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         for name in bakedTextures.removeAll() { device.deleteTexture(name) }
         targets.removeAll()
         cache.removeAll()
+        pageDecodes.forgetResident()
         glyphPages.removeAll()
         shapeMasks.removeAll()
         glyphSource.flush()

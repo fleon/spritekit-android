@@ -2,17 +2,36 @@
 import Foundation
 
 extension SKTexture {
-    /// SpriteKit decodes and uploads the textures ahead of their first draw.
-    /// Here a texture goes up to the GPU on the frame thread the first time
-    /// it is drawn — the only thread with the GL context — so there is
-    /// nothing to do ahead of it, and the handler runs at once, on the
-    /// calling thread, as SpriteKit's runs on one of its own.
+    /// Decodes packed pages ahead of their first draw; the renderer installs
+    /// it (`PageDecodes`). Called on the preloading thread, never the frame
+    /// thread, and returns once they're decoded.
+    public nonisolated(unsafe) static var pageDecoder: ((Set<Int>) -> Void)?
+
+    /// SpriteKit decodes the textures ahead of their first draw on a queue
+    /// of its own, then calls the handler there. Here the packed pages they
+    /// sit on are decoded the same way (the upload itself waits for the
+    /// frame thread, the only one with the GL context): on the calling
+    /// thread when that's a background one, as the game's are, else on a
+    /// queue of its own, the handler following once they're done.
     public class func preload(_ textures: [SKTexture], withCompletionHandler completionHandler: @escaping () -> Void) {
-        completionHandler()
+        let pages = Set(textures.compactMap(\.page))
+        guard !pages.isEmpty, let decode = pageDecoder else {
+            completionHandler()
+            return
+        }
+        guard Thread.isMainThread else {
+            decode(pages)
+            completionHandler()
+            return
+        }
+        DispatchQueue.global(qos: .utility).async {
+            decode(pages)
+            completionHandler()
+        }
     }
 
     public func preload(completionHandler: @escaping () -> Void) {
-        completionHandler()
+        SKTexture.preload([self], withCompletionHandler: completionHandler)
     }
 }
 

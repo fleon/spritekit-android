@@ -68,6 +68,86 @@ struct ThreadingTests {
         func get(_ index: Int) -> [UInt8]? { lock.lock(); defer { lock.unlock() }; return values[index] }
     }
 
+    // MARK: Preloading
+
+    nonisolated private static let index = try! AssetIndex(json: Data("""
+    {
+     "version": 1, "scale": 3,
+     "pages": [
+      { "file": "atlas-000.png", "width": 64, "height": 64 },
+      { "file": "atlas-001.png", "width": 64, "height": 64 },
+      { "file": "atlas-002.png", "width": 64, "height": 64 }
+     ],
+     "assets": {
+      "A": { "page": 0, "rect": [0, 0, 6, 6], "size": [2, 2] },
+      "B": { "page": 1, "rect": [0, 0, 6, 6], "size": [2, 2] },
+      "C": { "page": 1, "rect": [6, 0, 6, 6], "size": [2, 2] }
+     }
+    }
+    """.utf8))
+
+    nonisolated private final class Decodes: @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var calls: [(pages: Set<Int>, onMain: Bool)] = []
+        func record(_ pages: Set<Int>) {
+            lock.lock()
+            calls.append((pages, Thread.isMainThread))
+            lock.unlock()
+        }
+        var snapshot: [(pages: Set<Int>, onMain: Bool)] { lock.lock(); defer { lock.unlock() }; return calls }
+    }
+
+    nonisolated private static func textures(_ names: String...) -> [SKTexture] {
+        names.map { SKTexture(imageNamed: $0, in: index) } + [SKTexture(color: .white, size: CGSize(width: 1, height: 1))]
+    }
+
+    @Test("Preloading off the main thread decodes the textures' pages there, then calls back")
+    func preloadsOffMain() async {
+        let decodes = Decodes()
+        SKTexture.pageDecoder = { decodes.record($0) }
+        defer { SKTexture.pageDecoder = nil }
+        let textures = Self.textures("A", "B", "C")
+        let order = await Task.detached { () -> [String] in
+            var order: [String] = []
+            SKTexture.preload(textures) { order.append("done") }
+            order.append("returned")
+            return order
+        }.value
+        // As `WorldTextures.preloadNow` needs: decoded before it returns.
+        #expect(order == ["done", "returned"])
+        let calls = decodes.snapshot
+        #expect(calls.count == 1)
+        #expect(calls.first?.pages == [0, 1])
+        #expect(calls.first?.onMain == false)
+    }
+
+    @Test("Preloading from the main thread decodes on a queue of its own")
+    func preloadsFromMain() async {
+        let decodes = Decodes()
+        SKTexture.pageDecoder = { decodes.record($0) }
+        defer { SKTexture.pageDecoder = nil }
+        let textures = Self.textures("B")
+        #expect(Thread.isMainThread)
+        await withCheckedContinuation { (finished: CheckedContinuation<Void, Never>) in
+            SKTexture.preload(textures) { finished.resume() }
+        }
+        let calls = decodes.snapshot
+        #expect(calls.count == 1)
+        #expect(calls.first?.pages == [1])
+        #expect(calls.first?.onMain == false)
+    }
+
+    @Test("Textures on no page call back without decoding anything")
+    func preloadsNothing() {
+        let decodes = Decodes()
+        SKTexture.pageDecoder = { decodes.record($0) }
+        defer { SKTexture.pageDecoder = nil }
+        var done = false
+        SKTexture.preload([SKTexture(color: .white, size: CGSize(width: 1, height: 1))]) { done = true }
+        #expect(done)
+        #expect(decodes.snapshot.isEmpty)
+    }
+
     // MARK: The clock
 
     @Test("The media clock starts once, whichever thread reads it first")

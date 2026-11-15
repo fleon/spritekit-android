@@ -1,0 +1,127 @@
+import Foundation
+
+/// Packed pages decoded ahead of their first draw, off the frame thread.
+///
+/// SpriteKit's `SKTexture.preload` decodes on a queue of its own, and the
+/// game leans on it: the loading screen preloads the next scene's art, the
+/// world list the worlds either side (`WorldTextures`). Here a page used to
+/// be read out of the APK, inflated and premultiplied on the frame thread
+/// the first time anything on it drew, a 2048-pixel page at a time: a stall
+/// the length of several frames on a phone, every time a new world's art
+/// came on screen. `decode(_:)` does that work on whichever thread preloads,
+/// and the frame thread then only uploads what it finds here (`take`).
+///
+/// They decode a few at a time. On a Galaxy M31 that took the loading
+/// screen's longest frame from 3.7–4.8 s to 2.6–3.3 s, the world list
+/// arriving about a second later (Android/README.md). A page decoded and never drawn is
+/// dropped, oldest first, once the pages waiting hold more than `capacity`
+/// bytes; one already uploaded is never
+/// decoded again until the GL context goes (`forgetResident`).
+public final class PageDecodes: @unchecked Sendable {
+    public typealias Page = (width: Int, height: Int, pixels: Data)
+
+    private let load: (Int) -> Page?
+    private let capacity: Int
+    private let condition = NSCondition()
+    private var ready: [Int: Page] = [:]
+    private var order: [Int] = []
+    private var inFlight: Set<Int> = []
+    private var resident: Set<Int> = []
+    private var bytes = 0
+
+    /// How many pages decode at once: a scene's art spans a dozen pages,
+    /// and one thread decoding them in turn kept the loading screen up for
+    /// seconds longer than decoding them as they drew had.
+    private let width: Int
+
+    /// `load` reads and decodes one page, premultiplied, on the calling
+    /// thread. The default capacity holds a whole scene's pages (a world
+    /// list's page and its neighbours' art span about twenty): any less and
+    /// the first were dropped before they drew, and decoded again. A phone
+    /// with little memory keeps fewer, an eighth of what it has.
+    public init(capacity: Int = PageDecodes.defaultCapacity, width: Int = max(1, min(3, ProcessInfo.processInfo.activeProcessorCount - 1)), load: @escaping (Int) -> Page?) {
+        self.capacity = capacity
+        self.width = width
+        self.load = load
+    }
+
+    public static var defaultCapacity: Int {
+        min(384 << 20, Int(clamping: ProcessInfo.processInfo.physicalMemory / 8))
+    }
+
+    /// Decodes each of `pages` not uploaded, waiting or being decoded yet,
+    /// a few at a time, returning once they're done, and keeps them for `take`.
+    public func decode(_ pages: some Sequence<Int>) {
+        condition.lock()
+        var wanted: [Int] = []
+        for page in pages where !resident.contains(page) && ready[page] == nil && !inFlight.contains(page) {
+            inFlight.insert(page)
+            wanted.append(page)
+        }
+        condition.unlock()
+        guard !wanted.isEmpty else { return }
+        let threads = min(width, wanted.count)
+        guard threads > 1 else {
+            for page in wanted { finish(page, load(page)) }
+            return
+        }
+        DispatchQueue.concurrentPerform(iterations: threads) { lane in
+            for index in stride(from: lane, to: wanted.count, by: threads) {
+                finish(wanted[index], load(wanted[index]))
+            }
+        }
+    }
+
+    private func finish(_ page: Int, _ decoded: Page?) {
+        condition.lock()
+        inFlight.remove(page)
+        if let decoded, !resident.contains(page) {
+            ready[page] = decoded
+            order.append(page)
+            bytes += decoded.pixels.count
+            while bytes > capacity, let oldest = order.first {
+                order.removeFirst()
+                bytes -= ready.removeValue(forKey: oldest)?.pixels.count ?? 0
+            }
+        }
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    /// The page's pixels for its upload, marking it resident: decoded ahead
+    /// if it was, waited for if another thread is decoding it now, else
+    /// decoded here and now.
+    public func take(_ page: Int) -> Page? {
+        condition.lock()
+        while inFlight.contains(page) { condition.wait() }
+        resident.insert(page)
+        let decoded = ready.removeValue(forKey: page)
+        if let decoded {
+            order.removeAll { $0 == page }
+            bytes -= decoded.pixels.count
+        }
+        condition.unlock()
+        return decoded ?? load(page)
+    }
+
+    /// Every upload went with the GL context: pages decode again on demand.
+    public func forgetResident() {
+        condition.lock()
+        resident.removeAll()
+        condition.unlock()
+    }
+
+    /// Bytes decoded and waiting for their upload.
+    public var waitingBytes: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return bytes
+    }
+
+    /// Whether `page` is decoded and waiting.
+    public func isWaiting(_ page: Int) -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        return ready[page] != nil
+    }
+}
