@@ -127,6 +127,22 @@ bundletool install-apks --apks=/tmp/app.apks
 
 `adb shell pm path com.fleon.switchlings` then lists `split_content.apk`.
 
+## The launcher icon and the launch
+
+The launcher icon comes from the icon master, as every app icon does:
+`npm run art -- --icons` has `Tools/Art/android-icon.js` write the adaptive
+icon (`mipmap-anydpi-v26`: background, foreground and a monochrome layer
+for themed icons) and the legacy PNGs into `app/src/main/res/mipmap-*`.
+Never edit them by hand. The name under it is "Switchlings" in every
+language, as on iOS.
+
+The app starts on black, as iOS's launch storyboard does: the window is
+black (`values/themes.xml`), and Android 12 and later, which always open on
+a splash screen, show it black with a transparent icon (`values-v31`), since
+the launcher icon there would be a second splash before the game's own,
+Fleon Labs' logo (`LaunchSplashScene`). The splash goes once the window
+draws, onto the same black, so it isn't held for SDL's first frame.
+
 ## Installing and running
 
 ```bash
@@ -268,8 +284,6 @@ shader's `u_time` and in the board's action timings.
   real fix and is a question for the shim, not for the shell.
 - **The `x86_64` slice is built and packaged but has not been run** — the
   only system image installed here is arm64-v8a.
-- **No app icon.** The launcher shows Android's default. The real one comes
-  from `Tools/Art/Sources/icon-master.psd` when there is a pipeline for it.
 - **Audio and gamepads are initialised but unused.** `SDL_INIT_AUDIO` and
   `SDL_INIT_GAMEPAD` are passed so the subsystems exist; nothing reads them
   yet.

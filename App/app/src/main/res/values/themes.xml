@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- No system chrome: the game draws the whole screen, as it does on
-         iOS, and lays out around the cutout itself. -->
-    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+         iOS, and lays out around the cutout itself. The window is black, so
+         the app starts on plain black, as iOS's launch storyboard does, until
+         the game's first frame (LaunchSplashScene, Fleon Labs' logo). -->
+    <style name="Base.AppTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
+
+    <!-- Android 12 and later add their splash screen (values-v31). -->
+    <style name="AppTheme" parent="Base.AppTheme" />
 </resources>

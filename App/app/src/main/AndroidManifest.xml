@@ -21,8 +21,14 @@
          granted at install. Comes out with the solve log. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- The launcher icon: an adaptive icon with a monochrome layer for
+         themed icons, and legacy PNGs below Android 8, all generated from
+         the icon master by Tools/Art/android-icon.js (npm run art, with icons).
+         The name under it is "Switchlings" in every language, as on iOS. -->
     <application
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@style/AppTheme">
 
