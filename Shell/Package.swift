@@ -149,6 +149,9 @@ let package = Package(
                 // programs on a thread of their own (`GLBuilderThread`).
                 .linkedLibrary("EGL", .when(platforms: [.android])),
                 .linkedLibrary("log", .when(platforms: [.android])),
+                // The looper the vsync callbacks arrive on and the window's
+                // buffer size (`VsyncPacer`, `SurfaceScaler`).
+                .linkedLibrary("android", .when(platforms: [.android])),
                 // Android's own media stack, for decoding the soundtrack's AAC.
                 .linkedLibrary("mediandk", .when(platforms: [.android])),
                 // The main queue's drain, which the frame loop calls

@@ -28,6 +28,9 @@ struct FrameReport {
     static let warmUp = 60
 
     private var times: [Double] = []
+    /// The steps the scene moved (`Frame.delta`): on the display's vsync,
+    /// whole refreshes.
+    private var steps: [Double] = []
     private var frames = 0
     private var label = ""
 
@@ -52,19 +55,21 @@ struct FrameReport {
 
     /// One frame. `delta` is the wall clock between frames (so it carries
     /// the GPU and the swap), `cpu` the time inside `drawFrame`.
-    mutating func add(delta: Double, cpu: Double, scene: Double, renderScale: Double, renderer: SceneRenderer) {
+    mutating func add(delta: Double, step: Double, cpu: Double, scene: Double, renderScale: Double, renderer: SceneRenderer) {
         frames += 1
         let thread = Self.threadTime()
         defer { lastThreadTime = thread }
         guard frames > Self.warmUp else { return }
         if let last = lastThreadTime { threadTimes.append(thread - last) }
         times.append(delta)
+        steps.append(step)
         cpuTimes.append(cpu)
         sceneTimes.append(scene)
         scales.append(renderScale)
         guard times.count >= Self.interval else { return }
         report(renderer)
         times.removeAll(keepingCapacity: true)
+        steps.removeAll(keepingCapacity: true)
         cpuTimes.removeAll(keepingCapacity: true)
         sceneTimes.removeAll(keepingCapacity: true)
         scales.removeAll(keepingCapacity: true)
@@ -89,6 +94,13 @@ struct FrameReport {
             frame.median > 0 ? 1 / frame.median : 0,
             cpu.median * 1000, cpu.p95 * 1000, scene.median * 1000
         ))
+        // Jitter: how far frames stray from the median, wall clock and steps.
+        let step = Self.summary(steps)
+        Log.info(String(
+            format: "[frames] %@ jitter: interval sd %.2f ms p95-p5 %.2f ms  step p50 %.2f ms sd %.2f ms p95-p5 %.2f ms",
+            label, Self.deviation(times) * 1000, Self.spread(times) * 1000,
+            step.median * 1000, Self.deviation(steps) * 1000, Self.spread(steps) * 1000
+        ))
         let thread = Self.summary(threadTimes)
         Log.info(String(
             format: "[frames] %@ thread cpu p50 %.2f ms p95 %.2f ms",
@@ -112,6 +124,19 @@ struct FrameReport {
             format: "[frames] %@ cache textures %d  %.1f MB on the GPU (%.1f MB as RGBA8)",
             label, renderer.textureCount, Double(textures.gpu) / 1_048_576, Double(textures.rgba) / 1_048_576
         ))
+    }
+
+    private static func deviation(_ values: [Double]) -> Double {
+        guard values.count > 1 else { return 0 }
+        let mean = values.reduce(0, +) / Double(values.count)
+        return (values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count - 1)).squareRoot()
+    }
+
+    private static func spread(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        func at(_ share: Double) -> Double { sorted[Int(Double(sorted.count - 1) * share)] }
+        return at(0.95) - at(0.05)
     }
 
     private static func summary(_ values: [Double]) -> (median: Double, p95: Double, max: Double) {

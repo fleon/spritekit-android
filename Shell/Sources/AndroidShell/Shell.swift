@@ -108,7 +108,8 @@ public enum Shell {
             Log.error("SDL_GL_MakeCurrent failed: \(sdlError)")
             return 1
         }
-        // Vsync. The game's own frame-rate setting is a later ring.
+        // Vsync. Frames also start on it (`VsyncPacer`), and the game's
+        // frame-rate setting skips refreshes (`shouldDraw`).
         SDL_GL_SetSwapInterval(1)
 
         var size = drawableSize(of: window)
@@ -138,14 +139,22 @@ public enum Shell {
         renderer.windowMetricsDidChange(metrics)
         defer { renderer.rendererWillStop() }
         let gamepads = GamepadBridge()
+        // `-FixedFrameStep` keeps its own clock, unpaced, as it always has.
+        var pacer = MediaTime.fixedStep == nil ? VsyncPacer(refreshRate: metrics.refreshRate) : nil
+        Log.info(pacer != nil ? "frames paced to the display's vsync" : "frames paced by the swap alone")
+        var scaler = SurfaceScaler()
 
         var running = true
         var foreground = true
         var index: UInt64 = 0
         var previous = ShellClock.now
+        var previousStart = previous
         var lastReport = previous
 
         while running {
+            // The next vsync, before reading input, so what the frame shows
+            // is as fresh as it can be.
+            let vsync = foreground ? pacer?.nextFrame() : nil
             // What the game queued for the main thread since the last
             // frame: a film's progress and its finish, a sync's catch-up.
             if ownsMainQueue { switchlings_drain_main_queue() }
@@ -173,6 +182,8 @@ public enum Shell {
                 case SDL_EVENT_DID_ENTER_FOREGROUND.rawValue:
                     foreground = true
                     previous = ShellClock.now
+                    pacer?.reset()
+                    scaler.reset()
                     audio.resume()
                     UIApplication.shared.becomeActive()
                     renderer.applicationStateDidChange(active: true)
@@ -199,6 +210,7 @@ public enum Shell {
                     let updated = windowMetrics(of: window)
                     if updated != metrics {
                         metrics = updated
+                        pacer?.refreshRateDidChange(to: metrics.refreshRate)
                         renderer.windowMetricsDidChange(metrics)
                     }
                 case SDL_EVENT_FINGER_DOWN.rawValue,
@@ -213,6 +225,7 @@ public enum Shell {
                         Log.info("drawable \(Int(size.width)) x \(Int(size.height)) px")
                         renderer.drawableSizeDidChange(to: size)
                         metrics = windowMetrics(of: window)
+                        pacer?.refreshRateDidChange(to: metrics.refreshRate)
                         renderer.windowMetricsDidChange(metrics)
                     }
                 default:
@@ -241,20 +254,30 @@ public enum Shell {
                 SDL_Delay(Self.skippedFrameWait)
                 continue
             }
-            let now = step.map { MediaTime.stepped + (index == 0 ? 0 : $0) } ?? ShellClock.now
+            let now = step.map { MediaTime.stepped + (index == 0 ? 0 : $0) } ?? vsync ?? ShellClock.now
+            // Sized before the frame asks for it: a geometry set now takes
+            // effect as EGL next takes a buffer, and `surfaceSize` says
+            // whether it has yet.
+            scaler.apply(scale: renderer.surfaceScale, drawable: size, frameRate: renderer.preferredFrameRate, window: window)
+            let started = ShellClock.now
             let frame = Frame(
                 time: now,
-                delta: index == 0 ? 0 : now - previous,
+                // Never back past the last frame (the app just came back).
+                delta: index == 0 ? 0 : max(0, now - previous),
                 size: size,
-                index: index
+                index: index,
+                surfaceSize: SurfaceScaler.current(or: size),
+                interval: index == 0 ? 0 : started - previousStart
             )
             // A frame skipped is not drawn or swapped, so nothing waits on
-            // the display: wait a little here instead of spinning.
+            // the display: wait for the next vsync, or a little here
+            // instead of spinning.
             guard renderer.shouldDraw(frame) else {
-                SDL_Delay(Self.skippedFrameWait)
+                if vsync == nil { SDL_Delay(Self.skippedFrameWait) }
                 continue
             }
             previous = now
+            previousStart = started
             if step != nil { MediaTime.stepped = now }
             // A frame that took far longer than its share: a stall on the
             // frame thread (a page decoded, a shader compiled, a bake), the

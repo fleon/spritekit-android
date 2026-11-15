@@ -73,6 +73,16 @@ public protocol FrameRenderer: AnyObject {
 
     /// The activity came back to the front, or went away.
     func applicationStateDidChange(active: Bool)
+
+    /// The share of the drawable the window's buffers should be, each side:
+    /// below 1 the shell sizes them `SurfaceGeometry.pixels(of:scale:)` and
+    /// the display's compositor stretches them onto the screen, and each
+    /// frame's `surfaceSize` says what the buffer drawn into really is.
+    var surfaceScale: CGFloat { get }
+
+    /// The frames a second the game wants (its frame-rate setting), told to
+    /// Android so a screen that can switch rates runs at it; 0 for no say.
+    var preferredFrameRate: Int { get }
 }
 
 public extension FrameRenderer {
@@ -85,6 +95,23 @@ public extension FrameRenderer {
     func receive(_ input: InputEvent) -> Bool { false }
     func windowMetricsDidChange(_ metrics: WindowMetrics) {}
     func applicationStateDidChange(active: Bool) {}
+    var surfaceScale: CGFloat { 1 }
+    var preferredFrameRate: Int { 0 }
+}
+
+/// How a scaled surface is sized, in one place for the shell (which sizes
+/// the window's buffers) and the renderer (which falls back to a target of
+/// the same size while they aren't yet).
+public enum SurfaceGeometry {
+    /// `size` scaled, in whole pixels; `size` itself at 1 or more.
+    public static func pixels(of size: CGSize, scale: CGFloat) -> CGSize {
+        let scale = min(max(scale, 0.25), 1)
+        guard scale < 1 else { return size }
+        return CGSize(
+            width: CGFloat(max(1, Int((size.width * scale).rounded()))),
+            height: CGFloat(max(1, Int((size.height * scale).rounded())))
+        )
+    }
 }
 
 /// Input other than touches, as the shell reads it from SDL.
@@ -187,18 +214,27 @@ public struct Frame: Sendable {
     /// `CACurrentMediaTime()`, and the clock the shim's actions and the
     /// game's shader `u_time` run on. See `ShellClock`.
     public var time: TimeInterval
-    /// Seconds since the previous frame. Zero on the first frame.
+    /// Seconds since the previous frame. Zero on the first frame. Paced to
+    /// the display, a whole number of its refreshes.
     public var delta: TimeInterval
     /// The drawable size in physical pixels, the same value last passed to
     /// `drawableSizeDidChange(to:)`.
     public var size: CGSize
     /// Frames drawn since the shell started, counting from zero.
     public var index: UInt64
+    /// The buffer this frame draws into, in pixels: `size`, or less where the
+    /// display's compositor stretches it onto the screen (`surfaceScale`).
+    public var surfaceSize: CGSize
+    /// The wall clock between this frame's start and the last one's, which
+    /// `delta` (the step the scene moves, on the display's vsync) may round.
+    public var interval: TimeInterval
 
-    public init(time: TimeInterval, delta: TimeInterval, size: CGSize, index: UInt64) {
+    public init(time: TimeInterval, delta: TimeInterval, size: CGSize, index: UInt64, surfaceSize: CGSize? = nil, interval: TimeInterval? = nil) {
         self.time = time
         self.delta = delta
         self.size = size
         self.index = index
+        self.surfaceSize = surfaceSize ?? size
+        self.interval = interval ?? delta
     }
 }

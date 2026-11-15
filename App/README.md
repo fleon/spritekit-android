@@ -254,8 +254,11 @@ public protocol FrameRenderer: AnyObject {
 
 Every method runs on the frame thread with the context current. The shell
 swaps buffers after `drawFrame` returns, so a renderer never swaps itself.
-`Frame` carries the monotonic time, the delta, the drawable size in physical
-pixels and the frame index. `RenderContext` carries the four driver strings,
+`Frame` carries the monotonic time (the display's latest vsync, `VsyncPacer`),
+the delta (whole refreshes), the wall clock since the last frame, the
+drawable size in physical pixels, the size of the buffer drawn into (smaller
+once the display stretches it: the renderer's `surfaceScale`, which the shell
+applies with `SurfaceScaler`) and the frame index. `RenderContext` carries the four driver strings,
 of which `shadingLanguageVersion` is the one that decides which `#version`
 line the game's GLSL gets rewritten with.
 

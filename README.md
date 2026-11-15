@@ -1669,9 +1669,17 @@ What changed, by what it bought:
 
 - **The render scale** (`RenderScaleGovernor`). Frame times fell almost
   exactly with the pixels drawn (Sunny Garden 52 ms at full size, 25.5 at
-  0.67, 16.7 at 0.5), so the renderer draws the scene into a target a share
-  of the screen's size and stretches it on (`glBlitFramebuffer`), with
-  shaders still counting the screen's own pixels (`FragCoordSpace`). The
+  0.67, 16.7 at 0.5), so the scene draws at a share of the screen's size,
+  with shaders still counting the screen's own pixels (`FragCoordSpace`).
+  The display stretches it, not the GPU: the shell sizes the window's
+  buffers to the scale (`ANativeWindow_setBuffersGeometry`, `SurfaceScaler`
+  in `Display.swift`) and the renderer draws straight into them, so no
+  full-screen pass writes every pixel of the screen again. Changing the
+  size takes a few hundredths of a millisecond and shows nothing on screen.
+  The shell sizes them again whenever SDL makes the surface again (back from
+  the background) or the device turns. Until a new size takes, and wherever
+  Android refuses one, the renderer draws into a target of that size and
+  stretches it on itself (`glBlitFramebuffer`), as it always did. The
   governor starts at 1 and steps down while frames run late, unless the
   CPU took most of the frame, and tries a step up after a run of frames
   on time, backing off if that fails. It judges by the wall clock: the
@@ -1684,6 +1692,17 @@ What changed, by what it bought:
   (`startingRenderScale`); the governor itself is the game's
   (`Source/Utils/RenderScaleGovernor.swift`, symlinked into GLESRenderer), as
   Apple's game view adapts the same way.
+- **Frame pacing** (`VsyncPacer`, `Display.swift`). Frames start on the
+  display's vsync, which AChoreographer reports on the frame thread's
+  looper, never twice on one refresh. Each frame's time is the latest
+  vsync, so every step the scene moves is a whole number of refreshes, even
+  when a frame runs late. Before, the loop ran as fast as the swap let it,
+  timed by the wall clock, and each step was however long the last pass
+  happened to take. The game's frame-rate setting skips refreshes as it
+  did, and goes to Android as the window's rate (`ANativeWindow_setFrameRate`,
+  so a screen that can switch to 120 Hz does). The governor still judges
+  by the wall clock (`Frame.interval`). `-FixedFrameStep` isn't paced: its
+  frames step their own clock, as before.
 - **The CPU side**, a quarter to a third of the renderer's time (simpleperf):
   one vertex and one index buffer a frame, written batch after batch through
   unsynchronised maps, not `glBufferData` for every draw; uniform locations

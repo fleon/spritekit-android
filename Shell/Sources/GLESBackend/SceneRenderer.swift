@@ -192,9 +192,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var streamIsFresh = false
 
     /// The share of the screen's pixels the scene draws at. Below 1 the
-    /// scene draws into `sceneTarget` and is stretched onto the screen as
-    /// the frame ends: a phone's GPU that can't fill every pixel of a
-    /// 1080 × 2340 screen a frame (a Galaxy M31's Mali-G72 MP3) fills fewer.
+    /// shell sizes the window's buffers to it and the display's compositor
+    /// stretches them onto the screen (`surfaceScale`); until it has, and
+    /// where Android won't, the scene draws into `sceneTarget` and is
+    /// stretched onto the screen as the frame ends. Either way a phone's GPU
+    /// that can't fill every pixel of a 1080 × 2340 screen a frame (a Galaxy
+    /// M31's Mali-G72 MP3) fills fewer.
     /// Shaders still count the screen's own pixels (`FragCoordSpace`), so
     /// the lights and the edge blur land where they do at full size.
     public var renderScale: CGFloat = 1
@@ -547,17 +550,25 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         let screenWidth = Int(frame.size.width)
         let screenHeight = Int(frame.size.height)
-        let scene = sceneDrawTarget(screenWidth: screenWidth, screenHeight: screenHeight)
+        // The window's buffer: the screen's size, or smaller once the shell
+        // has the display stretch it (`surfaceScale`).
+        let surfaceWidth = Int(frame.surfaceSize.width)
+        let surfaceHeight = Int(frame.surfaceSize.height)
+        let surfaceScaled = surfaceWidth < screenWidth || surfaceHeight < screenHeight
+        let scene = sceneDrawTarget(screenWidth: screenWidth, screenHeight: screenHeight, surfaceScaled: surfaceScaled)
+        let drawnWidth = scene.isValid ? scene.width : surfaceWidth
+        let drawnHeight = scene.isValid ? scene.height : surfaceHeight
         target = Target(
             framebuffer: scene.framebuffer,
-            widthInPixels: scene.isValid ? scene.width : screenWidth,
-            heightInPixels: scene.isValid ? scene.height : screenHeight,
+            widthInPixels: drawnWidth,
+            heightInPixels: drawnHeight,
             visible: viewport.visibleSceneRect,
-            fragSpace: scene.isValid
+            // Shaders count the screen's own pixels however many are drawn.
+            fragSpace: drawnWidth != screenWidth || drawnHeight != screenHeight
                 ? FragCoordSpace(
                     offsetX: 0, offsetY: Float(screenHeight),
-                    scaleX: Float(screenWidth) / Float(scene.width),
-                    scaleY: -Float(screenHeight) / Float(scene.height)
+                    scaleX: Float(screenWidth) / Float(drawnWidth),
+                    scaleY: -Float(screenHeight) / Float(drawnHeight)
                 )
                 : .target(heightInPixels: screenHeight)
         )
@@ -595,7 +606,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // A frame's budget is a refresh, or longer if the game draws slower
         // (its frame-rate setting, `preferredFramesPerSecond`).
         let budget = max(refreshInterval, 1 / Double(max(view.preferredFramesPerSecond, 1)))
-        if !pinsRenderScale, governor.add(frame: frame.delta, cpu: MediaTime.source() - started, budget: budget) {
+        // Judged by the wall clock, as before frames were paced: `delta` is
+        // rounded to whole refreshes.
+        if !pinsRenderScale, governor.add(frame: frame.interval, cpu: MediaTime.source() - started, budget: budget) {
             renderScale = CGFloat(governor.scale)
         }
         if !pinsRenderScale, governor.windows != judgedWindows {
@@ -613,7 +626,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         launchPages?.writeIfDue(at: MediaTime.source() - launchStart)
 
         if !pendingCaptures.isEmpty {
-            let image = readScreen(width: Int(frame.size.width), height: Int(frame.size.height))
+            let image = readScreen(
+                width: surfaceWidth, height: surfaceHeight,
+                stretchedTo: (screenWidth, screenHeight)
+            )
             let waiting = pendingCaptures
             pendingCaptures.removeAll()
             for done in waiting { done(image) }
@@ -625,7 +641,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         }
         FrameCosts.report(tick: ticked - started, draw: MediaTime.source() - ticked)
         report.add(
-            delta: frame.delta,
+            delta: frame.interval,
+            step: frame.delta,
             cpu: MediaTime.source() - started,
             scene: flattened - started,
             renderScale: Double(renderScale),
@@ -1122,6 +1139,39 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     private var pendingCaptures: [(RasterImage?) -> Void] = []
 
+    /// The default framebuffer as drawn, row 0 the top, stretched to the
+    /// screen's size as the display shows it when the buffer is smaller.
+    private func readScreen(width: Int, height: Int, stretchedTo screen: (width: Int, height: Int)) -> RasterImage? {
+        guard let image = readScreen(width: width, height: height) else { return nil }
+        guard width != screen.width || height != screen.height else { return image }
+        return Self.stretched(image, toWidth: screen.width, height: screen.height)
+    }
+
+    /// `image` resized with bilinear filtering, as `GL_LINEAR` samples it:
+    /// a debug capture of a frame the display stretched.
+    private static func stretched(_ image: RasterImage, toWidth width: Int, height: Int) -> RasterImage {
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let sx = Double(image.width) / Double(width)
+        let sy = Double(image.height) / Double(height)
+        for y in 0 ..< height {
+            let fy = max(0, (Double(y) + 0.5) * sy - 0.5)
+            let y0 = min(Int(fy), image.height - 1), y1 = min(y0 + 1, image.height - 1)
+            let wy = fy - Double(y0)
+            for x in 0 ..< width {
+                let fx = max(0, (Double(x) + 0.5) * sx - 0.5)
+                let x0 = min(Int(fx), image.width - 1), x1 = min(x0 + 1, image.width - 1)
+                let wx = fx - Double(x0)
+                for c in 0 ..< 4 {
+                    func at(_ px: Int, _ py: Int) -> Double { Double(image.pixels[(py * image.width + px) * 4 + c]) }
+                    let top = at(x0, y0) * (1 - wx) + at(x1, y0) * wx
+                    let bottom = at(x0, y1) * (1 - wx) + at(x1, y1) * wx
+                    pixels[(y * width + x) * 4 + c] = UInt8(clamping: Int((top * (1 - wy) + bottom * wy).rounded()))
+                }
+            }
+        }
+        return RasterImage(width: width, height: height, pixels: pixels)
+    }
+
     /// The default framebuffer as drawn, row 0 the top.
     private func readScreen(width: Int, height: Int) -> RasterImage? {
         guard width > 0, height > 0 else { return nil }
@@ -1162,20 +1212,27 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         return RasterImage(width: size.width, height: size.height, pixels: flipped)
     }
 
-    /// Where the frame draws: `.none` for the screen itself, else a target
-    /// `renderScale` of its size (made again when that changes).
-    private func sceneDrawTarget(screenWidth: Int, screenHeight: Int) -> RenderTargetHandle {
+    public var surfaceScale: CGFloat { renderScale }
+    public var preferredFrameRate: Int { view.preferredFramesPerSecond }
+
+    /// Where the frame draws: `.none` for the window's buffer, else a target
+    /// `renderScale` of the screen's size (made again when that changes),
+    /// stretched onto the buffer as the frame ends. Only while the buffer is
+    /// still the screen's size: once the display stretches it, the frame
+    /// draws straight into it, whatever size it is.
+    private func sceneDrawTarget(screenWidth: Int, screenHeight: Int, surfaceScaled: Bool) -> RenderTargetHandle {
         let scale = min(max(renderScale, 0.25), 1)
-        guard scale < 1 else {
+        guard scale < 1, !surfaceScaled else {
             if sceneTarget.isValid {
                 device.deleteRenderTarget(sceneTarget)
                 sceneTarget = .none
-                Log.info("render scale 1: the scene drawn on the screen")
+                Log.info(surfaceScaled ? "render scale \(scale): the scene drawn on the window's buffer, stretched by the display" : "render scale 1: the scene drawn on the screen")
             }
             return .none
         }
-        let width = max(1, Int((CGFloat(screenWidth) * scale).rounded()))
-        let height = max(1, Int((CGFloat(screenHeight) * scale).rounded()))
+        let pixels = SurfaceGeometry.pixels(of: CGSize(width: screenWidth, height: screenHeight), scale: scale)
+        let width = Int(pixels.width)
+        let height = Int(pixels.height)
         if sceneTarget.isValid, sceneTarget.width == width, sceneTarget.height == height { return sceneTarget }
         if sceneTarget.isValid { device.deleteRenderTarget(sceneTarget) }
         sceneTarget = device.createRenderTarget(width: width, height: height, stencil: true) ?? .none

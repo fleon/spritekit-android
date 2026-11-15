@@ -427,3 +427,136 @@ void switchlings_gl_share_destroy(void *handle) {
     eglDestroyContext(share->display, share->context);
     free(share);
 }
+
+/* ---------------------------------------------------------------------------
+   The display: its vsync (AChoreographer) and the size of the window's
+   buffers (the hardware scaler). libandroid is opened here rather than
+   linked: AChoreographer and ANativeWindow_setFrameRate are newer than the
+   API 23 stubs the shell links against.
+   ------------------------------------------------------------------------- */
+
+#include <android/looper.h>
+#include <android/native_window.h>
+#include <time.h>
+
+typedef struct AChoreographer AChoreographer;
+typedef void (*switchlings_frame_cb)(long frameTimeNanos, void *data);
+typedef void (*switchlings_frame_cb64)(int64_t frameTimeNanos, void *data);
+
+static struct {
+    int state; /* 0 not tried, 1 running, -1 unavailable */
+    AChoreographer *choreographer;
+    void (*post)(AChoreographer *, switchlings_frame_cb, void *);
+    void (*post64)(AChoreographer *, switchlings_frame_cb64, void *);
+    int64_t latest;
+    int64_t fired;
+} switchlings_vsync;
+
+static void *switchlings_libandroid(void) {
+    static void *library;
+    if (!library) { library = dlopen("libandroid.so", RTLD_NOW | RTLD_LOCAL); }
+    return library;
+}
+
+static void switchlings_vsync_post(void);
+
+static void switchlings_on_vsync64(int64_t nanos, void *data) {
+    (void)data;
+    if (nanos > switchlings_vsync.latest) { switchlings_vsync.latest = nanos; }
+    switchlings_vsync.fired += 1;
+    /* Always one waiting, so the next vsync's timestamp is in hand as soon
+       as the frame thread looks, however long its frame took. */
+    switchlings_vsync_post();
+}
+
+static void switchlings_on_vsync(long nanos, void *data) { switchlings_on_vsync64((int64_t)nanos, data); }
+
+static void switchlings_vsync_post(void) {
+    if (switchlings_vsync.post64) {
+        switchlings_vsync.post64(switchlings_vsync.choreographer, switchlings_on_vsync64, NULL);
+    } else {
+        switchlings_vsync.post(switchlings_vsync.choreographer, switchlings_on_vsync, NULL);
+    }
+}
+
+bool switchlings_vsync_start(void) {
+    if (switchlings_vsync.state != 0) { return switchlings_vsync.state == 1; }
+    switchlings_vsync.state = -1;
+    void *library = switchlings_libandroid();
+    if (!library) { return false; }
+    AChoreographer *(*instance)(void) = (AChoreographer *(*)(void))dlsym(library, "AChoreographer_getInstance");
+    switchlings_vsync.post64 = (void (*)(AChoreographer *, switchlings_frame_cb64, void *))dlsym(library, "AChoreographer_postFrameCallback64");
+    switchlings_vsync.post = (void (*)(AChoreographer *, switchlings_frame_cb, void *))dlsym(library, "AChoreographer_postFrameCallback");
+    if (!instance || (!switchlings_vsync.post64 && !switchlings_vsync.post)) { return false; }
+    /* The choreographer delivers on the calling thread's looper, which a
+       native thread has to be given. */
+    if (!ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS)) { return false; }
+    switchlings_vsync.choreographer = instance();
+    if (!switchlings_vsync.choreographer) { return false; }
+    switchlings_vsync.state = 1;
+    switchlings_vsync_post();
+    return true;
+}
+
+int64_t switchlings_monotonic_ns(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
+}
+
+int64_t switchlings_vsync_poll(int timeout_ms) {
+    if (switchlings_vsync.state != 1) { return 0; }
+    const int64_t before = switchlings_vsync.fired;
+    /* What's already due, without waiting. */
+    while (ALooper_pollOnce(0, NULL, NULL, NULL) == ALOOPER_POLL_CALLBACK) {}
+    if (timeout_ms > 0 && switchlings_vsync.fired == before) {
+        const int64_t deadline = switchlings_monotonic_ns() + (int64_t)timeout_ms * 1000000LL;
+        while (switchlings_vsync.fired == before) {
+            const int64_t left = deadline - switchlings_monotonic_ns();
+            if (left <= 0) { break; }
+            int wait = (int)((left + 999999) / 1000000);
+            if (ALooper_pollOnce(wait, NULL, NULL, NULL) == ALOOPER_POLL_TIMEOUT) { break; }
+        }
+    }
+    return switchlings_vsync.latest;
+}
+
+void *switchlings_native_window(SDL_Window *window) {
+    return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, NULL);
+}
+
+void *switchlings_egl_surface(SDL_Window *window) {
+    return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_SURFACE_POINTER, NULL);
+}
+
+int switchlings_native_window_set_buffers(void *window, int width, int height) {
+    if (!window) { return -1; }
+    ANativeWindow *native = window;
+    /* Keep the format SDL chose from the EGL config. */
+    return ANativeWindow_setBuffersGeometry(native, width, height, ANativeWindow_getFormat(native));
+}
+
+int switchlings_native_window_set_frame_rate(void *window, float rate) {
+    if (!window) { return -1; }
+    static int (*setFrameRate)(ANativeWindow *, float, int8_t);
+    static int looked;
+    if (!looked) {
+        looked = 1;
+        void *library = switchlings_libandroid();
+        if (library) { setFrameRate = (int (*)(ANativeWindow *, float, int8_t))dlsym(library, "ANativeWindow_setFrameRate"); }
+    }
+    if (!setFrameRate) { return -1; }
+    /* ANATIVEWINDOW_FRAME_RATE_COMPATIBILITY_DEFAULT: a game's rate. */
+    return setFrameRate((ANativeWindow *)window, rate, 0);
+}
+
+bool switchlings_surface_size(int *width, int *height) {
+    EGLDisplay display = eglGetCurrentDisplay();
+    EGLSurface surface = eglGetCurrentSurface(EGL_DRAW);
+    if (display == EGL_NO_DISPLAY || surface == EGL_NO_SURFACE) { return false; }
+    EGLint w = 0, h = 0;
+    if (!eglQuerySurface(display, surface, EGL_WIDTH, &w) || !eglQuerySurface(display, surface, EGL_HEIGHT, &h)) { return false; }
+    *width = w;
+    *height = h;
+    return w > 0 && h > 0;
+}

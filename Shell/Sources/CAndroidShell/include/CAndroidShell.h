@@ -126,4 +126,27 @@ int switchlings_gl_share_make_current(void *share);
 void switchlings_gl_share_release(void *share);
 void switchlings_gl_share_destroy(void *share);
 
+/// The display's vsync, through AChoreographer on this thread's looper
+/// (prepared here). False where Android has no choreographer to give.
+bool switchlings_vsync_start(void);
+/// Runs the vsync callbacks that are due and, given a timeout, waits up to
+/// that long for the next one. Returns the latest vsync's timestamp
+/// (CLOCK_MONOTONIC nanoseconds, SDL's clock on Android), 0 before any.
+int64_t switchlings_vsync_poll(int timeout_ms);
+/// CLOCK_MONOTONIC, in nanoseconds.
+int64_t switchlings_monotonic_ns(void);
+
+/// The window's `ANativeWindow`, or NULL while Android has taken it away.
+void *switchlings_native_window(SDL_Window *window);
+/// The window's EGL surface, which SDL makes again (sizing the buffers to the
+/// window as it does) when Android hands the window back.
+void *switchlings_egl_surface(SDL_Window *window);
+/// Sizes its buffers (0 × 0: the window's own size), which the compositor
+/// then stretches onto the window: the hardware scaler. 0 on success.
+int switchlings_native_window_set_buffers(void *window, int width, int height);
+/// Tells Android the rate the game draws at (API 30 and later). 0 on success.
+int switchlings_native_window_set_frame_rate(void *window, float rate);
+/// The current draw surface's size in pixels, as EGL has it now.
+bool switchlings_surface_size(int *width, int *height);
+
 #endif /* CANDROIDSHELL_H */
