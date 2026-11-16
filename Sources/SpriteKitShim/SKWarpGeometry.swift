@@ -95,7 +95,10 @@ open class SKWarpGeometryGrid: SKWarpGeometry {
     /// Each position `t` of the way from this grid's to `other`'s.
     func blended(to other: SKWarpGeometryGrid, _ t: Float) -> SKWarpGeometryGrid {
         func mix(_ a: [SIMD2<Float>], _ b: [SIMD2<Float>]) -> [SIMD2<Float>] {
-            zip(a, b).map { $0 + ($1 - $0) * t }
+            var out: [SIMD2<Float>] = []
+            out.reserveCapacity(a.count)
+            for index in 0..<min(a.count, b.count) { out.append(a[index] + (b[index] - a[index]) * t) }
+            return out
         }
         return SKWarpGeometryGrid(
             columns: numberOfColumns, rows: numberOfRows,
@@ -211,8 +214,7 @@ public struct WarpMesh: Equatable {
 
     public init(grid: SKWarpGeometryGrid, subdivisionLevels: Int) {
         let columns = grid.numberOfColumns, rows = grid.numberOfRows
-        let untouched = grid.destinationPositions == SKWarpGeometryGrid.regular(columns: columns, rows: rows)
-        let level = untouched ? 0 : min(max(subdivisionLevels, 0), WarpMesh.deepestLevel)
+        let level = WarpMesh.isUntouched(grid) ? 0 : min(max(subdivisionLevels, 0), WarpMesh.deepestLevel)
         let split = 1 << level
         let across = columns * split + 1, down = rows * split + 1
 
@@ -251,6 +253,33 @@ public struct WarpMesh: Equatable {
     }
 
     public var vertexCount: Int { positions.count }
+
+    /// Whether the grid's destination is the plain regular grid, which
+    /// SpriteKit doesn't subdivide. Built as `regular` builds it, so it
+    /// compares exactly, without making that grid.
+    public static func isUntouched(_ grid: SKWarpGeometryGrid) -> Bool {
+        let columns = grid.numberOfColumns, rows = grid.numberOfRows
+        var index = 0
+        for row in 0...rows {
+            for column in 0...columns {
+                if grid.destinationPositions[index] != SIMD2(Float(column) / Float(columns), Float(row) / Float(rows)) { return false }
+                index += 1
+            }
+        }
+        return true
+    }
+
+    /// The bounds of where the grid draws, in unit space: every vertex of
+    /// its mesh is a bilinear mix of a cell's corners, so none lies outside
+    /// the destination's own.
+    public static func bounds(of grid: SKWarpGeometryGrid) -> (min: SIMD2<Float>, max: SIMD2<Float>) {
+        var low = grid.destinationPositions[0], high = low
+        for point in grid.destinationPositions {
+            low = pointwiseMin(low, point)
+            high = pointwiseMax(high, point)
+        }
+        return (low, high)
+    }
 }
 
 #endif

@@ -42,6 +42,42 @@ struct WarpBatchingTests {
         #expect(Array(v[(3 * stride)..<(3 * stride + 4)]) == [70, 40, 0.75, 0.75])
     }
 
+    @Test("The batch holds WarpMesh's vertices and triangles, carried by the node")
+    func matchesMesh() {
+        let regular = SKWarpGeometryGrid(columns: 3, rows: 2)
+        let grid = regular.replacingByDestinationPositions(positions: regular.destinationPositions.map {
+            SIMD2($0.x + 0.07 * sin($0.y * 5), $0.y - 0.04 * cos($0.x * 3))
+        }).replacingBySourcePositions(positions: regular.sourcePositions.map { SIMD2($0.x * 0.9 + 0.05, $0.y) })
+        let size = CGSize(width: 30, height: 18), anchor = CGPoint(x: 0.3, y: 0.6)
+        let list = batches { scene in
+            let parent = SKNode()
+            parent.position = CGPoint(x: 40, y: 20)
+            parent.zRotation = 0.4
+            parent.setScale(1.5)
+            let node = SKSpriteNode(color: .red, size: size)
+            node.anchorPoint = anchor
+            node.position = CGPoint(x: 7, y: -3)
+            node.warpGeometry = grid
+            parent.addChild(node)
+            scene.addChild(parent)
+        }
+        let mesh = WarpMesh(grid: grid, subdivisionLevels: 2)
+        let transform = CGAffineTransform(translationX: 7, y: -3)
+            .concatenating(CGAffineTransform(rotationAngle: 0.4).scaledBy(x: 1.5, y: 1.5))
+            .concatenating(CGAffineTransform(translationX: 40, y: 20))
+        let v = list[0].vertices, stride = SpriteBatcher.floatsPerVertex
+        #expect(v.count == mesh.vertexCount * stride)
+        #expect(list[0].indices == mesh.indices)
+        for i in 0..<mesh.vertexCount {
+            let unit = mesh.positions[i]
+            let point = CGPoint(x: size.width * (CGFloat(unit.x) - anchor.x), y: size.height * (CGFloat(unit.y) - anchor.y)).applying(transform)
+            #expect(abs(Double(v[i * stride]) - point.x) < 1e-3)
+            #expect(abs(Double(v[i * stride + 1]) - point.y) < 1e-3)
+            #expect(abs(v[i * stride + 2] - mesh.texCoords[i].x) < 1e-5)
+            #expect(abs(v[i * stride + 3] - mesh.texCoords[i].y) < 1e-5)
+        }
+    }
+
     @Test("Subdivision follows the node's levels")
     func levels() {
         let list = batches { scene in

@@ -157,9 +157,9 @@ public struct DrawList {
     /// With `culling`, the rect the view shows in the list's coordinates
     /// (`SKView.shouldCullNonVisibleNodes`), a sprite whose quad lies wholly
     /// outside it is left out: its fragments would all be clipped, so the
-    /// picture can't change. Only quads are culled: a warped sprite can reach
-    /// past its frame, and effect and crop nodes, labels and shapes are kept
-    /// whole.
+    /// picture can't change. Quads are culled by their frame, warped sprites
+    /// by where their grid reaches (which can be past their frame); effect
+    /// and crop nodes, labels and shapes are kept whole.
     @MainActor public init(scene: SKNode, transform: CGAffineTransform, culling: CGRect? = nil) {
         var entries: [(CGFloat, Command)] = []
         let cull = culling.map { $0.insetBy(dx: -Self.cullMargin, dy: -Self.cullMargin) }
@@ -187,8 +187,16 @@ public struct DrawList {
 
     /// A sprite command the cull rect leaves out.
     static func isCulled(_ sprite: Sprite, by cull: CGRect?) -> Bool {
-        guard let cull, sprite.warp == nil else { return false }
-        return isCulled(size: sprite.size, anchor: sprite.anchorPoint, transform: sprite.transform, by: cull)
+        guard let cull else { return false }
+        guard let grid = sprite.warp else {
+            return isCulled(size: sprite.size, anchor: sprite.anchorPoint, transform: sprite.transform, by: cull)
+        }
+        // The grid's reach as a quad of its own in the sprite's space.
+        let (low, high) = WarpMesh.bounds(of: grid)
+        let size = CGSize(width: sprite.size.width * CGFloat(high.x - low.x), height: sprite.size.height * CGFloat(high.y - low.y))
+        let origin = CGPoint(x: sprite.size.width * (CGFloat(low.x) - sprite.anchorPoint.x),
+                             y: sprite.size.height * (CGFloat(low.y) - sprite.anchorPoint.y))
+        return isCulled(size: size, anchor: .zero, transform: sprite.transform.translatedBy(x: origin.x, y: origin.y), by: cull)
     }
 
     /// Stable sort by accumulated z: ties keep tree order.

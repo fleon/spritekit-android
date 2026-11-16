@@ -1264,6 +1264,19 @@ in a straight line, a keyframe list blends from the node's own warp to the
 first pose by the first time, and a node with no warp — or one of another
 shape — takes the first pose at once.
 
+A pose changes every frame (the crowns, plants and wings loop through
+theirs without rest), so the batcher writes a warped sprite's mesh straight
+into the batch (`addWarp`: `WarpMesh`'s vertices and triangles, in its order,
+carried through the sprite's frame and transform in one affine step)
+instead of building a `WarpMesh` of its own each frame, and a warped sprite
+culls by where its grid reaches (`WarpMesh.bounds`: no vertex of the mesh
+lies outside its grid's destination), so the crowns off the screen's edges
+cost nothing. On the Galaxy M31 that took the scene's CPU time (ticking,
+flattening, batching) in Bug Woods from 5.98 to 5.06 ms a frame mid-level
+and from 6.91 to 6.29 on its world page, all but what removing every warp
+saves (5.00), and Sunny Garden's from 4.00 to 3.78; on an A14 iPad,
+SpriteKit's own warps cost nothing measurable.
+
 The two gaps outside the warp code that this found are closed: a repeat
 carries what a frame runs past a round's end into the next, and every timing
 mode runs on SpriteKit's measured curve (see **The game's own scenes**).
@@ -1776,7 +1789,9 @@ What's left, at 0.5 (the governor's floor):
   planets, the rug's room light) cost more than a Mali-G72 has at any
   scale worth showing. Lighter shaders there are game-side work.
 - **The CPU** takes 12–18 ms a frame (ticking actions, the rigs, flattening
-  and batching; Bug Woods' warped trees most), close to the whole budget.
+  and batching), close to the whole budget. Bug Woods' warped trees were
+  the most of it; round one's fixes and the warps' own (**Warps**) brought
+  them down to about what the same sprites cost unwarped.
 
 Rigs dropped triangles there too, and audio was silent everywhere; both are
 under Rigs and Audio.

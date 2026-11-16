@@ -326,7 +326,7 @@ struct InlineTests {
 
 @Suite("Culling")
 struct CullingTests {
-    @Test("Sprites wholly outside the view are left out; those touching it, warped ones and effects stay")
+    @Test("Sprites wholly outside the view are left out, warped ones by where their grid reaches; those touching it and effects stay")
     @MainActor func culls() {
         let scene = SKScene(size: CGSize(width: 100, height: 100))
         let inside = sprite(at: CGPoint(x: 50, y: 50))
@@ -334,13 +334,17 @@ struct CullingTests {
         let touching = sprite(size: 20, at: CGPoint(x: 108, y: 50))
         let warped = sprite(at: CGPoint(x: -300, y: 50))
         warped.warpGeometry = SKWarpGeometryGrid(columns: 1, rows: 1)
+        // Its frame lies outside, but its grid reaches in.
+        let reaching = sprite(at: CGPoint(x: -20, y: 50))
+        reaching.warpGeometry = SKWarpGeometryGrid(columns: 1, rows: 1)
+            .replacingByDestinationPositions(positions: [SIMD2(0, 0), SIMD2(5, 0), SIMD2(0, 1), SIMD2(5, 1)])
         let effect = SKEffectNode()
         effect.shader = SKShader(source: "void main() { gl_FragColor = vec4(1.0); }")
         effect.addChild(sprite(at: CGPoint(x: 500, y: 500)))
-        for node in [inside, outside, touching, warped, effect] { scene.addChild(node) }
+        for node in [inside, outside, touching, warped, reaching, effect] { scene.addChild(node) }
         let all = DrawList(scene: scene, transform: .identity)
         let culled = DrawList(scene: scene, transform: .identity, culling: CGRect(x: 0, y: 0, width: 100, height: 100))
-        #expect(all.spriteCount == 5)
+        #expect(all.spriteCount == 6)
         #expect(culled.spriteCount == 4)
     }
 
