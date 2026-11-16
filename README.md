@@ -1816,8 +1816,12 @@ What changed, by what it bought:
   frame rate with it). The governor now picks the frame rate too, quality
   before smoothness: every pixel at 60, then every pixel at the slower rates
   the display paces evenly (30 at 60 Hz; 40 and 30 at 120 Hz), and only
-  then the slowest rate at smaller scales; a rate changes as a scene
-  changes, a scale at once. A frame rate or Graphics setting the player
+  then the slowest rate at smaller scales. Both change only as a scene
+  changes, and it holds still once settled: a step down only after
+  seconds of late frames, a try up only as a scene starts, and a rung
+  that ran late isn't tried again for a few launches; only a try stepping
+  back, or frames badly late throughout, change under a scene. Its frame
+  reports count the frames over budget (`[frames] game late`). A frame rate or Graphics setting the player
   picks takes that side away from it, at once, and a launch starts where it
   settled last time (`SceneRenderer.configure`, from
   `AndroidGameController.displayChoices` and `startingLoad`); the governor
