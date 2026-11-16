@@ -79,6 +79,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Set once the first frame has been drawn, so the log says it happened
     /// exactly once rather than every frame.
     private var reportedFirstFrame = false
+    /// Each scene's first frame and the launch's long frames, to logcat.
+    private var timings = LaunchTimings()
 
     /// Frame times and per-frame counts, to logcat every few seconds.
     private var report = FrameReport()
@@ -346,6 +348,14 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         var maxFragmentVectors: GLint = 0
         glGetIntegerv(GLenum(GL_MAX_FRAGMENT_UNIFORM_VECTORS), &maxFragmentVectors)
         Log.info("max fragment uniform vectors \(maxFragmentVectors)")
+
+        // Programs linked before are loaded rather than built again
+        // (`ProgramCache`): made once, the first time a context starts.
+        if device.programCache == nil {
+            device.programCache = ProgramCache(
+                driver: [GL_VENDOR, GL_RENDERER, GL_VERSION].map { Self.glString(GLenum($0)) }.joined(separator: "|")
+            )
+        }
 
         state.forgetAll()
         // Two vertex arrays, each over its own pair of buffers, its
@@ -667,6 +677,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             reportedFirstFrame = true
             Log.info("first frame: \(quadsDrawn) quads, \(drawCalls) draw calls, \(targetBinds) target binds")
         }
+        timings.drew(view.scene, interval: frame.interval) { [device] in device.programCache?.summary ?? "" }
         FrameCosts.report(tick: ticked - started, draw: MediaTime.source() - ticked)
         report.add(
             delta: frame.interval,
@@ -1535,6 +1546,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// Says in logcat when the view's scene changes and when its transition
     /// lands, with the shell's clock, so a scene change can be timed.
+    private static func glString(_ name: GLenum) -> String {
+        guard let bytes = glGetString(name) else { return "" }
+        return String(cString: UnsafeRawPointer(bytes).assumingMemoryBound(to: CChar.self))
+    }
+
     private func noteSceneChange(at time: TimeInterval) {
         let scene = view.scene.map(ObjectIdentifier.init)
         let transitioning = view.isTransitioning
@@ -2020,6 +2036,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if touch.phase == .began {
             guard primaryFinger == nil else { return }
             primaryFinger = touch.finger
+            timings.pressed()
         }
         guard touch.finger == primaryFinger else { return }
         if touch.phase == .ended || touch.phase == .cancelled { primaryFinger = nil }
@@ -2062,7 +2079,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var appeared = false
 
     public func receive(_ input: InputEvent) -> Bool {
-        onInput?(input) ?? false
+        timings.pressed()
+        return onInput?(input) ?? false
     }
 
     public func windowMetricsDidChange(_ metrics: WindowMetrics) {

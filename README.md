@@ -1366,9 +1366,15 @@ each read once at start-up (`adb shell setprop …`, then relaunch):
 | `debug.switchlings.autosolve 1` | each level plays its stored solution, then opens the next through the loading screen |
 | `debug.switchlings.transitionslowdown 25` | transitions only, 25 times slower (an emulator draws a few frames a second, so a 0.1 s fade shows no frames between) |
 | `debug.switchlings.slowdown 8` | every action and transition, as `-AnimationSlowdown` |
+| `debug.switchlings.programcache off` | links every program from source, keeping none (`clear`: deletes the kept programs first, every launch while it's set) |
 
 logcat says when each scene arrives and when its transition lands
-(`scene LoadingScene at 13.462, transition playing`).
+(`scene LoadingScene at 13.462, transition playing`), and when each first
+draws (`[timings] WorldSelectScene first frame 12.807 s after launch, 4111 ms
+after the last scene's, 4192 ms after the last input; programs: …`: from the
+process's start, the scene before and the last touch, key or button, with the
+program cache's count so far), then the launch's longest frame and its frames
+of 50 ms or more once its first 30 s have passed (`LaunchTimings`).
 
 ## Share films
 
@@ -1509,7 +1515,8 @@ simpleperf), it was mostly not GL at all:
   behind 8,000 sprites (`AttributeShaders`), which took 1.2 s a time. Now
   in place: 8,000 sprites batch in 1 ms on a Mac, from 68.
 - **Linking**: up to 220 ms a program on a cold shader cache (Mali keeps
-  linked programs across launches, so a second launch barely links). The
+  linked programs across launches, so a second launch barely links, until
+  an update: see **Programs kept between launches**). The
   shaders a build makes on its thread are handed over as it preloads
   (`SKShader.programWarmer`) and linked on a second EGL context sharing the
   frame thread's (`GLBuilderThread`, `ProgramBuilds`), at niceness 0: the
@@ -1563,6 +1570,36 @@ What's still over 100 ms: the warm-up's CPU (the rig priming's 8,000 sprites,
 which Android doesn't need: a game change), the programs the game makes on the
 main thread as the world list shows (cold cache only) and its own main-thread
 work there.
+
+### Programs kept between launches
+
+Each program the port links is kept in the app's cache as the driver's binary
+(`glGetProgramBinary`) and loaded at the next launch in place of compiling and
+linking it (`glProgramBinary`, `ProgramCache`), on the frame thread and the
+builder's context alike. Files are named by a hash of the translated sources,
+in a folder named by the driver's vendor, renderer and version (a driver update
+starts afresh); a binary the driver turns down or a file that's damaged or cut
+short is deleted and the program linked from source and kept again; the folder
+holds 32 MB at the most, the least recently used going first.
+
+The app's build isn't part of the key, and that's the point: Android already
+keeps linked programs between launches (its EGL blob cache, in the app's
+`code_cache`), so a plain relaunch gains nothing, but every update empties
+`code_cache`, and the first launch after it linked everything again. Programs
+an update didn't change now load as before. On a Galaxy M31 (optimised builds,
+render scale 0.5, launching to the title, into the world list and into three
+worlds' first levels, medians of three runs):
+
+| | first launch (empty caches) | relaunch | first launch after an update, before | after |
+|---|---|---|---|---|
+| programs | 38 linked, 2.2 s on the builder thread | 38 loaded in 52–70 ms | linked again | 38 loaded in 63–108 ms |
+| linking on the frame thread, in long frames | 563 ms | 4 ms | 539–572 ms | 5–18 ms |
+| longest frame in the first 30 s | 703 ms | 377 ms | 666 ms | 387 ms |
+
+What every scene takes to show doesn't move (the title's first frame at 4.2 s,
+a level's 0.7 s after the tap): programs were already linked on their own
+thread while the loading screen played, and what holds the long frames up is
+bakes and page waits.
 
 Thread Sanitizer runs the host tests clean (`swift test --sanitize=thread
 --scratch-path .build/tsan`); before these fixes it reported eight races.

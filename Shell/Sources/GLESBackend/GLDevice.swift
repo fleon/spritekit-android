@@ -346,17 +346,37 @@ public nonisolated final class GLDevice: RenderDevice {
         FrameCosts.time(.programs) { build(vertex: vertex, fragment: fragment) }
     }
 
-    private func build(vertex: String, fragment: String) -> UInt32 {
-        guard let vs = compile(vertex, kind: GLenum(GL_VERTEX_SHADER), label: "vertex") else { return 0 }
-        defer { glDeleteShader(vs) }
-        guard let fs = compile(fragment, kind: GLenum(GL_FRAGMENT_SHADER), label: "fragment") else { return 0 }
-        defer { glDeleteShader(fs) }
+    /// Where linked programs are kept between launches, when it's on.
+    var programCache: ProgramCache?
 
-        let program = glCreateProgram()
-        guard program != 0 else {
-            Log.error("glCreateProgram gave 0")
+    private func build(vertex: String, fragment: String) -> UInt32 {
+        let create = { () -> GLuint in
+            let program = glCreateProgram()
+            if program == 0 { Log.error("glCreateProgram gave 0") }
+            return program
+        }
+        if let programCache {
+            return programCache.program(vertex: vertex, fragment: fragment, create: create) {
+                link($0, vertex: vertex, fragment: fragment)
+            }
+        }
+        let program = create()
+        guard program != 0 else { return 0 }
+        guard link(program, vertex: vertex, fragment: fragment) else {
+            glDeleteProgram(program)
             return 0
         }
+        return program
+    }
+
+    /// Compiles both stages into `program` and links it; the caller deletes
+    /// it if this fails.
+    private func link(_ program: GLuint, vertex: String, fragment: String) -> Bool {
+        guard let vs = compile(vertex, kind: GLenum(GL_VERTEX_SHADER), label: "vertex") else { return false }
+        defer { glDeleteShader(vs) }
+        guard let fs = compile(fragment, kind: GLenum(GL_FRAGMENT_SHADER), label: "fragment") else { return false }
+        defer { glDeleteShader(fs) }
+
         glAttachShader(program, vs)
         glAttachShader(program, fs)
 
@@ -373,10 +393,9 @@ public nonisolated final class GLDevice: RenderDevice {
         glGetProgramiv(program, GLenum(GL_LINK_STATUS), &linked)
         guard linked == GL_TRUE else {
             Log.error("link failed: \(programLog(program))")
-            glDeleteProgram(program)
-            return 0
+            return false
         }
-        return program
+        return true
     }
 
     public func deleteProgram(_ name: UInt32) {
