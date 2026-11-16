@@ -245,8 +245,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var governs = false
     /// The rate the view draws at now. A rung the governor picks waits for
     /// the next scene (`sceneShown`), as Apple's does, so play never flips
-    /// between 60 and 30 or sharpens and softens, but for a try stepping
-    /// back as its scene begins and frames badly late for seconds on end.
+    /// between 60 and 30 or sharpens and softens: under a scene it only
+    /// steps down, after seconds late, or back from a try as it began.
     private var appliedRate = RenderScaleGovernor.fastestAutoRate
     /// The scene drawn last, to catch a new one.
     private weak var lastScene: SKScene?
@@ -689,11 +689,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             let holding = !drawsGovernorRung
             if governor.add(frame: frame.interval, cpu: MediaTime.source() - started, budget: budget, holding: holding) {
                 if let blocked = governor.blockedLoad { onBlocked?(blocked) }
-                // The rung applies at the next scene, unless a try as this
-                // scene began didn't hold or frames ran badly late throughout.
-                if governor.backedOff || governor.urgent {
-                    apply(rate: governor.rate)
-                }
+                // A try that didn't hold as its scene began, or a step down
+                // after seconds late: at once.
+                apply(rate: governor.rate)
             }
             if governor.windows != judgedWindows {
                 judgedWindows = governor.windows

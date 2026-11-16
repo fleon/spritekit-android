@@ -1816,11 +1816,11 @@ What changed, by what it bought:
   frame rate with it). The governor now picks the frame rate too, quality
   before smoothness: every pixel at 60, then every pixel at the slower rates
   the display paces evenly (30 at 60 Hz; 40 and 30 at 120 Hz), and only
-  then the slowest rate at smaller scales. Both change only as a scene
-  changes, and it holds still once settled: a step down only after
-  seconds of late frames, a try up only as a scene starts, and a rung
-  that ran late isn't tried again for a few launches; only a try stepping
-  back, or frames badly late throughout, change under a scene. Its frame
+  then the slowest rate at smaller scales. It holds still once settled: a
+  step down only after seconds of late frames (at once), a try up only as
+  a scene starts (stepping back at once if it runs late), and a rung that
+  ran late isn't tried again for a few launches, so under a scene it only
+  ever comes down. Its frame
   reports count the frames over budget (`[frames] game late`). A frame rate or Graphics setting the player
   picks takes that side away from it, at once, and a launch starts where it
   settled last time (`SceneRenderer.configure`, from

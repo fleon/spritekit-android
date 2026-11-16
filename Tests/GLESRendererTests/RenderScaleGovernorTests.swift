@@ -31,32 +31,32 @@ struct RenderScaleGovernorTests {
 
     /// Plays `scenes` scenes of `windows` windows each as a caller does,
     /// frames taking what `device` says at the rung drawn: what's drawn
-    /// changes as a scene starts, or at once for a try stepping back or an
-    /// urgent step down. Returns the rungs drawn, scene by scene, and how
-    /// often what's drawn changed under a scene other than a try stepping
-    /// back as it began.
+    /// changes as a scene starts, or at once for a try stepping back or a
+    /// step down. Returns the rungs drawn, scene by scene, how often it
+    /// stepped down under a scene (a try stepping back as it began aside)
+    /// and how often it went up under one.
     private func play(
         _ governor: inout RenderScaleGovernor, scenes: Int, windows: Int = 60,
         device: (Rung) -> Double
-    ) -> (drawn: [Rung], underScene: Int) {
+    ) -> (drawn: [Rung], downs: Int, ups: Int) {
         var drawn = governor.rung
         var perScene: [Rung] = []
-        var underScene = 0
+        var downs = 0, ups = 0
         for _ in 0..<scenes {
             governor.startScene()
             drawn = governor.rung
             for index in 0..<windows {
                 let frame = device(drawn)
                 let changed = window(&governor, frame: frame, budget: 1 / Double(drawn.rate), holding: governor.rung != drawn)
-                if changed, governor.backedOff || governor.urgent {
+                if changed {
                     let trial = RenderScaleGovernor.warmUpWindows + RenderScaleGovernor.trialWindows
-                    if !(governor.backedOff && index < trial) { underScene += 1 }
+                    if governor.rung.load > drawn.load { ups += 1 } else if !(governor.backedOff && index < trial) { downs += 1 }
                     drawn = governor.rung
                 }
             }
             perScene.append(drawn)
         }
-        return (perScene, underScene)
+        return (perScene, downs, ups)
     }
 
     // MARK: Scales alone (a picked frame rate)
@@ -78,16 +78,7 @@ struct RenderScaleGovernorTests {
         for _ in 0..<(sustained(late) - 1) { #expect(!window(&governor, frame: late)) }
         #expect(window(&governor, frame: late))
         #expect(governor.scale == 0.875)
-        #expect(!governor.urgent)
         #expect(governor.blockedLoad == 60)
-    }
-
-    @Test("Badly late throughout: the step down is urgent")
-    func badlyLateIsUrgent() {
-        var governor = RenderScaleGovernor()
-        for _ in 0..<(sustained(0.05) - 1) { window(&governor, frame: 0.05) }
-        #expect(window(&governor, frame: 0.05))
-        #expect(governor.urgent)
     }
 
     @Test("A frame the CPU held up doesn't give up pixels")
@@ -149,15 +140,17 @@ struct RenderScaleGovernorTests {
         // From where it settled last launch: one try, then still.
         var measured = RenderScaleGovernor(rates: [60, 30], load: 30)
         let fromLoad = play(&measured, scenes: 12, device: device)
-        #expect(fromLoad.underScene == 0)
+        #expect(fromLoad.downs == 0)
+        #expect(fromLoad.ups == 0)
         #expect(measured.tries == 1)
         #expect(measured.failedTries == 1)
         #expect(fromLoad.drawn.suffix(10).allSatisfy { $0 == Rung(rate: 30, scale: 1) })
-        // From nothing known: down once, at once as its first scene runs at
-        // half the rate, and still.
+        // From nothing known: down once, seconds into its first scene, and
+        // still.
         var fresh = RenderScaleGovernor(rates: [60, 30])
         let fromNothing = play(&fresh, scenes: 12, device: device)
-        #expect(fromNothing.underScene == 1)
+        #expect(fromNothing.downs == 1)
+        #expect(fromNothing.ups == 0)
         #expect(fresh.tries == 0)
         #expect(fromNothing.drawn.dropFirst().allSatisfy { $0 == Rung(rate: 30, scale: 1) })
         // The next launch, the failure kept: no try at all.
@@ -173,9 +166,22 @@ struct RenderScaleGovernorTests {
         let device: (Rung) -> Double = { $0.scale > 0.76 ? 0.025 : 1.0 / 60 }
         var governor = RenderScaleGovernor(rates: [60], scales: RenderScaleGovernor.steps, load: 60 * 0.75 * 0.75)
         let run = play(&governor, scenes: 12, device: device)
-        #expect(run.underScene == 0)
+        #expect(run.downs == 0)
+        #expect(run.ups == 0)
         #expect(governor.tries == 1)
         #expect(run.drawn.suffix(10).allSatisfy { $0.scale == 0.75 })
+    }
+
+    @Test("Several rungs too costly: it comes down them within its first scene, then holds")
+    func settlesWithinAScene() {
+        // As a Galaxy Tab A8 found: only 30 at three quarters keeps time.
+        let device: (Rung) -> Double = { $0.load > 17 ? 0.045 : 1.0 / Double($0.rate) }
+        var governor = RenderScaleGovernor(rates: [60, 30])
+        let run = play(&governor, scenes: 12, device: device)
+        #expect(run.drawn.allSatisfy { $0 == Rung(rate: 30, scale: 0.75) })
+        #expect(run.downs == 3)
+        #expect(run.ups == 0)
+        #expect(governor.tries == 0)
     }
 
     @Test("Hitches now and then never move it")
