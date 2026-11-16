@@ -407,7 +407,8 @@ public class MainActivity extends SDLActivity {
     /**
      * SDL's surface, with the safe area iOS would give: the system bars and
      * the display cutout, and at the bottom the gesture-navigation handle,
-     * as iOS counts the home indicator. SDL's own adds the back-gesture
+     * as iOS counts the home indicator (none for hidden three-button
+     * navigation, which only a swipe brings back). SDL's own adds the back-gesture
      * edges (about 30 dp each side), which an iPhone's safe area has no
      * counterpart for, so every screen came out 60 points narrower than the
      * same screen on iOS; and with the bars hidden (full screen) the bottom
@@ -428,13 +429,23 @@ public class MainActivity extends SDLActivity {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets safe = insets.getInsets(
                     WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-                android.graphics.Insets handle = insets.getInsets(WindowInsets.Type.mandatorySystemGestures());
-                int bottom = Math.max(safe.bottom, handle.bottom);
+                // Gesture navigation draws a handle the game keeps clear of, as
+                // iOS keeps clear of the home indicator. Hidden three-button
+                // navigation leaves only the swipe that brings it back, whose
+                // mandatory gesture inset is the whole bar: nothing to keep
+                // clear of there. Its buttons are tappable, the handle isn't.
+                android.graphics.Insets nav = insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars());
+                android.graphics.Insets tappable = insets.getInsetsIgnoringVisibility(WindowInsets.Type.tappableElement());
+                boolean buttons = (nav.bottom > 0 && tappable.bottom > 0)
+                    || (nav.left > 0 && tappable.left > 0) || (nav.right > 0 && tappable.right > 0);
+                int handle = buttons ? 0 : insets.getInsets(WindowInsets.Type.mandatorySystemGestures()).bottom;
+                int bottom = Math.max(safe.bottom, handle);
                 SDLActivity.onNativeInsetsChanged(safe.left, safe.right, safe.top, bottom);
                 if (Build.VERSION.SDK_INT >= 31) {
                     android.view.RoundedCorner corner = insets.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT);
-                    Log.i("Switchlings", "insets: safe " + safe + ", handle " + handle.bottom
-                        + " px, corner radius " + (corner == null ? "none" : corner.getRadius() + " px"));
+                    Log.i("Switchlings", "insets: safe " + safe + ", " + (buttons ? "button" : "gesture")
+                        + " navigation, handle " + handle + " px, corner radius "
+                        + (corner == null ? "none" : corner.getRadius() + " px"));
                 }
                 // The soft keyboard's height, which the game hears as UIKit's
                 // keyboard notifications: the code prompt rises clear of it.
