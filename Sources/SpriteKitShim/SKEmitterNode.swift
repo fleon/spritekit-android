@@ -138,10 +138,10 @@ open class SKEmitterNode: SKNode {
         emitted = 0
     }
 
-    public override func tickActions(_ delta: TimeInterval) {
-        super.tickActions(delta)
-        guard !isEffectivelyPaused else { return }
-        simulate(delta * TimeInterval(max(0, worldSpeed)))
+    override func tickTree(_ delta: TimeInterval, pausedAbove: Bool, speedAbove: CGFloat) {
+        super.tickTree(delta, pausedAbove: pausedAbove, speedAbove: speedAbove)
+        guard !pausedAbove, !isPaused else { return }
+        simulate(delta * TimeInterval(max(0, speed * speedAbove)))
     }
 
     private func simulate(_ seconds: TimeInterval) {

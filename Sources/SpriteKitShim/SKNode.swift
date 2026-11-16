@@ -244,8 +244,18 @@ open class SKNode {
     /// Advances this node's actions and its descendants' by `delta` seconds.
     /// The renderer calls this once a frame on the scene.
     public func tickActions(_ delta: TimeInterval) {
-        if !isEffectivelyPaused, !runningActions.isEmpty {
-            let scaled = delta * TimeInterval(max(0, worldSpeed))
+        tickTree(delta, pausedAbove: parent?.isEffectivelyPaused ?? false, speedAbove: parent?.worldSpeed ?? 1)
+    }
+
+    /// `tickActions` for a node whose ancestors are `pausedAbove` and play
+    /// at `speedAbove` (`parent.worldSpeed`), handed down the tree so no
+    /// node walks its parents again: a deep tree's walks once took a third
+    /// of a frame on the Galaxy M31. Its own `isPaused` and `speed` are read
+    /// as it's reached, and again after its actions run, as before.
+    func tickTree(_ delta: TimeInterval, pausedAbove: Bool, speedAbove: CGFloat) {
+        if !runningActions.isEmpty, !pausedAbove, !isPaused {
+            // `worldSpeed`'s own product, in its order.
+            let scaled = delta * TimeInterval(max(0, speed * speedAbove))
             // A snapshot of the references, and nothing holding the list
             // open: a block may add to it, take things off it or clear it
             // while it runs. An action taken off meanwhile is cancelled, so
@@ -261,8 +271,10 @@ open class SKNode {
             }
             for completion in finished { completion() }
         }
+        let paused = pausedAbove || isPaused
+        let speed = self.speed * speedAbove
         // A child may remove itself while ticking, so walk a snapshot.
-        for child in Array(children) { child.tickActions(delta) }
+        for child in Array(children) { child.tickTree(delta, pausedAbove: paused, speedAbove: speed) }
     }
 }
 
