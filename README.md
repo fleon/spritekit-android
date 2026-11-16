@@ -1174,6 +1174,26 @@ Three things in the renderer are decided rather than inherited:
   most of the screen (`-BlurBackdrop`), films and bakes, and
   `debug.switchlings.bandblur off`.
 
+### Adreno: nothing mapped unsynchronised
+
+A Nothing Phone (3a) (Adreno 710) drew The Mainframe's world page with
+level coins showing other frames' numbers, the Edit button's label cut to
+"Ed" or gone, and bands of the glyph atlas smeared over the coin strip;
+Samsung Remote Test Lab's Galaxy S23 (Adreno 740) did the same. Text and
+shape masks were written draw by draw, each through an unsynchronised map at
+the next offset of a buffer orphaned once a frame, and Qualcomm's driver
+let those writes land over data draws still to run would read: a label drew
+with another frame's quads, or with the coin strip's crop-mask quad over its
+glyph page. Mali forgave it. Now the frame writes everything, text and masks
+included, into its stream at once (`SceneRenderer.stage`, labels and shapes
+made into runs first by `resolveCoverage`), the stream's one map is
+synchronised (on a store just orphaned, so it never waits on a driver that
+honours the orphan), and the few draws still written as they come (bakes, a
+kept target drawn again) give their buffers their own data with
+`glBufferData`. `debug.switchlings.poison` (debug builds) makes a forgiving
+GPU harsher: `targets` fills every off-screen target with junk before its
+clear, `stream` keeps the frame's store rather than orphaning it.
+
 ### What the emulator says, and what it does not
 
 Measured on the shared `switchlings_shell` AVD, which reports
@@ -1816,8 +1836,9 @@ What changed, by what it bought:
   by the wall clock (`Frame.interval`). `-FixedFrameStep` isn't paced: its
   frames step their own clock, as before.
 - **The CPU side**, a quarter to a third of the renderer's time (simpleperf):
-  one vertex and one index buffer a frame, written batch after batch through
-  unsynchronised maps, not `glBufferData` for every draw; uniform locations
+  one vertex and one index buffer a frame, sprites, text and shape masks
+  alike, written batch after batch through one map of a freshly orphaned
+  store, not `glBufferData` for every draw; uniform locations
   looked up once per program; and optimised builds without Swift's run-time
   exclusivity checks, which on Android read emulated TLS and came to about a
   tenth of the game thread. None of it moved a frame on the M31, which was

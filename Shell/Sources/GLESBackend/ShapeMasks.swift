@@ -49,6 +49,9 @@ final class ShapeMasks {
     private var cache: [Key: Cached] = [:]
     private var bytes = 0
     private var clock: UInt64 = 0
+    /// The clock as the frame began: masks staged since are drawn later in
+    /// the frame, so they're never evicted before it ends.
+    private var frameStart: UInt64 = 0
 
     private(set) var rasterised = 0
 
@@ -80,6 +83,8 @@ final class ShapeMasks {
         }
     }
 
+    func beginFrame() { frameStart = clock + 1 }
+
     func removeAll() {
         for entry in cache.values {
             var name = entry.name
@@ -110,7 +115,7 @@ final class ShapeMasks {
 
     private func evictIfNeeded() {
         guard bytes > budget else { return }
-        for (key, entry) in cache.sorted(by: { $0.value.used < $1.value.used }) {
+        for (key, entry) in cache.sorted(by: { $0.value.used < $1.value.used }) where entry.used < frameStart {
             var name = entry.name
             glDeleteTextures(1, &name)
             cache.removeValue(forKey: key)

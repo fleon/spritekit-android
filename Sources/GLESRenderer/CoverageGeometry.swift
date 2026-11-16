@@ -22,6 +22,40 @@ public enum CoverageGeometry {
         public var quadCount: Int { indices.count / 6 }
     }
 
+    /// A label or shape made into its runs ahead of drawing, so the frame
+    /// writes them into its stream with everything else.
+    public struct Staged {
+        public enum Origin {
+            case label(DrawList.Label)
+            case shape(DrawList.Shape)
+        }
+
+        public struct Part {
+            public var run: Run
+            /// A shape's mask texture; 0 for glyphs, whose page `run` names.
+            public var mask: UInt32
+            /// Where its indices start in the frame's stream; -1 until written.
+            public var streamFirstIndex: Int = -1
+
+            public init(run: Run, mask: UInt32) {
+                self.run = run
+                self.mask = mask
+            }
+        }
+
+        /// What it was: drawn afresh wherever it isn't in the stream (a kept
+        /// target drawn again in a later frame, whose masks may be gone).
+        public var origin: Origin
+        public var parts: [Part]
+
+        public init(origin: Origin, parts: [Part]) {
+            self.origin = origin
+            self.parts = parts
+        }
+
+        public var isStaged: Bool { !parts.isEmpty && parts.allSatisfy { $0.streamFirstIndex >= 0 } }
+    }
+
     /// One glyph as the renderer needs it: where it is on its page, and
     /// where it goes on the line.
     public struct Glyph: Equatable {

@@ -201,6 +201,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// GPU still holds the old.
     private var stagedVertexCapacity = 0
     private var stagedIndexCapacity = 0
+    /// The capacities the stores were last given (`RenderPoison.stream`).
+    private var stagedStores = (0, 0)
     /// Composite quads staged with the frame, by their effect node.
     private var stagedComposites: [ObjectIdentifier: SpriteBatcher.Batch] = [:]
     /// Each rasterizing effect node's contents as last batched, for a kept
@@ -209,17 +211,6 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var rasterContents: [ObjectIdentifier: [SpriteBatcher.Pass]] = [:]
     /// The nodes whose contents the batcher left out this frame.
     private var skippedRaster: Set<ObjectIdentifier> = []
-    /// What's drawn as it comes is written after the last, in buffers of
-    /// its own (`uploadDynamic`), so the staged stream is never orphaned
-    /// while draws that read it are still to come.
-    private var vertexCapacity = 0
-    private var indexCapacity = 0
-    private var vertexOffset = 0
-    private var indexOffset = 0
-    /// Whether this frame has its own stores yet: the first upload of each
-    /// frame orphans them, so the writes after it never touch memory a
-    /// frame still in flight reads.
-    private var streamIsFresh = false
 
     /// The share of the screen's pixels the scene draws at. Below 1 the
     /// shell sizes the window's buffers to it and the display's compositor
@@ -554,14 +545,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         state.forgetAll()
         if sceneTarget.isValid { device.deleteRenderTarget(sceneTarget) }
         sceneTarget = .none
-        vertexCapacity = 0
-        indexCapacity = 0
         stagedVertexCapacity = 0
         stagedIndexCapacity = 0
+        stagedStores = (0, 0)
         stagedComposites.removeAll()
         rasterContents.removeAll()
         skippedRaster.removeAll()
-        streamIsFresh = false
         if defaultProgram != 0 { device.deleteProgram(defaultProgram) }
         glDeleteBuffers(1, &vbo)
         glDeleteBuffers(1, &ebo)
@@ -643,11 +632,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 : .target(heightInPixels: screenHeight)
         )
         bindTarget()
+        RenderPoison.fillTarget()
+        glClearColor(0, 0, 0, 1)
         // The stencil clears with the colour: every crop node is balanced
         // (it increments on the way in and decrements on the way out), so a
         // frame starts with the buffer already zero — but a lost context or
         // a half-drawn frame would otherwise leave a stale mask behind.
         glClearStencil(0)
+        // A clear writes only the stencil bits the mask lets through.
+        glStencilMask(0xFF)
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_STENCIL_BUFFER_BIT))
 
         drawCalls = 0
@@ -660,7 +653,6 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         cropDepth = 0
 
         state.forgetTextures()
-        streamIsFresh = false
         let staged = stage(passes)
         drawingScreen = true
         draw(staged, projection: projection, time: Float(frame.time))
@@ -787,6 +779,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
             case let .shape(shape):
                 draw(shape, projection: projection)
+
+            case let .coverage(staged):
+                draw(staged, projection: projection)
             }
         }
     }
@@ -909,6 +904,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 fragSpace: texture.contentsSpace
             )
             bindTarget()
+            RenderPoison.fillTarget()
             glClearColor(0, 0, 0, 0)
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
             draw(contents, projection: texture.projection, time: time)
@@ -917,7 +913,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             cropDepth = outerDepth
             bindTarget()
             glClearColor(0, 0, 0, 1)
-            if outerDepth > 0 { glEnable(GLenum(GL_STENCIL_TEST)) }
+            resumeCrops()
         } else {
             effectsCached += 1
         }
@@ -1012,6 +1008,17 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         }
     }
 
+    /// Back in the crops `cropDepth` deep after drawing into a target of
+    /// its own, where a crop leaves the stencil's mask writing and its
+    /// function matching its own level.
+    private func resumeCrops() {
+        guard cropDepth > 0 else { return }
+        glEnable(GLenum(GL_STENCIL_TEST))
+        glStencilMask(0)
+        glStencilFunc(GLenum(GL_EQUAL), cropDepth, 0xFF)
+        glStencilOp(GLenum(GL_KEEP), GLenum(GL_KEEP), GLenum(GL_KEEP))
+    }
+
     /// The mask's sprites, through the alpha-testing program rather than
     /// their own.
     private func drawMask(_ passes: [SpriteBatcher.Pass], projection: [Float], time: Float) {
@@ -1033,6 +1040,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 // A shape mask (the scroll areas' rounded clips) cuts by
                 // where its fill and stroke reach.
                 draw(shape, projection: projection, program: shapeMaskProgram)
+            case let .coverage(staged):
+                if case .shape = staged.origin { draw(staged, projection: projection, mask: true) }
             case .label:
                 break
             }
@@ -1087,9 +1096,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         bindTarget()
         glViewport(GLint(pass.viewport.minX), GLint(pass.viewport.minY), GLsizei(pass.viewport.width), GLsizei(pass.viewport.height))
+        RenderPoison.fillTarget()
         let clear = pass.loadAction == .clear ? pass.clearColor : MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         glClearColor(GLfloat(clear.red), GLfloat(clear.green), GLfloat(clear.blue), GLfloat(clear.alpha))
         glClearStencil(0)
+        // A clear writes only the stencil bits the mask lets through.
+        glStencilMask(0xFF)
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_STENCIL_BUFFER_BIT))
         glClearColor(0, 0, 0, 1)
         cropDepth = 0
@@ -1182,6 +1194,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             visible: plan.bounds, fragSpace: plan.contentsSpace
         )
         bindTarget()
+        RenderPoison.fillTarget()
         glClearColor(0, 0, 0, 0)
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
         // Drawn as it comes: the frame's staged stream may still be read by
@@ -1193,7 +1206,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         cropDepth = outerDepth
         bindTarget()
         glClearColor(0, 0, 0, 1)
-        if outerDepth > 0 { glEnable(GLenum(GL_STENCIL_TEST)) }
+        resumeCrops()
 
         // The framebuffer has done its job; the texture it wrote into is
         // what the game keeps. Deleting the handle with its texture zeroed
@@ -1466,6 +1479,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 density: outer.density
             )
             bindTarget()
+            RenderPoison.fillTarget()
             glClearColor(0, 0, 0, 0)
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
             for (strip, place) in zip(plan.strips, places) {
@@ -1535,7 +1549,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             case let .effect(_, _, shader, alpha, _, rasterize, _, _, _, contents):
                 if !rasterize, shader != nil || alpha < 0.999 { return false }
                 if !rasterize, !drawsAnywhere(contents) { return false }
-            case .batches, .label, .shape:
+            case .batches, .label, .shape, .coverage:
                 continue
             }
         }
@@ -1698,7 +1712,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         _ run: CoverageGeometry.Run,
         texture: GLuint,
         projection: [Float],
-        program: GLuint? = nil
+        program: GLuint? = nil,
+        streamFirstIndex: Int = -1
     ) {
         guard !run.indices.isEmpty else { return }
 
@@ -1709,10 +1724,34 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         bindSprite(texture, program: program, held: held)
         setBlend(.alpha)
 
-        let first = uploadDynamic(vertices: run.vertices, indices: run.indices)
-        bindVertexArray(dynamicVAO)
-        drawElements(count: run.indices.count, first: first)
+        if streamFirstIndex >= 0 {
+            bindVertexArray(vao)
+            drawElements(count: run.indices.count, first: streamFirstIndex)
+        } else {
+            let first = uploadDynamic(vertices: run.vertices, indices: run.indices)
+            bindVertexArray(dynamicVAO)
+            drawElements(count: run.indices.count, first: first)
+        }
         quadsDrawn += run.indices.count / 6
+    }
+
+    /// A label or shape staged with the frame; `mask` as a crop's mask,
+    /// where only shapes draw.
+    private func draw(_ staged: CoverageGeometry.Staged, projection: [Float], mask: Bool = false) {
+        guard staged.isStaged else {
+            switch staged.origin {
+            case let .label(label): if !mask { draw(label, projection: projection) }
+            case let .shape(shape): draw(shape, projection: projection, program: mask ? shapeMaskProgram : nil)
+            }
+            return
+        }
+        let program = mask ? shapeMaskProgram : coverageProgram
+        guard program != 0 else { return }
+        for part in staged.parts {
+            let name = part.mask != 0 ? part.mask : glyphPages.name(of: part.run.page)
+            guard name != 0 else { continue }
+            drawCoverage(part.run, texture: name, projection: projection, program: program, streamFirstIndex: part.streamFirstIndex)
+        }
     }
 
     // MARK: The stream
@@ -1735,6 +1774,14 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// vertices), so no draw moves the vertex attributes.
     private func stage(_ passes: [SpriteBatcher.Pass]) -> [SpriteBatcher.Pass] {
         stagedComposites.removeAll(keepingCapacity: true)
+        // Text and shapes too: written draw by draw into a buffer earlier
+        // draws still read, as they were, Adreno drew them from whatever
+        // the next writes had left there (a level coin's number from
+        // another frame, half a label, stripes of the glyph atlas).
+        shapeMasks.beginFrame()
+        let passes = resolveCoverage(passes)
+        // Every glyph the frame shaped is on its page before any is drawn.
+        glyphPages.sync()
         var vertexBytes = 0
         var indexCount = 0
         measure(passes, vertexBytes: &vertexBytes, indexCount: &indexCount)
@@ -1755,8 +1802,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // so no vertex array's bindings change.
         glBindBuffer(vertexTarget, vbo)
         glBindBuffer(indexTarget, ebo)
-        glBufferData(vertexTarget, stagedVertexCapacity, nil, GLenum(GL_STREAM_DRAW))
-        glBufferData(indexTarget, stagedIndexCapacity, nil, GLenum(GL_STREAM_DRAW))
+        let stores = (stagedVertexCapacity, stagedIndexCapacity)
+        if !RenderPoison.stream || stagedStores != stores {
+            glBufferData(vertexTarget, stagedVertexCapacity, nil, GLenum(GL_STREAM_DRAW))
+            glBufferData(indexTarget, stagedIndexCapacity, nil, GLenum(GL_STREAM_DRAW))
+            stagedStores = stores
+        }
 
         var writer = StreamWriter(
             vertices: map(vertexTarget, bytes: vertexBytes),
@@ -1770,11 +1821,62 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         return staged
     }
 
-    /// The whole range, unsynchronised: the store was just orphaned.
+    /// The whole range of the store just orphaned. Never unsynchronised:
+    /// the orphan is the driver's to honour, and where it doesn't (or
+    /// handles an unsynchronised map as Qualcomm's drivers do) a synchronised
+    /// map waits rather than writing over a frame still being drawn.
     private func map(_ target: GLenum, bytes: Int) -> UnsafeMutableRawPointer? {
         streamMaps += 1
-        let access = GLbitfield(GL_MAP_WRITE_BIT) | GLbitfield(GL_MAP_UNSYNCHRONIZED_BIT) | GLbitfield(GL_MAP_INVALIDATE_RANGE_BIT)
+        let access = GLbitfield(GL_MAP_WRITE_BIT) | GLbitfield(GL_MAP_INVALIDATE_BUFFER_BIT)
         return glMapBufferRange(target, 0, bytes, access)
+    }
+
+    /// Labels and shapes made into their coverage runs, ahead of the
+    /// frame's one write (`stage`).
+    private func resolveCoverage(_ passes: [SpriteBatcher.Pass]) -> [SpriteBatcher.Pass] {
+        passes.map { pass in
+            switch pass {
+            case .batches, .coverage:
+                return pass
+            case let .effect(bounds, transform, shader, alpha, blendMode, rasterize, owner, generation, digest, contents):
+                return .effect(
+                    bounds: bounds, transform: transform, shader: shader, alpha: alpha, blendMode: blendMode,
+                    rasterize: rasterize, owner: owner, generation: generation, digest: digest,
+                    contents: resolveCoverage(contents)
+                )
+            case let .crop(transform, mask, contents):
+                return .crop(transform: transform, mask: resolveCoverage(mask), contents: resolveCoverage(contents))
+            case let .label(label):
+                guard coverageProgram != 0 else { return pass }
+                let parts = CoverageGeometry.runs(for: label, source: glyphSource).map { CoverageGeometry.Staged.Part(run: $0, mask: 0) }
+                return .coverage(.init(origin: .label(label), parts: parts))
+            case let .shape(shape):
+                return .coverage(.init(origin: .shape(shape), parts: shapeParts(shape)))
+            }
+        }
+    }
+
+    /// A shape's fill and stroke as coverage runs over their masks.
+    private func shapeParts(_ shape: DrawList.Shape) -> [CoverageGeometry.Staged.Part] {
+        guard let path = shape.path else { return [] }
+        let scale = deviceScale * transformScale(shape.transform)
+        guard scale > 0 else { return [] }
+        var parts: [CoverageGeometry.Staged.Part] = []
+        if shape.fillColor.alpha > 0,
+           let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale) {
+            parts.append(.init(
+                run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.fillColor, alpha: shape.alpha),
+                mask: mask.name
+            ))
+        }
+        if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
+           let mask = shapeMasks.stroke(path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale) {
+            parts.append(.init(
+                run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),
+                mask: mask.name
+            ))
+        }
+        return parts
     }
 
     /// How much `passes` and their composites stage.
@@ -1795,6 +1897,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             case let .crop(_, mask, contents):
                 measure(mask, vertexBytes: &vertexBytes, indexCount: &indexCount)
                 measure(contents, vertexBytes: &vertexBytes, indexCount: &indexCount)
+            case let .coverage(staged):
+                for part in staged.parts where !part.run.indices.isEmpty {
+                    vertexBytes += part.run.vertices.count * MemoryLayout<Float>.size
+                    indexCount += part.run.indices.count
+                }
             case .label, .shape:
                 break
             }
@@ -1825,65 +1932,38 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 )
             case let .crop(transform, mask, contents):
                 return .crop(transform: transform, mask: write(mask, into: &writer), contents: write(contents, into: &writer))
+            case var .coverage(staged):
+                for index in staged.parts.indices where !staged.parts[index].run.indices.isEmpty {
+                    staged.parts[index].streamFirstIndex = writer.add(staged.parts[index].run.vertices, staged.parts[index].run.indices)
+                }
+                return .coverage(staged)
             case .label, .shape:
                 return pass
             }
         }
     }
 
-    /// Writes a draw's vertices and indices after the last of what's drawn
-    /// as it comes, in buffers of its own, and hands back where its indices
-    /// start, for `drawElements`.
+    /// Gives a draw that isn't in the frame's stream (a bake, a kept target
+    /// drawn again) buffers of its own: re-specified with its data, which
+    /// every driver backs with fresh storage where a draw still to run
+    /// reads the old. Hands back where its indices start, for `drawElements`.
     private func uploadDynamic(vertices: [Float], indices: [UInt16]) -> Int {
-        let vertexBytes = vertices.count * MemoryLayout<Float>.size
-        let indexBytes = indices.count * MemoryLayout<UInt32>.size
         let vertexTarget = GLenum(GL_COPY_WRITE_BUFFER)
         let indexTarget = GLenum(GL_COPY_READ_BUFFER)
         glBindBuffer(vertexTarget, dynamicVBO)
         glBindBuffer(indexTarget, dynamicEBO)
-        if !streamIsFresh || vertexOffset + vertexBytes > vertexCapacity || indexOffset + indexBytes > indexCapacity {
-            // A fresh store for each: the frame's first draw, or a frame that
-            // outgrew them, which then keep the bigger size.
-            if streamIsFresh {
-                vertexCapacity = max(vertexCapacity, vertexOffset + vertexBytes) * 2
-                indexCapacity = max(indexCapacity, indexOffset + indexBytes) * 2
-            }
-            vertexCapacity = max(vertexCapacity, vertexBytes, Self.dynamicVertexBytes)
-            indexCapacity = max(indexCapacity, indexBytes, Self.dynamicIndexBytes)
-            glBufferData(vertexTarget, vertexCapacity, nil, GLenum(GL_STREAM_DRAW))
-            glBufferData(indexTarget, indexCapacity, nil, GLenum(GL_STREAM_DRAW))
-            vertexOffset = 0
-            indexOffset = 0
-            streamIsFresh = true
-        }
-        let base = UInt32(vertexOffset / Self.vertexStride)
-        let access = GLbitfield(GL_MAP_WRITE_BIT) | GLbitfield(GL_MAP_UNSYNCHRONIZED_BIT) | GLbitfield(GL_MAP_INVALIDATE_RANGE_BIT)
         streamMaps += 2
         vertices.withUnsafeBytes { source in
-            guard vertexBytes > 0, let from = source.baseAddress else { return }
-            if let mapped = glMapBufferRange(vertexTarget, vertexOffset, vertexBytes, access) {
-                mapped.copyMemory(from: from, byteCount: vertexBytes)
-                glUnmapBuffer(vertexTarget)
-            } else {
-                glBufferSubData(vertexTarget, vertexOffset, vertexBytes, from)
-            }
+            glBufferData(vertexTarget, source.count, source.baseAddress, GLenum(GL_STREAM_DRAW))
         }
-        if indexBytes > 0 {
-            if let mapped = glMapBufferRange(indexTarget, indexOffset, indexBytes, access) {
-                StreamWriter.rebase(indices, by: base, into: mapped)
-                glUnmapBuffer(indexTarget)
-            } else {
-                var rebased = [UInt32](repeating: 0, count: indices.count)
-                rebased.withUnsafeMutableBytes { StreamWriter.rebase(indices, by: base, into: $0.baseAddress!) }
-                glBufferSubData(indexTarget, indexOffset, indexBytes, rebased)
-            }
+        var rebased = [UInt32](repeating: 0, count: indices.count)
+        rebased.withUnsafeMutableBytes { StreamWriter.rebase(indices, by: 0, into: $0.baseAddress!) }
+        rebased.withUnsafeBytes { source in
+            glBufferData(indexTarget, source.count, source.baseAddress, GLenum(GL_STREAM_DRAW))
         }
         glBindBuffer(vertexTarget, 0)
         glBindBuffer(indexTarget, 0)
-        let first = indexOffset / MemoryLayout<UInt32>.size
-        vertexOffset += vertexBytes
-        indexOffset += indexBytes
-        return first
+        return 0
     }
 
     private func drawElements(count: Int, first: Int) {

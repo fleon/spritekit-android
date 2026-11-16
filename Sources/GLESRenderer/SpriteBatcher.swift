@@ -83,6 +83,9 @@ public struct SpriteBatcher {
         case label(DrawList.Label)
         /// Vector shapes, once there is a path rasteriser.
         case shape(DrawList.Shape)
+        /// A label or shape as the renderer made it into coverage quads, so
+        /// they're written with the frame's stream (`SceneRenderer.stage`).
+        case coverage(CoverageGeometry.Staged)
     }
 
     public init() {}
@@ -357,6 +360,7 @@ public extension SpriteBatcher.Pass {
         case let .effect(_, _, _, _, _, _, _, _, _, contents): return contents.reduce(0) { $0 + $1.quadCount }
         case let .crop(_, _, contents): return contents.reduce(0) { $0 + $1.quadCount }
         case .label, .shape: return 0
+        case let .coverage(staged): return staged.parts.reduce(0) { $0 + $1.run.quadCount }
         }
     }
 }
