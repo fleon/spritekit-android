@@ -129,9 +129,10 @@ final class RigMeshNode: SKNode {
     var needsPriming: Bool { holder.isHidden }
 
     /// Primes whatever shaders wait (its own among them) and shows it. The
-    /// rig calls it each frame it waits, before the frame draws.
+    /// rig calls it each frame it waits, before the frame draws; not in a
+    /// scene fading out, as the game's doesn't.
     func prepare(in view: SKView) {
-        guard holder.isHidden else { return }
+        guard holder.isHidden, !TransitionManager.isLeaving(scene) else { return }
         precondition(Thread.isMainThread)
         let shader = self.shader
         Self.primePending(in: view)
