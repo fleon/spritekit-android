@@ -601,6 +601,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // change which scene the view shows, and the projection is that
         // scene's.
         let started = MediaTime.source()
+        let threadStarted = FrameReport.threadTime()
         FrameCosts.reset()
         let list = view.tick(currentTime: frame.time, delta: frame.delta / max(slowdown, 1))
         SceneDump.check(view, at: frame.time)
@@ -687,7 +688,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             // is rounded to whole refreshes. A rate waiting for the next
             // scene counts windows but judges nothing.
             let holding = !drawsGovernorRung
-            if governor.add(frame: frame.interval, cpu: MediaTime.source() - started, budget: budget, holding: holding) {
+            // The CPU's share is the frame thread's own time: a driver that
+            // waits on the GPU inside its calls (a Galaxy Tab A8's Mali)
+            // would make every frame the GPU held up look the CPU's.
+            let cpu = FrameReport.threadTime() - threadStarted
+            if governor.add(frame: frame.interval, cpu: cpu, budget: budget, holding: holding) {
                 if let blocked = governor.blockedLoad { onBlocked?(blocked) }
                 // A try that didn't hold as its scene began, or a step down
                 // after seconds late: at once.

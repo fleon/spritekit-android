@@ -84,8 +84,9 @@ struct FrameReport {
     /// A frame past this share of its budget is late, as Auto counts one.
     private static let lateShare = 1.1
 
-    /// The calling thread's CPU time, in seconds.
-    private static func threadTime() -> Double {
+    /// The calling thread's CPU time, in seconds: what it worked, its waits
+    /// on the GPU and the swap left out.
+    static func threadTime() -> Double {
         var now = timespec()
         clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now)
         return Double(now.tv_sec) + Double(now.tv_nsec) / 1_000_000_000
