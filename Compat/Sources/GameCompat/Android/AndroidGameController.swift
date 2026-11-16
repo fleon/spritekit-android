@@ -101,23 +101,36 @@ public final class AndroidGameController {
         AudioManager.use(backend)
     }
 
-    /// The render scale a picked graphics setting holds
-    /// (`DisplaySettings.Graphics`); nil while nothing's picked, when the
-    /// renderer's governor moves it.
-    public static var heldRenderScale: Double? { DisplaySettings.heldRenderScale }
+    /// The frame rates and render scales the renderer may draw at, fastest
+    /// and largest first (one, where the player picked or something pins
+    /// it), and whether Auto moves between them at all
+    /// (`DisplaySettings.choices`).
+    public static var displayChoices: (rates: [Int], scales: [Double], governs: Bool) {
+        DisplaySettings.choices
+    }
 
     /// A render scale nothing moves (`-RenderScale`, or a capture running).
     public static var pinnedRenderScale: Double? { DisplaySettings.pinnedRenderScale }
 
-    /// Where the render scale starts: where this device settled last time.
-    public static var startingRenderScale: Double { DisplaySettings.startingRenderScale }
+    /// Where Auto starts: the load (pixels a second, in screens) this device
+    /// settled at last time.
+    public static var startingLoad: Double? { DisplaySettings.startingLoad }
 
-    /// Calls `changed` with the scale held whenever the player picks a
-    /// graphics setting.
-    public static func observeHeldRenderScale(_ changed: @escaping @MainActor (Double?) -> Void) {
-        _ = NotificationCenter.default.addObserver(forName: DisplaySettings.graphicsPicked, object: nil, queue: nil) { _ in
-            MainActor.assumeIsolated { changed(DisplaySettings.heldRenderScale) }
+    /// Calls `changed` whenever the player picks a frame rate or quality (or
+    /// Auto), Low Power Mode comes or goes, or the screen's fastest rate
+    /// changes: the renderer applies `displayChoices` at once.
+    public static func observeDisplayChoices(_ changed: @escaping @MainActor () -> Void) {
+        for name in [DisplaySettings.choicesDidChange, Notification.Name.NSProcessInfoPowerStateDidChange] {
+            _ = NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { _ in
+                DispatchQueue.main.async { MainActor.assumeIsolated { changed() } }
+            }
         }
+    }
+
+    /// Whether frames of `scene` measure how the game draws: not the
+    /// loading screen's or the splash's.
+    public static func isMeasured(_ scene: SKScene?) -> Bool {
+        TransitionManager.isMeasured(scene)
     }
 
     /// Whether the backdrops' costliest shaders draw whole, one sprite
@@ -135,10 +148,15 @@ public final class AndroidGameController {
         set { BandedLayerNode.bandCount = max(newValue, 1) }
     }
 
-    /// The scale the renderer settled on for a while, which measures the
-    /// setting shown until the player picks one.
-    public static func noteRenderScale(_ scale: Double) {
-        DisplaySettings.noteRenderScale(scale)
+    /// Where Auto stood as it judged a window of frames: a running average
+    /// of these is where the next launch starts.
+    public static func noteAuto(rate: Int, scale: Double) {
+        DisplaySettings.noteAuto(.init(rate: rate, scale: scale))
+    }
+
+    /// What the renderer draws at now, which the settings show as Auto's.
+    public static func setRunning(rate: Int, scale: Double) {
+        DisplaySettings.running = .init(rate: rate, scale: scale)
     }
 
     /// `-OpenLinkAfter`'s link and delay, opened once the game shows.
@@ -169,7 +187,6 @@ public final class AndroidGameController {
         view.ignoresSiblingOrder = true
         view.shouldCullNonVisibleNodes = true
         view.backgroundColor = Theme.launchSplashBackground
-        applyFrameRate()
         gamepads.onAction = { [weak self] in self?.handleGamepad($0) }
         gamepads.onDisconnectAll = { [weak self] in self?.releaseFocus() }
         // A touch takes focus back from a gamepad, as the Apple controller's
@@ -180,11 +197,6 @@ public final class AndroidGameController {
         NotificationCenter.default.addObserver(forName: ICloudSyncManager.didUpdateLocalData, object: nil, queue: nil) { [weak self] notification in
             let keys = Set(notification.userInfo?[ICloudSyncManager.updatedKeysUserInfoKey] as? [String] ?? [])
             MainActor.assumeIsolated { self?.savedDataDidSync(keys) }
-        }
-        for name in [DisplaySettings.frameRateDidChange, Notification.Name.NSProcessInfoPowerStateDidChange] {
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
-                MainActor.assumeIsolated { self?.applyFrameRate() }
-            }
         }
         startScripts()
         MainframeReward.watch(view)
@@ -215,9 +227,9 @@ public final class AndroidGameController {
         screen.nativeBounds = CGRect(x: 0, y: 0, width: size.width * view.contentScaleFactor, height: size.height * view.contentScaleFactor)
         window.windowScene?.effectiveGeometry.interfaceOrientation = orientation
         UIDevice.current.userInterfaceIdiom = idiom
+        // The frame rates on offer follow it (`observeDisplayChoices`).
         if maximumFramesPerSecond != DisplaySettings.screenMaximum {
             DisplaySettings.screenMaximum = maximumFramesPerSecond
-            applyFrameRate()
         }
         guard let scene = view.scene else {
             if size.width > 0 { presentSplash() }
@@ -262,10 +274,6 @@ public final class AndroidGameController {
         guard view.scene is LaunchSplashScene else { return }
         view.backgroundColor = WorldTheme.garden.palette.backgroundTop
         TransitionManager.present(initialDestination, in: view)
-    }
-
-    private func applyFrameRate() {
-        view.preferredFramesPerSecond = DisplaySettings.appliedFrameRate
     }
 
     private func savedDataDidSync(_ keys: Set<String>) {

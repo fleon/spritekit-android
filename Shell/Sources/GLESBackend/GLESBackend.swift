@@ -110,12 +110,6 @@ public enum GLESBackend {
             renderer.view.transitionSpeed = 1 / slowdown
             Log.info("transitions \(slowdown)x slower")
         }
-        // A picked graphics setting holds the render scale; till one's
-        // picked, the scale the renderer settles on measures the one shown.
-        renderer.heldRenderScale = AndroidGameController.heldRenderScale
-        renderer.startingRenderScale = AndroidGameController.startingRenderScale
-        AndroidGameController.observeHeldRenderScale { [weak renderer] held in renderer?.heldRenderScale = held }
-        renderer.onRenderScaleJudged = { AndroidGameController.noteRenderScale($0) }
         // `-RenderScale`, or a capture running: every pixel, or the pin's.
         if let pinned = AndroidGameController.pinnedRenderScale {
             renderer.renderScale = CGFloat(pinned)
@@ -126,6 +120,18 @@ public enum GLESBackend {
             renderer.renderScale = scale
             renderer.pinsRenderScale = true
             Log.info("render scale held at \(scale)")
+        }
+        // The frame rate and render scale: what the player picked, and on
+        // each side left at Auto, what the renderer's governor finds holds,
+        // from where this device settled last time; a pick applies at once.
+        renderer.measuresScene = { AndroidGameController.isMeasured($0) }
+        renderer.onAutoJudged = { AndroidGameController.noteAuto(rate: $0, scale: $1) }
+        renderer.onRunning = { AndroidGameController.setRunning(rate: $0, scale: $1) }
+        let choices = AndroidGameController.displayChoices
+        renderer.configure(rates: choices.rates, scales: choices.scales, governs: choices.governs, load: AndroidGameController.startingLoad)
+        AndroidGameController.observeDisplayChoices { [weak renderer] in
+            let choices = AndroidGameController.displayChoices
+            renderer?.configure(rates: choices.rates, scales: choices.scales, governs: choices.governs, fromCurrent: true)
         }
         if let slowdown = DebugProperty.string("debug.switchlings.slowdown").flatMap(Double.init), slowdown > 1 {
             renderer.slowdown = slowdown

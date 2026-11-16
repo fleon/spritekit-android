@@ -58,6 +58,10 @@ open class SKView: UIView {
     /// `shouldRender(atTime:)`, which keeps to it.
     public var preferredFramesPerSecond: Int = 60
 
+    /// One refresh of the display, once the shell knows it: a frame lets
+    /// through half a refresh early, so jitter never holds one back.
+    public var refreshInterval: TimeInterval?
+
     /// A paused view draws nothing new: what is on screen stays there, as
     /// SpriteKit holds its last frame.
     public var isPaused: Bool = false
@@ -191,15 +195,17 @@ open class SKView: UIView {
     /// delegate agrees. The shell asks before every frame, and skips the
     /// frame — update, actions and drawing — when the answer is no.
     ///
-    /// The frame rate is kept with a quarter of a frame's slack, so a 60 Hz
-    /// display's jitter never drops a frame at 60, and 30 lands on every
-    /// other one.
+    /// The frame rate is kept with a quarter of a frame's slack, or half a
+    /// refresh if less (`refreshInterval`), so a 60 Hz display's jitter
+    /// never drops a frame at 60, 30 lands on every other one, and on a
+    /// 120 Hz display 30 every fourth and 40 every third.
     public func shouldRender(atTime time: TimeInterval) -> Bool {
         guard !isPaused else { return false }
         // With a fixed step every frame is one step: the step is the rate.
         if preferredFramesPerSecond > 0, MediaTime.fixedStep == nil, let last = lastFired {
             let interval = 1 / TimeInterval(preferredFramesPerSecond)
-            guard time - last >= interval * 0.75 else { return false }
+            let slack = min(refreshInterval.map { $0 / 2 } ?? .infinity, interval / 4)
+            guard time - last >= interval - slack else { return false }
         }
         // A display link at the preferred rate fires whatever the delegate
         // then says, so the rate counts from here.

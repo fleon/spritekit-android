@@ -231,28 +231,63 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Shaders still count the screen's own pixels (`FragCoordSpace`), so
     /// the lights and the edge blur land where they do at full size.
     public var renderScale: CGFloat = 1
-    /// The scale a picked graphics setting holds `renderScale` at, late
-    /// frames or not; nil while nothing's picked, when the governor moves it.
-    public var heldRenderScale: Double? {
-        didSet { if !pinsRenderScale { renderScale = CGFloat(heldRenderScale ?? governor.scale) } }
-    }
-    /// Told the scale each time the governor has judged a window of frames.
-    public var onRenderScaleJudged: ((Double) -> Void)?
+    /// Told where Auto stands each time the governor has counted a window
+    /// of frames (rate, scale).
+    public var onAutoJudged: ((Int, Double) -> Void)?
+    /// Told the rate and scale drawn at whenever they change.
+    public var onRunning: ((Int, Double) -> Void)?
+    /// Whether a scene's frames measure how the game draws (not the
+    /// loading screen's).
+    public var measuresScene: (SKScene?) -> Bool = { $0 != nil }
     private var judgedWindows = 0
     /// Set once something chose `renderScale` (`debug.switchlings.renderscale`):
     /// the governor leaves it alone.
     public var pinsRenderScale = false
     private var sceneTarget: RenderTargetHandle = .none
-    /// Moves `renderScale` with how frames keep time (`RenderScaleGovernor`).
+    /// Moves the frame rate and `renderScale` with how frames keep time
+    /// (`RenderScaleGovernor`), between the rates and scales `configure`
+    /// offers it.
     private var governor = RenderScaleGovernor()
-    /// Where the governor starts: where this device was measured to draw
-    /// last time (`AndroidGameController.startingRenderScale`).
-    public var startingRenderScale: Double = 1 {
-        didSet {
-            governor = RenderScaleGovernor(scale: startingRenderScale)
-            if !pinsRenderScale { renderScale = CGFloat(heldRenderScale ?? governor.scale) }
+    private var governs = false
+    /// The rate the view draws at now. A rate the governor picks waits for
+    /// the next scene (`sceneShown`), as Apple's does, so play never flips
+    /// between 60 and 30; a scale it picks applies at once.
+    private var appliedRate = RenderScaleGovernor.fastestAutoRate
+    /// The scene drawn last, to catch a new one.
+    private weak var lastScene: SKScene?
+
+    /// Draws at `rates` and `scales` (fastest and largest first; one where
+    /// picked), the governor moving between them if `governs`: from the
+    /// best rung at most `load` (where this device settled last launch), or
+    /// else from where it stands now, the picked side at once.
+    public func configure(rates: [Int], scales: [Double], governs: Bool, load: Double? = nil, fromCurrent: Bool = false) {
+        let scales = pinsRenderScale ? [Double(renderScale)] : scales
+        governor = fromCurrent
+            ? RenderScaleGovernor(rates: rates, scales: scales, near: .init(rate: appliedRate, scale: Double(renderScale)))
+            : RenderScaleGovernor(rates: rates, scales: scales, load: governs ? load : nil)
+        // A pinned scale measures nothing: the rate holds too, as Apple's does.
+        self.governs = governs && !pinsRenderScale
+        judgedWindows = 0
+        apply(rate: governor.rate)
+    }
+
+    /// The governor's rate (and its scale, unless pinned), now.
+    private func apply(rate: Int) {
+        appliedRate = rate
+        view.preferredFramesPerSecond = rate
+        if !pinsRenderScale { renderScale = CGFloat(governor.scale) }
+        onRunning?(appliedRate, Double(renderScale))
+    }
+
+    /// A new scene: the rate the governor waits with applies, and its first
+    /// frames start a window afresh.
+    private func sceneShown() {
+        governor.restartWindow()
+        if governor.rate != appliedRate || (!pinsRenderScale && CGFloat(governor.scale) != renderScale) {
+            apply(rate: governor.rate)
         }
     }
+
     /// One refresh of the display: a frame's budget, at the most.
     private var refreshInterval = 1.0 / 60
 
@@ -640,18 +675,27 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             var stencil = GLenum(GL_STENCIL)
             glInvalidateFramebuffer(GLenum(GL_FRAMEBUFFER), 1, &stencil)
         }
-        // A frame's budget is a refresh, or longer if the game draws slower
-        // (its frame-rate setting, `preferredFramesPerSecond`).
-        let budget = max(refreshInterval, 1 / Double(max(view.preferredFramesPerSecond, 1)))
-        // Judged by the wall clock, as before frames were paced: `delta` is
-        // rounded to whole refreshes.
-        let governs = !pinsRenderScale && heldRenderScale == nil
-        if governs, governor.add(frame: frame.interval, cpu: MediaTime.source() - started, budget: budget) {
-            renderScale = CGFloat(governor.scale)
-        }
-        if governs, governor.windows != judgedWindows {
-            judgedWindows = governor.windows
-            onRenderScaleJudged?(governor.scale)
+        if view.scene !== lastScene {
+            lastScene = view.scene
+            sceneShown()
+        } else if governs, measuresScene(view.scene) {
+            // A frame's budget is a refresh, or longer at a slower rate.
+            let budget = max(refreshInterval, 1 / Double(max(appliedRate, 1)))
+            // Judged by the wall clock, as before frames were paced: `delta`
+            // is rounded to whole refreshes. A rate waiting for the next
+            // scene counts windows but judges nothing.
+            let holding = governor.rate != appliedRate
+            if governor.add(frame: frame.interval, cpu: MediaTime.source() - started, budget: budget, holding: holding) {
+                // A scale applies at once; a rate at the next scene, unless a
+                // faster one tried as this scene began didn't hold.
+                if governor.rate == appliedRate || governor.backedOff {
+                    apply(rate: governor.rate)
+                }
+            }
+            if governor.windows != judgedWindows {
+                judgedWindows = governor.windows
+                onAutoJudged?(governor.rate, governor.scale)
+            }
         }
 
         targets.evictKept(except: liveKept)
@@ -2085,6 +2129,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     public func windowMetricsDidChange(_ metrics: WindowMetrics) {
         refreshInterval = 1 / Double(max(metrics.refreshRate, 1))
+        view.refreshInterval = refreshInterval
         // The density can change (another display, a fold): points follow it.
         view.resize(drawable: drawableSize, displayScale: metrics.displayScale)
         let scale = view.contentScaleFactor

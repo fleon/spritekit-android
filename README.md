@@ -1792,22 +1792,26 @@ What changed, by what it bought:
   on time, backing off if that fails. It judges by the wall clock: the
   M31's `GL_EXT_disjoint_timer_query` answers a frame that draws into more
   than one target with nonsense, elapsed or by timestamps. `adb shell setprop
-  debug.switchlings.renderscale 0.67` holds it, for measuring. The governor
-  runs only until the player picks a Graphics setting (Low, Med, High):
-  a picked tier holds its scale, late frames or not (`heldRenderScale`, from
-  `DisplaySettings`), at once whichever way it moves. Till then the tier it
-  settles at is what the setting shows, and a launch starts there
-  (`startingRenderScale`); the governor itself is the game's
-  (`Source/Utils/RenderScaleGovernor.swift`, symlinked into GLESRenderer), as
-  Apple's game view adapts the same way.
+  debug.switchlings.renderscale 0.67` holds it, for measuring (and the
+  frame rate with it). The governor now picks the frame rate too, quality
+  before smoothness: every pixel at 60, then every pixel at the slower rates
+  the display paces evenly (30 at 60 Hz; 40 and 30 at 120 Hz), and only
+  then the slowest rate at smaller scales; a rate changes as a scene
+  changes, a scale at once. A frame rate or Graphics setting the player
+  picks takes that side away from it, at once, and a launch starts where it
+  settled last time (`SceneRenderer.configure`, from
+  `AndroidGameController.displayChoices` and `startingLoad`); the governor
+  itself is the game's (`Source/Utils/RenderScaleGovernor.swift`,
+  symlinked into GLESRenderer), as Apple's game view adapts the same way.
 - **Frame pacing** (`VsyncPacer`, `Display.swift`). Frames start on the
   display's vsync, which AChoreographer reports on the frame thread's
   looper, never twice on one refresh. Each frame's time is the latest
   vsync, so every step the scene moves is a whole number of refreshes, even
   when a frame runs late. Before, the loop ran as fast as the swap let it,
   timed by the wall clock, and each step was however long the last pass
-  happened to take. The game's frame-rate setting skips refreshes as it
-  did, and goes to Android as the window's rate (`ANativeWindow_setFrameRate`,
+  happened to take. The game's frame rate skips refreshes as it did (half
+  a refresh early at most, `SKView.refreshInterval`, so 40 lands on every
+  third of a 120 Hz display's), and goes to Android as the window's rate (`ANativeWindow_setFrameRate`,
   so a screen that can switch to 120 Hz does). The governor still judges
   by the wall clock (`Frame.interval`). `-FixedFrameStep` isn't paced: its
   frames step their own clock, as before.

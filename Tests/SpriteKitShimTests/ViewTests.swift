@@ -503,6 +503,20 @@ struct ViewDelegateTests {
         #expect(delegate.times.count == 2)
     }
 
+    @Test("On a 120 Hz display 40 lands on every third refresh and 30 on every fourth")
+    func frameRateOn120Hz() {
+        let view = SKView(bounds: CGRect(x: 0, y: 0, width: 10, height: 10))
+        let refresh = 1.0 / 120
+        view.refreshInterval = refresh
+        let jitter = [0.0, 0.0004, -0.0003, 0.0005, -0.0004, 0.0002, 0.0, -0.0005, 0.0003, -0.0002, 0.0004, 0.0, 0.0001]
+        view.preferredFramesPerSecond = 40
+        let forty = jitter.enumerated().map { view.shouldRender(atTime: Double($0.offset) * refresh + $0.element) }
+        #expect(forty.enumerated().allSatisfy { $0.element == ($0.offset % 3 == 0) })
+        view.preferredFramesPerSecond = 30
+        let thirty = jitter.enumerated().map { view.shouldRender(atTime: 1 + Double($0.offset) * refresh + $0.element) }
+        #expect(thirty.enumerated().allSatisfy { $0.element == ($0.offset % 4 == 0) })
+    }
+
     @Test("A forwarding delegate asks the one before it, the way FilmDrawTurns does")
     func forwarding() {
         let view = SKView(bounds: CGRect(x: 0, y: 0, width: 10, height: 10))
