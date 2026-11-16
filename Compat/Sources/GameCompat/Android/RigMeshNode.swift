@@ -92,12 +92,14 @@ final class RigMeshNode: SKNode {
     }
 
     /// Builds the shaders meshes asked for since last time ahead of their
-    /// first draw (`AttributeShaders`). Call it on the main thread.
-    static func primePending(in view: SKView) {
+    /// first draw (`AttributeShaders`). Call it on the main thread. A scene
+    /// that spreads its readying over frames (the title's tour) primes
+    /// `limit` at a time.
+    static func primePending(in view: SKView, limit: Int = .max) {
         guard hasPendingShaders, primingGate?() ?? true else { return }
         lock.lock()
-        let shaders = pending
-        pending = []
+        let shaders = Array(pending.prefix(limit))
+        pending.removeFirst(shaders.count)
         lock.unlock()
         guard !shaders.isEmpty else { return }
         AttributeShaders.prime(shaders, in: view)
