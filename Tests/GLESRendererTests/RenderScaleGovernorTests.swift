@@ -16,6 +16,49 @@ struct RenderScaleGovernorTests {
         return changed
     }
 
+    /// Windows of late frames at `frame` it takes to run late for
+    /// `sustainedLate` seconds.
+    private func sustained(_ frame: Double) -> Int {
+        Int((RenderScaleGovernor.sustainedLate / (frame * Double(RenderScaleGovernor.window))).rounded(.up))
+    }
+
+    /// A scene start, then its warm-up window.
+    private func startScene(_ governor: inout RenderScaleGovernor, frame: Double) -> Bool {
+        let changed = governor.startScene()
+        for _ in 0..<RenderScaleGovernor.warmUpWindows { window(&governor, frame: frame) }
+        return changed
+    }
+
+    /// Plays `scenes` scenes of `windows` windows each as a caller does,
+    /// frames taking what `device` says at the rung drawn: what's drawn
+    /// changes as a scene starts, or at once for a try stepping back or an
+    /// urgent step down. Returns the rungs drawn, scene by scene, and how
+    /// often what's drawn changed under a scene other than a try stepping
+    /// back as it began.
+    private func play(
+        _ governor: inout RenderScaleGovernor, scenes: Int, windows: Int = 60,
+        device: (Rung) -> Double
+    ) -> (drawn: [Rung], underScene: Int) {
+        var drawn = governor.rung
+        var perScene: [Rung] = []
+        var underScene = 0
+        for _ in 0..<scenes {
+            governor.startScene()
+            drawn = governor.rung
+            for index in 0..<windows {
+                let frame = device(drawn)
+                let changed = window(&governor, frame: frame, budget: 1 / Double(drawn.rate), holding: governor.rung != drawn)
+                if changed, governor.backedOff || governor.urgent {
+                    let trial = RenderScaleGovernor.warmUpWindows + RenderScaleGovernor.trialWindows
+                    if !(governor.backedOff && index < trial) { underScene += 1 }
+                    drawn = governor.rung
+                }
+            }
+            perScene.append(drawn)
+        }
+        return (perScene, underScene)
+    }
+
     // MARK: Scales alone (a picked frame rate)
 
     @Test("A phone that keeps time stays at full size")
@@ -25,41 +68,69 @@ struct RenderScaleGovernorTests {
         #expect(governor.scale == 1)
     }
 
-    @Test("Late frames step down a step at a time, to the smallest")
-    func lateStepsDown() {
+    @Test("A late window is a hitch; late for seconds on end, a step down")
+    func sustainedLateStepsDown() {
         var governor = RenderScaleGovernor()
-        #expect(window(&governor, frame: 0.052))
+        let late = 0.025
+        for _ in 0..<(sustained(late) - 1) { #expect(!window(&governor, frame: late)) }
+        // On time again: the run starts over.
+        window(&governor, frame: budget)
+        for _ in 0..<(sustained(late) - 1) { #expect(!window(&governor, frame: late)) }
+        #expect(window(&governor, frame: late))
         #expect(governor.scale == 0.875)
-        for _ in 0..<10 { window(&governor, frame: 0.030) }
-        #expect(governor.scale == 0.5)
+        #expect(!governor.urgent)
+        #expect(governor.blockedLoad == 60)
+    }
+
+    @Test("Badly late throughout: the step down is urgent")
+    func badlyLateIsUrgent() {
+        var governor = RenderScaleGovernor()
+        for _ in 0..<(sustained(0.05) - 1) { window(&governor, frame: 0.05) }
+        #expect(window(&governor, frame: 0.05))
+        #expect(governor.urgent)
     }
 
     @Test("A frame the CPU held up doesn't give up pixels")
     func cpuBoundHolds() {
         var governor = RenderScaleGovernor()
-        #expect(!window(&governor, frame: 0.030, cpu: 0.028))
+        for _ in 0..<(sustained(0.03) * 2) { #expect(!window(&governor, frame: 0.030, cpu: 0.028)) }
         #expect(governor.scale == 1)
     }
 
-    @Test("Frames on time try a step up, and a failed try waits twice as long")
-    func triesUp() {
+    @Test("Frames on time never step up under a scene, only as the next starts")
+    func triesUpOnlyAtSceneStart() {
         var governor = RenderScaleGovernor(scale: 0.5)
-        for _ in 0..<(RenderScaleGovernor.patience - 1) { #expect(!window(&governor, frame: budget)) }
-        #expect(window(&governor, frame: budget))
-        #expect(governor.scale == 0.625)
-        // The try runs late, even CPU-bound: back down, then a longer wait.
-        #expect(window(&governor, frame: 0.025, cpu: 0.024))
+        for _ in 0..<200 { #expect(!window(&governor, frame: budget)) }
         #expect(governor.scale == 0.5)
-        #expect(governor.backedOff)
-        for _ in 0..<(2 * RenderScaleGovernor.patience - 1) { #expect(!window(&governor, frame: budget)) }
-        #expect(window(&governor, frame: budget))
+        #expect(startScene(&governor, frame: budget))
         #expect(governor.scale == 0.625)
+        #expect(governor.tries == 1)
     }
 
-    @Test("From a lower start, frames on time try their way back to full size")
+    @Test("A try that runs late steps back at once and isn't tried again")
+    func failedTryBlocks() {
+        var governor = RenderScaleGovernor(scale: 0.5)
+        for _ in 0..<RenderScaleGovernor.patience { window(&governor, frame: budget) }
+        #expect(startScene(&governor, frame: budget))
+        #expect(window(&governor, frame: 0.025, cpu: 0.024))
+        #expect(governor.backedOff)
+        #expect(governor.scale == 0.5)
+        #expect(governor.failedTries == 1)
+        // However long it keeps time after, scene after scene.
+        for _ in 0..<20 {
+            for _ in 0..<40 { window(&governor, frame: budget) }
+            #expect(!startScene(&governor, frame: budget))
+        }
+        #expect(governor.scale == 0.5)
+    }
+
+    @Test("A try that holds through its scene's start stays, and the next scene tries again")
     func climbsBack() {
         var governor = RenderScaleGovernor(scale: 0.75)
-        for _ in 0..<40 { window(&governor, frame: budget) }
+        for _ in 0..<2 {
+            for _ in 0..<RenderScaleGovernor.patience { window(&governor, frame: budget) }
+            #expect(startScene(&governor, frame: budget))
+        }
         #expect(governor.scale == 1)
     }
 
@@ -67,6 +138,51 @@ struct RenderScaleGovernorTests {
     func startingScale() {
         #expect(RenderScaleGovernor(scale: 0.7).scale == 0.625)
         #expect(RenderScaleGovernor(scale: 0.1).scale == 0.5)
+    }
+
+    // MARK: Settling
+
+    @Test("A device just under a rung settles within a few scenes and never flips under one")
+    func settles() {
+        // 30 at full size holds; 60 at full size runs at 30.
+        let device: (Rung) -> Double = { $0.load > 40 ? 1.0 / 30 : 1.0 / Double($0.rate) }
+        // From where it settled last launch: one try, then still.
+        var measured = RenderScaleGovernor(rates: [60, 30], load: 30)
+        let fromLoad = play(&measured, scenes: 12, device: device)
+        #expect(fromLoad.underScene == 0)
+        #expect(measured.tries == 1)
+        #expect(measured.failedTries == 1)
+        #expect(fromLoad.drawn.suffix(10).allSatisfy { $0 == Rung(rate: 30, scale: 1) })
+        // From nothing known: down once, at once as its first scene runs at
+        // half the rate, and still.
+        var fresh = RenderScaleGovernor(rates: [60, 30])
+        let fromNothing = play(&fresh, scenes: 12, device: device)
+        #expect(fromNothing.underScene == 1)
+        #expect(fresh.tries == 0)
+        #expect(fromNothing.drawn.dropFirst().allSatisfy { $0 == Rung(rate: 30, scale: 1) })
+        // The next launch, the failure kept: no try at all.
+        var next = RenderScaleGovernor(rates: [60, 30], load: 45, blocked: measured.blockedLoad)
+        _ = play(&next, scenes: 12, device: device)
+        #expect(next.tries == 0)
+        #expect(next.rung == Rung(rate: 30, scale: 1))
+    }
+
+    @Test("A device just under a scale step settles there, scales alone")
+    func settlesOnScale() {
+        // At 60, every scale above 0.75 runs late.
+        let device: (Rung) -> Double = { $0.scale > 0.76 ? 0.025 : 1.0 / 60 }
+        var governor = RenderScaleGovernor(rates: [60], scales: RenderScaleGovernor.steps, load: 60 * 0.75 * 0.75)
+        let run = play(&governor, scenes: 12, device: device)
+        #expect(run.underScene == 0)
+        #expect(governor.tries == 1)
+        #expect(run.drawn.suffix(10).allSatisfy { $0.scale == 0.75 })
+    }
+
+    @Test("Hitches now and then never move it")
+    func hitches() {
+        var governor = RenderScaleGovernor(rates: [60, 30])
+        for index in 0..<300 { #expect(!window(&governor, frame: index % 3 == 0 ? 0.05 : budget)) }
+        #expect(governor.rung == Rung(rate: 60, scale: 1))
     }
 
     // MARK: Rates Auto offers
@@ -115,52 +231,55 @@ struct RenderScaleGovernorTests {
     @Test("Late at 60 at full size gives up the rate first, even CPU-bound")
     func rateFirst() {
         var governor = RenderScaleGovernor(rates: [60, 30])
-        #expect(window(&governor, frame: 0.025))
+        for _ in 0..<sustained(0.025) { window(&governor, frame: 0.025) }
         #expect(governor.rung == Rung(rate: 30, scale: 1))
         var cpuBound = RenderScaleGovernor(rates: [60, 30])
-        #expect(window(&cpuBound, frame: 0.025, cpu: 0.024))
+        for _ in 0..<sustained(0.025) { window(&cpuBound, frame: 0.025, cpu: 0.024) }
         #expect(cpuBound.rung == Rung(rate: 30, scale: 1))
         // At 30 a frame on time is 33 ms: it holds.
-        for _ in 0..<4 { #expect(!window(&governor, frame: 1.0 / 30)) }
+        for _ in 0..<20 { #expect(!window(&governor, frame: 1.0 / 30)) }
     }
 
     @Test("Only when 30 at full size doesn't hold does the scale come down")
     func thenScale() {
-        var governor = RenderScaleGovernor(rates: [60, 30])
-        window(&governor, frame: 0.040)
-        #expect(governor.rung == Rung(rate: 30, scale: 1))
-        window(&governor, frame: 0.050)
+        var governor = RenderScaleGovernor(rates: [60, 30], load: 30)
+        for _ in 0..<sustained(0.05) { window(&governor, frame: 0.050) }
         #expect(governor.rung == Rung(rate: 30, scale: 0.875))
         // CPU-bound at 30: fewer pixels wouldn't help.
-        #expect(!window(&governor, frame: 0.050, cpu: 0.045))
+        for _ in 0..<(sustained(0.05) * 2) { #expect(!window(&governor, frame: 0.050, cpu: 0.045)) }
     }
 
-    @Test("At 30 it tries 60 again, and backs off if that runs late")
+    @Test("At 30 it tries 60 as a scene starts, and backs off if that runs late")
     func triesRateUp() {
         var governor = RenderScaleGovernor(rates: [60, 30], load: 30)
         #expect(governor.rung == Rung(rate: 30, scale: 1))
         for _ in 0..<RenderScaleGovernor.patience { window(&governor, frame: 1.0 / 30) }
+        #expect(governor.rung == Rung(rate: 30, scale: 1))
+        #expect(startScene(&governor, frame: 1.0 / 60))
         #expect(governor.rung == Rung(rate: 60, scale: 1))
         #expect(window(&governor, frame: 0.025))
         #expect(governor.backedOff)
         #expect(governor.rung == Rung(rate: 30, scale: 1))
+        #expect(governor.blockedLoad == 60)
     }
 
     @Test("A faster rate isn't tried while the CPU alone takes longer than its frame")
     func cpuHoldsRate() {
         var governor = RenderScaleGovernor(rates: [60, 30], load: 30)
         for _ in 0..<(RenderScaleGovernor.patience * 2) { #expect(!window(&governor, frame: 1.0 / 30, cpu: 0.020)) }
+        let tried = governor.startScene()
+        #expect(!tried)
         #expect(governor.rate == 30)
     }
 
     @Test("A rung waiting to be applied counts windows but judges nothing")
     func holding() {
         var governor = RenderScaleGovernor(rates: [60, 30])
-        window(&governor, frame: 0.025, cpu: 0.024)
+        for _ in 0..<sustained(0.025) { window(&governor, frame: 0.025, cpu: 0.024) }
         let windows = governor.windows
-        #expect(!window(&governor, frame: 0.050, holding: true))
+        for _ in 0..<20 { #expect(!window(&governor, frame: 0.050, holding: true)) }
         #expect(governor.rung == Rung(rate: 30, scale: 1))
-        #expect(governor.windows == windows + 1)
+        #expect(governor.windows == windows + 20)
     }
 
     @Test("A launch starts at the best rung no costlier than where it settled")
@@ -170,6 +289,9 @@ struct RenderScaleGovernorTests {
         #expect(RenderScaleGovernor(rates: [60, 30], load: 17).rung == Rung(rate: 30, scale: 0.75))
         #expect(RenderScaleGovernor(rates: [60, 30], load: 1).rung == Rung(rate: 30, scale: 0.5))
         #expect(RenderScaleGovernor(rates: [60, 30], load: nil).rung == Rung(rate: 60, scale: 1))
+        // Short of a rung that ran late lately.
+        #expect(RenderScaleGovernor(rates: [60, 30], load: 60, blocked: 60).rung == Rung(rate: 30, scale: 1))
+        #expect(RenderScaleGovernor(rates: [60, 30], load: nil, blocked: 30).rung == Rung(rate: 30, scale: 0.875))
     }
 
     @Test("A pick takes its side at once and keeps the other where it stood")

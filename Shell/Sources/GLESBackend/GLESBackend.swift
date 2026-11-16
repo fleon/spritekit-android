@@ -127,8 +127,13 @@ public enum GLESBackend {
         renderer.measuresScene = { AndroidGameController.isMeasured($0) }
         renderer.onAutoJudged = { AndroidGameController.noteAuto(rate: $0, scale: $1) }
         renderer.onRunning = { AndroidGameController.setRunning(rate: $0, scale: $1) }
+        renderer.onBlocked = { AndroidGameController.noteBlocked(load: $0) }
         let choices = AndroidGameController.displayChoices
-        renderer.configure(rates: choices.rates, scales: choices.scales, governs: choices.governs, load: AndroidGameController.startingLoad)
+        let blocked = AndroidGameController.startingBlock
+        renderer.configure(
+            rates: choices.rates, scales: choices.scales, governs: choices.governs,
+            load: AndroidGameController.startingLoad, blocked: blocked
+        )
         AndroidGameController.observeDisplayChoices { [weak renderer] in
             let choices = AndroidGameController.displayChoices
             renderer?.configure(rates: choices.rates, scales: choices.scales, governs: choices.governs, fromCurrent: true)

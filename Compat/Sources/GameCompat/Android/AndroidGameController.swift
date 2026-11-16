@@ -116,6 +116,15 @@ public final class AndroidGameController {
     /// settled at last time.
     public static var startingLoad: Double? { DisplaySettings.startingLoad }
 
+    /// Rungs at least this costly aren't tried this launch: one ran late
+    /// on this device lately.
+    public static var startingBlock: Double? { DisplaySettings.startingBlock }
+
+    /// A rung this costly ran late: kept for a few launches.
+    public static func noteBlocked(load: Double) {
+        DisplaySettings.noteBlocked(load)
+    }
+
     /// Calls `changed` whenever the player picks a frame rate or quality (or
     /// Auto), Low Power Mode comes or goes, or the screen's fastest rate
     /// changes: the renderer applies `displayChoices` at once.

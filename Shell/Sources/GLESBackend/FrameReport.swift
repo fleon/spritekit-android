@@ -48,6 +48,9 @@ struct FrameReport {
     /// whatever it waited on (the GPU, the swap) left out.
     private var threadTimes: [Double] = []
     private var lastThreadTime: Double?
+    /// Frames longer than their budget (the rate drawn at's, in whole
+    /// refreshes) by more than Auto lets pass.
+    private var lateFrames = 0
 
     mutating func begin(_ label: String) {
         self.label = label
@@ -55,7 +58,7 @@ struct FrameReport {
 
     /// One frame. `delta` is the wall clock between frames (so it carries
     /// the GPU and the swap), `cpu` the time inside `drawFrame`.
-    mutating func add(delta: Double, step: Double, cpu: Double, scene: Double, renderScale: Double, renderer: SceneRenderer) {
+    mutating func add(delta: Double, step: Double, cpu: Double, scene: Double, renderScale: Double, budget: Double, renderer: SceneRenderer) {
         frames += 1
         let thread = Self.threadTime()
         defer { lastThreadTime = thread }
@@ -66,6 +69,7 @@ struct FrameReport {
         cpuTimes.append(cpu)
         sceneTimes.append(scene)
         scales.append(renderScale)
+        if delta > budget * Self.lateShare { lateFrames += 1 }
         guard times.count >= Self.interval else { return }
         report(renderer)
         times.removeAll(keepingCapacity: true)
@@ -74,7 +78,11 @@ struct FrameReport {
         sceneTimes.removeAll(keepingCapacity: true)
         scales.removeAll(keepingCapacity: true)
         threadTimes.removeAll(keepingCapacity: true)
+        lateFrames = 0
     }
+
+    /// A frame past this share of its budget is late, as Auto counts one.
+    private static let lateShare = 1.1
 
     /// The calling thread's CPU time, in seconds.
     private static func threadTime() -> Double {
@@ -101,6 +109,7 @@ struct FrameReport {
             label, Self.deviation(times) * 1000, Self.spread(times) * 1000,
             step.median * 1000, Self.deviation(steps) * 1000, Self.spread(steps) * 1000
         ))
+        Log.info(String(format: "[frames] %@ late %d of %d", label, lateFrames, times.count))
         let thread = Self.summary(threadTimes)
         Log.info(String(
             format: "[frames] %@ thread cpu p50 %.2f ms p95 %.2f ms",
