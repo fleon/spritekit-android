@@ -123,8 +123,8 @@ struct SpriteKitLabelParityTests {
     func linePositions(font: String) throws {
         _ = Self.registered
         _ = Fonts.engine
-        let view = SKView(frame: CGRect(x: 0, y: 0, width: 600, height: 600))
-        view.presentScene(SKScene(size: CGSize(width: 600, height: 600)))
+        let view = SpriteKit.SKView(frame: CGRect(x: 0, y: 0, width: 600, height: 600))
+        view.presentScene(SpriteKit.SKScene(size: CGSize(width: 600, height: 600)))
         let text = "Hx\nlonger second line\nB"
         for (h, v) in [(1, 0), (0, 1), (2, 2)] {
             let apple = SpriteKit.SKLabelNode(fontNamed: font)
