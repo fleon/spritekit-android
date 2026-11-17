@@ -41,6 +41,9 @@ extension NSMutableString {
     /// would override NSString's), so this one's defaulted argument stands in.
     public convenience init(initialCapacity: Int = 0) {
         self.init(capacity: initialCapacity)
+    }
+}
+
 extension NSAttributedString {
     /// UIKit's `size()`, for one run of attributes as the games build them:
     /// the string in its first character's font, wide by its advance and
