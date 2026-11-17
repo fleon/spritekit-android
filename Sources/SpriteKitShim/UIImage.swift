@@ -355,10 +355,11 @@ extension UIImage {
 
     /// UIKit's symbol configuration: carried, not applied (see
     /// `init(systemName:withConfiguration:)`).
-    public final class SymbolConfiguration: Configuration, @unchecked Sendable {
-        public let pointSize: CGFloat?
-        public let weight: SymbolWeight?
-        public let scale: SymbolScale?
+    open class SymbolConfiguration: Configuration, @unchecked Sendable {
+        // Not readable on Apple either.
+        let pointSize: CGFloat?
+        let weight: SymbolWeight?
+        let scale: SymbolScale?
 
         public init(pointSize: CGFloat) {
             self.pointSize = pointSize

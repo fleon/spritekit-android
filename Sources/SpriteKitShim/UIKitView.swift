@@ -114,7 +114,8 @@ open class UIImageView: UIView {
 open class UIWindow {
     public var bounds: CGRect
     public var safeAreaInsets: UIEdgeInsets = .zero
-    public var windowScene: UIWindowScene? {
+    /// Weak, as UIKit's: the scene holds its windows.
+    public weak var windowScene: UIWindowScene? {
         didSet {
             oldValue?.windows.removeAll { $0 === self }
             if let windowScene, !windowScene.windows.contains(where: { $0 === self }) {
@@ -172,9 +173,8 @@ open class UIView {
     }
 
     /// Where the view sits in its superview. Android shows one view, the
-    /// game's, so this only keeps what the game sets (the edge-swipe
-    /// previews size theirs to the view's bounds).
-    public var frame: CGRect {
+    /// game's, so this only keeps what is set, for code that reads it back.
+    open var frame: CGRect {
         get { CGRect(origin: origin, size: bounds.size) }
         set {
             origin = newValue.origin
@@ -238,6 +238,7 @@ open class UIView {
         reservedRegionList.filter { $0.kind == kind && ($0.isActive || options.contains(.includeInactive)) }
     }
 
+    /// Runtime seam, not UIKit API: what the shell reports.
     public var reservedRegionList: [ReservedRegion] = []
 
     public struct ReservedRegion: Equatable, Hashable, Identifiable {
@@ -264,6 +265,7 @@ open class UIView {
         public let margins: UIEdgeInsets
         public let isActive: Bool
 
+        /// Runtime seam, not UIKit API: how the shell makes one.
         public init(id: ID, kind: Kind, frame: CGRect, margins: UIEdgeInsets = .zero, isActive: Bool = true) {
             self.id = id
             self.kind = kind
