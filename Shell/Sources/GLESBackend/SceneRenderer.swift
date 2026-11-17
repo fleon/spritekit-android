@@ -43,6 +43,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var defaultProgram: GLuint = 0
     /// Glyphs and rasterised shape masks: 8-bit coverage, the node's colour.
     private var coverageProgram: GLuint = 0
+    /// A shape's fill or stroke with a texture: coverage times the texture.
+    private var texturedCoverageProgram: GLuint = 0
     /// An `SKCropNode`'s mask, written into the stencil.
     private var maskProgram: GLuint = 0
     /// A shape as a crop's mask: its coverage, cut at half.
@@ -428,6 +430,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         if coverageProgram == 0 { Log.error("the coverage program did not link") }
 
+        texturedCoverageProgram = device.createProgram(
+            vertex: ShaderTranslator.spriteVertexShader(),
+            fragment: ShaderTranslator.texturedCoverageFragmentShader
+        )
+        if texturedCoverageProgram == 0 { Log.error("the textured coverage program did not link") }
+
         maskProgram = device.createProgram(
             vertex: ShaderTranslator.spriteVertexShader(),
             fragment: ShaderTranslator.maskFragmentShader
@@ -538,6 +546,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         shapeMasks.removeAll()
         glyphSource.flush()
         if coverageProgram != 0 { device.deleteProgram(coverageProgram) }
+        if texturedCoverageProgram != 0 { device.deleteProgram(texturedCoverageProgram) }
         if maskProgram != 0 { device.deleteProgram(maskProgram) }
         if shapeMaskProgram != 0 { device.deleteProgram(shapeMaskProgram) }
         // A new context relinks every program, and GL reuses names, so a
@@ -1036,9 +1045,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 // where its fill and stroke reach.
                 draw(shape, projection: projection, program: shapeMaskProgram)
             case let .coverage(staged):
-                if case .shape = staged.origin { draw(staged, projection: projection, mask: true) }
-            case .label:
-                break
+                draw(staged, projection: projection, mask: true)
+            case let .label(label):
+                // A label mask (a gradient cut to a word, say) cuts by its glyphs'
+                // coverage, at half as a shape's does.
+                draw(label, projection: projection, program: shapeMaskProgram)
             }
         }
     }
@@ -1627,8 +1638,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// each line's pen origin, and that is also what it reported as its
     /// `contentFrame`. Re-measuring would be a second opinion, and the two
     /// would drift.
-    private func draw(_ label: DrawList.Label, projection: [Float]) {
-        guard coverageProgram != 0 else { return }
+    private func draw(_ label: DrawList.Label, projection: [Float], program: GLuint? = nil) {
+        let program = program ?? coverageProgram
+        guard program != 0 else { return }
 
         // Shaping and rasterising happen inside this, so the atlas is only
         // brought up to date afterwards — a glyph seen for the first time
@@ -1640,7 +1652,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         for run in runs {
             let name = glyphPages.name(of: run.page)
             guard name != 0 else { continue }
-            drawCoverage(run, texture: name, projection: projection)
+            drawCoverage(run, texture: name, projection: projection, program: program)
         }
     }
 
@@ -1656,8 +1668,14 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let program = program ?? coverageProgram
         guard program != 0, let path = shape.path else { return }
 
-        let scale = deviceScale * transformScale(shape.transform)
+        let scale = maskScale(for: shape, path: path)
         guard scale > 0 else { return }
+
+        // A texture (not as a crop's mask, which cuts by coverage alone) is
+        // stretched over the path's bounds, as SpriteKit maps it.
+        let textured = { (texture: SKTexture?) -> SKTexture? in
+            program == self.coverageProgram && self.texturedCoverageProgram != 0 ? texture : nil
+        }
 
         if shape.fillColor.alpha > 0,
            let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale) {
@@ -1668,7 +1686,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 ),
                 texture: mask.name,
                 projection: projection,
-                program: program
+                program: program,
+                fill: textured(shape.fillTexture).map { ($0, CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)) }
             )
         }
 
@@ -1684,9 +1703,26 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 ),
                 texture: mask.name,
                 projection: projection,
-                program: program
+                program: program,
+                fill: textured(shape.strokeTexture).map { ($0, CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)) }
             )
         }
+    }
+
+    /// The density a shape's mask is rasterised at: the one it's drawn at,
+    /// unless that makes the mask longer than a texture can be (a scrolling
+    /// strip tall enough to scroll through a long list is tens of thousands of
+    /// pixels). Then less, so the mask fits and the shape still draws,
+    /// stretched; its edges soften where a texel spans more than a pixel.
+    private func maskScale(for shape: DrawList.Shape, path: CGPath) -> CGFloat {
+        let scale = deviceScale * transformScale(shape.transform)
+        let box = path.boundingBoxOfPath
+        // A stroke's mask reaches half its width past the path, and the
+        // rasteriser adds a margin of its own.
+        let reach = max(box.width, box.height) + max(shape.lineWidth, 0) + 4
+        let side = CGFloat(device.maximumTextureSide)
+        guard reach > 0, reach * scale > side else { return scale }
+        return side / reach
     }
 
     /// How much a transform scales: the square root of the area it
@@ -1707,15 +1743,28 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         texture: GLuint,
         projection: [Float],
         program: GLuint? = nil,
-        streamFirstIndex: Int = -1
+        streamFirstIndex: Int = -1,
+        fill: (texture: SKTexture, map: SIMD4<Float>)? = nil
     ) {
         guard !run.indices.isEmpty else { return }
 
-        let program = program ?? coverageProgram
+        var program = program ?? coverageProgram
+        var fillName: GLuint = 0
+        if let fill {
+            fillName = cache.imageName(for: fill.texture)
+            if fillName != 0 { program = texturedCoverageProgram }
+        }
         useProgram(program)
         let held = state.uniforms(of: program)
         setProjection(projection, program: program, held: held)
         bindSprite(texture, program: program, held: held)
+        if let fill, fillName != 0 {
+            bindSampler(fillName, unit: 1)
+            let sampler = uniformLocation(program, "u_fill")
+            if sampler >= 0 { glUniform1i(sampler, 1) }
+            let map = uniformLocation(program, "u_fill_map")
+            if map >= 0 { glUniform4f(map, fill.map.x, fill.map.y, fill.map.z, fill.map.w) }
+        }
         setBlend(.alpha)
 
         if streamFirstIndex >= 0 {
@@ -1734,7 +1783,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private func draw(_ staged: CoverageGeometry.Staged, projection: [Float], mask: Bool = false) {
         guard staged.isStaged else {
             switch staged.origin {
-            case let .label(label): if !mask { draw(label, projection: projection) }
+            case let .label(label): draw(label, projection: projection, program: mask ? shapeMaskProgram : nil)
             case let .shape(shape): draw(shape, projection: projection, program: mask ? shapeMaskProgram : nil)
             }
             return
@@ -1744,7 +1793,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         for part in staged.parts {
             let name = part.mask != 0 ? part.mask : glyphPages.name(of: part.run.page)
             guard name != 0 else { continue }
-            drawCoverage(part.run, texture: name, projection: projection, program: program, streamFirstIndex: part.streamFirstIndex)
+            let fill = mask || texturedCoverageProgram == 0 ? nil : part.texture.map { ($0, part.textureMap) }
+            drawCoverage(part.run, texture: name, projection: projection, program: program, streamFirstIndex: part.streamFirstIndex, fill: fill)
         }
     }
 
@@ -1853,21 +1903,25 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// A shape's fill and stroke as coverage runs over their masks.
     private func shapeParts(_ shape: DrawList.Shape) -> [CoverageGeometry.Staged.Part] {
         guard let path = shape.path else { return [] }
-        let scale = deviceScale * transformScale(shape.transform)
+        let scale = maskScale(for: shape, path: path)
         guard scale > 0 else { return [] }
         var parts: [CoverageGeometry.Staged.Part] = []
         if shape.fillColor.alpha > 0,
            let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.fillColor, alpha: shape.alpha),
-                mask: mask.name
+                mask: mask.name,
+                texture: shape.fillTexture,
+                textureMap: CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)
             ))
         }
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
            let mask = shapeMasks.stroke(path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),
-                mask: mask.name
+                mask: mask.name,
+                texture: shape.strokeTexture,
+                textureMap: CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)
             ))
         }
         return parts
