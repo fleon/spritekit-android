@@ -125,7 +125,7 @@ public enum InputEvent: Sendable {
     case text(String)
     /// A gamepad, in GameController's terms.
     case gamepad(GamepadEvent)
-    /// The game was opened with a link (`switchlings://…`).
+    /// The game was opened with a link (`example://…`).
     case link(URL)
 }
 

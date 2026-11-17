@@ -1,8 +1,8 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-/// A textured or solid-colour quad — 378 uses in the game, and with SKNode the
-/// bulk of what the board draws.
+/// A textured or solid-colour quad — with SKNode the bulk of what a scene
+/// draws.
 open class SKSpriteNode: SKNode {
     open var texture: SKTexture?
     open var color: SKColor
@@ -10,9 +10,9 @@ open class SKSpriteNode: SKNode {
     open var blendMode: SKBlendMode = .alpha
     open var anchorPoint = CGPoint(x: 0.5, y: 0.5)
     open var shader: SKShader?
-    /// Carried for the lit worlds' pieces, whose lighting reads normals from
-    /// their own shaders' uniforms; SpriteKit's own lighting, which this
-    /// feeds, is never on (the game adds no `SKLightNode`).
+    /// Carried for a game whose lighting reads normals from its own shaders'
+    /// uniforms; SpriteKit's own lighting, which this feeds, isn't
+    /// implemented (there is no `SKLightNode`).
     open var normalTexture: SKTexture?
     open var size: CGSize
 
@@ -24,15 +24,14 @@ open class SKSpriteNode: SKNode {
     open var subdivisionLevels: Int = 2
 
     /// Triangles drawn instead of the quad (SKTriangleMesh.swift): the
-    /// shim's own, for the port's `RigMeshNode`.
+    /// shim's own, for a skeletal rig's meshes.
     open var triangleMesh: SKTriangleMesh?
 
     /// Backs `centerRect` (see NineSlice.swift), which 9-slices the texture.
     var sliceCenterRect = NineSlice.whole
 
     /// SpriteKit's designated initialiser; the others are convenience ones,
-    /// so a subclass calls this one, as the game's `GlowNode` and
-    /// `ConveyorNode` do.
+    /// so a subclass calls this one.
     public init(texture: SKTexture?, color: SKColor, size: CGSize) {
         self.texture = texture
         self.color = color
@@ -55,7 +54,7 @@ open class SKSpriteNode: SKNode {
     }
 
     /// An empty sprite, as SpriteKit's `SKSpriteNode()`: no texture, clear,
-    /// zero-sized. The game makes them to fill in later (`TileNode`'s dots).
+    /// zero-sized, to fill in later.
     public override convenience init() {
         self.init(texture: nil, size: .zero)
     }

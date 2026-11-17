@@ -44,8 +44,8 @@ public protocol RenderDevice: AnyObject {
     func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32
 
     /// The longest side a texture may have. GLES 3.0 guarantees 2048; real
-    /// devices give more, and an effect node covering a big screen's whole
-    /// backdrop needs it.
+    /// devices give more, and an effect node covering a big screen whole
+    /// needs it.
     var maximumTextureSide: Int { get }
 
     /// Whether the GPU samples ASTC (`GL_KHR_texture_compression_astc_ldr`).
@@ -82,7 +82,7 @@ public extension RenderDevice {
 ///
 /// `SKTexture.glName` and `SKShader.glProgram` are the cache slots — they
 /// live on the shim's types precisely so a texture used by many sprites is
-/// uploaded once, and a shader shared by a world's tiles is linked once.
+/// uploaded once, and a shader shared by many sprites is linked once.
 public final class ResourceCache {
     private let device: RenderDevice
     private var ownedTextures: Set<UInt32> = []
@@ -152,9 +152,9 @@ public final class ResourceCache {
             }
             let name = uploadPage(pageSource?(page), page: page)
             // A page the index marks as one whole tiling image may wrap.
-            // Sky's planet maps need it: the shader reads them as a sphere's
-            // surface and wraps longitude with `fract`, so a clamped map
-            // smears its last column round the back of every planet.
+            // A shader that reads one as a sphere's surface and wraps
+            // longitude with `fract` needs it: a clamped map smears its last
+            // column round the back of the sphere.
             if name != 0, AssetIndex.shared.map { page < $0.pages.count && $0.pages[page].repeats } == true {
                 device.setRepeats(name)
             }
@@ -189,12 +189,11 @@ public final class ResourceCache {
     /// of (`SKTexture.usesMipmaps`).
     ///
     /// Only here: a texture a shader draws keeps one level, as a whole page
-    /// does (`plainName`). The rigs ask for mip levels, and their meshes now
-    /// draw here as real triangles (`SKTriangleMesh`): the game's
-    /// `RigMeshNode` shader picked one of four triangles a pixel, so a texture
-    /// coordinate's derivative jumped across every triangle's edge and the
-    /// GPU read the smallest level along it, a dotted seam over every
-    /// Switchling.
+    /// does (`plainName`). A skeletal rig's pages ask for mip levels, and
+    /// their meshes draw here as real triangles (`SKTriangleMesh`): a shader
+    /// that picked one of four triangles a pixel made a texture coordinate's
+    /// derivative jump across every triangle's edge, and the GPU read the
+    /// smallest level along it, a dotted seam over every rig.
     public func drawnName(for texture: SKTexture) -> UInt32 {
         let name = name(for: texture)
         let root = texture.root
@@ -207,8 +206,8 @@ public final class ResourceCache {
     /// The texture a shader samples as a **uniform** (`SKUniform(name:texture:)`).
     ///
     /// SpriteKit hands such a shader the image alone: a shader that tiles
-    /// it with `fract` (Kitchen's gingham, the lawns' and the seabed's
-    /// grounds, the cracks' bricks) reads only its own pixels. A packed
+    /// it with `fract` (a repeating ground texture, say) reads only its own
+    /// pixels. A packed
     /// image is a slice of an atlas page, and the shader samples the page
     /// with the image's 0…1, so it would show the whole atlas. A slice is
     /// therefore cut out of its page once, into a texture of its own that
@@ -223,7 +222,7 @@ public final class ResourceCache {
     ///
     /// On iOS the game's images are each a texture of their own, so a
     /// shader's `v_tex_coord` runs 0…1 across the image (through its 9-slice)
-    /// and `CrumbleNode` reads its brick's front face at a fixed `y`. The
+    /// and a shader may read a part of its image at a fixed `y`. The
     /// batcher hands a shaded sprite those coordinates (`Batch.ownImage`),
     /// so this is what they index. A slice copy rather than the page, since
     /// a shader may sample anywhere in 0…1, and a page would hand it the
@@ -247,7 +246,7 @@ public final class ResourceCache {
         }
         // Copied out of the page already uploaded, on the GPU, where the
         // device can: decoding a page again costs a second or more on a
-        // phone, and a backdrop asks for several slices off several pages.
+        // phone, and a scene may ask for several slices off several pages.
         // A compressed page can't be read that way (it can't be a
         // framebuffer's attachment); its blocks are copied instead, below.
         let pageName = name(for: texture)
@@ -399,7 +398,7 @@ public final class ResourceCache {
 
     /// Uploads pages decoded ahead of their first draw a strip at a time,
     /// while `hasTime` says the frame has room, so a scene's art reaches the
-    /// GPU over the frames the loading screen shows while it builds rather
+    /// GPU over the frames a loading screen shows while it builds rather
     /// than all at once in its warm-up draw. A page drawn before it's done
     /// is finished then (`name(for:)`).
     public func uploadAhead(while hasTime: () -> Bool) {

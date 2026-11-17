@@ -1,13 +1,14 @@
 import Foundation
 import SpriteKitShim
 
-/// Command buffers a share film has committed (`SKRenderer` through the
+/// Command buffers an offscreen render has committed (`SKRenderer` through the
 /// Metal stand-ins), waiting for the renderer's next frame to draw them.
 ///
 /// The film renders on a thread of its own and waits for each frame
 /// (`waitUntilCompleted`); the renderer draws them on its own thread, where
-/// the context is current, before the view's frame. `FilmDrawTurns` lets the
-/// film update and encode only between the view's frames, so the renderer
+/// the context is current, before the view's frame. A game that films
+/// through the view's delegate updates and encodes only between the view's
+/// frames, so the renderer
 /// gives it a moment at the top of each frame while a film is being made:
 /// it waits for the film's next buffer, briefly, rather than ticking the
 /// view straight away and leaving the film a frame behind every time.

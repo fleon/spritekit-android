@@ -163,16 +163,16 @@ final class MusicMixer {
             let wanted = self.current == track && !self.isStopping
             if wanted { self.commands.append(.add(deck, volume: volume, fade: fade)) }
             self.lock.unlock()
-            if !wanted { sw_audio_close(deck.decoder) }
+            if !wanted { ska_audio_close(deck.decoder) }
         }
     }
 
     private func open(_ track: String, loop: MusicLoop?) -> Deck? {
-        guard let decoder = sw_audio_open_asset(AudioAssets.music(track)) else { return nil }
-        let rate = sw_audio_sample_rate(decoder)
-        let channels = sw_audio_channels(decoder)
+        guard let decoder = ska_audio_open_asset(AudioAssets.music(track)) else { return nil }
+        let rate = ska_audio_sample_rate(decoder)
+        let channels = ska_audio_channels(decoder)
         guard rate > 0, channels > 0 else {
-            sw_audio_close(decoder)
+            ska_audio_close(decoder)
             return nil
         }
         let points = loop.map { (start: Self.microseconds($0.start, rate: rate), end: Self.microseconds($0.end, rate: rate)) }
@@ -180,8 +180,8 @@ final class MusicMixer {
         return Deck(name: track, decoder: decoder, rate: rate, sourceChannels: channels, loop: points)
     }
 
-    /// A frame of the master as a presentation time. `MusicLoops.frames`
-    /// counts frames at the file's own rate, which is the master's.
+    /// A frame of the master as a presentation time. A game's loop points
+    /// count frames at the file's own rate, which is the master's.
     private static func microseconds(_ frame: Int64, rate: Int32) -> Int64 {
         frame * 1_000_000 / Int64(rate)
     }
@@ -204,7 +204,7 @@ final class MusicMixer {
                 SDL_Delay(Self.idleSleepMilliseconds)
             }
         }
-        for deck in decks { sw_audio_close(deck.decoder) }
+        for deck in decks { ska_audio_close(deck.decoder) }
         decks = []
         SDL_DestroyAudioStream(stream)
     }
@@ -232,7 +232,7 @@ final class MusicMixer {
 
         for deck in decks where deck.isSpent {
             Log.info("soundtrack \(deck.name) faded out")
-            sw_audio_close(deck.decoder)
+            ska_audio_close(deck.decoder)
         }
         decks.removeAll(where: \.isSpent)
 
@@ -258,7 +258,7 @@ final class MusicMixer {
             if wanted == 0 {
                 guard let loop = deck.loop else { break }
                 let from = deck.position
-                guard sw_audio_seek(deck.decoder, loop.start) else { break }
+                guard ska_audio_seek(deck.decoder, loop.start) else { break }
                 deck.position = loop.start
                 deck.loops += 1
                 Log.info("soundtrack \(deck.name): loop \(deck.loops) at \(from / 1000) ms, back to \(loop.start / 1000) ms")
@@ -268,12 +268,12 @@ final class MusicMixer {
             var at: Int64 = deck.position
             let got = scratch.withUnsafeMutableBufferPointer { buffer -> Int64 in
                 guard let base = buffer.baseAddress else { return 0 }
-                return sw_audio_read(deck.decoder, base, wanted, &at)
+                return ska_audio_read(deck.decoder, base, wanted, &at)
             }
             if got <= 0 {
                 // The tail ran out before the loop point: start over rather
                 // than fall silent.
-                guard let loop = deck.loop, sw_audio_seek(deck.decoder, loop.start) else { break }
+                guard let loop = deck.loop, ska_audio_seek(deck.decoder, loop.start) else { break }
                 deck.position = loop.start
                 continue
             }

@@ -7,10 +7,9 @@ public enum SKTransitionDirection: Int, Sendable {
 
 /// How the view goes from one scene to the next.
 ///
-/// The game uses one: `fade(withDuration:)`, both scenes left running, for
-/// every scene change (`TransitionManager.show`). The other kinds SpriteKit
-/// offers that draw with nothing but the two scenes and a colour are here
-/// too; the 3D ones (doorways, flips, CIFilter transitions) are not.
+/// `fade(withDuration:)`, both scenes left running, and the other kinds
+/// SpriteKit offers that draw with nothing but the two scenes and a colour
+/// are here; the 3D ones (doorways, flips, CIFilter transitions) are not.
 ///
 /// Every kind moves linearly in time, and draws each scene whole — its
 /// background, its contents through its own camera — as `SKView` composes

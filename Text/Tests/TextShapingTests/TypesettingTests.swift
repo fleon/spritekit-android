@@ -28,20 +28,20 @@ struct TypesettingTests {
 
     @Test("Breaking a line walks the whole string and stops")
     func walksToTheEnd() {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
-        let lines = wrapped(text, maxWidth: 160, font: Fonts.chiron(18))
+        let text = "Tap a tile to send it one step, and bump another to trade places"
+        let lines = wrapped(text, maxWidth: 160, font: Fonts.display(18))
 
         #expect(lines.count > 3)
         #expect(lines.joined(separator: " ") == text)
         for line in lines {
-            #expect(Fonts.engine.measure(line, font: Fonts.chiron(18)).advance <= 160.001, "\(line)")
+            #expect(Fonts.engine.measure(line, font: Fonts.display(18)).advance <= 160.001, "\(line)")
         }
     }
 
     @Test("A suggested break never returns zero, so the loop above terminates")
     func neverZero() {
-        let text = "Switchlings"
-        let font = Fonts.chiron(40)
+        let text = "Lightning"
+        let font = Fonts.display(40)
         for width in [CGFloat(1), 5, 20, 1000] {
             #expect(Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: width) > 0)
         }
@@ -60,7 +60,7 @@ struct TypesettingTests {
         #expect(count > 0)
         #expect(count <= text.utf16.count)
 
-        // The slice the game would take is valid text, not a cut codepoint.
+        // The slice a game would take is valid text, not a cut codepoint.
         let utf16 = Array(text.utf16)
         let piece = String(decoding: utf16[0..<count], as: UTF16.self)
         #expect(piece.unicodeScalars.allSatisfy { $0.value >= 0x0E00 && $0.value <= 0x0E7F })
@@ -68,8 +68,8 @@ struct TypesettingTests {
 
     @Test("Starting part-way through continues from there")
     func resumes() {
-        let text = "Unlock the full game and keep it forever"
-        let font = Fonts.chiron(18)
+        let text = "Unlock every level and keep them forever"
+        let font = Fonts.display(18)
         let first = Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: 100)
         let second = Typesetting.suggestLineBreak(text, font: font, startingAt: first, maxWidth: 100)
 
@@ -81,7 +81,7 @@ struct TypesettingTests {
     @Test("A hard line break ends the line there whatever the width")
     func hardBreak() {
         let text = "Bump\nand trade"
-        let font = Fonts.chiron(18)
+        let font = Fonts.display(18)
         let count = Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: 10_000)
         #expect(count == 5)                       // "Bump\n"
         #expect(wrapped(text, maxWidth: 10_000, font: font) == ["Bump", "and trade"])
@@ -89,7 +89,7 @@ struct TypesettingTests {
 
     @Test("Running off the end gives nothing back")
     func pastTheEnd() {
-        let font = Fonts.chiron(18)
+        let font = Fonts.display(18)
         #expect(Typesetting.suggestLineBreak("Play", font: font, startingAt: 4, maxWidth: 100) == 0)
         #expect(Typesetting.suggestLineBreak("", font: font, startingAt: 0, maxWidth: 100) == 0)
     }
@@ -104,7 +104,7 @@ struct TypesettingTests {
 
     @Test("Glyph-path bounds are the ink, and the plain bounds are the line")
     func lineBounds() throws {
-        let font = Fonts.chiron(40)
+        let font = Fonts.display(40)
         let ink = Typesetting.lineBounds("HELLO", font: font, glyphPath: true)
         let typographic = Typesetting.lineBounds("HELLO", font: font, glyphPath: false)
         let metrics = try #require(Fonts.engine.fontMetrics(font))
@@ -120,7 +120,7 @@ struct TypesettingTests {
         // The real one is `CTLineGetBoundsWithOptions(.useGlyphPathBounds).midY
         // - capHeight / 2`. A line of capitals needs almost no correction; one
         // with a descender needs a real one, downwards.
-        let font = Fonts.chiron(32)
+        let font = Fonts.display(32)
         let metrics = try #require(Fonts.engine.fontMetrics(font))
         func offset(_ text: String) -> CGFloat {
             Typesetting.lineBounds(text, font: font, glyphPath: true).midY - metrics.capHeight / 2
@@ -132,7 +132,7 @@ struct TypesettingTests {
 
     @Test("Break offsets are ascending and land inside the string")
     func breakOffsets() {
-        let text = "Tap a Switchling to send it one step"
+        let text = "Tap a tile to send it one step"
         let offsets = Fonts.engine.breakOffsets(in: text)
         #expect(!offsets.isEmpty)
         #expect(offsets == offsets.sorted())

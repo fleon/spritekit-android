@@ -1,9 +1,8 @@
 import Foundation
 
-// Stands in for the system `os` module on Android. The game imports it in
-// six files, and uses exactly one thing from it: `OSAllocatedUnfairLock`,
-// which guards the state scenes read off the main thread (the level feed,
-// a page's generation, a film's cancel flag).
+// Stands in for the system `os` module on Android, as far as one thing:
+// `OSAllocatedUnfairLock`, which guards state that scenes read off the main
+// thread.
 //
 // `os_unfair_lock` is Darwin's; the portable equivalent with the same
 // semantics — non-recursive, no fairness guarantee, cheap when uncontended —
@@ -11,7 +10,7 @@ import Foundation
 // Android. The surface is the Swift one, so the call sites compile unchanged.
 
 /// A value behind a lock, handed to a closure for the length of one call.
-/// Matches the shape the game uses: `init(initialState:)` and `withLock`.
+/// Apple's shape, as far as `init(initialState:)` and `withLock`.
 public final class OSAllocatedUnfairLock<State>: @unchecked Sendable {
     private let lock = NSLock()
     private var state: State

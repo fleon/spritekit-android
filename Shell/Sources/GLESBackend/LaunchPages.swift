@@ -1,12 +1,12 @@
 import Foundation
 import ShellCore
 
-/// The packed pages a launch's first seconds drew (the splash's and the
-/// first loading screen's), kept for the next launch to start decoding as it
-/// starts (`PageDecodes.prefetch`). The loading screen is made on the main
-/// thread and draws at once, so its pages were decoded as it first showed: a
-/// 0.3 s stall on a Galaxy M31 even when they started decoding as their
-/// textures were made. The splash shows for longer than they take.
+/// The packed pages a launch's first seconds drew (a splash's and the first
+/// scene's), kept for the next launch to start decoding as it starts
+/// (`PageDecodes.prefetch`). A first scene made on the main thread draws at
+/// once, so its pages were decoded as it first showed: a 0.3 s stall on a
+/// Mali-G72 phone even when they started decoding as their textures were
+/// made. A splash shows for longer than they take.
 nonisolated final class LaunchPages: @unchecked Sendable {
     /// How long into a launch the pages drawn count.
     static let window: TimeInterval = 4
