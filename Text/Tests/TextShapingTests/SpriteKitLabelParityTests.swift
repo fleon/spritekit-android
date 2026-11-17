@@ -13,7 +13,7 @@ import Testing
 @MainActor
 struct SpriteKitLabelParityTests {
     static let registered: Bool = {
-        for file in ["ChironGoRoundTC-Variable", "KoHo-Bold", "Montserrat"] {
+        for file in ["KoHo-Bold", "Montserrat"] {
             CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: Fonts.directory + "/" + file + ".ttf") as CFURL, .process, nil)
         }
         return true
@@ -22,7 +22,7 @@ struct SpriteKitLabelParityTests {
     static let texts = ["W1 / L1", "W10 / L26", "Español (México)", "Français", "Bahasa Indonesia", "Level Select",
                         "Play", "Collection", "Level Designer", "All home!", "0 of 30 cleared", "gpqy", "(", "ñ", "Switchlings"]
 
-    @Test("Frames match SpriteKit's in every alignment", arguments: ["ChironGoRoundTC-Black", "ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold"])
+    @Test("Frames match SpriteKit's in every alignment", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func framesMatch(font: String) {
         _ = Self.registered
         _ = Fonts.engine
@@ -50,8 +50,8 @@ struct SpriteKitLabelParityTests {
         // Core Text keeps a variable instance's advance deltas fractional,
         // where HarfBuzz rounds them to whole font units: a hundredth of a
         // point a glyph, which across a long line can tip its ink over a
-        // whole point. Chiron's Black, its default instance, has none.
-        let share = font == "ChironGoRoundTC-Black" ? 1.0 : 0.98
+        // whole point.
+        let share = font == "Montserrat-Black" ? 1.0 : 0.98
         #expect(Double(matched) >= Double(checked) * share, "\(matched) of \(checked) frames match")
     }
 }

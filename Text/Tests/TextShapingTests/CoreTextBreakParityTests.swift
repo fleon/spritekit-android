@@ -52,7 +52,7 @@ import Testing
         "A well-placed bump sends both home.",
     ]
 
-    @Test("Lines break where Core Text breaks them", arguments: ["ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold", "ChironGoRoundTC-Black"])
+    @Test("Lines break where Core Text breaks them", arguments: ["Montserrat-ExtraBold", "Montserrat-SemiBold", "Montserrat-Black"])
     func breaksMatch(font: String) {
         let size: CGFloat = 14
         for text in Self.texts {

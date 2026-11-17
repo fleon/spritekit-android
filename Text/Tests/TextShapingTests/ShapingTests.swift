@@ -93,14 +93,14 @@ struct ThaiShapingTests {
 struct ShapingTests {
     @Test("A Latin line's advances sum to its measured width")
     func latinAdvances() {
-        let font = Fonts.chiron()
+        let font = Fonts.display()
         for text in ["Switchlings", "Play", "Level 12", "Tap to bump and trade arrows"] {
             let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
             let sum = glyphs.reduce(0) { $0 + $1.xAdvance }
             let measured = Fonts.engine.measure(text, font: font)
             #expect(sum > 0)
             #expect(abs(measured.advance - sum) < 0.001, "\(text)")
-            // One glyph per character, nothing dropped: Latin in Chiron has
+            // One glyph per character, nothing dropped: Latin in Montserrat has
             // no ligatures the game would hit.
             #expect(glyphs.count == text.count)
         }
@@ -109,13 +109,13 @@ struct ShapingTests {
     @Test("Clusters run in order and cover the whole string")
     func latinClusters() {
         let text = "Level 12"
-        let glyphs = (Fonts.engine.shape(text, font: Fonts.chiron()) ?? []).flatMap(\.glyphs)
+        let glyphs = (Fonts.engine.shape(text, font: Fonts.display()) ?? []).flatMap(\.glyphs)
         #expect(glyphs.map(\.cluster) == Array(0..<text.utf8.count))
     }
 
     @Test("CJK shapes one glyph per ideograph, each with real width")
     func cjk() {
-        let font = Fonts.chiron()
+        let font = Fonts.display()
         for text in ["简体中文", "日本語", "한국어"] {
             let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
             #expect(glyphs.count == text.count, "\(text)")
@@ -126,7 +126,7 @@ struct ShapingTests {
 
     @Test("A mixed string is itemised into one run per script")
     func itemisation() {
-        let runs = Fonts.engine.shape("Level 1 \u{0E2A}\u{0E27}\u{0E31}\u{0E2A}\u{0E14}\u{0E35}", font: Fonts.chiron()) ?? []
+        let runs = Fonts.engine.shape("Level 1 \u{0E2A}\u{0E27}\u{0E31}\u{0E2A}\u{0E14}\u{0E35}", font: Fonts.display()) ?? []
         #expect(runs.count == 2)
         #expect(runs.first?.script == .latin)
         #expect(runs.last?.script == .thai)

@@ -9,7 +9,7 @@ struct LineBreakTests {
     func latin() {
         let lines = Fonts.engine.breakLines(
             "Unlock the full game and keep it forever",
-            font: Fonts.chiron(20),
+            font: Fonts.display(20),
             maxWidth: 140
         )
         #expect(lines.count > 2)
@@ -27,7 +27,7 @@ struct LineBreakTests {
 
     @Test("Spaces a line ends on hang past its edge")
     func hangingSpaces() {
-        let font = Fonts.chiron(20)
+        let font = Fonts.display(20)
         let word = Fonts.engine.measure("Unlock", font: font).advance
         let lines = Fonts.engine.breakLines("Unlock     everything", font: font, maxWidth: word + 0.01)
         #expect(lines == ["Unlock", "everything"])
@@ -35,14 +35,14 @@ struct LineBreakTests {
 
     @Test("A word wider than the line is left over-wide rather than cut")
     func longWord() {
-        let lines = Fonts.engine.breakLines("Switchlings", font: Fonts.chiron(40), maxWidth: 20)
+        let lines = Fonts.engine.breakLines("Switchlings", font: Fonts.display(40), maxWidth: 20)
         #expect(lines == ["Switchlings"])
     }
 
     @Test("Chinese breaks between characters, with no spaces to break at")
     func chinese() {
-        let text = "点击一个斯威奇灵让它走一步"
-        let lines = Fonts.engine.breakLines(text, font: Fonts.chiron(20), maxWidth: 100)
+        let text = "点击一个方块让它向前走一步"
+        let lines = Fonts.engine.breakLines(text, font: Fonts.han(20), maxWidth: 100)
         #expect(lines.count > 1)
         #expect(lines.joined() == text)
     }
@@ -96,7 +96,7 @@ struct LineBreakTests {
     @Test("Breaking is stable: the same text and width give the same lines")
     func stability() {
         let text = "Tap a Switchling to send it one step"
-        let font = Fonts.chiron(18)
+        let font = Fonts.display(18)
         let first = Fonts.engine.breakLines(text, font: font, maxWidth: 120)
         let second = Fonts.engine.breakLines(text, font: font, maxWidth: 120)
         #expect(first == second)

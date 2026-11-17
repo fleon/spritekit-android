@@ -11,7 +11,7 @@ import Testing
 /// fractional, are all that's left).
 @Suite("Lines as Core Text measures them") struct CoreTextParityTests {
     static let registered: Bool = {
-        for file in ["ChironGoRoundTC-Variable", "KoHo-Bold", "Montserrat"] {
+        for file in ["KoHo-Bold", "Montserrat"] {
             let url = URL(fileURLWithPath: Fonts.directory + "/" + file + ".ttf") as CFURL
             CTFontManagerRegisterFontsForURL(url, .process, nil)
         }
@@ -26,7 +26,7 @@ import Testing
         return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     }
 
-    @Test("Advances match Core Text's", arguments: ["ChironGoRoundTC-Black", "ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold"])
+    @Test("Advances match Core Text's", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func advancesMatch(font: String) {
         for text in ["Español (México)", "W1 / L1", "Français", "Bahasa Indonesia", "Level Select", "Switchlings"] {
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 15)).advance
@@ -34,7 +34,7 @@ import Testing
             #expect(abs(ours - theirs) < 0.0005 * theirs, "\(font) \(text): \(ours) against \(theirs)")
         }
     }
-    @Test("Glyph-path and image bounds match Core Text's", arguments: ["ChironGoRoundTC-Black", "ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold"])
+    @Test("Glyph-path and image bounds match Core Text's", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func boundsMatch(font: String) {
         for text in ["Español (México)", "W1 / L1", "Collection", "gpqy", "Sunny Garden", "SOHO"] {
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 20))
