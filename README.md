@@ -416,6 +416,10 @@ TestFlight shows nothing on iOS.
 - **Input:** one touch at a time, hardware keys by HID usage, gamepads
   through SDL.
 - **Threads:** libdispatch workers start below the frame thread's priority.
+- **Associated objects:** `objc_getAssociatedObject`, `objc_setAssociatedObject`
+  and `objc_removeAssociatedObjects` work without an Objective-C runtime,
+  answering as Apple's do (`AssociatedObjectsParityTests`); a value goes a
+  little after its object rather than with it.
 - **Launch arguments** (debuggable builds only) come from the intent, as
   `-Key value` pairs in the argument domain, as on Apple.
 - **Debug properties:** `adb shell setprop debug.<key>.<name> <value>`, read

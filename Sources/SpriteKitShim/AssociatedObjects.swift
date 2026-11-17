@@ -11,7 +11,7 @@ import Foundation
 /// object has gone is dropped the next time it's looked at, or by a sweep
 /// every so many writes (an identity is reused once its object is gone, so
 /// a stale entry must never answer for a new object).
-public enum AssociatedObjects {
+enum AssociatedObjects {
     private final class Entry {
         weak var object: AnyObject?
         var values: [UnsafeRawPointer: Any] = [:]
@@ -23,31 +23,47 @@ public enum AssociatedObjects {
     private nonisolated(unsafe) static var writes = 0
     static let sweepEvery = 256
 
+    // Every value taken off is let go only once the lock is open again: a
+    // value's `deinit` may hang or take values itself, which under the lock
+    // would deadlock (or, on Darwin, abort on the lock's recursion).
+
     /// What `object` holds under `key`, if anything.
-    public static func value(of object: AnyObject, for key: UnsafeRawPointer) -> Any? {
+    static func value(of object: AnyObject, for key: UnsafeRawPointer) -> Any? {
+        var released: [Any] = []
         lock.lock()
-        defer { lock.unlock() }
-        guard let entry = live(object) else { return nil }
-        return entry.values[key]
+        let value = live(object, releasing: &released)?.values[key]
+        lock.unlock()
+        released.removeAll()
+        return value
     }
 
     /// Hangs `value` on `object` under `key`, or takes it off for nil.
-    public static func set(_ value: Any?, of object: AnyObject, for key: UnsafeRawPointer) {
+    static func set(_ value: Any?, of object: AnyObject, for key: UnsafeRawPointer) {
+        var released: [Any] = []
         lock.lock()
-        defer { lock.unlock() }
         writes += 1
-        if writes % sweepEvery == 0 { entries = entries.filter { $0.value.object != nil } }
+        if writes % sweepEvery == 0 {
+            for (id, entry) in entries where entry.object == nil {
+                released.append(entry)
+                entries[id] = nil
+            }
+        }
         let id = ObjectIdentifier(object)
-        let entry = live(object) ?? Entry(object)
+        let entry = live(object, releasing: &released) ?? Entry(object)
+        if let old = entry.values[key] { released.append(old) }
         entry.values[key] = value
         entries[id] = entry.values.isEmpty ? nil : entry
+        lock.unlock()
+        released.removeAll()
     }
 
     /// Takes everything off `object`.
-    public static func removeAll(of object: AnyObject) {
+    static func removeAll(of object: AnyObject) {
+        var released: [Any] = []
         lock.lock()
-        defer { lock.unlock() }
-        entries[ObjectIdentifier(object)] = nil
+        if let entry = entries.removeValue(forKey: ObjectIdentifier(object)) { released.append(entry) }
+        lock.unlock()
+        released.removeAll()
     }
 
     /// How many objects hold values, for tests.
@@ -58,11 +74,12 @@ public enum AssociatedObjects {
     }
 
     /// The entry for `object` itself, never one left by an object that had
-    /// its identity before it.
-    private static func live(_ object: AnyObject) -> Entry? {
+    /// its identity before it (that one goes into `released`).
+    private static func live(_ object: AnyObject, releasing released: inout [Any]) -> Entry? {
         let id = ObjectIdentifier(object)
         guard let entry = entries[id] else { return nil }
         guard entry.object === object else {
+            released.append(entry)
             entries[id] = nil
             return nil
         }
@@ -74,14 +91,12 @@ public enum AssociatedObjects {
 /// `objc_AssociationPolicy`. Every policy retains here: Swift values are
 /// copied on assignment anyway, and a value hung unretained is kept
 /// alive here rather than dangling.
-public struct objc_AssociationPolicy: RawRepresentable, Hashable, Sendable {
-    public let rawValue: UInt
-    public init(rawValue: UInt) { self.rawValue = rawValue }
-    public static let OBJC_ASSOCIATION_ASSIGN = objc_AssociationPolicy(rawValue: 0)
-    public static let OBJC_ASSOCIATION_RETAIN_NONATOMIC = objc_AssociationPolicy(rawValue: 1)
-    public static let OBJC_ASSOCIATION_COPY_NONATOMIC = objc_AssociationPolicy(rawValue: 3)
-    public static let OBJC_ASSOCIATION_RETAIN = objc_AssociationPolicy(rawValue: 769)
-    public static let OBJC_ASSOCIATION_COPY = objc_AssociationPolicy(rawValue: 771)
+public enum objc_AssociationPolicy: UInt, @unchecked Sendable {
+    case OBJC_ASSOCIATION_ASSIGN = 0
+    case OBJC_ASSOCIATION_RETAIN_NONATOMIC = 1
+    case OBJC_ASSOCIATION_COPY_NONATOMIC = 3
+    case OBJC_ASSOCIATION_RETAIN = 769
+    case OBJC_ASSOCIATION_COPY = 771
 }
 
 public func objc_getAssociatedObject(_ object: Any, _ key: UnsafeRawPointer) -> Any? {

@@ -55,10 +55,9 @@ public final class UIScreen {
 
     /// The screen the game shows on: Android has one, the last made. A game
     /// reads its size here, where iOS finds it through its window scenes.
-    /// Implicitly unwrapped, as UIKit's is not optional: `UIScreen.main.scale`
-    /// compiles as written, and `UIScreen.main?.bounds` still does too. Nil
-    /// only before the shell has made the window.
-    public private(set) static weak var main: UIScreen!
+    /// Not optional, as UIKit's isn't: until the shell makes the window's
+    /// screen, a placeholder (no size, one pixel a point) answers.
+    public private(set) static var main = UIScreen(placeholder: ())
 
     public var bounds: CGRect
     public var nativeBounds: CGRect
@@ -73,6 +72,12 @@ public final class UIScreen {
     public var fixedCoordinateSpace: CoordinateSpace {
         CoordinateSpace(bounds: CGRect(x: 0, y: 0, width: min(bounds.width, bounds.height),
                                        height: max(bounds.width, bounds.height)))
+    }
+
+    private init(placeholder: Void) {
+        bounds = .zero
+        nativeScale = 1
+        nativeBounds = .zero
     }
 
     public init(bounds: CGRect, nativeScale: CGFloat) {
