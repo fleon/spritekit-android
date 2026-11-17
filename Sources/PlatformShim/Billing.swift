@@ -4,9 +4,10 @@ import Foundation
 /// code.
 ///
 /// What a game keeps about what's owned is its own. Behind it sits one of
-/// three backends: `PlayBilling` (Google Play, through `PlatformChannel`), `SimulatedBilling` (the Apple build's
-/// `-SimulatePurchases`: granted locally, no money moves) or `NoBilling`
-/// (no store at all, as on a host test).
+/// three backends: `PlayBilling` (Google Play, through `PlatformChannel`),
+/// `SimulatedBilling` (a debug build's simulated purchases: granted
+/// locally, no money moves) or `NoBilling` (no store at all, as on a host
+/// test).
 public protocol BillingBackend: AnyObject {
     /// The product's price in the player's currency, once it is known.
     var displayPrice: String? { get }
@@ -51,8 +52,8 @@ public final class NoBilling: BillingBackend {
 }
 
 /// Grants the purchase on this device at once, without a service, and keeps
-/// it across launches. The Apple build's `-SimulatePurchases` with somewhere
-/// to put the result.
+/// it across launches: a game's simulated purchases, as it may offer them on
+/// Apple, with somewhere to put the result.
 public final class SimulatedBilling: BillingBackend {
     private enum Key {
         static let simulated = "store.simulatedProducts"

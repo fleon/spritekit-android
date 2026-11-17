@@ -3,9 +3,8 @@ import Foundation
 
 /// Line breaking and line bounds as CoreText reports them.
 ///
-/// `Source/Utils/TextHelpers.swift` is pure CoreText — `wrappedLines` runs a
-/// `CTTypesetter` and `capitalsOffset` reads a `CTLine`'s glyph-path bounds —
-/// and it is the file the whole interface positions text with. This is what
+/// A game's text layout may be pure CoreText — a `CTTypesetter` to wrap
+/// lines, a `CTLine`'s glyph-path bounds to place them. This is what
 /// stands behind those calls on Android.
 ///
 /// It lives here rather than in `TextShaping` so it can be built and tested

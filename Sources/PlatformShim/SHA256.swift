@@ -1,9 +1,8 @@
 import Foundation
 
-/// CryptoKit's `SHA256`, for the one thing the game hashes: a Level
-/// Designer board's fingerprint (`DesignerStore`), which must match the iOS
-/// build's byte for byte so a level shared from either is the same level.
-/// FIPS 180-4, in plain Swift; `CryptoKit` in `Compat` re-exports it.
+/// CryptoKit's `SHA256`, for a game that fingerprints its data and needs
+/// the iOS build's digests byte for byte. FIPS 180-4, in plain Swift;
+/// `CryptoKit` in `Modules` re-exports it.
 public enum SHA256 {
     public static func hash<D: DataProtocol>(data: D) -> SHA256Digest {
         var hasher = Hasher256()

@@ -15,7 +15,7 @@ public enum SKLabelVerticalAlignmentMode: Int, Sendable {
 /// reports the box the ink covers. The measuring behind it — shaping with
 /// HarfBuzz, metrics from FreeType — comes from whatever `TextProvider` has
 /// been registered with `TextMetrics`, which keeps those two C libraries out
-/// of this package. See `Android/Text`.
+/// of this package. See `Text/`.
 ///
 /// With no provider registered the frame is `.zero`, as it was before any of
 /// this landed. That is deliberate: a label that measures nothing is obvious,
@@ -226,8 +226,8 @@ open class SKLabelNode: SKNode {
 
 /// Vector shapes — buttons, panels, meters and the focus rings.
 ///
-/// 16 uses directly, but `SurfaceTexture` (7 CGContext sites) draws most
-/// chunky surfaces, so the renderer needs a 2D path rasteriser either way.
+/// A game may also draw such surfaces through a `CGContext`, so the
+/// renderer needs a 2D path rasteriser either way.
 /// The shim records the path; filling and stroking it is the renderer's job.
 open class SKShapeNode: SKNode {
     open var path: CGPath?
@@ -241,7 +241,7 @@ open class SKShapeNode: SKNode {
     open var blendMode: SKBlendMode = .alpha
     open var fillTexture: SKTexture?
     open var fillShader: SKShader?
-    /// Carried, not drawn: the game sets none, and only `ShaderPrimer` reads it.
+    /// Carried, not drawn.
     open var strokeShader: SKShader?
 
     public override init() {

@@ -35,17 +35,18 @@ public enum GLESBackend {
     /// starts at launch, and settles which scene to draw. Call before the
     /// first frame: with no asset index every texture resolves to the white
     /// placeholder, with no fonts registered every label measures zero and
-    /// draws nothing, and with no resources no level, rig or string loads.
+    /// draws nothing, and with no resources none of the game's files or
+    /// strings load.
     @MainActor
     public static func prepare() {
         AssetBundle.installIndex()
         AssetBundle.installFonts()
         ResourceBundle.install()
 
-        // One monotonic clock for the whole port: the shell's, which is
-        // `SDL_GetTicksNS`. The game reads `CACurrentMediaTime()` in 30
-        // places — `MediaClock`, every shader's `u_time`,
-        // `BandedLayerNode.hold` — so there has to be exactly one of it.
+        // One monotonic clock for the whole runtime: the shell's, which is
+        // `SDL_GetTicksNS`. A game reads `CACurrentMediaTime()` for its own
+        // timing, and every shader's `u_time` and the actions follow it, so
+        // there has to be exactly one of it.
         MediaTime.source = { TimeInterval(SDL_GetTicksNS()) / 1_000_000_000 }
         // `-FixedFrameStep`: the shell moves that clock on a step a frame
         // instead, from 0, before the game reads it.
@@ -68,10 +69,10 @@ public enum GLESBackend {
     public static func makeRenderer(_ context: RenderContext) -> FrameRenderer {
         if context.displayScale > 0 { pointScale = context.displayScale }
         let size = sceneSize(for: context.size)
-        // How many pixels a point is worth, which is what the game reads to
+        // How many pixels a point is worth, which is what a game reads to
         // decide the density of every texture it draws for itself
-        // (`SurfaceTexture.renderScale`). It has to be right *before* the
-        // scene builds, since that is when the surfaces are drawn.
+        // (`UITraitCollection.current.displayScale`). It has to be right
+        // *before* the scene builds, since that is when they are drawn.
         UITraitCollection.current.displayScale = Viewport(
             drawableSize: context.size, sceneSize: size, scaleMode: .aspectFill
         ).scale.x
@@ -114,7 +115,8 @@ public enum GLESBackend {
             renderer.view.transitionSpeed = 1 / slowdown
             Log.info("transitions \(slowdown)x slower")
         }
-        // `-RenderScale`, or a capture running: every pixel, or the pin's.
+        // A scale the game pins (`GameHost.pinnedRenderScale`), or a capture
+        // running: every pixel, or the pin's.
         if let pinned = host.pinnedRenderScale {
             renderer.renderScale = CGFloat(pinned)
             renderer.pinsRenderScale = true
@@ -143,7 +145,7 @@ public enum GLESBackend {
         }
         if DebugProperty.string("bandblur") == "off" {
             renderer.blursBandsOnly = false
-            Log.info("edge blur through the whole backdrop")
+            Log.info("band blur through the whole effect node")
         }
         return renderer
     }
@@ -203,7 +205,8 @@ public enum GLESBackend {
         return scene
     }
 
-    /// `DesignSystem.sceneSize(for:)`, in points, from a drawable in pixels.
+    /// The game's scene size (`GameHost.sceneSize(for:)`), in points, from a
+    /// drawable in pixels.
     @MainActor
     static func sceneSize(for drawable: CGSize) -> CGSize {
         host.sceneSize(for: CGSize(width: drawable.width / pointScale, height: drawable.height / pointScale))

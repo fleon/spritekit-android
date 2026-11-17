@@ -4,15 +4,15 @@ import Foundation
 /// Where `Bundle.main.url(forResource:withExtension:)` finds a file on
 /// Android.
 ///
-/// The game asks the main bundle for eight resources: the rigs
-/// (`RigGardenA.json`, `RigGardenA.png`, `RigFaces.*`), the music, and a
-/// level's JSON. On Apple those sit in the app bundle. On Android there is
+/// A game asks the main bundle for its resources (data files, images that
+/// aren't in the asset catalog, music). On Apple those sit in the app
+/// bundle. On Android there is
 /// no app bundle: an asset lives inside the APK, which is a zip, so it has
 /// no path on disk and `Data(contentsOf:)` cannot read it. corelibs
 /// Foundation's `Bundle.main` looks beside the executable instead, which for
 /// an SDL app is the system's `app_process`, so it finds nothing.
 ///
-/// No file in `Source/` may change, so the call has to keep working as
+/// The game's sources compile unchanged, so the call has to keep working as
 /// written. It does, through an overload: Foundation's takes `String?` for
 /// both arguments and every call site in the game passes a plain `String`,
 /// so this one — which takes `String` — needs no optional promotion and is

@@ -5,8 +5,8 @@ import SpriteKitShim
 /// What the shell asks of the game: the seam that keeps the runtime free of
 /// any one game.
 ///
-/// The game's controller adopts it (the Android counterpart of its
-/// `GameViewController`), and the game's own entry target hands its type to
+/// The game's controller adopts it (the Android counterpart of its Apple
+/// view controller), and the game's own entry target hands its type to
 /// `Shell.start(argc:argv:app:game:configure:)`. Nothing in
 /// the shell imports the game; everything it needs from it is here.
 @MainActor

@@ -1,13 +1,12 @@
 #if SPRITEKIT_SHIM && !canImport(Darwin)
 import Foundation
 
-// The slice of CoreText and UIKit that `Source/Utils/TextHelpers.swift`
-// uses, so that file compiles on Android **unchanged** — imports and all.
+// The slice of CoreText and UIKit that wrapping and measuring text takes, so
+// a game's text helpers compile on Android **unchanged** — imports and all.
 //
-// It is a small slice, and deliberately not more: `wrappedLines` runs a
-// typesetter, `capitalsOffset` reads a line's glyph-path bounds, and
-// `TextBlockNode` measures a string. Nothing else in the game reaches for
-// CoreText, so nothing else is here.
+// It is a small slice, and deliberately not more: a typesetter to wrap lines
+// with, a line's glyph-path bounds, and a string's size. Nothing more is
+// here.
 //
 // None of it does any text work itself. It is a rename over `Typesetting`,
 // which is in the shim proper and host-testable; these names exist on Apple
@@ -31,8 +30,8 @@ private extension NSAttributedString {
 }
 
 extension NSString {
-    /// UIKit's `NSString.size(withAttributes:)`, which `TextBlockNode` uses
-    /// to find its widest line. The height is the font's line height, as
+    /// UIKit's `NSString.size(withAttributes:)`, which finds the widest line
+    /// of a block of text. The height is the font's line height, as
     /// UIKit reports it for a single line.
     public func size(withAttributes attributes: [NSAttributedString.Key: Any]?) -> CGSize {
         guard let font = attributes?[.font] as? UIFont else { return .zero }
@@ -125,8 +124,8 @@ public func CTLineGetBoundsWithOptions(_ line: CTLine, _ options: CTLineBoundsOp
 
 // MARK: Registering fonts
 
-/// `FontRegistry` registers the bundled faces through this. On Android the
-/// shell has registered the same three files out of the APK before the first
+/// A game registers its bundled faces through this. On Android the shell
+/// has registered the same files out of the APK before the first
 /// scene (`AssetBundle.installFonts`), so there is nothing left to do; the
 /// call answers whether the face is one the text stack holds.
 public typealias CFURL = URL

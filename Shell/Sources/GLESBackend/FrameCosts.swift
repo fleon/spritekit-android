@@ -5,7 +5,7 @@ import SpriteKitShim
 /// Where a long frame's time went, logged with it (`frame cost …`): the
 /// frame split into the scene's tick and its drawing, and the frame thread's
 /// one-off work (texture uploads, programs built, bakes, waits for a page
-/// still decoding). What made the loading screen's warm-up draw take seconds
+/// still decoding). What made a loading screen's warm-up draw take seconds
 /// on a phone was guesswork without it. Frame thread only; programs built on
 /// `GLBuilderThread` aren't counted.
 nonisolated enum FrameCosts {

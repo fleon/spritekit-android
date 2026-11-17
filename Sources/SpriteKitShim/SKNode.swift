@@ -9,8 +9,7 @@ import Foundation
 @preconcurrency @MainActor
 open class SKNode {
     /// UIKit's accessibility label, which every `NSObject` carries. Kept,
-    /// not read: the game supports no screen reader (AGENTS.md), and only
-    /// the Help button's badge sets one.
+    /// not read: there is no screen reader support on Android yet.
     open var accessibilityLabel: String?
 
     // MARK: Tree
@@ -181,8 +180,8 @@ open class SKNode {
     ///
     /// It has to be a reference: an action's own block may start, replace or
     /// stop actions on the very node it is running on — SpriteKit allows it
-    /// and the game leans on it everywhere (a looping glance schedules the
-    /// next one, a board cue starts the move it announces). Advancing a
+    /// and games lean on it everywhere (a loop scheduling its next round, a
+    /// cue starting the move it announces). Advancing a
     /// struct in place would hold an exclusive access to `runningActions`
     /// open across the block, and the second access from inside it aborts
     /// the process with "Fatal access conflict detected".
@@ -250,7 +249,7 @@ open class SKNode {
     /// `tickActions` for a node whose ancestors are `pausedAbove` and play
     /// at `speedAbove` (`parent.worldSpeed`), handed down the tree so no
     /// node walks its parents again: a deep tree's walks once took a third
-    /// of a frame on the Galaxy M31. Its own `isPaused` and `speed` are read
+    /// of a frame on a Mali-G72 phone. Its own `isPaused` and `speed` are read
     /// as it's reached, and again after its actions run, as before.
     func tickTree(_ delta: TimeInterval, pausedAbove: Bool, speedAbove: CGFloat) {
         if !runningActions.isEmpty, !pausedAbove, !isPaused {

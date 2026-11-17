@@ -6,15 +6,15 @@ import Foundation
 /// The game uses `UIImage` in exactly two shapes, and they want different
 /// things from it:
 ///
-/// - **Loaded** — `UIImage(contentsOfFile:)` on a rig's page, handed to
+/// - **Loaded** — `UIImage(contentsOfFile:)` on a loose image, handed to
 ///   `SKTexture(image:)` and drawn. Nobody asks it for a pixel, so this keeps
 ///   the file's bytes and the size out of the PNG header, and leaves
 ///   decoding to the renderer, which has a decoder already and would
 ///   otherwise do the work twice. It is nil for a file that is not there, as
-///   Apple's is, which is how `RigMeshNode.look(of:)` tells a lit rig from an
-///   unlit one.
-/// - **Drawn** — what `UIGraphicsImageRenderer` hands back. Every chunky
-///   surface `SurfaceTexture` makes is one of these. Its pixels already exist,
+///   Apple's is, which is how a game can tell whether an optional file
+///   shipped.
+/// - **Drawn** — what `UIGraphicsImageRenderer` hands back. Every surface a
+///   game draws for itself is one of these. Its pixels already exist,
 ///   premultiplied RGBA8 out of a `CGContext`, so it carries them as
 ///   `cgImage` and there is nothing for anyone to decode.
 ///
@@ -54,18 +54,18 @@ public final class UIImage: @unchecked Sendable {
         self.data = data
         drawn = nil
         asset = nil
-        // The rig pages are 1x files, as `RigNode` says: their sizes are in
-        // pixels, and the rig's own maths scales them.
+        // A loose file is 1x, as `UIImage(contentsOfFile:)` takes one without
+        // a scale suffix: its size is in pixels.
         scale = 1
         size = pixels
     }
 
-    /// A loose PNG the bundle answers for (a rig's page), else an image set
-    /// from the packed art, as the asset catalog answers on Apple: measured
-    /// in its points, its pixels cut from its page only when somebody asks
-    /// for them (`cgImage`, through `packed`). `SceneLighting` asks this some
-    /// five hundred times just to learn whether an asset has normals, so it
-    /// must answer without decoding anything.
+    /// A loose PNG the bundle answers for, else an image set from the packed
+    /// art, as the asset catalog answers on Apple: measured in its points,
+    /// its pixels cut from its page only when somebody asks for them
+    /// (`cgImage`, through `packed`). A game may ask this hundreds of times
+    /// just to learn whether an asset exists, so it must answer without
+    /// decoding anything.
     public convenience init?(named name: String) {
         if let url = BundleResources.url(forResource: name, withExtension: "png") {
             self.init(contentsOfFile: url.path)
@@ -95,26 +95,24 @@ public final class UIImage: @unchecked Sendable {
     public nonisolated(unsafe) static var pngToJPEG: ((Data, CGFloat) -> Data?)?
 
     /// A PNG's bytes, decoded as a file's are (`decoder`), or a JPEG's, by
-    /// way of `jpegToPNG`: a shared level's maker photo, which iOS sends as
-    /// JPEG. One that won't decode comes back nil, and `CreditNode` shows
-    /// the maker's initial instead, as it does for a maker with no photo.
+    /// way of `jpegToPNG` (a photo from a server, say). One that won't
+    /// decode comes back nil.
     public convenience init?(data: Data) {
         let png = UIImage.pngSize(data) != nil ? data : UIImage.jpegToPNG?(data)
         guard let png, UIImage.pngSize(png) != nil, let pixels = UIImage.decoder?(png) else { return nil }
         self.init(cgImage: pixels, scale: 1)
     }
 
-    /// The image as a JPEG, by way of `pngToJPEG`: what a shared level's
-    /// maker photo is sent as.
+    /// The image as a JPEG, by way of `pngToJPEG`.
     public func jpegData(compressionQuality: CGFloat) -> Data? {
         guard let png = pngData() else { return nil }
         return UIImage.pngToJPEG?(png, compressionQuality)
     }
 
     /// A drawn image. UIKit's carries its scale so a 3x rendering still
-    /// measures as its points, and the game relies on that: `SurfaceTexture`
-    /// draws a 120-point button at 3x and expects a 120-point texture back,
-    /// not a 360-point one.
+    /// measures as its points, and games rely on that: a 120-point button
+    /// drawn at 3x is expected back as a 120-point texture, not a 360-point
+    /// one.
     public init(cgImage: RasterImage, scale: CGFloat = 1) {
         data = Data()
         drawn = cgImage
@@ -140,8 +138,8 @@ public final class UIImage: @unchecked Sendable {
     /// chunk: 8 bytes of signature, then length, type, width, height.
     /// The renderers' contexts on the calling thread, innermost last: UIKit
     /// keeps a context stack per thread. The game draws on several at once:
-    /// the main thread's buttons and carets while a build off it draws a
-    /// circuit floor or a lawn's clearing, and one shared stack let each
+    /// the main thread's buttons while a build off it draws a scene's layers,
+    /// and one shared stack let each
     /// draw into the other's context, or tore the array itself.
     static var contexts: [BitmapContext] {
         get { ContextStack.current.contexts }
@@ -214,8 +212,8 @@ public final class UIImage: @unchecked Sendable {
 public final class UIGraphicsImageRendererFormat: @unchecked Sendable {
     /// Which colours the bitmap may hold. The shim keeps everything in the
     /// standard range, so this is recorded and otherwise has no effect — but
-    /// it is recorded, because `SurfaceTexture` sets `.standard` when what it
-    /// draws is data (a normal map) rather than a picture, and a later wide
+    /// it is recorded, because a game sets `.standard` when what it draws is
+    /// data (a normal map) rather than a picture, and a later wide
     /// format must not quietly shift those values.
     public enum Range: Int, Sendable {
         case unspecified, automatic, extended, standard
@@ -245,9 +243,8 @@ public final class UIGraphicsImageRendererContext: @unchecked Sendable {
         self.format = format
     }
 
-    /// UIKit vends these conveniences on the context too; `SurfaceTexture`
-    /// uses the `CGContext` directly, but `fill` and `stroke` are one line
-    /// each and the next ring will want them.
+    /// UIKit vends these conveniences on the context too; `fill` and
+    /// `stroke` are one line each.
     public func fill(_ rect: CGRect) { cgContext.fill(rect) }
     public func stroke(_ rect: CGRect) { cgContext.stroke(rect) }
     public func clip(to rect: CGRect) { cgContext.clip(to: rect) }
@@ -298,9 +295,8 @@ public final class UIGraphicsImageRenderer: @unchecked Sendable {
     }
 }
 
-/// Only `displayScale` is here, which is the one thing the game asks a trait
-/// collection for: `SurfaceTexture.renderScale` reads it to decide how many
-/// pixels a point of a button is worth.
+/// Only `displayScale` is here, the thing a game asks a trait collection for
+/// to decide how many pixels a point of a drawn surface is worth.
 ///
 /// The shell sets it once the drawable size is known. Left alone it is 1,
 /// which draws a correct but soft texture rather than a wrong one.

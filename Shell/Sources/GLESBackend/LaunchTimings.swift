@@ -8,7 +8,7 @@ import SpriteKitShim
 /// start, the previous scene's first frame and the last touch, key or
 /// button pressed (the one that asked for it, as a rule), and the launch's
 /// long frames once its first half minute has passed. What the program cache
-/// and the warm-ups are for is read from these lines (`Android/README.md`).
+/// and the warm-ups are for is read from these lines.
 nonisolated struct LaunchTimings {
     /// How long into the launch long frames are counted.
     static let window: TimeInterval = 30

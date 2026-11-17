@@ -5,20 +5,19 @@ import SpriteKitShim
 
 /// Makes `Bundle.main` answer for the game's own resources.
 ///
-/// The game asks the main bundle for its rigs (`RigData`, `RigNode`), its
-/// levels (`LevelCatalog`: `Worlds.json`, each world's file, the tips'
-/// overrides, the title's showcase), its fonts (`FontRegistry`) and each
-/// language's strings (`Localization`, through `path(forResource:ofType:
-/// "lproj")` and `Bundle(path:)`). None of those calls may change, so each
+/// A game asks the main bundle for its data files (JSON, PNG pages that
+/// aren't packed art), its fonts and each language's strings (through
+/// `path(forResource:ofType: "lproj")` and `Bundle(path:)`). None of those
+/// calls may change, so each
 /// has to come back a real path; inside the APK there are none, since an
 /// asset is an entry in a zip. So a file is copied out the first time it is
 /// asked for in a run, into the app's cache, and the path points there.
 /// Copied afresh each run rather than once per install, since the cache
-/// outlives an update and a level or a string may have changed in it.
+/// outlives an update and a file or a string may have changed in it.
 ///
-/// Where each kind is staged in the APK (`app/build.gradle.kts`): the rigs
-/// with the packed art (`rigs/`), the levels (`levels/`), the fonts
-/// (`fonts/`) and the strings (`lproj/<language>.lproj/`).
+/// Where each kind is staged in the APK, by the game's Gradle project: JSON
+/// named `Rig…` and PNGs in `rigs/`, other JSON in `levels/`, the fonts in
+/// `fonts/` and the strings in `lproj/<language>.lproj/`.
 public enum ResourceBundle {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var unpacked: Set<String> = []

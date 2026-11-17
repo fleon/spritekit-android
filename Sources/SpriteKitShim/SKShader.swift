@@ -4,10 +4,10 @@ import Foundation
 /// A fragment shader attached to a node.
 ///
 /// SpriteKit takes GLSL ES 1.0 with its own preamble (`u_time`, `v_tex_coord`,
-/// `u_texture`, `SKDefaultShading()`). The game has 65 of these and 71
-/// `gl_FragColor` sites, so the shim keeps the source verbatim and the
-/// renderer rewrites the preamble to GLSL ES 3.0 at upload — the dialect
-/// change is textual and belongs in one place, not in 31 files.
+/// `u_texture`, `SKDefaultShading()`). A game may have dozens of these, so
+/// the shim keeps the source verbatim and the renderer rewrites the preamble
+/// to GLSL ES 3.0 at upload — the dialect change is textual and belongs in
+/// one place, not in every shader file.
 public final class SKShader: @unchecked Sendable {
     public var source: String? { didSet { revision &+= 1 } }
     public var uniforms: [SKUniform] { didSet { revision &+= 1 } }
@@ -39,11 +39,11 @@ public final class SKShader: @unchecked Sendable {
     // SpriteKit compiles a shader the first time it draws, as the renderer
     // here does; a phone's driver takes up to a fifth of a second a program
     // the first time, so a scene's dozens stalled its warm-up draw for
-    // seconds. A scene builds on a thread of its own and preloads its
-    // textures there once it's built (`LoadingScene`), so the shaders made on
-    // that thread are finished by then: `SKTexture.preload` hands them to the
-    // renderer (`programWarmer`), which builds their programs a few a frame
-    // while the loading screen still shows.
+    // seconds. A scene built on a thread of its own that preloads its
+    // textures there once it's built has finished the shaders made on that
+    // thread by then: `SKTexture.preload` hands them to the renderer
+    // (`programWarmer`), which builds their programs a few a frame while a
+    // loading screen still shows.
 
     private static let madeLock = NSLock()
     private nonisolated(unsafe) static var made: [UInt: [Weak]] = [:]
@@ -98,8 +98,8 @@ public final class SKShader: @unchecked Sendable {
     }
 }
 
-/// A shader uniform — 378 uses, by far the busiest type after the nodes
-/// themselves, because the lit worlds push their light into every shader.
+/// A shader uniform — often the busiest type after the nodes themselves,
+/// since a scene lit in its shaders pushes its light into every one.
 public final class SKUniform: @unchecked Sendable {
     public enum Value {
         case float(CGFloat)
@@ -107,10 +107,9 @@ public final class SKUniform: @unchecked Sendable {
         case vector3(SIMD3<Float>)
         case vector4(SIMD4<Float>)
         /// Column-major, as GL and simd both keep them. Metal gives a shader
-        /// 31 buffers and every uniform takes one, so the game packs sets of
-        /// colours into a matrix a column each (`NightSkyNode`'s nebula and
-        /// fold tints, the planets' places, poses and rings) — which makes
-        /// these load-bearing rather than exotic.
+        /// 31 buffers and every uniform takes one, so a game may pack sets of
+        /// colours or several objects' places and poses into a matrix a
+        /// column each — which makes these load-bearing rather than exotic.
         case matrix2([Float])
         case matrix3([Float])
         case matrix4([Float])
@@ -120,9 +119,9 @@ public final class SKUniform: @unchecked Sendable {
     public let name: String
     public var value: Value
 
-    /// What kind of value this holds, as SpriteKit reports it. The game
-    /// switches over it in `BandedLayerNode`, which copies a uniform per
-    /// band so a cached band keeps the values it was drawn with.
+    /// What kind of value this holds, as SpriteKit reports it. A game may
+    /// switch over it to copy a uniform (per cached band, say, so a band
+    /// keeps the values it was drawn with).
     public var uniformType: SKUniformType {
         switch value {
         case .float: return .float
@@ -239,7 +238,7 @@ public final class SKUniform: @unchecked Sendable {
 }
 
 /// What kind of value an `SKUniform` holds, with SpriteKit's own spelling —
-/// `BandedLayerNode` switches over every case to copy a uniform per band.
+/// a game copying uniforms switches over every case.
 public enum SKUniformType: Int, Sendable {
     case none
     case float
@@ -257,8 +256,8 @@ public enum SKAttributeType: Int, Sendable {
     case halfFloat, vectorHalfFloat2, vectorHalfFloat3, vectorHalfFloat4
 }
 
-/// A per-node shader input. Only 3 declarations in the game, but they carry
-/// the rig meshes' triangle runs, so they matter.
+/// A per-node shader input, the way a mesh sprite's triangle runs reach its
+/// shader.
 public final class SKAttribute: @unchecked Sendable {
     public let name: String
     public let type: SKAttributeType
