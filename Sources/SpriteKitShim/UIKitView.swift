@@ -55,17 +55,29 @@ public final class UIScreen {
 
     /// The screen the game shows on: Android has one, the last made. A game
     /// reads its size here, where iOS finds it through its window scenes.
-    public private(set) static weak var main: UIScreen?
+    /// Not optional, as UIKit's isn't: until the shell makes the window's
+    /// screen, a placeholder (no size, one pixel a point) answers.
+    public private(set) static var main = UIScreen(placeholder: ())
 
     public var bounds: CGRect
     public var nativeBounds: CGRect
     public var nativeScale: CGFloat
+
+    /// Pixels a point. UIKit's is a whole 2 or 3 and its `nativeScale` the
+    /// panel's own; an Android display has only its density, which is both.
+    public var scale: CGFloat { nativeScale }
 
     /// Its bounds upright, whichever way it's turned, as UIKit's fixed
     /// coordinate space gives them.
     public var fixedCoordinateSpace: CoordinateSpace {
         CoordinateSpace(bounds: CGRect(x: 0, y: 0, width: min(bounds.width, bounds.height),
                                        height: max(bounds.width, bounds.height)))
+    }
+
+    private init(placeholder: Void) {
+        bounds = .zero
+        nativeScale = 1
+        nativeBounds = .zero
     }
 
     public init(bounds: CGRect, nativeScale: CGFloat) {
