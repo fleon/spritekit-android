@@ -7,10 +7,13 @@ import Foundation
 /// exist on Play, and packed into the APK.
 ///
 ///     {"applicationId": "123456789012",
-///      "achievements": {"com.fleon.switchlings.achievement.levels.10":
-///                         {"id": "CgkI…", "steps": 10}, …}}
+///      "achievements": {"com.example.game.achievement.levels.10":
+///                         {"id": "CgkI…", "steps": 10}, …},
+///      "leaderboards": {"com.example.game.leaderboard.score":
+///                         {"id": "CgkI…"}, …}}
 ///
-/// No `steps` (or 0) is a standard achievement, unlocked at 100%.
+/// No `steps` (or 0) is a standard achievement, unlocked at 100%. A game
+/// with no leaderboards leaves `leaderboards` out.
 public struct PlayGamesMapping: Equatable, Sendable {
     public struct Entry: Equatable, Sendable {
         public var id: String
@@ -25,10 +28,13 @@ public struct PlayGamesMapping: Equatable, Sendable {
     public var applicationID: String
     /// By Game Center ID (`Achievement.id`).
     public var achievements: [String: Entry]
+    /// Play's leaderboard ID, by Game Center leaderboard ID.
+    public var leaderboards: [String: String]
 
-    public init(applicationID: String, achievements: [String: Entry]) {
+    public init(applicationID: String, achievements: [String: Entry], leaderboards: [String: String] = [:]) {
         self.applicationID = applicationID
         self.achievements = achievements
+        self.leaderboards = leaderboards
     }
 
     public init?(data: Data) {
@@ -40,6 +46,11 @@ public struct PlayGamesMapping: Equatable, Sendable {
         achievements = entries.compactMapValues { entry -> Entry? in
             guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
             return Entry(id: id, steps: entry.int("steps") ?? 0)
+        }
+        let boards = root["leaderboards"] as? [String: [String: Any]] ?? [:]
+        leaderboards = boards.compactMapValues { entry -> String? in
+            guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
+            return id
         }
     }
 

@@ -1,29 +1,103 @@
-// Stands in for GameKit on Android, for the one file that still imports it:
-// the beta's solve log (`PlaytestLog`), which names a signed-in player by
-// their id and alias. The game's own Game Center manager is a stand-in of
-// its own (`Platform/GameCenterManager.swift`, on Play Games).
+// Stands in for GameKit on Android: the local player (the one signed in to
+// Play Games) and leaderboard scores (`GKLeaderboard`), which go to Play
+// Games. A game's Game Center manager has an Android body of its own, on
+// Play Games, and sends scores either through `GKLeaderboard` or straight to
+// the backend.
 import Foundation
+import PlatformShim
 
-/// The player as the solve log asks: the one signed in to Play Games, by
-/// their Play Games ID and name (set by `AndroidPlatformServices` from
-/// `PlayGamesAchievements.identity`), so the log names them as it names a
-/// Game Center player on iOS (`pg:<id>` rather than `gc:<id>`). Signed out,
-/// a record names its install instead (`anon:<id>`), as an iOS build signed
-/// out of Game Center does. Comes out with the solve log.
+/// A Game Center player: here, the one signed in to Play Games.
 @MainActor
-public final class GKLocalPlayer {
+open class GKPlayer {
+    public internal(set) var gamePlayerID = ""
+    public internal(set) var alias = ""
+    public var displayName: String { alias }
+
+    init() {}
+}
+
+/// The local player: the one signed in to Play Games, by their Play Games ID
+/// and name (set by the game from `PlayGamesAchievements.identity`), as
+/// Game Center names its player on iOS. Signed out, not authenticated and
+/// unnamed.
+@MainActor
+public final class GKLocalPlayer: GKPlayer {
     public static let local = GKLocalPlayer()
 
     public private(set) var isAuthenticated = false
-    public private(set) var gamePlayerID = ""
-    public private(set) var alias = ""
 
-    private init() {}
+    private override init() {}
 
     /// The Play Games player now signed in, or nil once nobody is.
     public func update(_ identity: (id: String, name: String)?) {
         isAuthenticated = identity != nil
         gamePlayerID = identity?.id ?? ""
         alias = identity?.name ?? ""
+    }
+}
+
+/// GameKit's errors, by Apple's codes, for the few a stand-in reports.
+public struct GKError: Error, Equatable, Sendable {
+    public enum Code: Int, Sendable {
+        case unknown = 1
+        case cancelled = 2
+        case communicationsFailure = 3
+        case notAuthenticated = 6
+    }
+
+    public static let errorDomain = "GKErrorDomain"
+
+    public let code: Code
+
+    public init(_ code: Code) {
+        self.code = code
+    }
+
+    public static var unknown: Code { .unknown }
+    public static var cancelled: Code { .cancelled }
+    public static var communicationsFailure: Code { .communicationsFailure }
+    public static var notAuthenticated: Code { .notAuthenticated }
+}
+
+/// A leaderboard, for sending scores to: `submitScore` as Game Center has
+/// it, on `backend` (Play Games once the game installs it, else nowhere).
+@MainActor
+public final class GKLeaderboard {
+    /// Where scores go. The game installs `PlayGamesLeaderboards` at launch.
+    public static var backend: LeaderboardsBackend = LocalLeaderboards()
+
+    private init() {}
+
+    /// Sends `score` to the leaderboards in `leaderboardIDs` for `player`
+    /// (always the local player: Game Center accepts no other, and Play Games
+    /// knows only the one signed in). The handler runs on the main actor with
+    /// nil once they arrived, or `.communicationsFailure` when they didn't —
+    /// signed out included, since Play answers that rather than the player.
+    public static func submitScore(
+        _ score: Int,
+        context: Int,
+        player: GKPlayer,
+        leaderboardIDs: [String],
+        completionHandler: @escaping @MainActor (Error?) -> Void
+    ) {
+        Task { @MainActor in
+            do {
+                try await submitScore(score, context: context, player: player, leaderboardIDs: leaderboardIDs)
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
+        }
+    }
+
+    public static func submitScore(
+        _ score: Int,
+        context: Int,
+        player: GKPlayer,
+        leaderboardIDs: [String]
+    ) async throws {
+        guard await backend.submit(score, context: context, to: leaderboardIDs) else {
+            throw GKError(.communicationsFailure)
+        }
     }
 }

@@ -878,6 +878,48 @@ Play Games can't run — no Google Play services on the device or out of date
 the scene runs it, before it's drawn. The game always shows the button, so
 the icon is the one place the port can decide without touching `Source/`.
 
+### Leaderboards — Play Games Services v2
+
+`PlayGamesLeaderboards` (`Sources/PlatformShim/Leaderboards.swift`) behind
+`LeaderboardsBackend`, and Game Center's own call on top of it in the
+`GameKit` module: `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:completionHandler:)`
+(and its `async throws` form), sending to `GKLeaderboard.backend`, which a
+game installs at launch beside its achievements. Without Play Games it is
+`LocalLeaderboards`, which keeps nothing.
+
+Game Center leaderboard IDs map to Play's in the same generated file as the
+achievements, under `leaderboards` (`{"gc.id": {"id": "CgkI…"}}`); a game
+without leaderboards leaves the key out. Play keeps a player's best, as Game
+Center does (`submitScoreImmediate`), and Game Center's 64-bit context
+travels as Play's score tag, its decimal digits (none for 0). Signed out,
+Java answers each submission "no", which `submitScore` reports as
+`.communicationsFailure`. `showDashboard(leaderboardID:)` opens one
+leaderboard, or the list of them for nil (Game Center's dashboard), signing
+the player in first.
+
+The Java half lives in the game's app, in its Play Games service, as two
+methods under `games`:
+
+```java
+case "submitScores": {        // {items: [{id, score, tag}], request}
+    JSONArray items = args.getJSONArray("items");
+    int request = args.optInt("request");
+    activity.runOnUiThread(() -> submitScores(items, request));
+    return null;              // answers scoresSubmitted {request, ok}
+}
+case "showLeaderboards": {    // {id?}: one leaderboard, or all of them
+    String id = args.optString("id", "");
+    activity.runOnUiThread(() -> showLeaderboards(id.isEmpty() ? null : id));
+    return null;
+}
+```
+
+`submitScores` calls `PlayGames.getLeaderboardsClient(activity)
+.submitScoreImmediate(id, score[, tag])` for each item and posts
+`scoresSubmitted` once `Tasks.whenAll` completes (`ok: false` at once when
+signed out); `showLeaderboards` signs in first if needed, then starts
+`getLeaderboardIntent(id)` or `getAllLeaderboardsIntent()`.
+
 ### Saved data — Play Games Saved Games
 
 `ICloudSyncManager` keeps its shape exactly — `set` / `insert` /

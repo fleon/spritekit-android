@@ -64,8 +64,9 @@ let package = Package(
         .target(name: "CryptoKit",
                 dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
-        // The beta's solve log's two (`PlaytestLog`).
+        // The local player and leaderboard scores, on Play Games.
         .target(name: "GameKit",
+                dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
         // Empty: the SpriteKit template's unused `import GameplayKit`.
         .target(name: "GameplayKit",
