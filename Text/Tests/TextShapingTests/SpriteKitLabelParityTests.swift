@@ -89,6 +89,96 @@ struct SpriteKitLabelParityTests {
         #expect(Double(matched) >= Double(checked) * 0.98, "\(matched) of \(checked) frames match")
     }
 
+    @Test("A trailing newline starts no line, and trailing spaces add no width, as in SpriteKit", arguments: ["Montserrat-SemiBold", "KoHo-Bold"])
+    func trailingNewlinesAndSpaces(font: String) {
+        _ = Self.registered
+        _ = Fonts.engine
+        var checked = 0, matched = 0
+        for size in [13, 20] as [CGFloat] {
+            for text in ["Hx\n", "H\nH\n", "Hx   \nH", "Level \nSelect  ", "A\n\nB", "gpqy  "] {
+                for (h, v) in [(0, 0), (1, 1), (2, 2), (1, 3)] {
+                    let apple = SpriteKit.SKLabelNode(fontNamed: font)
+                    apple.fontSize = size
+                    apple.numberOfLines = 0
+                    apple.text = text
+                    apple.horizontalAlignmentMode = SpriteKit.SKLabelHorizontalAlignmentMode(rawValue: h)!
+                    apple.verticalAlignmentMode = SpriteKit.SKLabelVerticalAlignmentMode(rawValue: v)!
+                    let ours = SpriteKitShim.SKLabelNode(fontNamed: font)
+                    ours.fontSize = size
+                    ours.numberOfLines = 0
+                    ours.text = text
+                    ours.horizontalAlignmentMode = SpriteKitShim.SKLabelHorizontalAlignmentMode(rawValue: h)!
+                    ours.verticalAlignmentMode = SpriteKitShim.SKLabelVerticalAlignmentMode(rawValue: v)!
+                    checked += 1
+                    if apple.frame == ours.contentFrame { matched += 1 } else {
+                        print("\(font) \(size) '\(text.debugDescription)' h\(h) v\(v): SpriteKit \(apple.frame) shim \(ours.contentFrame)")
+                    }
+                }
+            }
+        }
+        #expect(matched == checked, "\(matched) of \(checked) frames match")
+    }
+
+    @Test("Each line's ink lands where SpriteKit draws it", arguments: ["Montserrat-SemiBold", "KoHo-Bold"])
+    func linePositions(font: String) throws {
+        _ = Self.registered
+        _ = Fonts.engine
+        let view = SKView(frame: CGRect(x: 0, y: 0, width: 600, height: 600))
+        view.presentScene(SKScene(size: CGSize(width: 600, height: 600)))
+        let text = "Hx\nlonger second line\nB"
+        for (h, v) in [(1, 0), (0, 1), (2, 2)] {
+            let apple = SpriteKit.SKLabelNode(fontNamed: font)
+            apple.fontSize = 20
+            apple.numberOfLines = 0
+            apple.text = text
+            apple.fontColor = .white
+            apple.horizontalAlignmentMode = SpriteKit.SKLabelHorizontalAlignmentMode(rawValue: h)!
+            apple.verticalAlignmentMode = SpriteKit.SKLabelVerticalAlignmentMode(rawValue: v)!
+            let ours = SpriteKitShim.SKLabelNode(fontNamed: font)
+            ours.fontSize = 20
+            ours.numberOfLines = 0
+            ours.text = text
+            ours.horizontalAlignmentMode = SpriteKitShim.SKLabelHorizontalAlignmentMode(rawValue: h)!
+            ours.verticalAlignmentMode = SpriteKitShim.SKLabelVerticalAlignmentMode(rawValue: v)!
+            let layout = try #require(ours.layout)
+            let image = try #require(view.texture(from: apple)?.cgImage())
+            let ink = Self.ink(image, frame: apple.frame)
+            for (index, placed) in layout.lines.enumerated() {
+                // Ours, from the frame's top-left corner, y down.
+                let box = placed.line.inkBounds.offsetBy(dx: placed.origin.x, dy: placed.origin.y)
+                let left = box.minX - layout.bounds.minX, top = layout.bounds.maxY - box.maxY
+                let band = (top: top - 2, bottom: layout.bounds.maxY - box.minY + 2)
+                let theirs = try #require(ink.first { abs($0.top - top) < 1.5 && $0.top >= band.top && $0.top <= band.bottom }, "\(font) h\(h) v\(v) line \(index): no ink near \(top)")
+                #expect(abs(theirs.left - left) < 1, "\(font) h\(h) v\(v) line \(index): left \(left) against SpriteKit's \(theirs.left)")
+            }
+        }
+    }
+
+    /// The rows of ink in a rendered label, each its top and leftmost column
+    /// in points from the frame's top-left corner.
+    private static func ink(_ image: CGImage, frame: CGRect) -> [(top: CGFloat, left: CGFloat)] {
+        let width = image.width, height = image.height
+        var data = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(data: &data, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let scale = CGFloat(width) / frame.width
+        var bands: [(top: CGFloat, left: CGFloat)] = []
+        var inBand = false, top = 0, left = width
+        for y in 0..<height {
+            var rowLeft = width
+            for x in 0..<width where data[(y * width + x) * 4 + 3] > 128 { rowLeft = min(rowLeft, x); break }
+            if rowLeft < width {
+                if !inBand { inBand = true; top = y; left = rowLeft } else { left = min(left, rowLeft) }
+            } else if inBand {
+                inBand = false
+                bands.append((CGFloat(top) / scale, CGFloat(left) / scale))
+            }
+        }
+        if inBand { bands.append((CGFloat(top) / scale, CGFloat(left) / scale)) }
+        return bands
+    }
+
     @Test("Lines are as far apart as SpriteKit's", arguments: ["Montserrat-SemiBold", "Montserrat-Black", "KoHo-Bold"])
     func lineSpacingMatches(font: String) {
         _ = Self.registered

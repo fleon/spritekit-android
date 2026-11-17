@@ -57,8 +57,9 @@ public struct FontKey: Hashable, Sendable {
 
 /// A face's vertical metrics at one size, in points.
 ///
-/// `lineHeight` is `ascent + descent + leading`, as UIKit reports it, so a
-/// game's line-height ratios keep their meaning.
+/// `lineHeight` is `ascent + descent + leading`, the whole line. UIKit's
+/// `UIFont.lineHeight` leaves the leading out, and SpriteKit spaces a
+/// label's lines by the three each rounded to whole points.
 public struct FontMetrics: Equatable, Sendable {
     public var ascent: CGFloat
     public var descent: CGFloat
