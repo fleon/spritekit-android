@@ -21,7 +21,7 @@ Templates/App/
 | `app/src/main/AndroidManifest.xml` | GLES 3, the vibrator, SDL's activity settings, the share sheet's `FileProvider`, Play Games' `APP_ID` |
 | `MainActivity.java` | SDL's activity: launch arguments in debuggable builds, the environment the runtime reads (below), Back on Android 13 and later, the safe area as iOS gives it, the share sheet (`shareFile`), Paste over a text field (`offerPaste`), the platform channel's two JNI calls |
 | `PlatformServices.java` | The channel's Java end: dispatches `service.method` calls and queues events |
-| `DeviceServices.java` | `device`: haptics, battery saver, audio focus, the status bar |
+| `DeviceServices.java` | `device`: haptics, battery saver, audio focus, the status bar, the app's settings page (`openAppSettings`) |
 | `AudioFocusPolicy.java` (+ its test) | When to ask for audio focus, as an ambient iOS session behaves |
 | `PlayBilling.java` | `billing`: one-time products (prices, purchases, acknowledgement, restore) |
 | `PlayGamesServices.java` | `games`: sign-in, achievements, leaderboards, the player, Saved Games |
@@ -96,9 +96,10 @@ And the shell calls these on the activity through JNI:
    `MainActivity` (local notifications: `notifications/README.md`).
 5. **Links.** A game that opens links adds its intent filters to the
    manifest, adds a cold start's link to `getArguments` as
-   `-LaunchLink <link>` (`LaunchLinks.launchLinkArgument`), and hands a
-   running game's to `nativeOpenLink` from `onNewIntent`. The base opens
-   none.
+   `-LaunchLink <link>` (`LaunchLinks.launchLinkArgument`). The base's
+   `onNewIntent` already makes a running game's new intent the activity's
+   (`setIntent`, which a notification tap is read from) and hands its link,
+   if any, to `nativeOpenLink`.
 6. **Play Games' IDs.** The build reads
    `<game>/Tools/Play/PlayGames/PlayGamesAchievements.json` (the project ID,
    and each achievement's and leaderboard's Play ID by its Game Center ID)

@@ -51,9 +51,11 @@ import org.libsdl.app.SDLSurface;
  * <p>The base the runtime's template gives every game: launch arguments in
  * debuggable builds, the version, device and beta flag in the environment,
  * Android's back gesture handed to the game, the safe area as iOS would give
- * it, the share sheet, Paste, and the platform channel. A game that opens
- * links adds that half: its intent filters, and {@code onNewIntent} handing
- * the link to {@code nativeOpenLink}.
+ * it, the share sheet, Paste, and the platform channel. An intent that
+ * arrives while the game runs becomes the activity's intent (what a
+ * notification tap is read from), and its link, if it has one, goes to
+ * {@code nativeOpenLink}. A game that opens links adds only its intent
+ * filters.
  */
 public class MainActivity extends SDLActivity {
 
@@ -119,6 +121,20 @@ public class MainActivity extends SDLActivity {
             }
         }
         return all.toArray(new String[0]);
+    }
+
+    /**
+     * A tap on a notification or a link while the game runs: the new intent
+     * replaces the old one, so whatever reads {@code getIntent()} sees it,
+     * and its link goes to the game ({@code GameHost.open}).
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent != null && intent.getData() != null) {
+            nativeOpenLink(intent.getData().toString());
+        }
     }
 
     // Registered by the shell on this class (`ska_register_natives`, which

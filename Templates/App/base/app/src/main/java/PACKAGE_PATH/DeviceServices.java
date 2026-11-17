@@ -94,9 +94,28 @@ final class DeviceServices implements AudioManager.OnAudioFocusChangeListener {
                 return PlatformServices.object(
                     "powerSave", power != null && power.isPowerSaveMode(),
                     "haptics", vibrator != null && vibrator.hasVibrator());
+            case "openAppSettings":
+                return PlatformServices.object("ok", openAppSettings());
             default:
                 Log.w(PlatformServices.TAG, "no device." + method);
                 return null;
+        }
+    }
+
+    /**
+     * The app's page in the system settings, where
+     * {@code UIApplication.openSettingsURLString} goes on iOS.
+     */
+    private boolean openAppSettings() {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.fromParts("package", activity.getPackageName(), null));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(intent);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(PlatformServices.TAG, "no app settings", e);
+            return false;
         }
     }
 
