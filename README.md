@@ -448,6 +448,34 @@ The Java half is a class of its own in the game's app (`PlayReview`, on
 is over. A build not installed from Play runs the flow and shows nothing, as
 TestFlight shows nothing on iOS.
 
+### A game's own fonts, and the system font
+
+The shell registers every `.ttf`/`.otf` the game stages in the APK's
+`fonts/` at launch (`AssetBundle.installFonts`), as an iOS app's
+`UIAppFonts` are. The files the game names in `Shell.start(fonts:)` come
+first, in its order, so its default face is the one it chose. A game that
+registers its fonts itself goes through
+CoreText's font manager, which `CoreTextCompat.swift` answers over
+`TextMetrics.catalog` (the `TextEngine`): `CTFontManagerCreateFontDescriptorsFromURL`
+lists a file's faces as CoreText does (one for a plain file, one per named
+instance for a variable font: pinned against CoreText on the Mac's own
+Geneva, New York and SF, all 369 of SF's), `CTFontCreateWithFontDescriptor`,
+`CTFontCopyPostScriptName` and `CTFontDescriptorCopyAttribute(_, kCTFontNameAttribute)`
+name them, and `CTFontManagerRegisterFontURLs` registers, reporting a second
+registration of a file as an error, as Apple does, with CoreText's error
+codes (101 missing file, 103 not a font, 105 already registered). A font
+collection (`.ttc`) registers its first face only. A file is known by its
+name without extension, so two files of one name in different folders count
+as one.
+
+`UIFont(name:size:)` is nil for a name no registered face answers to, as on
+Apple, so "this face, else the system font" falls back as it does there.
+`UIFont.systemFont(ofSize:weight:)` draws in the device's Roboto:
+`/system/fonts/Roboto-Regular.ttf`, whose named instances are its weights on
+Android 12 and later (a file a weight before that), at the instance of SF's
+weight class for each UIKit weight (`.semibold` is Roboto SemiBold), chosen
+by `SystemFontFaces`.
+
 ### The shell
 
 - **The main thread** is SDL's thread: `MainThread.claim()` makes it so for
