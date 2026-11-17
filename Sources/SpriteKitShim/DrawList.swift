@@ -92,6 +92,9 @@ public struct DrawList {
         /// registered, which is the renderer's cue that there is nothing to
         /// draw rather than a reason to measure the string itself.
         public var layout: TextLayout?
+        /// Extra space after each character, in points (an attributed
+        /// label's `.kern`), which `layout` has already counted.
+        public var kern: CGFloat = 0
     }
 
     public struct Effect {
@@ -352,7 +355,8 @@ public struct DrawList {
                 horizontal: label.horizontalAlignmentMode,
                 vertical: label.verticalAlignmentMode,
                 alpha: alpha,
-                layout: label.layout
+                layout: label.layout,
+                kern: label.kern
             ))))
         } else if let emitter = node as? SKEmitterNode {
             // Its particles, one sprite each, at its own depth.

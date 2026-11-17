@@ -4,16 +4,16 @@ import Testing
 @testable import TextShaping
 
 /// What a game actually asks of the layer: a label that knows how big it
-/// is. Everything the rest of a UI positions — buttons sized to their
-/// labels, capitals centred, blocks of text — is built on this.
-// Nodes are main-actor, as SpriteKit's are, so building a draw list is too.
+/// is. Everything the rest of the UI positions — buttons sized to their
+/// labels, `centerCapitals`, `TextBlockNode` — is built on this.
+// Nodes are main-actor, as SpriteKit's are (#406), so building a draw list is too.
 @Suite("Label layout")
 @MainActor
 struct LabelTests {
     private func label(_ text: String, size: CGFloat = 32) -> SKLabelNode {
         _ = Fonts.engine
         let node = SKLabelNode()
-        node.fontName = "ChironGoRoundTC-Black"
+        node.fontName = "Montserrat-Black"
         node.fontSize = size
         node.text = text
         return node
@@ -21,8 +21,8 @@ struct LabelTests {
 
     @Test("A label's frame is its ink rounded out to whole points, a point to spare all round")
     func frameIsInkRoundedOut() {
-        let node = label("Salamanders")
-        let ink = Fonts.engine.measure("Salamanders", font: Fonts.chiron(32)).inkBounds
+        let node = label("Lightning")
+        let ink = Fonts.engine.measure("Lightning", font: Fonts.display(32)).inkBounds
 
         #expect(node.contentFrame.width == ink.maxX.rounded(.up) - ink.minX.rounded(.down) + 2)
         #expect(node.contentFrame.height == ink.maxY.rounded(.up) - ink.minY.rounded(.down) + 2)
@@ -47,7 +47,7 @@ struct LabelTests {
     func nothingToMeasure() {
         #expect(label("").contentFrame == .zero)
 
-        let unknown = label("Salamanders")
+        let unknown = label("Lightning")
         unknown.fontName = "NoSuchFont"
         #expect(unknown.contentFrame == .zero)
     }
@@ -67,8 +67,8 @@ struct LabelTests {
 
     @Test("Vertical alignment works on the ink, as SpriteKit's does")
     func vertical() {
-        // Games lean on this: `.center` centres the glyphs drawn, which is
-        // why a game has to correct for it to line capitals up.
+        // The game leans on this: `.center` centres the glyphs drawn, which
+        // is why TextHelpers has to correct for it to line capitals up.
         let baseline = label("gpqy"); baseline.verticalAlignmentMode = .baseline
         let centre = label("gpqy"); centre.verticalAlignmentMode = .center
         let top = label("gpqy"); top.verticalAlignmentMode = .top
@@ -88,9 +88,9 @@ struct LabelTests {
 
         // Both are centred on their own ink. The one with a descender has a
         // taller box hanging below the baseline, so centring it pushes its
-        // capitals up — exactly the drift a game centring capitals by their
-        // glyph-path bounds undoes on buttons, which only has to exist
-        // because SpriteKit centres ink rather than the typographic box.
+        // capitals up — exactly the drift `TextHelpers.capitalsOffset`
+        // exists to undo on buttons, and it only has to exist because
+        // SpriteKit centres ink rather than the typographic box.
         #expect(hanging.contentFrame.maxY > caps.contentFrame.maxY)
         #expect(hanging.contentFrame.minY < caps.contentFrame.minY)
     }
@@ -118,7 +118,7 @@ struct LabelTests {
         node.numberOfLines = 0
         node.verticalAlignmentMode = .baseline
         let layout = try #require(node.layout)
-        let lineHeight = try #require(Fonts.engine.fontMetrics(Fonts.chiron(20))).lineHeight
+        let lineHeight = try #require(Fonts.engine.fontMetrics(Fonts.display(20))).lineHeight
 
         #expect(layout.lines[0].origin.y == 0)
         #expect(abs(layout.lines[1].origin.y + lineHeight) < 0.001)
@@ -128,7 +128,7 @@ struct LabelTests {
 
     @Test("preferredMaxLayoutWidth wraps, and nothing comes out wider")
     func wrapping() throws {
-        let text = "Tap a salamander to send it one step, and bump another to trade arrows"
+        let text = "Tap a tile to send it one step, and bump another to trade places"
         let node = label(text, size: 18)
         node.numberOfLines = 0
         node.preferredMaxLayoutWidth = 180
@@ -145,7 +145,7 @@ struct LabelTests {
 
     @Test("numberOfLines caps how many lines a wrap produces")
     func lineLimit() throws {
-        let text = "Tap a salamander to send it one step, and bump another to trade arrows"
+        let text = "Tap a tile to send it one step, and bump another to trade places"
         let node = label(text, size: 18)
         node.numberOfLines = 2
         node.preferredMaxLayoutWidth = 180
@@ -154,7 +154,7 @@ struct LabelTests {
 
     @Test("Layout is stable across repeated calls and reflects every change")
     func caching() throws {
-        let node = label("Salamanders")
+        let node = label("Lightning")
         let first = try #require(node.layout)
         #expect(node.layout == first)
         #expect(node.contentFrame == first.bounds)
@@ -214,7 +214,7 @@ struct FontMetricsTests {
     /// sign convention UIKit uses.
     @Test("Forwarded metrics follow UIKit's conventions")
     func conventions() throws {
-        let metrics = try #require(Fonts.engine.fontMetrics(Fonts.chiron(30)))
+        let metrics = try #require(Fonts.engine.fontMetrics(Fonts.display(30)))
         #expect(metrics.lineHeight == metrics.ascent + metrics.descent + metrics.leading)
         #expect(metrics.ascent > 0)
         // UIFont.descender is the negative of this, which the shim flips.

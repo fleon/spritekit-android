@@ -13,8 +13,8 @@ struct AtlasTests {
     @Test("Asking twice gives back the same rect, and rasterises once")
     func stableRects() throws {
         let (atlas, _) = fresh()
-        let font = Fonts.chiron(24)
-        let glyphs = (Fonts.engine.shape("Salamanders", font: font) ?? []).flatMap(\.glyphs)
+        let font = Fonts.display(24)
+        let glyphs = (Fonts.engine.shape("Lightning", font: font) ?? []).flatMap(\.glyphs)
         let key = GlyphAtlas.Key(font: font.name, size: font.size, glyph: glyphs[0].glyph)
 
         let first = try #require(atlas.glyph(key, font: font))
@@ -30,7 +30,7 @@ struct AtlasTests {
     @Test("Each glyph gets its own rect, and none overlap")
     func packing() {
         let (atlas, _) = fresh()
-        let font = Fonts.chiron(18)
+        let font = Fonts.display(18)
         let glyphs = (Fonts.engine.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", font: font) ?? []).flatMap(\.glyphs)
         let entries = glyphs.compactMap {
             atlas.glyph(GlyphAtlas.Key(font: font.name, size: font.size, glyph: $0.glyph), font: font)
@@ -47,8 +47,8 @@ struct AtlasTests {
     @Test("The same glyph at two sizes is two entries")
     func keyedBySize() throws {
         let (atlas, _) = fresh()
-        let small = Fonts.chiron(16)
-        let large = Fonts.chiron(48)
+        let small = Fonts.display(16)
+        let large = Fonts.display(48)
         let glyph = try #require((Fonts.engine.shape("S", font: small) ?? []).first?.glyphs.first?.glyph)
 
         let a = try #require(atlas.glyph(GlyphAtlas.Key(font: small.name, size: small.size, glyph: glyph), font: small))
@@ -62,7 +62,7 @@ struct AtlasTests {
     @Test("A rasterised glyph has ink in it, and only inside its rect")
     func coverage() throws {
         let (atlas, _) = fresh()
-        let font = Fonts.chiron(32)
+        let font = Fonts.display(32)
         let glyph = try #require((Fonts.engine.shape("S", font: font) ?? []).first?.glyphs.first?.glyph)
         let entry = try #require(atlas.glyph(GlyphAtlas.Key(font: font.name, size: font.size, glyph: glyph), font: font))
         let page = atlas.pages[entry.page]
@@ -88,7 +88,7 @@ struct AtlasTests {
     @Test("A space is cached as a real entry with nothing to draw")
     func emptyGlyph() throws {
         let (atlas, _) = fresh()
-        let font = Fonts.chiron(24)
+        let font = Fonts.display(24)
         let glyph = try #require((Fonts.engine.shape(" ", font: font) ?? []).first?.glyphs.first?.glyph)
         let entry = try #require(atlas.glyph(GlyphAtlas.Key(font: font.name, size: font.size, glyph: glyph), font: font))
         #expect(entry.isEmpty)
@@ -98,7 +98,7 @@ struct AtlasTests {
     @Test("Pages fill up and the next one is started")
     func multiplePages() {
         let (atlas, _) = fresh()                    // 256 px pages
-        let font = Fonts.chiron(48)
+        let font = Fonts.display(48)
         let text = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
         for glyph in glyphs {
@@ -111,7 +111,7 @@ struct AtlasTests {
     @Test("A page reports what changed, so the renderer uploads a sub-rect")
     func dirtyRects() throws {
         let (atlas, _) = fresh()
-        let font = Fonts.chiron(20)
+        let font = Fonts.display(20)
         let glyph = try #require((Fonts.engine.shape("W", font: font) ?? []).first?.glyphs.first?.glyph)
         _ = atlas.glyph(GlyphAtlas.Key(font: font.name, size: font.size, glyph: glyph), font: font)
 
@@ -126,7 +126,7 @@ struct AtlasTests {
     @Test("Shaping and rasterising together place every glyph on the line")
     func placed() {
         let (_, engine) = fresh()
-        let font = Fonts.chiron(28)
+        let font = Fonts.display(28)
         let placed = engine.placedGlyphs("Play", font: font)
         #expect(placed.count == 4)
         // Pens march left to right and the frames follow them.

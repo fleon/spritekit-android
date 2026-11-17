@@ -1,4 +1,5 @@
 import Foundation
+import SpriteKitShim
 
 /// The small part of `NSUbiquitousKeyValueStore` a game's sync code
 /// actually needs: a dictionary per key, a nudge to fetch, and news that
@@ -24,13 +25,19 @@ import Foundation
 /// `PlaySavedGamesCloud` is that store. `LocalOnlyCloud` is what runs without
 /// Play Games (a build without its IDs, a game with sync off, a host test), keeping
 /// saved data on the device.
-public protocol CloudKeyValueStore: AnyObject {
+///
+/// Every one is also a cloud for `NSUbiquitousKeyValueStore`
+/// (`UbiquitousCloud`), which keeps its keys apart under a prefix. One game
+/// uses one or the other: both set `externalChanges`.
+public protocol CloudKeyValueStore: UbiquitousCloud {
     func dictionary(forKey key: String) -> [String: Any]?
     func set(_ dictionary: [String: Any], forKey key: String)
     /// Asks the service for news. Returns whether anything may have changed.
     @discardableResult func synchronize() -> Bool
     /// Called when another device's changes arrive, on the main thread.
     var externalChanges: (() -> Void)? { get set }
+    /// Every key held.
+    var keys: [String] { get }
 }
 
 /// No cloud at all: every read is empty and every write goes nowhere, so the
@@ -49,6 +56,7 @@ public final class LocalOnlyCloud: CloudKeyValueStore {
     public func dictionary(forKey key: String) -> [String: Any]? { nil }
     public func set(_ dictionary: [String: Any], forKey key: String) {}
     @discardableResult public func synchronize() -> Bool { false }
+    public var keys: [String] { [] }
 }
 
 /// A cloud in memory, so the merge can be tested with two devices.
@@ -63,6 +71,8 @@ public final class MemoryCloud: CloudKeyValueStore {
     public func set(_ dictionary: [String: Any], forKey key: String) {
         contents[key] = dictionary
     }
+
+    public var keys: [String] { Array(contents.keys) }
 
     @discardableResult public func synchronize() -> Bool { true }
 

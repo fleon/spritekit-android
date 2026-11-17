@@ -32,15 +32,17 @@ Package.swift        SpriteKitShim, GLESRenderer, PlatformShim and their
 Sources/
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
-                     camera, SKRenderer, and the UIKit / CoreGraphics /
-                     CoreText / CoreImage surface. On Apple platforms it
+                     camera, SKRenderer, the UIKit / CoreGraphics /
+                     CoreText / CoreImage surface, and Foundation's
+                     NSUbiquitousKeyValueStore. On Apple platforms it
                      re-exports the real SpriteKit.
   GLESRenderer/      The GL-free half of the renderer: shader translation,
                      batching, render targets, compressed pages, the render
                      scale governor. Host-tested.
   PlatformShim/      The Android stand-ins for Apple's services, without the
-                     device: Play Billing, Play Games, Saved Games and the
-                     sync engine, MediaCodec-backed AVFoundation, haptics,
+                     device: Play Billing, Play Games, Saved Games (the
+                     key-value store's cloud) and the sync engine,
+                     MediaCodec-backed AVFoundation, haptics,
                      sharing, the launch-argument domain.
 Tests/               Host tests: no device or GL context.
 Modules/             Android-only. Targets that exist to own a module name
@@ -58,6 +60,9 @@ Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
 Scripts/             Building SDL and a game's shell library, checking the
                      runtime alone, launching with arguments, the emulator
                      pool.
+Templates/App/       The Android app a game copies: the Gradle project,
+                     MainActivity and the Java half of each platform
+                     service (Templates/App/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -77,7 +82,8 @@ directory's name, and the manifests here refer to this package as
 <game>/Android/
   spritekit-android/   this repository (submodule)
   Game/                the game's package (GAME_PACKAGE_DIR)
-  App/                 the game's Gradle project (APP_DIR)
+  App/                 the game's Gradle project (APP_DIR), copied from
+                       Templates/App/base
 ```
 
 The game's package depends on `../spritekit-android`,
@@ -316,9 +322,12 @@ and tested on a Mac against a fake Java:
   Center's percentages.
 - **Saved data** (Play Games Saved Games): a key-value store's records in one
   snapshot, merged commutatively so a conflict resolves without loss.
-- **Audio:** sound effects through SDL's audio streams, music through the
-  NDK's MediaCodec (the same AAC an iOS build ships), with loop points kept
-  in presentation time.
+- **Audio:** sound effects (`.wav`) through SDL's audio streams, music
+  through the NDK's MediaCodec, with loop points kept in presentation time.
+  A track may be AAC in `.m4a`, MP3 or Ogg Vorbis (`.ogg`), looked for in
+  that order, so the files an iOS build ships play as they are. Gradle
+  stages them in `audio/SFX` and `audio/Music`, and `Bundle.main` finds them
+  there too (`ResourceBundle.defaultFolder`).
   A track with no loop points of its own repeats whole with
   `MusicLoop.wholeTrack`, as `AVAudioPlayer`'s `numberOfLoops = -1` does.
   `AudioBackend.duration(ofSound:)` is a prepared sound's length (from its
@@ -327,6 +336,58 @@ and tested on a Mac against a fake Java:
   MediaCodec and MediaMuxer, for games that render video.
 - **The device:** haptics (primitives where the vibrator has them), audio
   focus, battery saver as Low Power Mode, sharing through Android's chooser.
+
+### iCloud's key-value store, as Apple names it
+
+A game that talks to `NSUbiquitousKeyValueStore` itself (keeping its
+progress there as one `Data`, say) gets Apple's API
+(`Sources/SpriteKitShim/UbiquitousKeyValueStore.swift`). Values are kept on
+the device in user defaults, each with the time it was set, and synced
+through any `CloudKeyValueStore` the game installs as its `cloud` (Play
+Games Saved Games), one record per key under `ubiquitous.<key>`. When two
+devices write one key, the later write wins, as with iCloud; two writes at
+the same instant settle on the same value everywhere. The keys that change
+here are posted as `didChangeExternallyNotification`. The reason is the
+initial sync for the first merge that hears from the cloud (installed with
+data there, or the first fetch after Play signs in), and a server change
+after that. A removal is a record too, so it travels. With no cloud the
+store is the device's alone, as with iCloud off. It is safe from any
+thread; the cloud is spoken to on the main thread. A game uses this or
+`ICloudSyncManager`'s `SyncEngine` on one cloud, not both: each takes the
+cloud's `externalChanges`.
+
+Where it differs from Apple's:
+
+- No limits are enforced: not the 1 MB total, the 1,024 keys, the 1 MB per
+  value, or the 128-character keys.
+- `QuotaViolationChange` and `AccountChange` are never posted (the
+  constants exist). If the player switches Play account, the new account's
+  values merge with what the device holds.
+- `synchronize()` always returns `true`.
+- Writes are timestamped by the device's clock, so a device whose clock is
+  far off can win or lose a key it shouldn't. A fresh install that writes
+  before Play's snapshot arrives competes on time with the snapshot's
+  values.
+- The type is visible only through a module that re-exports
+  `SpriteKitShim` (`Foundation` itself can't gain it).
+
+### Ratings: Play In-App Review
+
+`SKStoreReviewController.requestReview(in:)` (and `requestReview()`,
+`AppStore.requestReview(in:)`) in the `StoreKit` module go to
+`StoreReview.request()` (`Sources/PlatformShim/StoreReview.swift`):
+`PlayInAppReview` over the shell's channel, nothing in a host build. As on
+iOS, the request is fire-and-forget and the store decides whether a card
+shows; a game's own rules about when to ask stay its own. One request is
+with Play at a time; one that gets no answer within a minute stops holding
+the next one back.
+
+The Java half is a class of its own in the game's app (`PlayReview`, on
+`com.google.android.play:review`), under `review`:
+`request` runs `ReviewManager.requestReviewFlow()` then
+`launchReviewFlow(activity, info)` and posts `requested {ok}` when the flow
+is over. A build not installed from Play runs the flow and shows nothing, as
+TestFlight shows nothing on iOS.
 
 ### The shell
 
