@@ -36,6 +36,10 @@ open class SKEffectNode: SKNode {
     public private(set) var rasterGeneration: UInt64 = 0
 
     open var shouldEnableEffects: Bool = true
+    /// SpriteKit's Core Image filter on the node's picture. Zyl and Phantom
+    /// Words hang a `CIGaussianBlur` here (`CIFilter.gaussianBlurRadius`).
+    /// Kept, not yet drawn: the renderer composites the picture unblurred.
+    open var filter: CIFilter?
     open var shouldCenterFilter: Bool = true
     open var blendMode: SKBlendMode = .alpha
 

@@ -1,12 +1,14 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// Core Image, as much of it as the game uses: two soft fields drawn from a
-// mask (`LawnNode`'s clearing round the board, `BoardGroundingArt`'s glow and
-// shadow), each `clampedToExtent().applyingGaussianBlur(sigma:).cropped(to:)`
-// and read back through a `CIContext`. Android has no Core Image, so the blur
-// runs here on the CPU, over the premultiplied pixels the software
-// `CGContext` drew.
+// Core Image, as much of it as the games use: soft fields drawn from a
+// mask (Switchlings' `LawnNode` clearing round the board, `BoardGroundingArt`'s
+// glow and shadow), each `clampedToExtent().applyingGaussianBlur(sigma:).cropped(to:)`
+// and read back through a `CIContext`; and three filters by name
+// (`CoreImageFilters.swift`): Hue Rings' and Zyl's linear and radial gradient
+// textures and the Gaussian blur Zyl and Phantom Words put on effect nodes.
+// Android has no Core Image, so all of it runs here on the CPU, over the
+// premultiplied pixels the software `CGContext` drew.
 //
 // The blur is three box blurs a direction (Wells' "boxes for Gauss"), which
 // is within a few levels of a true Gaussian for these sizes and costs the
@@ -26,16 +28,44 @@ public final class CIImage: @unchecked Sendable {
     fileprivate let pixels: [Float]
     /// Edges repeat outward (`clampedToExtent`) rather than fading to clear.
     fileprivate let clamped: Bool
+    /// A generator's picture instead of pixels (a gradient filter's output):
+    /// premultiplied colour in linear light at a point, y up, as Core Image
+    /// works. Drawn when a context renders a rectangle of it.
+    let field: (@Sendable (CGFloat, CGFloat) -> SIMD4<Float>)?
+    /// A generator's extent: infinite, as Core Image's, unless cropped (or a
+    /// radial gradient that ends clear).
+    private let fieldExtent: CGRect
 
-    /// Core Image's extent: the image's own rectangle, origin at zero.
-    public var extent: CGRect { CGRect(x: 0, y: 0, width: width, height: height) }
+    /// Core Image's extent: the image's own rectangle, origin at zero, or a
+    /// generator's.
+    public var extent: CGRect {
+        field == nil ? CGRect(x: 0, y: 0, width: width, height: height) : fieldExtent
+    }
 
     fileprivate init(width: Int, height: Int, pixels: [Float], clamped: Bool) {
         self.width = width
         self.height = height
         self.pixels = pixels
         self.clamped = clamped
+        field = nil
+        fieldExtent = .zero
     }
+
+    /// A generator, over `extent` (`CIImage.infiniteExtent` for all of it).
+    init(extent: CGRect, field: @escaping @Sendable (CGFloat, CGFloat) -> SIMD4<Float>) {
+        width = 0
+        height = 0
+        pixels = []
+        clamped = false
+        self.field = field
+        fieldExtent = extent
+    }
+
+    /// Core Image's infinite rectangle, as its generators report it.
+    public static let infiniteExtent = CGRect(
+        x: -CGFloat.greatestFiniteMagnitude / 2, y: -CGFloat.greatestFiniteMagnitude / 2,
+        width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude
+    )
 
     public convenience init(cgImage: RasterImage) {
         var pixels = cgImage.pixels.map { Float($0) / 255 }
@@ -49,16 +79,26 @@ public final class CIImage: @unchecked Sendable {
     }
 
     public func clampedToExtent() -> CIImage {
-        CIImage(width: width, height: height, pixels: pixels, clamped: true)
+        if field != nil { return self }
+        return CIImage(width: width, height: height, pixels: pixels, clamped: true)
     }
 
-    /// Cropping to anything but the image's own extent is not needed by the
-    /// game, so the pixels are kept and only the clamp is dropped.
+    /// Cropping a bitmap to anything but its own extent is not needed by the
+    /// games, so the pixels are kept and only the clamp is dropped. A
+    /// generator is cropped to the rectangle: clear outside it.
     public func cropped(to rect: CGRect) -> CIImage {
-        CIImage(width: width, height: height, pixels: pixels, clamped: false)
+        if let field { return CIImage(extent: fieldExtent.intersection(rect), field: field) }
+        return CIImage(width: width, height: height, pixels: pixels, clamped: false)
     }
 
     public func applyingGaussianBlur(sigma: Double) -> CIImage {
+        if field != nil {
+            // A generator is drawn over its extent first; an infinite one
+            // (a gradient that never ends) has nothing to blur against.
+            guard fieldExtent.width < 1e7, fieldExtent.height < 1e7,
+                  let drawn = render(fieldExtent) else { return self }
+            return CIImage(cgImage: drawn).applyingGaussianBlur(sigma: sigma)
+        }
         guard sigma > 0, width > 0, height > 0 else { return self }
         var out = pixels
         var scratch = [Float](repeating: 0, count: max(width, height) * 4)
@@ -111,6 +151,43 @@ public final class CIImage: @unchecked Sendable {
         }
     }
 
+    /// A generator drawn over `rect`: a pixel a point from its bottom left,
+    /// each sampled at its centre, the last column and row covering only
+    /// what of them the rectangle reaches (as Core Image renders a
+    /// fractional rectangle: whole pixels from its origin, a part one at
+    /// its far edge). Colour is encoded to sRGB from linear light as it's
+    /// written.
+    fileprivate func render(_ rect: CGRect) -> RasterImage? {
+        guard let field else { return nil }
+        let width = Int((rect.width - 1e-9).rounded(.up)), height = Int((rect.height - 1e-9).rounded(.up))
+        guard width > 0, height > 0, width * height <= 1 << 26 else { return nil }
+        let lastColumn = Float(rect.width - CGFloat(width - 1))
+        let lastRow = Float(rect.height - CGFloat(height - 1))
+        let inside = fieldExtent
+        var out = [UInt8](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            let up = height - 1 - row
+            let y = rect.minY + CGFloat(up) + 0.5
+            let rowCover = up == height - 1 ? lastRow : 1
+            for column in 0..<width {
+                let x = rect.minX + CGFloat(column) + 0.5
+                guard inside.minX <= x, x < inside.maxX, inside.minY <= y, y < inside.maxY else { continue }
+                var colour = field(x, y)
+                let alpha = colour.w
+                guard alpha > 0 else { continue }
+                for channel in 0..<3 {
+                    colour[channel] = Self.encoded(min(1, max(0, colour[channel] / alpha))) * alpha
+                }
+                let cover = (column == width - 1 ? lastColumn : 1) * rowCover
+                let base = (row * width + column) * 4
+                for channel in 0..<4 {
+                    out[base + channel] = UInt8(max(0, min(255, (colour[channel] * cover * 255).rounded())))
+                }
+            }
+        }
+        return RasterImage(width: width, height: height, pixels: out)
+    }
+
     fileprivate var raster: RasterImage {
         var encoded = pixels
         Self.convertColour(&encoded, Self.encoded)
@@ -149,7 +226,10 @@ public struct CIContextOption: Hashable, Sendable {
 public final class CIContext: @unchecked Sendable {
     public init(options: [CIContextOption: Any]? = nil) {}
 
+    /// A bitmap's pixels as they are (the games read back the whole
+    /// extent), or a generator drawn over `rect`.
     public func createCGImage(_ image: CIImage, from rect: CGRect) -> RasterImage? {
+        if image.field != nil { return image.render(rect) }
         guard image.width > 0, image.height > 0 else { return nil }
         return image.raster
     }
