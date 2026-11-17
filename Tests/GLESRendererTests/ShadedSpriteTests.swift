@@ -5,16 +5,16 @@ import Testing
 
 /// What a custom shader sees as `v_tex_coord` on a packed image.
 ///
-/// SpriteKit hands it the texture's own 0…1, and on iOS every image of the
-/// game's is a texture of its own. Android packs them into atlas pages, and
-/// the shaded sprites were drawn with the page's coordinates: `CrumbleNode`
-/// struck its cracks far off its brick (a plain brick in the Level
-/// Designer's tool grid) and read the crack colour from a fixed row of the
-/// page (vertical streaks across Starry Sky's cracked tiles).
+/// SpriteKit hands it the texture's own 0…1, and on iOS every image in an
+/// asset catalog is a texture of its own. Android packs them into atlas
+/// pages, and the shaded sprites were drawn with the page's coordinates: a
+/// shader that cracks its brick struck its cracks far off it (a plain brick)
+/// and read the crack colour from a fixed row of the page (vertical streaks
+/// across the cracked tiles).
 @Suite("Shaded sprites")
 @MainActor
 struct ShadedSpriteTests {
-    /// `BrickGarden1` as the index packs it: 64 × 80 points at (1822, 246)
+    /// A brick as an index packs it: 64 × 80 points at (1822, 246)
     /// on a 2048 page, its top face and a sliver of its front kept when it
     /// stretches down below a raised tile.
     private static let index = try! AssetIndex(json: Data("""
@@ -30,7 +30,7 @@ struct ShadedSpriteTests {
 
     private func brick(_ name: String = "Brick1", height: CGFloat = 62.5, shaded: SKShader? = SKShader(source: "void main() {}")) -> SKSpriteNode {
         let node = SKSpriteNode(texture: SKTexture(imageNamed: name, in: Self.index), size: CGSize(width: 50, height: height))
-        // TileNode's slice: the top cap and the foot kept, the front between them stretching.
+        // A tile's slice: the top cap and the foot kept, the front between them stretching.
         node.centerRect = CGRect(x: 0, y: 4.48 / 80, width: 1, height: (80 - 67.2 - 4.48) / 80)
         node.shader = shaded
         return node

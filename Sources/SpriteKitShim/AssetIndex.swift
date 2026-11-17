@@ -3,13 +3,13 @@ import Foundation
 
 /// Where the art lives on Android.
 ///
-/// `Tools/Art/android-art.js` (`npm run art -- --android`) packs the @3x
-/// image sets the Apple export writes into a few atlas pages plus one
+/// A game's art packer packs the @3x image sets of its asset catalog into a
+/// few atlas pages plus one
 /// `index.json`; this reads that index and turns an asset name — the name
-/// the game passes `txtr(_:)` and `SKTexture(imageNamed:)` — into the page
-/// holding its pixels, the rect it occupies there, its size in points, and
-/// the 9-slice cap insets and board anchors the exporter also writes into
-/// `ArtSlices.swift`.
+/// the game passes `SKTexture(imageNamed:)` — into the page holding its
+/// pixels, the rect it occupies there, its size in points, and the 9-slice
+/// cap insets, content insets and anchors the game may also know the image
+/// by.
 ///
 /// The index carries no pixels. Loading and uploading a page is the
 /// renderer's job: it asks for `url(ofPage:)` and caches the handle on
@@ -30,12 +30,12 @@ public final class AssetIndex: Sendable {
         public let rect: CGRect
         /// The art's size in points: its pixels over the index's scale.
         public let size: CGSize
-        /// The corners and edges a 9-slice keeps, in points (`ArtSlices.capInsets`).
+        /// The corners and edges a 9-slice keeps, in points.
         public let capInsets: UIEdgeInsets?
-        /// Where the image's inner area begins, in points (`ArtSlices.contentInsets`).
+        /// Where the image's inner area begins, in points.
         public let contentInsets: UIEdgeInsets?
-        /// How far a board piece reaches past what it lies on, in board
-        /// cells (`ArtSlices.anchors`).
+        /// How far the image reaches past what it lies on, in the game's own
+        /// units: carried for the game, not read here.
         public let anchor: UIEdgeInsets?
         /// The same rect in the page's unit coordinates with a bottom-left
         /// origin, which is what `SKTexture.textureRect` reports and what
@@ -51,7 +51,7 @@ public final class AssetIndex: Sendable {
         public let size: CGSize
         /// Whether the page holds a single whole image rather than an atlas,
         /// so it may be sampled with repeat wrapping and mipped — which the
-        /// tiling backdrop grounds need and an atlas slice cannot have.
+        /// tiling ground textures need and an atlas slice cannot have.
         public let repeats: Bool
         /// Whether the page ships as ASTC (a KTX file, `CompressedPage`)
         /// rather than a PNG.

@@ -14,7 +14,7 @@ extension SKTexture {
     /// thread when that's a background one, as the game's are, else on a
     /// queue of its own, the handler following once they're done.
     /// Readies textures the asset index doesn't back (the game's drawn
-    /// surfaces, rig pages, raw data) for their upload ahead of their first
+    /// surfaces, loaded image pages, raw data) for their upload ahead of their first
     /// draw; the renderer installs it. Called on the preloading thread.
     public nonisolated(unsafe) static var imageWarmer: (([SKTexture]) -> Void)?
 

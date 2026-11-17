@@ -42,7 +42,7 @@ public struct PageImage: @unchecked Sendable {
 }
 
 /// A page shipped as ASTC blocks with its mip levels, read from the KTX
-/// 1.1 file `Tools/Art/ASTC/compress.js` writes: premultiplied, rows bottom
+/// 1.1 file an art packer writes: premultiplied, rows bottom
 /// first as GL takes them, so its levels upload as they are
 /// (`RenderDevice.createTexture(compressed:levels:)`).
 public struct CompressedPage: @unchecked Sendable {

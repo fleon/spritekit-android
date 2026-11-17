@@ -1,8 +1,8 @@
 import Foundation
 import SpriteKitShim
 
-/// The small part of `NSUbiquitousKeyValueStore` that `ICloudSyncManager`
-/// actually uses: a dictionary per key, a nudge to fetch, and news that
+/// The small part of `NSUbiquitousKeyValueStore` a game's sync code
+/// actually needs: a dictionary per key, a nudge to fetch, and news that
 /// another device changed something.
 ///
 /// ## Why this shape, and how Play Saved Games fits it
@@ -13,7 +13,7 @@ import SpriteKitShim
 /// without seeing each other.
 ///
 /// That is a worse API in general and an irrelevant difference here, because
-/// of how `ICloudSyncManager` merges. Every record it writes is either a
+/// of how `SyncEngine` merges. Every record it writes is either a
 /// value with the time it changed, or a set of items each with the time it
 /// was added plus the time the set was last reset. Merging two of those is
 /// commutative and idempotent — latest wins, unions pool, resets drop what
@@ -23,7 +23,7 @@ import SpriteKitShim
 ///
 /// So one snapshot holding `[key: record]` gives this protocol exactly:
 /// `PlaySavedGamesCloud` is that store. `LocalOnlyCloud` is what runs without
-/// Play Games (a build without its IDs, `-ICloudOff`, a host test), keeping
+/// Play Games (a build without its IDs, a game with sync off, a host test), keeping
 /// saved data on the device.
 ///
 /// Every one is also a cloud for `NSUbiquitousKeyValueStore`
@@ -43,8 +43,8 @@ public protocol CloudKeyValueStore: UbiquitousCloud {
 /// No cloud at all: every read is empty and every write goes nowhere, so the
 /// merge engine above degrades to "this device's values, kept locally".
 ///
-/// What an Android build without Play Games uses, and the same path the
-/// Apple build takes under `-ICloudOff`, which is why the semantics the game
+/// What an Android build without Play Games uses, and the same path an
+/// Apple build with iCloud off takes, which is why the semantics a game
 /// depends on — latest wins, sets pool, a reset empties — are not a separate
 /// code path that could drift: they are the merge engine running with
 /// nothing on the other side.

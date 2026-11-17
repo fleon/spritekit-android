@@ -92,12 +92,12 @@ struct SavedGamesTests {
         let phone = Device(play), tablet = Device(play)
         phone.start()
         tablet.start()
-        phone.engine.insert(["garden-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1"], intoSetForKey: "cleared")
         phone.signIn()
         #expect(play.commits == 1)
         tablet.signIn()
-        #expect(tablet.cleared == ["garden-1"])
-        // What `SavedDataObserving` hears through ICloudSyncManager.
+        #expect(tablet.cleared == ["level-1"])
+        // What a game's sync code hears.
         #expect(tablet.updated == [["cleared"]])
     }
 
@@ -107,14 +107,14 @@ struct SavedGamesTests {
         let phone = Device(play), tablet = Device(play)
         phone.start()
         tablet.start()
-        phone.engine.insert(["garden-1", "garden-2"], intoSetForKey: "cleared")
-        tablet.engine.insert(["farm-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1", "level-2"], intoSetForKey: "cleared")
+        tablet.engine.insert(["level-31"], intoSetForKey: "cleared")
         tablet.signIn()
         phone.signIn()
         tablet.engine.synchronize()
         tablet.pump()
-        #expect(phone.cleared == ["garden-1", "garden-2", "farm-1"])
-        #expect(tablet.cleared == ["garden-1", "garden-2", "farm-1"])
+        #expect(phone.cleared == ["level-1", "level-2", "level-31"])
+        #expect(tablet.cleared == ["level-1", "level-2", "level-31"])
     }
 
     @Test("The latest change wins, wherever it was made")
@@ -143,10 +143,10 @@ struct SavedGamesTests {
         phone.start()
         tablet.start()
         phone.clock = 2000
-        phone.engine.insert(["garden-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1"], intoSetForKey: "cleared")
         phone.signIn()
         tablet.signIn()
-        #expect(tablet.cleared == ["garden-1"])
+        #expect(tablet.cleared == ["level-1"])
         tablet.clock = 3000
         tablet.engine.resetSet(forKey: "cleared")
         tablet.runLater()
@@ -154,11 +154,11 @@ struct SavedGamesTests {
         phone.pump()
         #expect(phone.cleared.isEmpty)
         phone.clock = 4000
-        phone.engine.insert(["garden-2"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-2"], intoSetForKey: "cleared")
         phone.runLater()
         tablet.engine.synchronize()
         tablet.pump()
-        #expect(tablet.cleared == ["garden-2"])
+        #expect(tablet.cleared == ["level-2"])
     }
 
     @Test("A save goes up a few seconds later, not at once and not twice")
@@ -168,8 +168,8 @@ struct SavedGamesTests {
         phone.start()
         phone.signIn()
         let commits = play.commits
-        phone.engine.insert(["garden-1"], intoSetForKey: "cleared")
-        phone.engine.insert(["garden-2"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-2"], intoSetForKey: "cleared")
         #expect(play.commits == commits)
         phone.runLater()
         #expect(play.commits == commits + 1)
@@ -182,7 +182,7 @@ struct SavedGamesTests {
         phone.start()
         phone.signIn()
         let commits = play.commits
-        phone.engine.insert(["garden-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1"], intoSetForKey: "cleared")
         phone.cloud.flush()
         phone.pump()
         #expect(play.commits == commits + 1)
@@ -193,7 +193,7 @@ struct SavedGamesTests {
         let play = FakePlay()
         let phone = Device(play)
         phone.start()
-        phone.engine.insert(["garden-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1"], intoSetForKey: "cleared")
         phone.signIn()
         let commits = play.commits
         phone.engine.synchronize()
@@ -208,7 +208,7 @@ struct SavedGamesTests {
         play.snapshot = Data("not a property list".utf8)
         let phone = Device(play)
         phone.start()
-        phone.engine.insert(["garden-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1"], intoSetForKey: "cleared")
         phone.signIn()
         #expect(play.commits == 0)
         #expect(play.snapshot == Data("not a property list".utf8))
@@ -219,10 +219,10 @@ struct SavedGamesTests {
         let play = FakePlay()
         let phone = Device(play)
         phone.start()
-        phone.engine.insert(["garden-1"], intoSetForKey: "cleared")
+        phone.engine.insert(["level-1"], intoSetForKey: "cleared")
         phone.runLater()
         #expect(phone.calls.isEmpty)
-        #expect(phone.cleared == ["garden-1"])
+        #expect(phone.cleared == ["level-1"])
     }
 
     @Test("Values keep their types through the snapshot")

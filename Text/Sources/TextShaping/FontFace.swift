@@ -24,7 +24,8 @@ public enum FontError: Error, CustomStringConvertible {
 }
 
 /// A font file read once and kept, so the many sizes a screen uses cost one
-/// face each rather than one read each. Chiron GoRound TC is 50 MB.
+/// face each rather than one read each. A large variable font can be tens
+/// of megabytes.
 public final class FontFile {
     let bytes: [UInt8]
     public let path: String
@@ -42,10 +43,10 @@ public final class FontFile {
         bytes = [UInt8](data)
     }
 
-    /// The PostScript names of the file's named instances, in order. Chiron
-    /// is a variable font and the game asks for its instances by name
-    /// ("ChironGoRoundTC-Black"), so this is how a name becomes an axis
-    /// setting rather than a missing face.
+    /// The PostScript names of the file's named instances, in order. A game
+    /// asks for a variable font's instances by name ("SomeFont-Black"), so
+    /// this is how a name becomes an axis setting rather than a missing
+    /// face.
     public func namedInstances() throws -> [String] {
         let face = try FaceHandle(file: self, size: 16, instance: nil)
         return face.instanceNames
@@ -79,7 +80,7 @@ final class FaceHandle {
     /// `subunits` to the font unit: what lines are shaped and measured with.
     /// HarfBuzz over FreeType takes its advances from FreeType in 1/64
     /// points, rounding every glyph's, and FreeType's outlines come scaled to
-    /// the same grid; Core Text, which the game is laid out by on Apple,
+    /// the same grid; Core Text, which a game is laid out by on Apple,
     /// works from the font's own tables in floating point. Laid out to whole
     /// points as SpriteKit lays labels out, those few hundredths tip frames a
     /// point either way, so measuring here is as fine as Core Text's.
@@ -130,7 +131,7 @@ final class FaceHandle {
         }
 
         // 72 dpi so one point is one pixel unit, and 26.6 fixed point so a
-        // fractional size survives — the game scales labels freely.
+        // fractional size survives — games scale labels freely.
         let sized = FT_Set_Char_Size(face, 0, FT_F26Dot6((size * 64).rounded()), 72, 72)
         guard sized == FT_Err_Ok else { throw FontError.sizeRejected(sized) }
 

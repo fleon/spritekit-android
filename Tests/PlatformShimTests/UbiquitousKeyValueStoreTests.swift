@@ -17,7 +17,9 @@ private final class Device {
     var posted: [(reason: Int, keys: [String])] = []
     private var observer: NSObjectProtocol?
 
-    init(_ name: String, at time: TimeInterval) {
+    /// `signedIn`: the cloud has fetched once already, as Play has once it
+    /// signs in, so what arrives later is a server change.
+    init(_ name: String, at time: TimeInterval, signedIn: Bool = true, preload: ((MemoryCloud) -> Void)? = nil) {
         let suite = "ubiquitous-test-\(name)-\(UUID())"
         defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -32,7 +34,9 @@ private final class Device {
             let keys = note.userInfo?[UbiquitousKeyValueStore.changedKeysKey] as? [String] ?? []
             MainActor.assumeIsolated { self?.posted.append((reason, keys)) }
         }
+        preload?(cloud)
         store.cloud = cloud
+        if signedIn { cloud.externalChanges?() }
     }
 
     deinit {
@@ -72,6 +76,70 @@ struct UbiquitousKeyValueStoreTests {
         device.store.removeObject(forKey: "word")
         #expect(device.store.string(forKey: "word") == nil)
         #expect(device.store.dictionaryRepresentation["word"] == nil)
+    }
+
+    @Test("Installed with the cloud's data already there: posted as the initial sync")
+    func initialSyncWithData() {
+        let a = Device("a", at: 100)
+        a.store.set("saved", forKey: "progress")
+        let b = Device("b", at: 200, signedIn: false) { a.cloud.deliver(to: $0) }
+        #expect(b.store.string(forKey: "progress") == "saved")
+        #expect(b.posted.count == 1)
+        #expect(b.posted.first?.reason == UbiquitousKeyValueStore.initialSyncChange)
+        #expect(b.posted.first?.keys == ["progress"])
+    }
+
+    @Test("Installed empty, then the data arrives: the first is the initial sync, the next a server change")
+    func initialSyncLater() {
+        let a = Device("a", at: 100)
+        let b = Device("b", at: 200, signedIn: false)
+        #expect(b.posted.isEmpty)
+        a.store.set("first", forKey: "progress")
+        a.sync(to: b)
+        #expect(b.store.string(forKey: "progress") == "first")
+        #expect(b.posted.map(\.reason) == [UbiquitousKeyValueStore.initialSyncChange])
+        a.now = 300
+        a.store.set("second", forKey: "progress")
+        a.sync(to: b)
+        #expect(b.store.string(forKey: "progress") == "second")
+        #expect(b.posted.map(\.reason) == [UbiquitousKeyValueStore.initialSyncChange, UbiquitousKeyValueStore.serverChange])
+    }
+
+    @Test("Two writes at the same instant settle on the same value on both devices")
+    func tie() {
+        let a = Device("a", at: 100)
+        let b = Device("b", at: 100)
+        a.store.set("apple", forKey: "word")
+        b.store.set("pear", forKey: "word")
+        a.sync(to: b)
+        b.sync(to: a)
+        #expect(a.store.string(forKey: "word") == b.store.string(forKey: "word"))
+    }
+
+    @Test("A dictionary arriving with its keys in another order is the same value, and posts nothing")
+    func dictionaryOrder() {
+        let a = Device("a", at: 100)
+        let b = Device("b", at: 200)
+        a.store.set(["x": 1, "y": 2, "z": 3] as [String: Any], forKey: "grid")
+        a.sync(to: b)
+        b.now = 300
+        b.store.set(["z": 3, "y": 2, "x": 1] as [String: Any], forKey: "grid")
+        let before = a.posted.count
+        b.sync(to: a)
+        #expect(a.posted.count == before)
+    }
+
+    @Test("Writes from another thread land, and reach the cloud on the main thread")
+    func offMainWrites() async {
+        let device = Device("a", at: 100)
+        let store = device.store
+        await Task.detached { store.set("background", forKey: "word") }.value
+        #expect(device.store.string(forKey: "word") == "background")
+        await Task.yield()
+        for _ in 0..<50 where device.cloud.dictionary(forKey: "ubiquitous.word") == nil {
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        #expect(device.cloud.dictionary(forKey: "ubiquitous.word") != nil)
     }
 
     @Test("Another device's newer write arrives, and its key is posted as a server change")

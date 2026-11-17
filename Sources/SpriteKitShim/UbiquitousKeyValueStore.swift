@@ -46,14 +46,26 @@ public struct UbiquitousRecord {
         }
     }
 
-    /// Whether two records hold the same value (by their property-list
-    /// encoding, so a value that went through the cloud still compares).
+    /// Whether two records hold the same value, as property lists compare
+    /// (so a dictionary that went through the cloud, its keys in another
+    /// order, still compares equal).
     func sameValue(as other: UbiquitousRecord) -> Bool {
         switch (value, other.value) {
         case (nil, nil): return true
-        case let (a?, b?): return Self.encoded(a) == Self.encoded(b)
+        case let (a?, b?): return NSArray(object: a).isEqual(NSArray(object: b))
         default: return false
         }
+    }
+
+    /// Whether this record wins over `other`: the later one, and for two set
+    /// at the same instant the one whose encoding sorts last, so every device
+    /// settles on the same value.
+    func wins(over other: UbiquitousRecord) -> Bool {
+        if time != other.time { return time > other.time }
+        if sameValue(as: other) { return false }
+        let mine = value.flatMap(Self.encoded).map(Array.init) ?? []
+        let theirs = other.value.flatMap(Self.encoded).map(Array.init) ?? []
+        return mine.lexicographicallyPrecedes(theirs) == false && mine != theirs
     }
 
     private static func encoded(_ value: Any) -> Data? {
@@ -70,9 +82,13 @@ public struct UbiquitousRecord {
 /// under `"ubiquitous." + key`. iCloud resolves two devices' writes to one key
 /// by keeping the later, and so does the merge here, key by key; the keys
 /// whose value changed on this device are posted as
-/// `didChangeExternallyNotification`, with the server-change reason, as iCloud
-/// posts them. With no cloud the store is the device's alone, as with iCloud
-/// off.
+/// `didChangeExternallyNotification`, as iCloud posts them: the initial-sync
+/// reason for the first merge that hears from the cloud (installed with its
+/// data there, or the first news after Play signs in), the server-change one
+/// after. With no cloud the store is the device's alone, as with iCloud off.
+///
+/// Safe to read and write from any thread; the cloud is only spoken to on
+/// the main thread, where its changes also arrive.
 open class UbiquitousKeyValueStore: @unchecked Sendable {
     public static let didChangeExternallyNotification = Notification.Name("NSUbiquitousKeyValueStoreDidChangeExternallyNotification")
     public static let changeReasonKey = "NSUbiquitousKeyValueStoreChangeReasonKey"
@@ -90,14 +106,21 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
 
     private let defaults: UserDefaults
     private let clock: () -> TimeInterval
+    private let lock = NSLock()
     private var records: [String: UbiquitousRecord]
+    /// Whether the cloud has been heard from yet, so the next merge is
+    /// iCloud's initial sync.
+    private var hasSynced = false
 
     /// Where the values go beyond this device. Installing one merges with it
-    /// at once (iCloud's initial sync).
+    /// at once; if it holds nothing yet (Play Games not signed in), the first
+    /// news from it is the initial sync.
     public var cloud: UbiquitousCloud? {
         didSet {
-            cloud?.externalChanges = { [weak self] in self?.mergeWithCloud(reason: Self.serverChange) }
-            mergeWithCloud(reason: Self.initialSyncChange)
+            onMain { [self] in
+                cloud?.externalChanges = { [weak self] in self?.mergeWithCloud(heardFrom: true) }
+                mergeWithCloud(heardFrom: false)
+            }
         }
     }
 
@@ -110,7 +133,7 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
 
     // MARK: Reading
 
-    open func object(forKey key: String) -> Any? { records[key]?.value }
+    open func object(forKey key: String) -> Any? { locked { records[key]?.value } }
     open func string(forKey key: String) -> String? { object(forKey: key) as? String }
     open func array(forKey key: String) -> [Any]? { object(forKey: key) as? [Any] }
     open func dictionary(forKey key: String) -> [String: Any]? { object(forKey: key) as? [String: Any] }
@@ -119,7 +142,7 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
     open func double(forKey key: String) -> Double { (object(forKey: key) as? NSNumber)?.doubleValue ?? 0 }
     open func bool(forKey key: String) -> Bool { (object(forKey: key) as? NSNumber)?.boolValue ?? false }
 
-    open var dictionaryRepresentation: [String: Any] { records.compactMapValues(\.value) }
+    open var dictionaryRepresentation: [String: Any] { locked { records.compactMapValues(\.value) } }
 
     // MARK: Writing
 
@@ -150,8 +173,8 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
     /// answers whenever the values could be saved.
     @discardableResult
     open func synchronize() -> Bool {
-        save()
-        cloud?.synchronize()
+        locked { save() }
+        onMain { [self] in cloud?.synchronize() }
         return true
     }
 
@@ -159,18 +182,33 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
 
     private func write(_ value: Any?, forKey key: String) {
         let record = UbiquitousRecord(value: value, time: clock())
-        records[key] = record
-        save()
-        cloud?.set(record.dictionary, forKey: Self.cloudPrefix + key)
+        locked {
+            records[key] = record
+            save()
+        }
+        onMain { [self] in cloud?.set(record.dictionary, forKey: Self.cloudPrefix + key) }
     }
 
+    /// Under the lock.
     private func save() {
         defaults.set(records.mapValues(\.dictionary), forKey: Self.defaultsKey)
     }
 
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    private func onMain(_ body: @escaping () -> Void) {
+        if Thread.isMainThread { body() } else { DispatchQueue.main.async(execute: body) }
+    }
+
     /// Takes the cloud's newer records, sends back this device's newer ones,
-    /// and posts the keys whose value changed here.
-    private func mergeWithCloud(reason: Int) {
+    /// and posts the keys whose value changed here. On the main thread.
+    /// `heardFrom` is true when the cloud called with news, which a signed-in
+    /// cloud does once it has fetched, data or not.
+    private func mergeWithCloud(heardFrom: Bool) {
         guard let cloud else { return }
         var remote: [String: UbiquitousRecord] = [:]
         for cloudKey in cloud.keys where cloudKey.hasPrefix(Self.cloudPrefix) {
@@ -179,21 +217,30 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
             }
         }
         var changed: [String] = []
-        for key in Set(records.keys).union(remote.keys).sorted() {
-            switch (records[key], remote[key]) {
-            case let (local?, theirs?) where theirs.time > local.time:
-                if !theirs.sameValue(as: local) { changed.append(key) }
-                records[key] = theirs
-            case let (nil, theirs?):
-                records[key] = theirs
-                if theirs.value != nil { changed.append(key) }
-            case let (local?, theirs) where theirs.map({ local.time > $0.time }) ?? true:
-                cloud.set(local.dictionary, forKey: Self.cloudPrefix + key)
-            default:
-                break
+        var outgoing: [(String, UbiquitousRecord)] = []
+        let reason: Int = locked {
+            let reason = hasSynced ? Self.serverChange : Self.initialSyncChange
+            if heardFrom || !remote.isEmpty { hasSynced = true }
+            for key in Set(records.keys).union(remote.keys).sorted() {
+                switch (records[key], remote[key]) {
+                case let (local?, theirs?) where theirs.wins(over: local):
+                    if !theirs.sameValue(as: local) { changed.append(key) }
+                    records[key] = theirs
+                case let (nil, theirs?):
+                    records[key] = theirs
+                    if theirs.value != nil { changed.append(key) }
+                case let (local?, theirs) where theirs.map({ local.wins(over: $0) }) ?? true:
+                    outgoing.append((key, local))
+                default:
+                    break
+                }
             }
+            save()
+            return reason
         }
-        save()
+        for (key, record) in outgoing {
+            cloud.set(record.dictionary, forKey: Self.cloudPrefix + key)
+        }
         guard !changed.isEmpty else { return }
         NotificationCenter.default.post(
             name: Self.didChangeExternallyNotification,

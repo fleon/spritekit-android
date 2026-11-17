@@ -1,8 +1,7 @@
 import Foundation
 
 /// The game's line to Google Play and the device: Play Billing, Play Games
-/// Services and the device glue, all of which live in Java
-/// (`PlatformServices` in the app).
+/// Services and the device glue, all of which live in Java in the app.
 ///
 /// One call each way, both JSON:
 ///

@@ -21,12 +21,12 @@
 # Build optimised only to measure frame times or to upload to Play; every
 # other build, the last pass before a merge included, is `--debug`.
 #
-# The game's `#if DEBUG` is what lets it read its launch arguments
-# (`LaunchArguments`), print markers and run its scripts, as an Xcode Debug
-# build does. A debug build defines it, and so does an optimised one unless
-# it's `--store`, so a frame-time run can still take `-StartLevel` and
-# `-FrameLog`. What a release APK hands the game is MainActivity's to decide
-# (it passes no arguments outside a debuggable build).
+# A game's `#if DEBUG` code (reading its debug launch arguments, say) builds
+# as in an Xcode Debug build. A debug build defines DEBUG, and so does an
+# optimised one unless it's `--store`, so a frame-time run can still take
+# the game's debug launch arguments. What a release APK hands the game is
+# MainActivity's to decide (it passes no arguments outside a debuggable
+# build).
 
 . "$(dirname "$0")/config.sh"
 require_ndk
@@ -53,8 +53,8 @@ for abi in "${targets[@]}"; do
         exit 1
     fi
 
-    # FreeType and HarfBuzz, found through pkg-config exactly as Android/Text
-    # finds them. Without this the shell fails to resolve CTextShaping and
+    # FreeType and HarfBuzz, found through pkg-config exactly as Text/ finds
+    # them. Without this the shell fails to resolve CTextShaping and
     # says so in a way that reads like a missing module rather than a missing
     # build step.
     text_prefix="$VENDOR_DIR/out/$(vendor_triple "$abi")"
@@ -84,15 +84,15 @@ for abi in "${targets[@]}"; do
     # An optimised build skips Swift's run-time exclusivity checks. On
     # Android each one reads thread-local storage through emulated TLS
     # (`__emutls_get_address`, `pthread_getspecific`), which came to about
-    # a tenth of the game thread on a Galaxy M31. Debug builds keep them,
-    # so a violation still traps where it's checked.
+    # a tenth of a game's main thread on a Mali-G72 phone (Exynos 9611).
+    # Debug builds keep them, so a violation still traps where it's checked.
     if [ "$CONFIG" = release ]; then
         swiftpm+=(-Xswiftc -enforce-exclusivity=unchecked)
     fi
     # -lSDL3, -lGLESv3, -llog and -lmediandk used to be passed here. They cannot
     # be: `-Xlinker` reaches every link in the build, and since the shell
-    # started linking the game the build also makes a *host* macro plugin
-    # (Macros, for @NSCodingUnsupported), whose macOS link then went looking
+    # started linking the game the build may also make a *host* macro plugin
+    # (any Swift macro the game declares), whose macOS link then went looking
     # for libGLESv3. The libraries are named in Shell/Package.swift instead,
     # on the target that actually needs them. The search path above stays
     # here, because it is per ABI and harmless anywhere else.
