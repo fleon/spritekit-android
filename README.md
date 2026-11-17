@@ -1143,8 +1143,7 @@ against Apple's own where Apple's runs on the Mac:
   misplaced.
 - `SKConstraint` (`positionX`/`positionY`, `distance`, `zRotation`,
   `orient`), applied by the scene once a frame after the actions and before
-  `didApplyConstraints()`, as SpriteKit does; Hue Rings pins its title
-  buttons with them. Measured with `SKRenderer` on macOS 27.2
+  `didApplyConstraints()`, as SpriteKit does. Measured with `SKRenderer` on macOS 27.2
   (`ConstraintTests`): nodes take turns in the order they were given
   constraints or entered the scene with them, not in tree order; a node not
   in a scene, or in a paused scene, is left alone; ranges clamp as

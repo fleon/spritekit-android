@@ -3,8 +3,7 @@ import Foundation
 
 /// SpriteKit's constraints: limits on a node's position, its distance from a
 /// point or node, and its rotation, applied once a frame after the actions
-/// (`SKScene.applyConstraints`). Hue Rings keeps its title buttons where its
-/// layout wants them this way (`positionX`/`positionY` of a constant).
+/// (`SKScene.applyConstraints`).
 ///
 /// Measured with `SKRenderer` on a Mac (macOS 27.2), and pinned in
 /// `ConstraintTests`:
