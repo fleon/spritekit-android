@@ -305,6 +305,19 @@ HarfBuzz shapes and FreeType measures and rasterises (`Text/`), behind
 at the screen's density into an atlas uploaded as `R8` pages. Complex scripts
 (Thai is the acceptance test) shape correctly, which FreeType alone cannot.
 
+#### Attributed labels in several styles
+
+An `SKLabelNode`'s `attributedText` whose runs differ in font, colour,
+`.kern` or `.baselineOffset` draws each run in its own style when the label
+is one line (`numberOfLines` 1), as SpriteKit does: the runs end to end on
+one baseline, each raised by its `.baselineOffset`, and the whole line
+placed by its combined ink as a one-style line is, so `frame` and every
+alignment mode agree with SpriteKit's (`AttributedLabelRunTests`, against
+Apple's `SKLabelNode` on the same font file). `SKLabelNode.runs` holds the
+runs; `laidOutRuns` is set when the layout placed them, and the draw list
+then emits one label command per run. A wrapped label in several styles
+still draws in its first run's style.
+
 ### The platform layer
 
 Everything Apple-shaped that needs a device goes through one channel
