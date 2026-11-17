@@ -315,9 +315,12 @@ and tested on a Mac against a fake Java:
   Center's percentages.
 - **Saved data** (Play Games Saved Games): a key-value store's records in one
   snapshot, merged commutatively so a conflict resolves without loss.
-- **Audio:** sound effects through SDL's audio streams, music through the
-  NDK's MediaCodec (the same AAC an iOS build ships), with loop points kept
-  in presentation time.
+- **Audio:** sound effects (`.wav`) through SDL's audio streams, music
+  through the NDK's MediaCodec, with loop points kept in presentation time.
+  A track may be AAC in `.m4a`, MP3 or Ogg Vorbis (`.ogg`), looked for in
+  that order, so the files an iOS build ships play as they are. Gradle
+  stages them in `audio/SFX` and `audio/Music`, and `Bundle.main` finds them
+  there too (`ResourceBundle.defaultFolder`).
   A track with no loop points of its own repeats whole with
   `MusicLoop.wholeTrack`, as `AVAudioPlayer`'s `numberOfLoops = -1` does.
 - **Media:** `AVAssetWriter`, `AVAudioFile` and composition stand-ins over
