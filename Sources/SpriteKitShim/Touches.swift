@@ -104,16 +104,6 @@ public final class UIEvent {
 // MARK: - Hit testing
 
 public extension SKNode {
-    /// Whether `point`, in **this node's parent's** coordinates, falls inside
-    /// everything the node draws — SpriteKit's own meaning, which is why the
-    /// point is in the parent's space and not the node's.
-    func contains(_ point: CGPoint) -> Bool {
-        guard !isHidden else { return false }
-        return accumulatedContents(includingHidden: false)
-            .applying(localTransform)
-            .contains(point)
-    }
-
     /// Every node drawing at `point` (in this node's coordinates), this one
     /// included if it draws there, topmost first.
     func nodes(at point: CGPoint) -> [SKNode] {

@@ -1,0 +1,306 @@
+package PACKAGE_NAME;
+
+import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
+import android.os.Build;
+import android.os.PowerManager;
+import android.os.VibrationAttributes;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
+import android.util.Log;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
+
+import org.json.JSONObject;
+
+/**
+ * The device's part: haptics, audio focus, battery saver and the status bar.
+ *
+ * <p><b>Haptics.</b> The game's five feedback kinds (UIKit's light, medium
+ * and soft impacts, selection, success and warning) as Android's haptic
+ * primitives where the vibrator has them, its predefined effects where not,
+ * and a short buzz on the oldest. Played as touch feedback, so the system's
+ * own "vibration & haptics" switch silences them as it does every app's.
+ *
+ * <p><b>Audio focus,</b> to the iOS build's ambient session: the player's
+ * own music wins. If something else is playing music as the game comes to
+ * the front, the game asks for no focus and keeps its soundtrack quiet
+ * (its sounds still mix in); otherwise it takes focus for the soundtrack and
+ * steps aside the moment another app takes it, and pauses for a call. It
+ * holds focus until it stops, not merely pauses ({@link AudioFocusPolicy}).
+ * Events: {@code audio} with {@code otherAudio} and {@code interrupted}.
+ *
+ * <p><b>Battery saver</b> is iOS's Low Power Mode: the game holds its frame
+ * rate to 60 while it is on. Event: {@code powerSave}.
+ */
+final class DeviceServices implements AudioManager.OnAudioFocusChangeListener {
+    private static final String SERVICE = "device";
+
+    private final Activity activity;
+    private final PlatformServices services;
+    private final Vibrator vibrator;
+    private final AudioManager audio;
+    private final PowerManager power;
+    private AudioFocusRequest focusRequest;
+    private boolean hasFocus;
+    private final AudioFocusPolicy focusPolicy = new AudioFocusPolicy();
+
+    private final BroadcastReceiver powerSaveReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            postPowerSave();
+        }
+    };
+
+    DeviceServices(Activity activity, PlatformServices services) {
+        this.activity = activity;
+        this.services = services;
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager manager = (VibratorManager) activity.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+            vibrator = manager != null ? manager.getDefaultVibrator() : null;
+        } else {
+            vibrator = (Vibrator) activity.getSystemService(Context.VIBRATOR_SERVICE);
+        }
+        audio = (AudioManager) activity.getSystemService(Context.AUDIO_SERVICE);
+        power = (PowerManager) activity.getSystemService(Context.POWER_SERVICE);
+        IntentFilter filter = new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
+        if (Build.VERSION.SDK_INT >= 33) {
+            activity.registerReceiver(powerSaveReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            activity.registerReceiver(powerSaveReceiver, filter);
+        }
+    }
+
+    JSONObject call(String method, JSONObject args) {
+        switch (method) {
+            case "haptic":
+                haptic(args.optString("kind"));
+                return null;
+            case "statusBar": {
+                boolean visible = args.optBoolean("visible");
+                activity.runOnUiThread(() -> showStatusBar(visible));
+                return null;
+            }
+            case "state":
+                return PlatformServices.object(
+                    "powerSave", power != null && power.isPowerSaveMode(),
+                    "haptics", vibrator != null && vibrator.hasVibrator());
+            case "openAppSettings":
+                return PlatformServices.object("ok", openAppSettings());
+            default:
+                Log.w(PlatformServices.TAG, "no device." + method);
+                return null;
+        }
+    }
+
+    /**
+     * The app's page in the system settings, where
+     * {@code UIApplication.openSettingsURLString} goes on iOS.
+     */
+    private boolean openAppSettings() {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.fromParts("package", activity.getPackageName(), null));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(intent);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(PlatformServices.TAG, "no app settings", e);
+            return false;
+        }
+    }
+
+    /**
+     * The settings' status bar switch: the status bar shows over the game or
+     * hides, as the iOS build's {@code prefersStatusBarHidden} follows it.
+     * Only the status bar: the navigation bar keeps SDL's own setting.
+     */
+    private void showStatusBar(boolean visible) {
+        Window window = activity.getWindow();
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller == null) return;
+            if (visible) {
+                controller.show(WindowInsets.Type.statusBars());
+            } else {
+                controller.hide(WindowInsets.Type.statusBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else if (visible) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        } else {
+            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        }
+    }
+
+    void onResume() {
+        postPowerSave();
+        if (audio == null) return;
+        // Before SDL resumes the game's own stream, which is stopped only
+        // after a stop (`AudioFocusPolicy`).
+        switch (focusPolicy.onResume(hasFocus, audio.isMusicActive())) {
+            case OTHER_AUDIO:
+                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", true, "interrupted", false));
+                break;
+            case REQUEST:
+                requestFocus();
+                break;
+            case KEEP:
+                break;
+        }
+    }
+
+    void onStop() {
+        focusPolicy.onStop();
+        abandonFocus();
+    }
+
+    void onDestroy() {
+        abandonFocus();
+        try {
+            activity.unregisterReceiver(powerSaveReceiver);
+        } catch (IllegalArgumentException alreadyGone) {
+            // Never registered, or already unregistered.
+        }
+    }
+
+    private void postPowerSave() {
+        services.post(SERVICE, "powerSave", PlatformServices.object("enabled", power != null && power.isPowerSaveMode()));
+    }
+
+    // MARK: - Audio focus
+
+    private void requestFocus() {
+        if (audio == null || hasFocus) return;
+        int result;
+        if (Build.VERSION.SDK_INT >= 26) {
+            if (focusRequest == null) {
+                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build())
+                    .setOnAudioFocusChangeListener(this)
+                    .build();
+            }
+            result = audio.requestAudioFocus(focusRequest);
+        } else {
+            result = audio.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        }
+        hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        services.post(SERVICE, "audio", PlatformServices.object("otherAudio", !hasFocus, "interrupted", false));
+    }
+
+    private void abandonFocus() {
+        if (audio == null || !hasFocus) return;
+        if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
+            audio.abandonAudioFocusRequest(focusRequest);
+        } else {
+            audio.abandonAudioFocus(this);
+        }
+        hasFocus = false;
+    }
+
+    @Override
+    public void onAudioFocusChange(int change) {
+        switch (change) {
+            case AudioManager.AUDIOFOCUS_GAIN:
+                hasFocus = true;
+                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", false, "interrupted", false));
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS:
+                // Another app's music: the soundtrack steps aside for good,
+                // until the game next comes to the front.
+                abandonFocus();
+                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", true, "interrupted", false));
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                // A call or an alarm: everything waits.
+                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", false, "interrupted", true));
+                break;
+            default:
+                // LOSS_TRANSIENT_CAN_DUCK: the system ducks us itself.
+                break;
+        }
+    }
+
+    // MARK: - Haptics
+
+    private void haptic(String kind) {
+        if (vibrator == null || !vibrator.hasVibrator()) return;
+        VibrationEffect effect = Build.VERSION.SDK_INT >= 30 ? composed(kind) : null;
+        if (effect == null && Build.VERSION.SDK_INT >= 29) effect = predefined(kind);
+        if (effect == null && Build.VERSION.SDK_INT >= 26) effect = VibrationEffect.createOneShot(milliseconds(kind), amplitude(kind));
+        if (effect == null) {
+            vibrator.vibrate(milliseconds(kind));
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH));
+        } else {
+            vibrator.vibrate(effect, new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build());
+        }
+    }
+
+    /** Haptic primitives (Android 11+), if this vibrator plays them. */
+    private VibrationEffect composed(String kind) {
+        int click = VibrationEffect.Composition.PRIMITIVE_CLICK;
+        int tick = VibrationEffect.Composition.PRIMITIVE_TICK;
+        if (!vibrator.areAllPrimitivesSupported(click, tick)) return null;
+        VibrationEffect.Composition composition = VibrationEffect.startComposition();
+        switch (kind) {
+            case "light": composition.addPrimitive(click, 0.5f); break;
+            case "medium": composition.addPrimitive(click, 0.8f); break;
+            case "soft": composition.addPrimitive(tick, 0.7f); break;
+            case "selection": composition.addPrimitive(tick, 0.5f); break;
+            case "success":
+                composition.addPrimitive(click, 0.6f);
+                composition.addPrimitive(click, 1.0f, 80);
+                break;
+            case "warning":
+                composition.addPrimitive(click, 1.0f);
+                composition.addPrimitive(click, 0.6f, 120);
+                break;
+            default: return null;
+        }
+        return composition.compose();
+    }
+
+    private static VibrationEffect predefined(String kind) {
+        switch (kind) {
+            case "light":
+            case "soft":
+            case "selection": return VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK);
+            case "medium": return VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK);
+            case "success": return VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK);
+            case "warning": return VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK);
+            default: return null;
+        }
+    }
+
+    private static long milliseconds(String kind) {
+        switch (kind) {
+            case "medium": return 20;
+            case "success":
+            case "warning": return 35;
+            default: return 10;
+        }
+    }
+
+    private static int amplitude(String kind) {
+        switch (kind) {
+            case "medium":
+            case "warning": return 200;
+            case "success": return 160;
+            default: return 90;
+        }
+    }
+}
