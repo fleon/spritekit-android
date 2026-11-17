@@ -1,6 +1,10 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
+/// SpriteKit's custom timing curve: progress through an action, 0 to 1, in;
+/// the progress to show, out.
+public typealias SKActionTimingFunction = (Float) -> Float
+
 public enum SKActionTimingMode: Int, Sendable {
     case linear, easeIn, easeOut, easeInEaseOut
 
@@ -52,6 +56,23 @@ public final class SKAction {
     let kind: Kind
     public var duration: TimeInterval
     public var timingMode: SKActionTimingMode = .linear
+    /// SpriteKit's `timingFunction`. Measured with `SKRenderer` on a Mac
+    /// (`ActionTimingFunctionTests`): it runs on what the timing mode gives,
+    /// `f(mode(t))`, whichever was set first; what it returns is clamped to
+    /// 0...1, so an overshooting curve holds at the end rather than passing
+    /// it; an action is done once that reaches 1 (a back ease ends early,
+    /// a curve that never gets there holds its last value); a custom
+    /// action's block is handed the curved time; a sequence or group runs
+    /// its children on curved time and, if the curve hasn't reached 1 when
+    /// its duration is up, jumps them to the end the frame after; a repeat
+    /// ignores it. Unset, SpriteKit's is a nil block that crashes when
+    /// called; this one reads as the identity.
+    public var timingFunction: SKActionTimingFunction {
+        get { curve ?? { $0 } }
+        set { curve = newValue }
+    }
+    /// The function set, if one was.
+    var curve: SKActionTimingFunction?
     public var speed: CGFloat = 1
 
     init(kind: Kind, duration: TimeInterval) {
@@ -61,10 +82,11 @@ public final class SKAction {
 
     /// `NSCopying`'s copy, as games write it (`fade.copy() as! SKAction`) to
     /// run one action on several nodes and change each copy apart: the same
-    /// action, with its own duration, timing mode and speed.
+    /// action, with its own duration, timing mode, timing function and speed.
     public func copy() -> Any {
         let copy = SKAction(kind: kind, duration: duration)
         copy.timingMode = timingMode
+        copy.curve = curve
         copy.speed = speed
         return copy
     }
@@ -230,8 +252,13 @@ public final class SKAction {
 
     /// SpriteKit's reverse: relative actions undo themselves, sequences run
     /// backwards, and actions with nothing to reverse (an absolute move, a
-    /// block) come back as they are, as SpriteKit's do. The timing mode is
-    /// mirrored, so an ease-in reversed eases out.
+    /// block) come back as they are, as SpriteKit's do. Measured with
+    /// `SKRenderer` on a Mac (macOS 27.2, `ActionTimingFunctionTests`):
+    /// moves, rotations, scales and custom actions keep their timing mode,
+    /// function and speed as they are, not mirrored (a reversed ease-in
+    /// still eases in); sequences, groups, repeats, waits, blocks and fades
+    /// come back linear, with no function and a speed of 1; and a reversed
+    /// fade takes no time.
     public func reversed() -> SKAction {
         let kind: Kind
         switch self.kind {
@@ -244,14 +271,30 @@ public final class SKAction {
         case let .repeating(action, count): kind = .repeating(action.reversed(), count)
         default: kind = self.kind
         }
-        let reversed = SKAction(kind: kind, duration: duration)
-        reversed.speed = speed
-        switch timingMode {
-        case .easeIn: reversed.timingMode = .easeOut
-        case .easeOut: reversed.timingMode = .easeIn
-        default: reversed.timingMode = timingMode
+        let plain: Bool, fade: Bool
+        switch self.kind {
+        case .fadeTo, .fadeBy: plain = true; fade = true
+        case .wait, .run, .sequence, .group, .repeating: plain = true; fade = false
+        default: plain = false; fade = false
+        }
+        let reversed = SKAction(kind: kind, duration: fade ? 0 : duration)
+        if !plain {
+            reversed.speed = speed
+            reversed.timingMode = timingMode
+            reversed.curve = curve
         }
         return reversed
+    }
+
+    /// Whether the action's time runs on a curve rather than straight.
+    var curvesTime: Bool { timingMode != .linear || curve != nil }
+
+    /// What `t` of the way through shows: the mode's curve, then the
+    /// function's, clamped to 0...1 as SpriteKit clamps it.
+    func curved(_ t: CGFloat) -> CGFloat {
+        let moded = timingMode.apply(t)
+        guard let curve else { return moded }
+        return CGFloat(min(max(curve(Float(moded)), 0), 1))
     }
 
     var totalDuration: TimeInterval {
@@ -268,6 +311,9 @@ public final class SKAction {
     struct State {
         let action: SKAction
         private var elapsed: TimeInterval = 0
+        /// A sequence's or group's own time on its curve: what its children
+        /// have been handed so far.
+        private var curvedElapsed: TimeInterval = 0
         private var started = false
         private var from: Snapshot?
         private var children: [State] = []
@@ -323,6 +369,14 @@ public final class SKAction {
                     zRotation: node.zRotation,
                     warp: (node as? SKWarpable)?.warpGeometry
                 )
+            }
+
+            var delta = delta
+            switch action.kind {
+            case .sequence, .group:
+                if action.curvesTime { delta = curvedDelta(delta) }
+            default:
+                break
             }
 
             switch action.kind {
@@ -391,24 +445,45 @@ public final class SKAction {
                 elapsed += delta * speed
                 let total = action.duration
                 let raw = total > 0 ? CGFloat(min(1, elapsed / total)) : 1
-                apply(progress: action.timingMode.apply(raw), rawElapsed: elapsed, on: node)
-                guard total <= 0 || elapsed >= total else { return nil }
+                let progress = action.curved(raw)
+                // A custom block is handed seconds: straight, as they ran;
+                // curved, the curve's share of the duration.
+                let shown = action.curvesTime ? TimeInterval(progress) * total : elapsed
+                apply(progress: progress, elapsed: shown, on: node)
+                guard total <= 0 || progress >= 1 else { return nil }
                 // Back in the parent's time: what this action's own speed
-                // ran past its end.
-                return total <= 0 ? delta : speed > 0 ? (elapsed - total) / speed : 0
+                // ran past its end (none, if a curve got there early).
+                return total <= 0 ? delta : speed > 0 ? max(0, elapsed - total) / speed : 0
             }
         }
 
-        private func apply(progress t: CGFloat, rawElapsed: TimeInterval, on node: SKNode) {
+        /// A curved sequence's or group's frame: the children are handed the
+        /// step along the curve, and, once its time is past, the rest of it
+        /// (a curve that never reached 1 jumps to the end, as SpriteKit's
+        /// does) and what the frame ran past the end, so they finish and
+        /// hand that on.
+        private mutating func curvedDelta(_ delta: TimeInterval) -> TimeInterval {
+            let total = action.duration
+            let before = elapsed
+            elapsed += delta
+            guard total > 0, total.isFinite else { return delta }
+            let target = elapsed > total ? total : TimeInterval(action.curved(CGFloat(elapsed / total))) * total
+            let along = max(0, target - curvedElapsed)
+            curvedElapsed = max(curvedElapsed, target)
+            let past = max(0, elapsed - max(total, before))
+            return along + past
+        }
+
+        private func apply(progress t: CGFloat, elapsed: TimeInterval, on node: SKNode) {
             guard let from else { return }
             switch action.kind {
             case .wait:
                 break
 
             case let .custom(block):
-                // SpriteKit hands the block elapsed seconds, not progress, and
-                // does not apply timingMode to it.
-                block(node, CGFloat(min(rawElapsed, action.duration)))
+                // SpriteKit hands the block seconds, not progress: on the
+                // timing mode's and function's curve, if it has one.
+                block(node, CGFloat(min(elapsed, action.duration)))
 
             case let .moveTo(point, onlyX, onlyY):
                 if let point {
@@ -481,7 +556,7 @@ public final class SKAction {
 
             case let .animate(textures, timePerFrame, restore):
                 guard let sprite = node as? SKSpriteNode, !textures.isEmpty else { break }
-                let step = Int(rawElapsed / timePerFrame)
+                let step = Int(elapsed / timePerFrame)
                 if step >= textures.count {
                     if restore { sprite.texture = textures.first }
                 } else {
