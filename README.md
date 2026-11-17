@@ -837,8 +837,7 @@ Java answers each submission "no", which `submitScore` reports as
 leaderboard, or the list of them for nil (Game Center's dashboard), signing
 the player in first.
 
-The Java half lives in each game's App (Zyl's is the first:
-`Android/App/app/src/main/java/com/fleon/zyl/PlayGamesServices.java`), two
+The Java half lives in the game's app, in its Play Games service, as two
 methods under `games`:
 
 ```java

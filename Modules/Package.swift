@@ -63,8 +63,7 @@ let package = Package(
         .target(name: "CryptoKit",
                 dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
-        // The local player (Switchlings' `PlaytestLog`) and leaderboard
-        // scores, on Play Games.
+        // The local player and leaderboard scores, on Play Games.
         .target(name: "GameKit",
                 dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),

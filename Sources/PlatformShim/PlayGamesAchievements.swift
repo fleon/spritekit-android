@@ -7,9 +7,9 @@ import Foundation
 /// exist on Play, and packed into the APK.
 ///
 ///     {"applicationId": "123456789012",
-///      "achievements": {"com.fleon.switchlings.achievement.levels.10":
+///      "achievements": {"com.example.game.achievement.levels.10":
 ///                         {"id": "CgkI…", "steps": 10}, …},
-///      "leaderboards": {"com.fleon.zyl.leaderboards.totalStars":
+///      "leaderboards": {"com.example.game.leaderboard.score":
 ///                         {"id": "CgkI…"}, …}}
 ///
 /// No `steps` (or 0) is a standard achievement, unlocked at 100%. A game

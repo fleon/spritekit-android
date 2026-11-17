@@ -1,8 +1,8 @@
-// Stands in for GameKit on Android: the player, as Switchlings' beta solve
-// log (`PlaytestLog`) names them, and leaderboard scores (`GKLeaderboard`),
-// which go to Play Games. A game's own Game Center manager is a stand-in of
-// its own (its `Platform/GameCenterManager.swift`, on Play Games), and sends
-// scores either through `GKLeaderboard` or straight to the backend.
+// Stands in for GameKit on Android: the local player (the one signed in to
+// Play Games) and leaderboard scores (`GKLeaderboard`), which go to Play
+// Games. A game's Game Center manager has an Android body of its own, on
+// Play Games, and sends scores either through `GKLeaderboard` or straight to
+// the backend.
 import Foundation
 import PlatformShim
 
@@ -16,12 +16,10 @@ open class GKPlayer {
     init() {}
 }
 
-/// The player as the solve log asks: the one signed in to Play Games, by
-/// their Play Games ID and name (set by the game from
-/// `PlayGamesAchievements.identity`), so the log names them as it names a
-/// Game Center player on iOS (`pg:<id>` rather than `gc:<id>`). Signed out,
-/// a record names its install instead (`anon:<id>`), as an iOS build signed
-/// out of Game Center does.
+/// The local player: the one signed in to Play Games, by their Play Games ID
+/// and name (set by the game from `PlayGamesAchievements.identity`), as
+/// Game Center names its player on iOS. Signed out, not authenticated and
+/// unnamed.
 @MainActor
 public final class GKLocalPlayer: GKPlayer {
     public static let local = GKLocalPlayer()
