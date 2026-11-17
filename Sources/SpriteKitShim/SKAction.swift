@@ -59,6 +59,16 @@ public final class SKAction {
         self.duration = duration
     }
 
+    /// `NSCopying`'s copy, as games write it (`fade.copy() as! SKAction`) to
+    /// run one action on several nodes and change each copy apart: the same
+    /// action, with its own duration, timing mode and speed.
+    public func copy() -> Any {
+        let copy = SKAction(kind: kind, duration: duration)
+        copy.timingMode = timingMode
+        copy.speed = speed
+        return copy
+    }
+
     // MARK: The four the game builds on
 
     public static func customAction(
