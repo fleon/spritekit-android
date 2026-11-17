@@ -45,7 +45,7 @@ open class SKRenderer {
     open func render(withViewport viewport: CGRect, commandBuffer: MTLCommandBuffer, renderPassDescriptor: MTLRenderPassDescriptor) {
         guard let scene else { return }
         let color = renderPassDescriptor.colorAttachments[0]
-        let (list, size, anchor, mode) = mainActorUnchecked { (DrawList(scene: scene), scene.size, scene.anchorPoint, scene.scaleMode) }
+        let (list, size, anchor, mode) = mainActorUnchecked { (DrawList(scene: scene, ignoresSiblingOrder: ignoresSiblingOrder), scene.size, scene.anchorPoint, scene.scaleMode) }
         commandBuffer.record(RecordedRenderPass(
             list: list,
             viewport: viewport,

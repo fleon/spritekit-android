@@ -1176,6 +1176,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         ) else { return nil }
 
         var list = DrawList()
+        // SpriteKit draws a snapshot in tree order, whatever the view's
+        // `ignoresSiblingOrder` (measured by readback on a Mac).
         list.commands = DrawList(scene: node).commands
         let passes = batcher.passes(for: list)
 
