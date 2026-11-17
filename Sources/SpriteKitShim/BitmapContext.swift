@@ -4,11 +4,9 @@ import Foundation
 /// A software drawing context: CoreGraphics' `CGContext`, as much of it as
 /// the game draws through.
 ///
-/// `Source/Utils/SurfaceTexture.swift` is what this exists for. Every chunky
-/// button, panel, meter, card, well and focus ring in the game is a texture
-/// drawn by that file through a `CGContext`, so until one exists on Android
-/// no part of the HUD or the menus can appear at all — the board can draw
-/// without it; nothing else can.
+/// A game that draws its buttons, panels, meters and cards into textures
+/// through a `CGContext` (as SpriteKit games commonly do, to keep them
+/// crisp at any size) shows none of them on Android until one exists.
 ///
 /// **Why it is here and not in the renderer.** A game file reaches this
 /// through a plain `import UIKit`, which on Android resolves to a target that
@@ -155,7 +153,8 @@ public final class BitmapContext {
     private var ownsStorage: Bool
 
     /// What `CGContext.data` hands back — the live pixels, premultiplied
-    /// RGBA8. `MechanicSampleNode` reads a context's bytes this way.
+    /// RGBA8. A game reading back what it drew reads a context's bytes this
+    /// way.
     public var data: UnsafeMutableRawPointer? {
         guard exposesAlphaOnly else { return UnsafeMutableRawPointer(storage) }
         // An alpha-only bitmap's bytes: one a pixel, its coverage, read off
@@ -654,10 +653,9 @@ public final class BitmapContext {
         }
     }
 
-    /// A gradient between two circles, as CoreGraphics draws one. The game's
-    /// radial gradients are all concentric with a zero start radius (glows,
-    /// the waterline, the circuit board's light), which is the easy case of
-    /// the same solve.
+    /// A gradient between two circles, as CoreGraphics draws one. Most radial
+    /// gradients are concentric with a zero start radius (glows, spots of
+    /// light), which is the easy case of the same solve.
     public func drawRadialGradient(
         _ gradient: Gradient,
         startCenter: CGPoint,
@@ -731,8 +729,7 @@ public final class BitmapContext {
     /// `CGContext(data:...)`), so an image drawn over the whole of one fills
     /// it the right way up; a renderer's context is y-down, as UIKit's is,
     /// so an image drawn straight into one comes out upside down — the
-    /// CoreGraphics gotcha the game's own code flips for
-    /// (`BoardGroundingArt`, `CircuitBoardNode`).
+    /// CoreGraphics gotcha game code already flips for.
     public func draw(_ image: RasterImage, in rect: CGRect) {
         draw(image, in: rect, byTiling: false)
     }

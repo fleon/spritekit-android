@@ -5,7 +5,7 @@ import PlatformShim
 import ShellCore
 import SpriteKitShim
 
-/// What a share film needs from the platform, set up before anything asks.
+/// What writing a video needs from the platform, set up before anything asks.
 enum FilmSetup {
     /// Points Foundation's temporary directory at the app's cache. Corelibs
     /// Foundation answers `/data/local/tmp/` on Android when `TMPDIR` isn't

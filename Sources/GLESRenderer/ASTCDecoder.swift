@@ -3,12 +3,11 @@ import Foundation
 /// Decodes ASTC LDR blocks to RGBA8 on the CPU.
 ///
 /// The packed pages ship ASTC (`CompressedPage`), which the GPU samples as
-/// it is. A few things still want their pixels on the CPU: the game draws
-/// some packed images into CoreGraphics surfaces (ledges' mitred ends, the
-/// Mainframe's floor, share avatars: `UIImage(named:)`), shaders sample an
+/// it is. A few things still want their pixels on the CPU: a game may draw
+/// packed images into CoreGraphics surfaces (`UIImage(named:)`), shaders sample an
 /// atlas image cut out of its page (`ResourceCache.cutOut`), and a GPU
 /// without ASTC (no `GL_KHR_texture_compression_astc_ldr`) takes the page
-/// as RGBA8 instead. This covers what android-art.js's astcenc writes: 2D
+/// as RGBA8 instead. This covers what ARM's astcenc writes: 2D
 /// blocks, every LDR endpoint mode, one to four partitions and dual planes;
 /// HDR and 3D blocks decode to the error colour, as a GPU would show them.
 ///

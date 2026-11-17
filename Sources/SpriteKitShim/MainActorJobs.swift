@@ -3,9 +3,8 @@ import Foundation
 
 /// Runs the main actor's work on the thread the game lives on.
 ///
-/// The loading screen builds the next scene on a background thread and
-/// hands it back with `Task { @MainActor in … }`; the game does the same in
-/// a dozen other places. On Apple the main actor's jobs go to the main
+/// A game may build its next scene on a background thread and hand it back
+/// with `Task { @MainActor in … }`, as games commonly do. On Apple the main actor's jobs go to the main
 /// dispatch queue, which the main run loop drains. On Android the process's
 /// first thread — the one libdispatch bound its main queue to as it loaded —
 /// is Java's UI thread, which runs a Looper, not a CFRunLoop: nothing ever
@@ -28,7 +27,7 @@ import Foundation
 ///
 /// `DispatchQueue.main.async` is not covered: that goes to libdispatch's own
 /// queue, which the shell binds to the same thread and drains once a pass
-/// (Android/README.md, "`DispatchQueue.main` runs on the game's thread").
+/// (see the README's notes on the shell).
 public enum MainActorJobs {
     /// The executor's reference, as the runtime passes executors: the object
     /// and its `SerialExecutor` witness table (with flag bits).

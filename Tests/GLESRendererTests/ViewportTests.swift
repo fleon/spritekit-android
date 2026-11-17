@@ -9,7 +9,7 @@ private func close(_ a: Float, _ b: Float, _ tolerance: Float = 0.0001) -> Bool 
 
 @Suite("Projection")
 struct ProjectionTests {
-    /// The emulator's screen, and the scene size DesignSystem gives for it.
+    /// The emulator's screen, and a scene size a game might give for it.
     /// 1080x2400 px at 3x is 360x800 pt; held in landscape the game runs
     /// 2400x1080 px, 800x360 pt.
     private var phone: Viewport {

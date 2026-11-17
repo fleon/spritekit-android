@@ -1,8 +1,8 @@
 import Foundation
 
-/// simd's `simd_quatf`, as much as the game asks of one: Starry Sky's
-/// planet block keeps its orientation as a quaternion, built from axis-angle
-/// turns, multiplied, normalised and handed to its shader as a `vector`
+/// simd's `simd_quatf`, as much as a tumbling object needs of one: an
+/// orientation kept as a quaternion, built from axis-angle turns,
+/// multiplied, normalised and handed to a shader as a `vector`
 /// (ix, iy, iz, r). Named apart so the tests can check it against the real
 /// one on the Mac; on Android it takes simd's name.
 public struct Quaternion: Equatable, Sendable {

@@ -3,8 +3,8 @@ import Testing
 @testable import GLESRenderer
 @testable import SpriteKitShim
 
-// A 400 × 800 pt screen at one pixel a point, the backdrop overscanning it
-// by 8 pt, as `EdgeShade.Blur` sets its uniforms there.
+// A 400 × 800 pt screen at one pixel a point, the effect node overscanning
+// it by 8 pt, as a band blur sets its uniforms there.
 private let visible = CGRect(x: 0, y: 0, width: 400, height: 800)
 private let bounds = CGRect(x: -8, y: -8, width: 416, height: 816)
 private let nowhere: Float = 100_000
@@ -38,7 +38,7 @@ func uprightBands() throws {
     // Six points of taps, two texels more, as far as the overscan goes.
     let top = result.strips[1]
     #expect(top.strip == .init(x0: -8, y0: 632, x1: 408, y1: 808))
-    // The strip's texture spans 416 × 176 pixels where the backdrop's spanned
+    // The strip's texture spans 416 × 176 pixels where the effect node's spanned
     // 416 × 816: its coordinates run that much faster per point.
     #expect(abs(top.span.x - 1 / 416) < 1e-6)
     #expect(abs(top.span.y - 1 / 176) < 1e-6)
@@ -60,7 +60,7 @@ func landscapeBands() throws {
     ])
 }
 
-@Test("Without bands the backdrop draws in place, cropped as the shader crops it")
+@Test("Without bands the contents draw in place, cropped as the shader crops it")
 func noBandsCropped() throws {
     let none = SIMD4<Float>(0, 0, 0, -nowhere)
     let result = try #require(plan(uniforms(top: none, bottom: none, crop: SIMD4(100, -nowhere, 250.4, nowhere))))

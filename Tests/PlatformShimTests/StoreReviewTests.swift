@@ -33,6 +33,20 @@ struct StoreReviewTests {
         #expect(java.count("review.request") == 2)
     }
 
+    @Test("A request Java never answers stops holding the next one back after the timeout")
+    func unanswered() {
+        let java = FakeJava()
+        var now: TimeInterval = 1000
+        let review = PlayInAppReview(channel: java.channel, clock: { now })
+        review.request()
+        now += PlayInAppReview.answerTimeout - 1
+        review.request()
+        #expect(java.count("review.request") == 1)
+        now += 1
+        review.request()
+        #expect(java.count("review.request") == 2)
+    }
+
     @Test("Without a channel a request does nothing, as on a simulator")
     func noChannel() {
         let saved = StoreReview.playInAppReview

@@ -3,11 +3,8 @@ import Foundation
 
 /// A particle emitter, simulated here in Swift and drawn as sprites.
 ///
-/// The game builds every emitter in code (no .sks files): the reef's marine
-/// snow and motes, its bubbling vents and the bursts a tap lets go
-/// (`SeabedNode`), and every other world's pollen, dust, bubbles, fireflies
-/// and twinkles (`AmbientParticlesNode` in `BackdropNode`). `ShaderPrimer`
-/// reads `shader`. This is that surface and the properties SpriteKit puts
+/// For emitters built in code (no .sks files): drifting motes, rising
+/// bubbles, bursts and twinkles. A game priming shaders may read `shader`. This is that surface and the properties SpriteKit puts
 /// beside it.
 ///
 /// **Ranges** are SpriteKit's: a value's whole spread, so a particle takes

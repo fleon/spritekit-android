@@ -1,10 +1,10 @@
 import Foundation
 
-/// Whether the game offers its Vibration switch and plays haptics: where the
-/// device has a vibrator (`Vibrator.hasVibrator()`, `DeviceServices.java`),
+/// Whether the game offers haptics (and a switch for them): where the
+/// device has a vibrator (`Vibrator.hasVibrator()`),
 /// whatever its size, rather than iOS's phones-only idiom test, which would
 /// hide it on a vibrating tablet and show it on a phone without a motor.
-/// `-Vibrator NO` (or `YES`), a debug launch argument of the Android port's
+/// `-Vibrator NO` (or `YES`), a debug launch argument of the runtime's
 /// alone, stands in for the device's answer; release builds never read it.
 public enum VibrationSupport {
     public static let argument = "Vibrator"

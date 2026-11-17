@@ -5,10 +5,9 @@ import Foundation
 /// `CGPath` records rather than holding a CoreGraphics object, so there is
 /// nothing for the two to differ in and the names can be the same type.
 ///
-/// Only the three calls the rigs make are here — a clipping mask is a closed
-/// polygon and nothing more. The other 60-odd path calls in the game
-/// (`SVGPath`, `SurfaceTexture`, `EdgeNode`, the chunky surfaces) come with
-/// the rasteriser, which is what has to draw them.
+/// Only the three calls a clipping mask needs are here — a closed polygon
+/// and nothing more. The other path calls (curves, arcs, rounded rects)
+/// come with the rasteriser, which is what has to draw them.
 public typealias CGMutablePath = CGPath
 
 public extension CGPath {
