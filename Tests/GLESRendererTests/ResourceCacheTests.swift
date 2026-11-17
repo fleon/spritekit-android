@@ -159,7 +159,7 @@ struct PackedPageTests {
             "Brick1": {"page": 0, "rect": [0, 0, 150, 150], "size": [50, 50]},
             "Brick2": {"page": 0, "rect": [160, 0, 150, 150], "size": [50, 50]},
             "Brick3": {"page": 0, "rect": [320, 0, 150, 150], "size": [50, 50]},
-            "Kerb":   {"page": 1, "rect": [0, 0, 300, 60], "size": [100, 20]}
+            "Wall":   {"page": 1, "rect": [0, 0, 300, 60], "size": [100, 20]}
           }
         }
         """.utf8))
@@ -173,7 +173,7 @@ struct PackedPageTests {
         let a = cache.name(for: SKTexture(imageNamed: "Brick1"))
         let b = cache.name(for: SKTexture(imageNamed: "Brick2"))
         let c = cache.name(for: SKTexture(imageNamed: "Brick3"))
-        let d = cache.name(for: SKTexture(imageNamed: "Kerb"))
+        let d = cache.name(for: SKTexture(imageNamed: "Wall"))
 
         #expect(a == b && b == c)
         #expect(d != a)

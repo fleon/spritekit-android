@@ -6,7 +6,7 @@ import ShellCore
 /// A thread of its own with a GL context sharing the frame thread's objects
 /// (`ska_gl_share_create`), for work that would stall a frame:
 /// linking programs (`ProgramBuilds`). It runs below the frame thread but
-/// above the game's other workers (`WorkerPriority`): the loading screen's
+/// above the game's other workers (`WorkerPriority`): a loading screen's
 /// warm-up draw waits for what it hasn't finished.
 nonisolated final class GLBuilderThread: @unchecked Sendable {
     private let condition = NSCondition()

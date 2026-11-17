@@ -4,7 +4,7 @@ import Foundation
 /// A texture.
 ///
 /// The game builds these from asset names, raw image data, and sub-rectangles
-/// of other textures (the atlas slices the rigs and the board art use). The
+/// of other textures (atlas slices). The
 /// shim keeps the description; uploading to GL is the renderer's job, and
 /// `glName` is where the renderer caches the uploaded handle.
 ///
@@ -17,29 +17,28 @@ public final class SKTexture: @unchecked Sendable {
     public enum Source {
         case named(String)
         /// Raw RGBA8 pixels, rows bottom first — exactly what SpriteKit's
-        /// `SKTexture(data:size:)` takes. The game builds these itself:
-        /// `Starlight.noise`, the lattice the sky's nebula, clouds and
-        /// mottled blue all sample, is one.
+        /// `SKTexture(data:size:)` takes. A game builds these itself: a noise
+        /// lattice its shaders sample, say.
         case data(Data)
         /// An image file's bytes, still encoded: what `SKTexture(image:)`
         /// carries, since the shim's `UIImage` keeps a PNG undecoded and lets
         /// the renderer decode it once. A case of its own because sharing
         /// `.data` with raw pixels means one of them is always misread —
-        /// either the rig pages as raw RGBA or the sky's noise as a PNG.
+        /// either a loaded PNG as raw RGBA or raw noise as a PNG.
         case encoded(Data)
         /// A sub-rectangle of another texture, in unit coordinates.
         case slice(SKTexture, CGRect)
         /// A solid colour, for stand-ins and tests.
         case color(SKColor, CGSize)
-        /// Pixels the game drew itself, through a `CGContext`: every chunky
-        /// surface `SurfaceTexture` makes arrives this way.
+        /// Pixels the game drew itself, through a `CGContext`: every surface
+        /// a game draws for itself arrives this way.
         case image(RasterImage)
     }
 
     public let source: Source
     public var filteringMode: SKTextureFilteringMode = .linear
-    /// Whether the renderer should build a mip chain for it. The rigs' pages
-    /// ask for one; a slice of an atlas page cannot have one.
+    /// Whether the renderer should build a mip chain for it. A loaded image
+    /// page may ask for one; a slice of an atlas page cannot have one.
     public var usesMipmaps: Bool = false
 
     /// Set by the renderer once uploaded. 0 means "not resident".
@@ -70,7 +69,7 @@ public final class SKTexture: @unchecked Sendable {
 
     /// Told each packed page a named texture is made on, so it can start
     /// decoding before the texture first draws (`PageDecodes.prefetch`):
-    /// a scene made on the main thread, as the loading screen is, draws the
+    /// a scene made on the main thread, as a loading screen may be, draws the
     /// next frame. The renderer installs it.
     public nonisolated(unsafe) static var pageWanted: ((Int) -> Void)?
 
@@ -106,11 +105,10 @@ public final class SKTexture: @unchecked Sendable {
 
     /// A texture from an image, either kind `UIImage` can be.
     ///
-    /// One the game **drew** (through `UIGraphicsImageRenderer`, as every
-    /// chunky surface is) carries its pixels as `.image`. One it **loaded**
-    /// from a file (a rig's page) carries the file's undecoded bytes as
-    /// `.encoded`, which the renderer decodes — not `.data`, which is
-    /// SpriteKit's raw RGBA and what `Starlight.noise` hands over. Either way
+    /// One the game **drew** (through `UIGraphicsImageRenderer`) carries its
+    /// pixels as `.image`. One it **loaded** from a file carries the file's
+    /// undecoded bytes as `.encoded`, which the renderer decodes — not
+    /// `.data`, which is SpriteKit's raw RGBA. Either way
     /// the image's scale is what makes a 3x rendering measure as its own
     /// points, as `SKTexture(image:)` does on Apple.
     public convenience init(image: UIImage) {
@@ -129,8 +127,8 @@ public final class SKTexture: @unchecked Sendable {
         declaredSize = image.size
     }
 
-    /// SpriteKit's `SKTexture(cgImage:)`: a bitmap the game drew or blurred
-    /// (`LawnNode`'s clearing, the board's grounding), a point a pixel, as
+    /// SpriteKit's `SKTexture(cgImage:)`: a bitmap the game drew or blurred,
+    /// a point a pixel, as
     /// SpriteKit measures one.
     public init(cgImage: RasterImage) {
         source = .image(cgImage)

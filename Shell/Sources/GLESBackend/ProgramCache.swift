@@ -14,7 +14,7 @@ import SpriteKitShim
 /// about it (with `layout`), so the programs an update didn't change load as
 /// they did. That's where this beats the driver's own cache, Android's EGL
 /// blob cache in the app's `code_cache`, which keeps a relaunch's programs
-/// as well but is emptied by every update (a Galaxy M31).
+/// as well but is emptied by every update (on a Mali-G72 phone, at least).
 ///
 /// A binary the driver turns down (a driver updated under the same version
 /// string), a file cut short or one that doesn't match its sources is deleted

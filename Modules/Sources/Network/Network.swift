@@ -1,9 +1,7 @@
-// Stands in for Network on Android, for the one file that imports it: the
-// beta's solve log (`PlaytestLog`), which records how the device reaches
-// the internet as TestFlight's feedback does. The platform services ask
-// Android's ConnectivityManager (`SystemServices.connection`,
-// `DeviceServices.java`) whenever the path is read. Comes out with the
-// solve log.
+// Stands in for Network on Android, as far as asking how the device reaches
+// the internet goes. The app's platform services ask Android's
+// ConnectivityManager (`SystemServices.connection`) whenever the path is
+// read.
 import Dispatch
 import Foundation
 import SpriteKitShim

@@ -103,11 +103,11 @@ struct UnionMergeTests {
         let engine = SyncEngine(defaults: defaults, cloud: cloud, now: { now }) { _ in }
         engine.start(syncing: [["progress.cleared": .union]])
 
-        engine.insert(["garden-1", "garden-2"], intoSetForKey: "progress.cleared")
+        engine.insert(["level-1", "level-2"], intoSetForKey: "progress.cleared")
         now = 20
-        engine.simulateRemoteInsert(["garden-3"], intoSetForKey: "progress.cleared")
+        engine.simulateRemoteInsert(["level-3"], intoSetForKey: "progress.cleared")
 
-        #expect(defaults.stringArray(forKey: "progress.cleared") == ["garden-1", "garden-2", "garden-3"])
+        #expect(defaults.stringArray(forKey: "progress.cleared") == ["level-1", "level-2", "level-3"])
     }
 
     @Test("A set announces only the keys whose contents changed")
@@ -116,13 +116,13 @@ struct UnionMergeTests {
         var changed: [String] = []
         let engine = SyncEngine(defaults: scratchDefaults(), cloud: cloud, now: { 1 }) { changed += $0 }
         engine.start(syncing: [["progress.cleared": .union]])
-        engine.insert(["garden-1"], intoSetForKey: "progress.cleared")
+        engine.insert(["level-1"], intoSetForKey: "progress.cleared")
         changed = []
 
-        engine.simulateRemoteInsert(["garden-1"], intoSetForKey: "progress.cleared")
+        engine.simulateRemoteInsert(["level-1"], intoSetForKey: "progress.cleared")
         #expect(changed.isEmpty)
 
-        engine.simulateRemoteInsert(["garden-2"], intoSetForKey: "progress.cleared")
+        engine.simulateRemoteInsert(["level-2"], intoSetForKey: "progress.cleared")
         #expect(changed == ["progress.cleared"])
     }
 
@@ -133,7 +133,7 @@ struct UnionMergeTests {
         let defaults = scratchDefaults()
         let engine = SyncEngine(defaults: defaults, cloud: cloud, now: { now }) { _ in }
         engine.start(syncing: [["progress.cleared": .union]])
-        engine.insert(["garden-1", "garden-2"], intoSetForKey: "progress.cleared")
+        engine.insert(["level-1", "level-2"], intoSetForKey: "progress.cleared")
 
         now = 20
         engine.resetSet(forKey: "progress.cleared")
@@ -141,7 +141,7 @@ struct UnionMergeTests {
 
         // An item added before the reset does not come back.
         var stale = SyncEngine.SetRecord()
-        stale.items = ["garden-1": 15]
+        stale.items = ["level-1": 15]
         cloud.set(stale.dictionary, forKey: "progress.cleared")
         now = 30
         engine.synchronize()
@@ -155,13 +155,13 @@ struct UnionMergeTests {
         let defaults = scratchDefaults()
         let engine = SyncEngine(defaults: defaults, cloud: cloud, now: { now }) { _ in }
         engine.start(syncing: [["progress.cleared": .union]])
-        engine.insert(["garden-1"], intoSetForKey: "progress.cleared")
+        engine.insert(["level-1"], intoSetForKey: "progress.cleared")
         now = 20
         engine.resetSet(forKey: "progress.cleared")
 
         now = 30
-        engine.simulateRemoteInsert(["garden-9"], intoSetForKey: "progress.cleared")
-        #expect(defaults.stringArray(forKey: "progress.cleared") == ["garden-9"])
+        engine.simulateRemoteInsert(["level-9"], intoSetForKey: "progress.cleared")
+        #expect(defaults.stringArray(forKey: "progress.cleared") == ["level-9"])
     }
 
     @Test("Each item keeps the earliest time it was added anywhere")
@@ -185,7 +185,7 @@ struct UnionMergeTests {
     @Test("Items listed before syncing count as added before any reset")
     func legacyItemsDropOnReset() {
         let defaults = scratchDefaults()
-        defaults.set(["garden-1", "garden-2"], forKey: "progress.cleared")
+        defaults.set(["level-1", "level-2"], forKey: "progress.cleared")
         var now: TimeInterval = 100
         let engine = SyncEngine(defaults: defaults, cloud: MemoryCloud(), now: { now }) { _ in }
         engine.start(syncing: [["progress.cleared": .union]])
@@ -213,9 +213,9 @@ struct TwoDeviceTests {
         phone.start(syncing: [["progress.cleared": .union]])
         pad.start(syncing: [["progress.cleared": .union]])
 
-        phone.insert(["reef-4"], intoSetForKey: "progress.cleared")
+        phone.insert(["level-4"], intoSetForKey: "progress.cleared")
         now = 20
-        pad.insert(["sky-2"], intoSetForKey: "progress.cleared")
+        pad.insert(["level-42"], intoSetForKey: "progress.cleared")
 
         // The service hands each device the other's bytes.
         now = 30
@@ -223,8 +223,8 @@ struct TwoDeviceTests {
         padCloud.deliver(to: phoneCloud)
         phone.synchronize()
 
-        #expect(phoneDefaults.stringArray(forKey: "progress.cleared") == ["reef-4", "sky-2"])
-        #expect(padDefaults.stringArray(forKey: "progress.cleared") == ["reef-4", "sky-2"])
+        #expect(phoneDefaults.stringArray(forKey: "progress.cleared") == ["level-4", "level-42"])
+        #expect(padDefaults.stringArray(forKey: "progress.cleared") == ["level-4", "level-42"])
         #expect(padChanged == ["progress.cleared"])
     }
 
@@ -236,7 +236,7 @@ struct TwoDeviceTests {
         var changes = 0
         let engine = SyncEngine(defaults: defaults, cloud: cloud, now: { now }) { _ in changes += 1 }
         engine.start(syncing: [["progress.cleared": .union, "settings.musicEnabled": .latest]])
-        engine.insert(["garden-1"], intoSetForKey: "progress.cleared")
+        engine.insert(["level-1"], intoSetForKey: "progress.cleared")
         engine.set(false, forKey: "settings.musicEnabled")
         changes = 0
 
@@ -245,7 +245,7 @@ struct TwoDeviceTests {
         engine.synchronize()
 
         #expect(changes == 0)
-        #expect(defaults.stringArray(forKey: "progress.cleared") == ["garden-1"])
+        #expect(defaults.stringArray(forKey: "progress.cleared") == ["level-1"])
         #expect(defaults.object(forKey: "settings.musicEnabled") as? Bool == false)
     }
 }

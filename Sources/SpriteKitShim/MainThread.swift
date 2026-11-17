@@ -8,11 +8,10 @@ import Glibc
 
 /// Which thread the game is allowed to call itself the main one on.
 ///
-/// The game asserts it. `RigMeshNode.prepare(in:)` opens with
+/// Games assert it: code that primes a shader may open with
 /// `precondition(Thread.isMainThread)` — priming a shader waits for the GPU,
-/// so it has to happen on the thread that draws — and it will not be the
-/// only place: the scene loader, the board and the backdrops all build off
-/// the main thread and come back to it, because on Apple the thread that
+/// so it has to happen on the thread that draws — and code that builds off
+/// the main thread comes back to it, because on Apple the thread that
 /// draws **is** the process's first thread.
 ///
 /// On Android it is not. SDL's Java side runs `SDL_main` on a thread of its
@@ -23,10 +22,10 @@ import Glibc
 ///
 ///     signal 5 (SIGTRAP) … tid: 5578, name: SDLThread
 ///     Swift runtime failure: precondition failure
-///     RigMeshNode.prepare(in:)
+///     (the game's function that primed a shader)
 ///
-/// Nothing in `Source/` may change, so Foundation's answer has to be the
-/// right one instead. On Android, corelibs Foundation answers
+/// The game's sources compile unchanged, so Foundation's answer has to be
+/// the right one instead. On Android, corelibs Foundation answers
 /// `Thread.isMainThread` out of CoreFoundation's `_CFIsMainThread`, which is
 /// `gettid() == getpid()` — "is this the process's first thread" — and
 /// nothing can make that true of a thread Java started.
@@ -42,7 +41,7 @@ import Glibc
 /// That is the truth for this app: SDL's thread is the one the game lives
 /// on. It is a loader-order trick all the same, so `claim()` checks that it
 /// took and the shell says so loudly if it did not — what follows otherwise
-/// is a trap on the first rig that draws.
+/// is a trap on the first main-thread check.
 public enum MainThread {
     /// The thread the game runs on, once it has said so. Read by
     /// `_CFIsMainThread` below, which is why it is not private.

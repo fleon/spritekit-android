@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import SpriteKitShim
 
-// The off-screen renderer and the Metal and CoreVideo it stands on, which
-// `SolutionFilm` films a level's solution through. Nothing here needs a GPU:
+// The off-screen renderer and the Metal and CoreVideo it stands on, which a
+// game films a scene through. Nothing here needs a GPU:
 // a command buffer records `DrawList`s, and the executor these tests register
 // stands in for the GLES renderer that draws them on a device.
 
@@ -170,7 +170,7 @@ struct FilmPictureTests {
         let bytes = buffer.baseAddress.assumingMemoryBound(to: UInt8.self)
         // Blue, then red, as BGRA.
         for (i, value) in [255, 0, 0, 255, 0, 0, 255, 255].enumerated() { bytes[i] = UInt8(value) }
-        // SolutionFilm's: premultiplied first (2), 32-bit little-endian (1 << 13).
+        // A film's: premultiplied first (2), 32-bit little-endian (1 << 13).
         #expect(BitmapContext.isBGRA(bitmapInfo: 2 | 1 << 13))
         #expect(!BitmapContext.isBGRA(bitmapInfo: 1))
         let context = try #require(BitmapContext(wrapping: buffer.baseAddress, width: 2, height: 1, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer)))

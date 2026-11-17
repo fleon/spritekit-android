@@ -53,12 +53,12 @@ public struct ShapedRun: Equatable, Sendable {
     public var advance: CGFloat { glyphs.reduce(0) { $0 + $1.xAdvance } }
 }
 
-/// The scripts the game ships, plus `.common` for digits, spaces and
+/// The scripts supported, plus `.common` for digits, spaces and
 /// punctuation, which take the script of whatever they sit among.
 ///
 /// This is not a general Unicode script property: it is only as fine as the
-/// shaper needs, because every one of these is left-to-right and the game
-/// uses one face for a whole label. What it is for is handing HarfBuzz the
+/// shaper needs, because every one of these is left-to-right and a label
+/// uses one face for all of it. What it is for is handing HarfBuzz the
 /// right script tag, which is what turns Thai reordering on.
 public enum TextScript: String, Equatable, Sendable, CaseIterable {
     case common

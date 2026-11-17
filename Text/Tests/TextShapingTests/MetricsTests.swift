@@ -7,7 +7,7 @@ import Testing
 struct MetricsTests {
     @Test("A face reports real vertical metrics")
     func metrics() throws {
-        let metrics = try #require(Fonts.engine.fontMetrics(Fonts.chiron(32)))
+        let metrics = try #require(Fonts.engine.fontMetrics(Fonts.display(32)))
         #expect(metrics.ascent > 0)
         #expect(metrics.descent > 0)
         #expect(metrics.lineHeight >= metrics.ascent + metrics.descent)
@@ -20,8 +20,8 @@ struct MetricsTests {
 
     @Test("Metrics scale with the point size")
     func scaling() throws {
-        let small = try #require(Fonts.engine.fontMetrics(Fonts.chiron(20)))
-        let large = try #require(Fonts.engine.fontMetrics(Fonts.chiron(40)))
+        let small = try #require(Fonts.engine.fontMetrics(Fonts.display(20)))
+        let large = try #require(Fonts.engine.fontMetrics(Fonts.display(40)))
         // FreeType grid-fits a face's global metrics to whole pixels, so
         // doubling the size doubles them to within a few per cent rather
         // than exactly.
@@ -31,7 +31,7 @@ struct MetricsTests {
 
     @Test("Measurement is stable across repeated calls")
     func stability() {
-        let font = Fonts.chiron(26.5)
+        let font = Fonts.display(26.5)
         let first = Fonts.engine.measure("Stump your friends", font: font)
         Fonts.engine.flush()
         let afterFlush = Fonts.engine.measure("Stump your friends", font: font)
@@ -45,33 +45,33 @@ struct MetricsTests {
 
     @Test("A fractional size is honoured, not rounded to whole points")
     func fractionalSize() {
-        let narrow = Fonts.engine.measure("Switchlings", font: Fonts.chiron(20))
-        let wide = Fonts.engine.measure("Switchlings", font: Fonts.chiron(20.5))
+        let narrow = Fonts.engine.measure("Lightning", font: Fonts.display(20))
+        let wide = Fonts.engine.measure("Lightning", font: Fonts.display(20.5))
         #expect(wide.advance > narrow.advance)
     }
 
     @Test("The named instances of the variable font really differ")
     func namedInstances() {
-        // The game asks Chiron for three weights by name, and they are
+        // A game asks a variable font for weights by name, and they are
         // instances of one variable file rather than three faces. If the
         // axis were never set they would all measure the same.
-        let text = "Switchlings"
-        let black = Fonts.engine.measure(text, font: FontKey(name: "ChironGoRoundTC-Black", size: 32))
-        let semibold = Fonts.engine.measure(text, font: FontKey(name: "ChironGoRoundTC-SemiBold", size: 32))
-        let light = Fonts.engine.measure(text, font: FontKey(name: "ChironGoRoundTC-Light", size: 32))
+        let text = "Lightning"
+        let black = Fonts.engine.measure(text, font: FontKey(name: "Montserrat-Black", size: 32))
+        let semibold = Fonts.engine.measure(text, font: FontKey(name: "Montserrat-SemiBold", size: 32))
+        let light = Fonts.engine.measure(text, font: FontKey(name: "Montserrat-Light", size: 32))
 
         #expect(black.advance > semibold.advance)
         #expect(semibold.advance > light.advance)
     }
 
-    @Test("Every name the game asks for resolves")
+    @Test("Every name a game asks for resolves")
     func registeredNames() {
         let names = Fonts.engine.library.registeredNames
         for wanted in [
-            "ChironGoRoundTC-Black",       // GeometryHelpers, .black
-            "ChironGoRoundTC-ExtraBold",   // GeometryHelpers, .heavy
-            "ChironGoRoundTC-SemiBold",    // GeometryHelpers, everything else
-            "KoHo-Bold",                   // Localization, Thai
+            "Montserrat-Black",       // weight .black
+            "Montserrat-ExtraBold",   // weight .heavy
+            "Montserrat-SemiBold",    // weight .semibold
+            "KoHo-Bold",                   // Thai
         ] {
             #expect(names.contains(wanted), "\(wanted) is not registered")
         }
@@ -79,8 +79,9 @@ struct MetricsTests {
 
     @Test("Ink bounds sit around the baseline, not on it")
     func inkBounds() {
-        let font = Fonts.chiron(40)
-        let caps = Fonts.engine.measure("HELLO", font: font).inkBounds
+        let font = Fonts.display(40)
+        // Flat-bottomed capitals: a round one (O) overshoots the baseline.
+        let caps = Fonts.engine.measure("HILL", font: font).inkBounds
         let descending = Fonts.engine.measure("gpqy", font: font).inkBounds
 
         #expect(caps.minY >= -0.5)              // capitals sit on the baseline
@@ -91,7 +92,7 @@ struct MetricsTests {
 
     @Test("A line of spaces has width but no ink")
     func spacesOnly() {
-        let line = Fonts.engine.measure("   ", font: Fonts.chiron())
+        let line = Fonts.engine.measure("   ", font: Fonts.display())
         #expect(line.advance > 0)
         #expect(line.inkBounds.height == 0)
     }
