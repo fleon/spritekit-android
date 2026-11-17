@@ -260,6 +260,8 @@ open class SKView: UIView {
         let counted = scene.actionClockStarted && delta <= Self.longestCountedFrame ? delta : 0
         scene.actionClockStarted = true
         scene.tickActions(counted)
+        scene.applyConstraints()
+        scene.didApplyConstraints()
     }
 
     /// The longest frame whose time actions count: a 0.98 s frame advances

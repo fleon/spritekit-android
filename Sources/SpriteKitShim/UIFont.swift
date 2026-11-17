@@ -31,8 +31,13 @@ public final class UIFont: LabelFont, @unchecked Sendable {
     public let pointSize: CGFloat
     public let weight: Weight
 
+    /// Nil, as on Apple, for a name no registered face answers to — so a
+    /// game's "this face, else the system font" falls back as it does there.
+    /// With no text stack installed (`TextMetrics.catalog`) every name is
+    /// taken on trust.
     public init?(name: String, size: CGFloat) {
         guard !name.isEmpty else { return nil }
+        if let catalog = TextMetrics.catalog, !catalog.hasFace(named: name) { return nil }
         fontName = name
         pointSize = size
         weight = .regular
@@ -44,8 +49,14 @@ public final class UIFont: LabelFont, @unchecked Sendable {
         self.weight = weight
     }
 
+    /// The device's own face at the nearest weight (Roboto's named
+    /// instances on Android: `.semibold` is "Roboto-SemiBold"), as Apple's is
+    /// SF's; "system" where the stack has no system face, which draws
+    /// nothing.
     public static func systemFont(ofSize size: CGFloat, weight: Weight = .regular) -> UIFont {
-        UIFont(name: "system", size: size, weight: weight)
+        let names = TextMetrics.catalog?.systemFaceNames ?? []
+        let face = SystemFontFaces.face(forWeight: weight.rawValue, among: names)
+        return UIFont(name: face ?? "system", size: size, weight: weight)
     }
 
     private var metrics: FontMetrics? {
