@@ -14,7 +14,7 @@ struct AtlasTests {
     func stableRects() throws {
         let (atlas, _) = fresh()
         let font = Fonts.display(24)
-        let glyphs = (Fonts.engine.shape("Switchlings", font: font) ?? []).flatMap(\.glyphs)
+        let glyphs = (Fonts.engine.shape("Lightning", font: font) ?? []).flatMap(\.glyphs)
         let key = GlyphAtlas.Key(font: font.name, size: font.size, glyph: glyphs[0].glyph)
 
         let first = try #require(atlas.glyph(key, font: font))

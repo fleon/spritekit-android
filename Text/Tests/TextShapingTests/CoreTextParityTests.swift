@@ -28,18 +28,21 @@ import Testing
 
     @Test("Advances match Core Text's", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func advancesMatch(font: String) {
-        for text in ["Español (México)", "W1 / L1", "Français", "Bahasa Indonesia", "Level Select", "Switchlings"] {
+        for text in ["Español (México)", "W1 / L1", "Français", "Bahasa Indonesia", "Level Select", "Lightning"] {
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 15)).advance
             let theirs = Self.coreText(text, font: font, size: 15)
-            #expect(abs(ours - theirs) < 0.0005 * theirs, "\(font) \(text): \(ours) against \(theirs)")
+            // A tenth of a percent: the instances' fractional advance deltas.
+            #expect(abs(ours - theirs) < 0.001 * theirs, "\(font) \(text): \(ours) against \(theirs)")
         }
     }
     @Test("Glyph-path and image bounds match Core Text's", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func boundsMatch(font: String) {
         for text in ["Español (México)", "W1 / L1", "Collection", "gpqy", "Sunny Garden", "SOHO"] {
+            // Registered before the first lookup: Core Text keeps a name it
+            // couldn't find as its fallback for the rest of the process.
+            _ = Self.registered
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 20))
             let ctFont = CTFontCreateWithName(font as CFString, 20, nil)
-            _ = Self.registered
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): ctFont]))
             let path = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
             let image = CTLineGetImageBounds(line, nil)

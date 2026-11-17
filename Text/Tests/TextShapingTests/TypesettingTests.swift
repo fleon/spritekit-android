@@ -28,7 +28,7 @@ struct TypesettingTests {
 
     @Test("Breaking a line walks the whole string and stops")
     func walksToTheEnd() {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a tile to send it one step, and bump another to trade places"
         let lines = wrapped(text, maxWidth: 160, font: Fonts.display(18))
 
         #expect(lines.count > 3)
@@ -40,7 +40,7 @@ struct TypesettingTests {
 
     @Test("A suggested break never returns zero, so the loop above terminates")
     func neverZero() {
-        let text = "Switchlings"
+        let text = "Lightning"
         let font = Fonts.display(40)
         for width in [CGFloat(1), 5, 20, 1000] {
             #expect(Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: width) > 0)
@@ -132,7 +132,7 @@ struct TypesettingTests {
 
     @Test("Break offsets are ascending and land inside the string")
     func breakOffsets() {
-        let text = "Tap a Switchling to send it one step"
+        let text = "Tap a tile to send it one step"
         let offsets = Fonts.engine.breakOffsets(in: text)
         #expect(!offsets.isEmpty)
         #expect(offsets == offsets.sorted())

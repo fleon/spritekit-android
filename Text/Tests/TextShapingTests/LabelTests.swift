@@ -21,8 +21,8 @@ struct LabelTests {
 
     @Test("A label's frame is its ink rounded out to whole points, a point to spare all round")
     func frameIsInkRoundedOut() {
-        let node = label("Switchlings")
-        let ink = Fonts.engine.measure("Switchlings", font: Fonts.display(32)).inkBounds
+        let node = label("Lightning")
+        let ink = Fonts.engine.measure("Lightning", font: Fonts.display(32)).inkBounds
 
         #expect(node.contentFrame.width == ink.maxX.rounded(.up) - ink.minX.rounded(.down) + 2)
         #expect(node.contentFrame.height == ink.maxY.rounded(.up) - ink.minY.rounded(.down) + 2)
@@ -47,7 +47,7 @@ struct LabelTests {
     func nothingToMeasure() {
         #expect(label("").contentFrame == .zero)
 
-        let unknown = label("Switchlings")
+        let unknown = label("Lightning")
         unknown.fontName = "NoSuchFont"
         #expect(unknown.contentFrame == .zero)
     }
@@ -128,7 +128,7 @@ struct LabelTests {
 
     @Test("preferredMaxLayoutWidth wraps, and nothing comes out wider")
     func wrapping() throws {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a tile to send it one step, and bump another to trade places"
         let node = label(text, size: 18)
         node.numberOfLines = 0
         node.preferredMaxLayoutWidth = 180
@@ -145,7 +145,7 @@ struct LabelTests {
 
     @Test("numberOfLines caps how many lines a wrap produces")
     func lineLimit() throws {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a tile to send it one step, and bump another to trade places"
         let node = label(text, size: 18)
         node.numberOfLines = 2
         node.preferredMaxLayoutWidth = 180
@@ -154,7 +154,7 @@ struct LabelTests {
 
     @Test("Layout is stable across repeated calls and reflects every change")
     func caching() throws {
-        let node = label("Switchlings")
+        let node = label("Lightning")
         let first = try #require(node.layout)
         #expect(node.layout == first)
         #expect(node.contentFrame == first.bounds)

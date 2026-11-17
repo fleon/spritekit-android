@@ -20,7 +20,7 @@ struct SpriteKitLabelParityTests {
     }()
 
     static let texts = ["W1 / L1", "W10 / L26", "Español (México)", "Français", "Bahasa Indonesia", "Level Select",
-                        "Play", "Collection", "Level Designer", "All home!", "0 of 30 cleared", "gpqy", "(", "ñ", "Switchlings"]
+                        "Play", "Collection", "Level Editor", "All done!", "0 of 30 cleared", "gpqy", "(", "ñ", "Lightning"]
 
     @Test("Frames match SpriteKit's in every alignment", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func framesMatch(font: String) {

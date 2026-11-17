@@ -35,8 +35,8 @@ struct LineBreakTests {
 
     @Test("A word wider than the line is left over-wide rather than cut")
     func longWord() {
-        let lines = Fonts.engine.breakLines("Switchlings", font: Fonts.display(40), maxWidth: 20)
-        #expect(lines == ["Switchlings"])
+        let lines = Fonts.engine.breakLines("Lightning", font: Fonts.display(40), maxWidth: 20)
+        #expect(lines == ["Lightning"])
     }
 
     @Test("Chinese breaks between characters, with no spaces to break at")
@@ -95,7 +95,7 @@ struct LineBreakTests {
 
     @Test("Breaking is stable: the same text and width give the same lines")
     func stability() {
-        let text = "Tap a Switchling to send it one step"
+        let text = "Tap a tile to send it one step"
         let font = Fonts.display(18)
         let first = Fonts.engine.breakLines(text, font: font, maxWidth: 120)
         let second = Fonts.engine.breakLines(text, font: font, maxWidth: 120)

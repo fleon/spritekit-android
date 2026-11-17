@@ -45,8 +45,8 @@ struct MetricsTests {
 
     @Test("A fractional size is honoured, not rounded to whole points")
     func fractionalSize() {
-        let narrow = Fonts.engine.measure("Switchlings", font: Fonts.display(20))
-        let wide = Fonts.engine.measure("Switchlings", font: Fonts.display(20.5))
+        let narrow = Fonts.engine.measure("Lightning", font: Fonts.display(20))
+        let wide = Fonts.engine.measure("Lightning", font: Fonts.display(20.5))
         #expect(wide.advance > narrow.advance)
     }
 
@@ -55,7 +55,7 @@ struct MetricsTests {
         // A game asks a variable font for weights by name, and they are
         // instances of one variable file rather than three faces. If the
         // axis were never set they would all measure the same.
-        let text = "Switchlings"
+        let text = "Lightning"
         let black = Fonts.engine.measure(text, font: FontKey(name: "Montserrat-Black", size: 32))
         let semibold = Fonts.engine.measure(text, font: FontKey(name: "Montserrat-SemiBold", size: 32))
         let light = Fonts.engine.measure(text, font: FontKey(name: "Montserrat-Light", size: 32))
@@ -68,10 +68,10 @@ struct MetricsTests {
     func registeredNames() {
         let names = Fonts.engine.library.registeredNames
         for wanted in [
-            "Montserrat-Black",       // GeometryHelpers, .black
-            "Montserrat-ExtraBold",   // GeometryHelpers, .heavy
-            "Montserrat-SemiBold",    // GeometryHelpers, everything else
-            "KoHo-Bold",                   // Localization, Thai
+            "Montserrat-Black",       // weight .black
+            "Montserrat-ExtraBold",   // weight .heavy
+            "Montserrat-SemiBold",    // weight .semibold
+            "KoHo-Bold",                   // Thai
         ] {
             #expect(names.contains(wanted), "\(wanted) is not registered")
         }
@@ -80,7 +80,8 @@ struct MetricsTests {
     @Test("Ink bounds sit around the baseline, not on it")
     func inkBounds() {
         let font = Fonts.display(40)
-        let caps = Fonts.engine.measure("HELLO", font: font).inkBounds
+        // Flat-bottomed capitals: a round one (O) overshoots the baseline.
+        let caps = Fonts.engine.measure("HILL", font: font).inkBounds
         let descending = Fonts.engine.measure("gpqy", font: font).inkBounds
 
         #expect(caps.minY >= -0.5)              // capitals sit on the baseline

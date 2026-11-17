@@ -46,7 +46,7 @@ import Testing
         "First appears in: " + "Cozy Kitchen · Level 12".replacingOccurrences(of: " ", with: nbsp),
         "Zuerst in: " + "Sonniger Garten · Level 1".replacingOccurrences(of: " ", with: nbsp),
         "Appears in: 37 levels",
-        "Tap a Switchling to send it one step, and bump another to trade arrows!",
+        "Tap a tile to send it one step, and bump another to trade places!",
         "You’re not signed in to Game\u{00A0}Center. To sign in, go to Settings > Game\u{00A0}Center.",
         "Ice keeps you sliding (until something stops you).",
         "A well-placed bump sends both home.",
