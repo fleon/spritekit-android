@@ -9,7 +9,7 @@ import SpriteKitShim
 /// files are where it can read them. Everything above — `SKLabelNode`'s
 /// layout, `UIFont`'s metrics — goes through the `TextProvider` this
 /// registers, so nothing else in a game or the layer links FreeType.
-public final class TextEngine: TextProvider, @unchecked Sendable {
+public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     public static let shared = TextEngine()
 
     public let library: FontLibrary
@@ -47,7 +47,7 @@ public final class TextEngine: TextProvider, @unchecked Sendable {
                 try engine.library.register(path: path)
             }
         }
-        TextMetrics.provider = engine
+        engine.install()
         return engine
     }
 
@@ -65,7 +65,7 @@ public final class TextEngine: TextProvider, @unchecked Sendable {
         for font in fonts {
             try engine.library.register(data: font.data, name: font.name)
         }
-        TextMetrics.provider = engine
+        engine.install()
         return engine
     }
 
@@ -73,6 +73,69 @@ public final class TextEngine: TextProvider, @unchecked Sendable {
     /// tests and for an app that loads its fonts from its own bundle.
     public func install() {
         TextMetrics.provider = self
+        TextMetrics.catalog = self
+    }
+
+    // MARK: - FontCatalog
+
+    /// The files the game itself has registered, by name without extension
+    /// (the shell registers the APK's `fonts/` by those names at launch).
+    private var registeredByGame: Set<String> = []
+    private var systemFaces: [String] = []
+
+    public var systemFaceNames: [String] {
+        lock.withLock { systemFaces }
+    }
+
+    public func faceNames(inFontAt path: String) -> [String]? {
+        if let known = library.faces(ofFile: path) ?? library.faces(ofFile: Self.fileName(path)) {
+            return known
+        }
+        return try? FontLibrary.faces(ofFontAt: path)
+    }
+
+    public func registerFont(at path: String) -> FontRegistration {
+        let name = Self.fileName(path)
+        if lock.withLock({ registeredByGame.contains(name) }) { return .alreadyRegistered }
+        // Registered by the shell at launch from the APK: the same bytes, so
+        // not read a second time.
+        if library.faces(ofFile: name) == nil {
+            guard (try? library.register(path: path)) != nil else { return .unreadable }
+        }
+        lock.withLock { _ = registeredByGame.insert(name) }
+        return .registered
+    }
+
+    public func hasFace(named name: String) -> Bool {
+        library.hasName(name)
+    }
+
+    /// Registers the device's own face as the system font: Roboto, which
+    /// on Android 12 and later is one variable file whose named instances are
+    /// its weights, and before that a file a weight. What
+    /// `UIFont.systemFont(ofSize:weight:)` draws with (`SystemFontFaces`).
+    @discardableResult
+    public func registerSystemFonts(in directory: String = "/system/fonts") -> [String] {
+        var faces: [String] = []
+        let variable = directory + "/Roboto-Regular.ttf"
+        if let registered = try? library.register(path: variable), !registered.isEmpty {
+            faces = library.faces(ofFile: variable) ?? []
+        }
+        if faces.count <= 1 {
+            for style in ["Thin", "Light", "Medium", "Bold", "Black"] {
+                let path = "\(directory)/Roboto-\(style).ttf"
+                guard FileManager.default.fileExists(atPath: path),
+                      (try? library.register(path: path)) != nil
+                else { continue }
+                faces += library.faces(ofFile: path) ?? []
+            }
+        }
+        lock.withLock { systemFaces = faces }
+        return faces
+    }
+
+    private static func fileName(_ path: String) -> String {
+        ((path as NSString).lastPathComponent as NSString).deletingPathExtension
     }
 
     // MARK: - Shaping

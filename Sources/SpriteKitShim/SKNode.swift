@@ -27,24 +27,48 @@ open class SKNode {
         precondition(node !== self, "a node cannot be its own child")
         node.parent = self
         children.append(node)
+        if SKNode.constraintsInUse, let scene { node.constraintsEnter(scene) }
     }
 
     open func insertChild(_ node: SKNode, at index: Int) {
         precondition(node.parent == nil, "node already has a parent")
         node.parent = self
         children.insert(node, at: index)
+        if SKNode.constraintsInUse, let scene { node.constraintsEnter(scene) }
     }
 
     open func removeFromParent() {
         guard let parent else { return }
         parent.children.removeAll { $0 === self }
         self.parent = nil
+        if SKNode.constraintsInUse { constraintsLeave() }
     }
 
     open func removeAllChildren() {
-        for child in children { child.parent = nil }
+        for child in children {
+            child.parent = nil
+            if SKNode.constraintsInUse { child.constraintsLeave() }
+        }
         children.removeAll()
     }
+
+    // MARK: Constraints (SKConstraint.swift)
+
+    /// SpriteKit's constraints, applied by the scene once a frame after the
+    /// actions, in the order nodes were given them.
+    open var constraints: [SKConstraint]? {
+        didSet {
+            // None or an empty list takes no turn, and takes none away.
+            guard constraints?.isEmpty == false else { return }
+            SKNode.constraintsInUse = true
+            if let scene { enterConstraintOrder(scene) } else { leaveConstraintOrder() }
+        }
+    }
+
+    /// The scene whose turn order this node is in, and whether it is still
+    /// waiting to join it at the next pass.
+    weak var constraintScene: SKScene?
+    var constraintPending = false
 
     open func removeChildren(in nodes: [SKNode]) {
         for node in nodes where node.parent === self { node.removeFromParent() }
