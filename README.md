@@ -1129,7 +1129,8 @@ backdrop draws on a device — `Source/Common/Components/NightSkyNode.swift`
 (972 lines), symlinked into `Compat` and compiled unmodified, with
 `Theme.swift`, `WorldTheme.swift` and `ColorHelpers.swift` beside it, and
 `BandedLayerNode`, which is the game's line for line but for its band count
-(`Compat/Sources/GameCompat/Android/BandedLayerNode.swift`: 8 bands, below).
+(`Compat/Sources/GameCompat/Android/BandedLayerNode.swift`: a band count
+the debug property can change, below).
 
 Three things in the renderer are decided rather than inherited:
 
@@ -1223,9 +1224,10 @@ each world's 12th level auto-solving a move every 1.5 s), banding is the
 biggest single saving the port has: drawn whole, Castle and Reef run at
 under half their frame rate and Ruins at not much more. More bands win more, since the GPU is the
 whole of a frame and a band switch costs next to nothing beside an eighth of
-a full-screen lit shader, so the port draws every banded layer in **8**
-(`BandedLayerNode.bandCount`), where the game draws 4 (Castle's sea behind
-gameplay 6). Frame p50 in milliseconds, the median of every 300-frame window
+a full-screen lit shader, so the port drew every banded layer in 8
+(`BandedLayerNode.bandCount`), where the game drew 4 (Castle's sea behind
+gameplay 6). Since 2026-11-17 both draw every layer in **4**, as the owner
+chose; the measurements stand for reference. Frame p50 in milliseconds, the median of every 300-frame window
 wholly inside the level over the runs counted (alternating modes, the same
 build); 16.7 ms is the screen's 60 fps:
 

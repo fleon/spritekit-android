@@ -2,13 +2,10 @@ import Macros
 import SpriteKit
 
 // The port's own `BandedLayerNode`, standing where `Source/Common/Components/
-// BandedLayerNode.swift` does: the game's, line for line, but for how many
-// bands a layer draws in. The game's draws in 4 (Castle's sea behind
-// gameplay in 6), for an A14 iPad; a Mali-G72 (the Galaxy M31) is so bound by
-// fill rate that 8 bands, each layer redrawing an eighth of its shader a
-// frame, run Reef, Bug Woods and Ruins at 60 fps and Castle and Sky faster
-// than 4 or 6 do (Android/README.md, "Banded layers on the M31"). Keep the
-// two in step.
+// BandedLayerNode.swift` does: the game's, line for line, but for a band
+// count `debug.switchlings.bands` can change for measuring (`bandCount`).
+// Both draw every layer in 4 bands (`DesignSystem.bandedLayerBands`). Keep
+// the two in step.
 
 /// A full-screen shader too costly to run over every pixel every frame on a
 /// big screen (Castle's sea of clouds, Sky's night, Reef's water, the forest
@@ -39,7 +36,7 @@ final class BandedLayerNode: SKNode {
     /// few frames apart would flicker.
     nonisolated(unsafe) static var drawsWhole = false
     /// The bands every layer draws in here, whatever `count` it's handed.
-    nonisolated(unsafe) static var bandCount = 8
+    nonisolated(unsafe) static var bandCount = DesignSystem.bandedLayerBands
 
     override init() {
         super.init()

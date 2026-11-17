@@ -142,8 +142,8 @@ public final class AndroidGameController {
         set { BandedLayerNode.drawsWhole = newValue }
     }
 
-    /// The bands each of them draws in otherwise (8). Set before the first
-    /// backdrop builds.
+    /// The bands each of them draws in otherwise (4, as the game's). Set
+    /// before the first backdrop builds.
     public static var bandedLayerBands: Int {
         get { BandedLayerNode.bandCount }
         set { BandedLayerNode.bandCount = max(newValue, 1) }
