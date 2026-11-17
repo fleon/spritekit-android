@@ -3,8 +3,8 @@ import Foundation
 
 /// Whether the game is in front, as the game asks UIKit. The shell sets it
 /// from SDL's background and foreground events and posts the notifications
-/// UIKit would (`SolutionFilm` waits for the game to come back before it
-/// draws another frame, since nothing draws while it's away).
+/// UIKit would (an offscreen render may wait for the game to come back
+/// before it draws another frame, since nothing draws while it's away).
 public final class UIApplication: @unchecked Sendable {
     public enum State: Int, Sendable {
         case active, inactive, background

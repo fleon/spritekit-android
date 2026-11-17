@@ -5,10 +5,9 @@ import Foundation
 ///
 /// SpriteKit's nodes are main-actor isolated (they descend from
 /// `UIResponder`), but Objective-C never enforces it, and the game relies on
-/// that: a share film's stage is built, updated and drawn on the film's own
-/// thread through `SKRenderer`, taking turns with the screen
-/// (`FilmDrawTurns`), and the loading screen builds a scene off the main
-/// thread (`offMainActor`). Here the isolation is checked by Swift, so the
+/// that: a scene filmed through `SKRenderer` may be built, updated and drawn
+/// on a thread of its own, taking turns with the screen, and a loading
+/// screen may build a scene off the main thread. Here the isolation is checked by Swift, so the
 /// shim's own off-main entry points say what Objective-C would have let
 /// pass, and nothing more.
 @inline(__always)

@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import SpriteKitShim
 
-// The two things the gameplay ring added to the shim: 9-slicing, which the
-// board's kerbs and raised bricks need before anything it draws looks right,
-// and touch delivery, which is how a tap reaches a Switchling.
+// Two things a game's play needs of the shim: 9-slicing, which walls and
+// raised tiles need before anything drawn with them looks right, and touch
+// delivery, which is how a tap reaches a node.
 //
 // Both are host-testable for the same reason the rest of the layer is: a
 // frame is a value and a touch is a walk over the tree. No device, no
@@ -12,7 +12,7 @@ import Testing
 
 @Suite("Nine-slice")
 struct NineSliceTests {
-    /// A kerb-shaped case: 40 points of art, 12 fixed either side, drawn
+    /// A wall-shaped case: 40 points of art, 12 fixed either side, drawn
     /// 200 long.
     private let art = CGSize(width: 40, height: 40)
     private let center = CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4)
@@ -269,12 +269,12 @@ struct TouchTests {
 
 @Suite("Actions that change their own node's actions")
 struct ReentrantActionTests {
-    // The game does this constantly and SpriteKit allows it: a looping
-    // glance schedules the next one from inside itself, a board cue starts
-    // the move it announces, a completion starts the next step. Advancing
+    // Games do this constantly and SpriteKit allows it: a loop schedules
+    // its next round from inside itself, a cue starts the move it
+    // announces, a completion starts the next step. Advancing
     // the list in place made the second access abort the process with
     // "Fatal access conflict detected" — a real crash on a device, three
-    // seconds into the first level.
+    // seconds into play.
 
     @Test("An action may start another on the same node from inside itself")
     func startsAnother() {

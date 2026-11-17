@@ -1,7 +1,7 @@
 // The two C libraries behind the text stack, as one module.
 //
 // Keeping them in a single system-library target means SwiftPM resolves one
-// pkg-config file (switchlings-text.pc, written by Android/Vendor/build.sh)
+// pkg-config file (spritekit-text.pc, written by Vendor/build.sh)
 // instead of a Requires: chain, and hb-ft.h gets FreeType's headers in the
 // same include path it expects.
 #ifndef SKA_TEXT_SHIM_H

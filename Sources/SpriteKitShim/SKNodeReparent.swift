@@ -3,7 +3,7 @@ import Foundation
 
 public extension SKNode {
     /// Moves the node to a new parent, keeping where it stands — what
-    /// `RigNode` uses to put a slot's parts inside the crop node of the
+    /// a skeletal rig uses to put a slot's parts inside the crop node of the
     /// clipping attachment that masks them.
     ///
     /// SpriteKit's own keeps the node where it is by converting through both

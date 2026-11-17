@@ -144,7 +144,7 @@ static bool close_pipe(Pipe *pipe, bool finish, int64_t end_us) {
 
 // MARK: - Video
 
-struct SwVideoEncoder {
+struct SkaVideoEncoder {
     Pipe pipe;
     int32_t colorFormat;
     int32_t stride;
@@ -154,8 +154,8 @@ struct SwVideoEncoder {
 
 typedef AMediaFormat *(*GetInputFormat)(AMediaCodec *);
 
-SwVideoEncoder *sw_video_open(const char *path, int32_t width, int32_t height, int32_t fps, int32_t bitrate) {
-    SwVideoEncoder *e = calloc(1, sizeof(SwVideoEncoder));
+SkaVideoEncoder *ska_video_open(const char *path, int32_t width, int32_t height, int32_t fps, int32_t bitrate) {
+    SkaVideoEncoder *e = calloc(1, sizeof(SkaVideoEncoder));
     if (e == NULL) return NULL;
     e->pipe.fd = -1;
     e->pipe.track = -1;
@@ -213,37 +213,37 @@ SwVideoEncoder *sw_video_open(const char *path, int32_t width, int32_t height, i
     return e;
 }
 
-int32_t sw_video_color_format(const SwVideoEncoder *e) { return e->colorFormat; }
-int32_t sw_video_stride(const SwVideoEncoder *e) { return e->stride; }
-int32_t sw_video_slice_height(const SwVideoEncoder *e) { return e->sliceHeight; }
+int32_t ska_video_color_format(const SkaVideoEncoder *e) { return e->colorFormat; }
+int32_t ska_video_stride(const SkaVideoEncoder *e) { return e->stride; }
+int32_t ska_video_slice_height(const SkaVideoEncoder *e) { return e->sliceHeight; }
 
-bool sw_video_encode(SwVideoEncoder *e, const uint8_t *yuv, size_t size, int64_t pts_us) {
+bool ska_video_encode(SkaVideoEncoder *e, const uint8_t *yuv, size_t size, int64_t pts_us) {
     e->lastPts = pts_us;
     return feed(&e->pipe, yuv, size, pts_us);
 }
 
-bool sw_video_finish(SwVideoEncoder *e) {
+bool ska_video_finish(SkaVideoEncoder *e) {
     bool ok = close_pipe(&e->pipe, true, e->lastPts);
     free(e);
     return ok;
 }
 
-void sw_video_cancel(SwVideoEncoder *e) {
+void ska_video_cancel(SkaVideoEncoder *e) {
     close_pipe(&e->pipe, false, 0);
     free(e);
 }
 
 // MARK: - AAC
 
-struct SwAudioEncoder {
+struct SkaAudioEncoder {
     Pipe pipe;
     int32_t sampleRate;
     int32_t channels;
     int64_t framesIn;
 };
 
-SwAudioEncoder *sw_aac_open(const char *path, int32_t sample_rate, int32_t channels, int32_t bitrate) {
-    SwAudioEncoder *e = calloc(1, sizeof(SwAudioEncoder));
+SkaAudioEncoder *ska_aac_open(const char *path, int32_t sample_rate, int32_t channels, int32_t bitrate) {
+    SkaAudioEncoder *e = calloc(1, sizeof(SkaAudioEncoder));
     if (e == NULL) return NULL;
     e->pipe.fd = -1;
     e->pipe.track = -1;
@@ -278,7 +278,7 @@ SwAudioEncoder *sw_aac_open(const char *path, int32_t sample_rate, int32_t chann
     return e;
 }
 
-bool sw_aac_encode(SwAudioEncoder *e, const int16_t *pcm, int64_t frames) {
+bool ska_aac_encode(SkaAudioEncoder *e, const int16_t *pcm, int64_t frames) {
     // A few thousand frames at a time, so each fits an input buffer.
     const int64_t chunk = 2048;
     for (int64_t start = 0; start < frames; start += chunk) {
@@ -290,7 +290,7 @@ bool sw_aac_encode(SwAudioEncoder *e, const int16_t *pcm, int64_t frames) {
     return true;
 }
 
-bool sw_aac_finish(SwAudioEncoder *e) {
+bool ska_aac_finish(SkaAudioEncoder *e) {
     bool ok = close_pipe(&e->pipe, true, e->framesIn * 1000000 / e->sampleRate);
     free(e);
     return ok;

@@ -7,7 +7,7 @@ import Testing
 @testable import TextShaping
 
 /// The shim's labels against Apple's own `SKLabelNode`, on the same font
-/// files: the frame the game sizes its pills, buttons and wells by must come
+/// files: the frame a game sizes its pills, buttons and wells by must come
 /// out the same, point for point.
 @Suite("Labels as SpriteKit lays them out")
 @MainActor
@@ -19,8 +19,8 @@ struct SpriteKitLabelParityTests {
         return true
     }()
 
-    static let texts = ["W1 / L1", "W10 / L26", "Español (México)", "Français", "Bahasa Indonesia", "Level Select",
-                        "Play", "Collection", "Level Designer", "All home!", "0 of 30 cleared", "gpqy", "(", "ñ", "Switchlings"]
+    static let texts = ["A1 / B1", "A10 / B26", "Español (México)", "Français", "Bahasa Indonesia", "Level Select",
+                        "Play", "Collection", "Level Editor", "All done!", "0 of 30 cleared", "gpqy", "(", "ñ", "Salamanders"]
 
     @Test("Frames match SpriteKit's in every alignment", arguments: ["ChironGoRoundTC-Black", "ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold"])
     func framesMatch(font: String) {

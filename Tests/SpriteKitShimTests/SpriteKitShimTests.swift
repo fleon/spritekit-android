@@ -234,14 +234,14 @@ struct DrawListTests {
         }
     }
 
-    /// The board's shape, and the bug the user saw: kerbs in one layer and
+    /// A tile map's shape, and a bug seen in one: walls in one layer and
     /// tiles in another, both at z 0, each piece carrying its own row-based
     /// z. With `ignoresSiblingOrder` they interleave across the two layers;
-    /// sorting each layer as a block drew every kerb under every tile.
+    /// sorting each layer as a block drew every wall under every tile.
     @Test("Descendants of sibling layers interleave by their own z")
     func siblingLayersInterleave() {
         let scene = SKScene(size: CGSize(width: 100, height: 100))
-        let frame = SKNode()        // BoardFrameNode: the kerbs
+        let frame = SKNode()        // the walls' layer
         let grid = SKNode()         // the grid layer: the tiles
         scene.addChild(frame)
         scene.addChild(grid)
@@ -256,9 +256,9 @@ struct DrawListTests {
             layer.addChild(node)
         }
         // Row 0 at the back, row 1 nearer: z = row * 10 + depth, with
-        // tile = 1 and frontKerb = 7, as BoardMetrics.z(row:_:) gives.
-        piece(1, z: 7, in: frame)     // kerb, row 0
-        piece(2, z: 17, in: frame)    // kerb, row 1
+        // tile = 1 and frontWall = 7.
+        piece(1, z: 7, in: frame)     // wall, row 0
+        piece(2, z: 17, in: frame)    // wall, row 1
         piece(3, z: 1, in: grid)      // tile, row 0
         piece(4, z: 11, in: grid)     // tile, row 1
 
@@ -266,19 +266,19 @@ struct DrawListTests {
             guard case let .sprite(s) = command else { return nil }
             return Int((s.color.red * 10).rounded())
         }
-        // tile0, kerb0, tile1, kerb1 — not both kerbs then both tiles.
+        // tile0, wall0, tile1, wall1 — not both walls then both tiles.
         #expect(drawn == [3, 1, 4, 2])
     }
 
-    @Test("A front kerb draws over the tile of the row behind it")
-    func frontKerbOverTileBehind() {
+    @Test("A front wall draws over the tile of the row behind it")
+    func frontWallOverTileBehind() {
         let scene = SKScene(size: CGSize(width: 100, height: 100))
         let frame = SKNode(), grid = SKNode()
         scene.addChild(frame)
         scene.addChild(grid)
-        let kerb = SKSpriteNode(color: .blue, size: CGSize(width: 1, height: 1))
-        kerb.zPosition = 17          // row 1, frontKerb
-        frame.addChild(kerb)         // added FIRST, in the layer drawn first
+        let wall = SKSpriteNode(color: .blue, size: CGSize(width: 1, height: 1))
+        wall.zPosition = 17          // row 1, frontWall
+        frame.addChild(wall)         // added FIRST, in the layer drawn first
         let tile = SKSpriteNode(color: .red, size: CGSize(width: 1, height: 1))
         tile.zPosition = 11          // row 1, tile
         grid.addChild(tile)
@@ -287,8 +287,8 @@ struct DrawListTests {
             guard case let .sprite(s) = command else { return nil }
             return s.color.blue
         }
-        // Tile (red, blue 0) first, kerb (blue 1) over it — although the
-        // kerb's layer comes first in the tree.
+        // Tile (red, blue 0) first, wall (blue 1) over it — although the
+        // wall's layer comes first in the tree.
         #expect(colours == [0, 1])
     }
 
@@ -428,25 +428,24 @@ struct FrameTests {
 
 @Suite("Asset index")
 struct AssetIndexTests {
-    /// A small index with the shapes that matter: a 9-sliced brick, a kerb
+    /// A small index with the shapes that matter: a 9-sliced brick, a wall
     /// with an anchor, a panel with content insets, a plain image and a
-    /// whole page. The numbers are the real exporter's, from the staged
-    /// index for Sunny Garden.
+    /// whole page. The numbers are a real exporter's.
     static let json = """
     {
      "version": 2,
      "scale": 3,
      "pages": [
       { "file": "atlas-000.png", "width": 2048, "height": 2048 },
-      { "file": "whole/BackdropReefSeabedSand.png", "width": 1254, "height": 1254, "repeats": true }
+      { "file": "whole/GroundSand.png", "width": 1254, "height": 1254, "repeats": true }
      ],
      "assets": {
-      "BrickGarden1": { "page": 0, "rect": [1822, 246, 192, 240], "size": [64, 80], "caps": [67.2, 0, 4.48, 0] },
-      "KerbGardenHorizontal": { "page": 0, "rect": [960, 1106, 217, 116], "size": [72.33333333333333, 38.666666666666664],
+      "Brick1": { "page": 0, "rect": [1822, 246, 192, 240], "size": [64, 80], "caps": [67.2, 0, 4.48, 0] },
+      "WallHorizontal": { "page": 0, "rect": [960, 1106, 217, 116], "size": [72.33333333333333, 38.666666666666664],
                                 "caps": [0, 8.4939, 0, 8.4939], "anchor": [0.125, 0, 0.2283, 0] },
       "PanelWell": { "page": 0, "rect": [0, 0, 60, 60], "size": [20, 20], "caps": [4, 4, 4, 4], "content": [6, 6, 6, 6] },
-      "ArrowTile": { "page": 0, "rect": [850, 1166, 360, 360], "size": [120, 120] },
-      "BackdropReefSeabedSand": { "page": 1, "rect": [0, 0, 1254, 1254], "size": [418, 418] }
+      "Badge": { "page": 0, "rect": [850, 1166, 360, 360], "size": [120, 120] },
+      "GroundSand": { "page": 1, "rect": [0, 0, 1254, 1254], "size": [418, 418] }
      }
     }
     """
@@ -461,37 +460,37 @@ struct AssetIndexTests {
         #expect(index.count == 5)
         #expect(index.scale == 3)
 
-        let brick = try #require(index.entry("BrickGarden1"))
+        let brick = try #require(index.entry("Brick1"))
         #expect(brick.page == 0)
         #expect(brick.rect == CGRect(x: 1822, y: 246, width: 192, height: 240))
         #expect(brick.size == CGSize(width: 64, height: 80))
 
         #expect(index["Nothing"] == nil)
-        #expect(index.names.first == "ArrowTile")
+        #expect(index.names.first == "Badge")
     }
 
     @Test("Cap insets, content insets and anchors come through as points")
     func insets() throws {
         let index = try Self.index()
-        let brick = try #require(index.entry("BrickGarden1"))
+        let brick = try #require(index.entry("Brick1"))
         #expect(brick.capInsets == UIEdgeInsets(top: 67.2, left: 0, bottom: 4.48, right: 0))
         #expect(brick.contentInsets == nil)
         #expect(brick.anchor == nil)
 
-        let kerb = try #require(index.entry("KerbGardenHorizontal"))
-        #expect(kerb.capInsets == UIEdgeInsets(top: 0, left: 8.4939, bottom: 0, right: 8.4939))
-        #expect(kerb.anchor == UIEdgeInsets(top: 0.125, left: 0, bottom: 0.2283, right: 0))
+        let wall = try #require(index.entry("WallHorizontal"))
+        #expect(wall.capInsets == UIEdgeInsets(top: 0, left: 8.4939, bottom: 0, right: 8.4939))
+        #expect(wall.anchor == UIEdgeInsets(top: 0.125, left: 0, bottom: 0.2283, right: 0))
 
         let panel = try #require(index.entry("PanelWell"))
         #expect(panel.contentInsets == UIEdgeInsets(top: 6, left: 6, bottom: 6, right: 6))
 
-        #expect(try #require(index.entry("ArrowTile")).capInsets == nil)
+        #expect(try #require(index.entry("Badge")).capInsets == nil)
     }
 
     @Test("The texture rect is the page slice, counted up from the bottom")
     func textureRect() throws {
         let index = try Self.index()
-        let brick = try #require(index.entry("BrickGarden1"))
+        let brick = try #require(index.entry("Brick1"))
         #expect(abs(brick.textureRect.minX - 1822.0 / 2048) < 1e-12)
         // The index counts y down from the top: 2048 - (246 + 240).
         #expect(abs(brick.textureRect.minY - (2048.0 - 486) / 2048) < 1e-12)
@@ -499,7 +498,7 @@ struct AssetIndexTests {
         #expect(abs(brick.textureRect.height - 240.0 / 2048) < 1e-12)
 
         // A whole page's one image covers all of it.
-        let sand = try #require(index.entry("BackdropReefSeabedSand"))
+        let sand = try #require(index.entry("GroundSand"))
         #expect(sand.textureRect == CGRect(x: 0, y: 0, width: 1, height: 1))
         #expect(index.pages[sand.page].repeats)
         #expect(index.pages[0].repeats == false)
@@ -509,7 +508,7 @@ struct AssetIndexTests {
     func pageURLs() throws {
         let index = try Self.index()
         #expect(index.url(ofPage: 0)?.path == "/art/atlas-000.png")
-        #expect(index.url(ofPage: 1)?.path == "/art/whole/BackdropReefSeabedSand.png")
+        #expect(index.url(ofPage: 1)?.path == "/art/whole/GroundSand.png")
         #expect(index.url(ofPage: 2) == nil)
     }
 
@@ -539,8 +538,8 @@ struct TextureAssetTests {
     @Test("A named texture reports the art's size in points")
     func namedSize() throws {
         try withIndex {
-            #expect(SKTexture(imageNamed: "BrickGarden1").size() == CGSize(width: 64, height: 80))
-            #expect(SKTexture(imageNamed: "ArrowTile").size() == CGSize(width: 120, height: 120))
+            #expect(SKTexture(imageNamed: "Brick1").size() == CGSize(width: 64, height: 80))
+            #expect(SKTexture(imageNamed: "Badge").size() == CGSize(width: 120, height: 120))
             // SpriteKit reports zero for an image it cannot find; so does this.
             #expect(SKTexture(imageNamed: "NotThere").size() == .zero)
         }
@@ -549,7 +548,7 @@ struct TextureAssetTests {
     @Test("A sprite built from a named texture takes that size")
     func spriteSize() throws {
         try withIndex {
-            let node = SKSpriteNode(imageNamed: "BrickGarden1")
+            let node = SKSpriteNode(imageNamed: "Brick1")
             #expect(node.size == CGSize(width: 64, height: 80))
             #expect(node.contentFrame == CGRect(x: -32, y: -40, width: 64, height: 80))
         }
@@ -558,7 +557,7 @@ struct TextureAssetTests {
     @Test("A named texture carries its page and rect for the renderer")
     func pageAndRect() throws {
         try withIndex {
-            let texture = SKTexture(imageNamed: "BrickGarden1")
+            let texture = SKTexture(imageNamed: "Brick1")
             #expect(texture.page == 0)
             #expect(texture.asset?.rect == CGRect(x: 1822, y: 246, width: 192, height: 240))
             #expect(texture.textureRect == texture.asset?.textureRect)
@@ -569,7 +568,7 @@ struct TextureAssetTests {
     @Test("A slice of a packed texture lands inside its parent's rect")
     func sliceComposes() throws {
         try withIndex {
-            let whole = SKTexture(imageNamed: "ArrowTile")
+            let whole = SKTexture(imageNamed: "Badge")
             let half = SKTexture(rect: CGRect(x: 0.5, y: 0, width: 0.5, height: 1), in: whole)
             #expect(half.size() == CGSize(width: 60, height: 120))
             #expect(half.root === whole)
@@ -587,7 +586,7 @@ struct TextureAssetTests {
         let before = AssetIndex.shared
         AssetIndex.shared = nil
         defer { AssetIndex.shared = before }
-        let texture = SKTexture(imageNamed: "BrickGarden1")
+        let texture = SKTexture(imageNamed: "Brick1")
         #expect(texture.size() == .zero)
         #expect(texture.asset == nil)
         #expect(texture.page == nil)
@@ -597,12 +596,14 @@ struct TextureAssetTests {
 
 @Suite("The staged export")
 struct StagedAssetsTests {
-    /// Android/Assets, written by `npm run art -- --android`. It is 101 MB
-    /// and never committed, so this suite does nothing until it is there.
+    /// A game's packed art, staged beside the runtime's checkout (the
+    /// directory holding it, as when the runtime is a submodule there). It
+    /// is large and never committed, so this suite does nothing until it is
+    /// there.
     static let staged = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()   // SpriteKitShimTests
         .deletingLastPathComponent()   // Tests
-        .deletingLastPathComponent()   // Android
+        .deletingLastPathComponent()   // the runtime's checkout
         .appendingPathComponent("Assets")
 
     static var exported: Bool {
@@ -610,32 +611,31 @@ struct StagedAssetsTests {
     }
 
     @Test("The real index loads, and every asset names a page file that is there",
-          .enabled(if: StagedAssetsTests.exported, "run npm run art -- --android first"))
+          .enabled(if: StagedAssetsTests.exported, "stage a game's packed art first"))
     func loadsTheRealThing() throws {
         let index = try AssetIndex(directory: Self.staged)
         #expect(index.scale == 3)
-        #expect(index.count > 1_000)
+        #expect(index.count > 0)
         for page in index.pages.indices {
             let url = try #require(index.url(ofPage: page))
             #expect(FileManager.default.fileExists(atPath: url.path), "\(index.pages[page].file) is missing")
         }
-        // A board brick, 9-sliced, and a kerb with its footprint anchor: the
-        // two shapes the board's layout reads out of ArtSlices.
-        let brick = try #require(index.entry("BrickGarden1"))
-        #expect(brick.size == CGSize(width: 64, height: 80))
-        #expect(brick.capInsets?.top == 67.2)
-        #expect(try #require(index.entry("KerbGardenHorizontal")).anchor != nil)
-        // Every tiling backdrop ground has a whole page it can repeat on.
-        #expect(index.pages[try #require(index.entry("BackdropReefSeabedSand")).page].repeats)
+        // Every 9-sliced image's fixed caps fit inside it.
+        for name in index.names {
+            let entry = try #require(index.entry(name))
+            guard let caps = entry.capInsets else { continue }
+            #expect(caps.left + caps.right <= entry.size.width + 1e-6 && caps.top + caps.bottom <= entry.size.height + 1e-6,
+                    "\(name)'s caps are bigger than it")
+        }
     }
 
     @Test("Named textures resolve against it",
-          .enabled(if: StagedAssetsTests.exported, "run npm run art -- --android first"))
+          .enabled(if: StagedAssetsTests.exported, "stage a game's packed art first"))
     func texturesResolve() throws {
         let before = AssetIndex.shared
         AssetIndex.shared = try AssetIndex(directory: Self.staged)
         defer { AssetIndex.shared = before }
-        for name in ["BrickGarden1", "ArrowTile", "CharacterGardenAOpen", "Spring", "Key"] {
+        for name in try #require(AssetIndex.shared).names {
             let size = SKTexture(imageNamed: name).size()
             #expect(size.width > 0 && size.height > 0, "\(name) resolved to \(size)")
         }
@@ -646,9 +646,9 @@ struct StagedAssetsTests {
 
 @Test("SKTexture(data:size:) is raw pixels, as SpriteKit defines it")
 func dataInitIsRawPixels() {
-    // `Starlight.noise` builds RGBA bytes and hands them over this way. If it
-    // were taken for a PNG it would fail to decode, upload as one white pixel,
-    // and the sky would draw flat with no nebula — which happened once.
+    // A game's noise lattice is built as RGBA bytes and handed over this way.
+    // If it were taken for a PNG it would fail to decode, upload as one white
+    // pixel, and the shader reading it would draw flat — which happened once.
     let texture = SKTexture(data: Data(repeating: 255, count: 4 * 4 * 4), size: CGSize(width: 4, height: 4))
     guard case .data = texture.source else {
         Issue.record("raw pixel data must stay `.data`"); return
@@ -671,7 +671,7 @@ func imageInitIsEncoded() throws {
     let texture = SKTexture(image: image)
     guard case .encoded = texture.source else {
         // Sharing `.data` with raw pixels means one of the two is always
-        // misread: the rig pages as RGBA, or the sky's noise as a PNG.
+        // misread: a loaded PNG as RGBA, or raw noise as a PNG.
         Issue.record("an image's bytes must be `.encoded`, not raw `.data`"); return
     }
     #expect(texture.size() == CGSize(width: 3, height: 2))

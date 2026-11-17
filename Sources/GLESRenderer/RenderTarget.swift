@@ -6,8 +6,8 @@ import SpriteKitShim
 ///
 /// The renderer needs these for two things the game cannot do without —
 /// `SKEffectNode`, which draws its subtree into a texture and composites that
-/// through a shader, and `SKView.texture(from:)`, which the live backdrops
-/// call to bake their floors.
+/// through a shader, and `SKView.texture(from:)`, which bakes a subtree into
+/// a texture.
 public struct RenderTargetHandle: Equatable {
     public var framebuffer: UInt32
     public var texture: UInt32
@@ -34,24 +34,22 @@ public struct RenderTargetHandle: Equatable {
 /// Two things differ, and both matter:
 ///
 ///  1. **Which way up.** SpriteKit runs on Metal, where the fragment
-///     coordinate counts *down from the top left*. The game relies on it:
-///     `WorldLight.fragment` is `u_fragment.xy + gl_FragCoord.xy *
-///     u_fragment.zw` with `SceneLighting.view = (visible.minX, visible.maxY,
-///     pixels, 0)` — a scene point only comes out of that if y runs down —
-///     and `EdgeShade.Blur` writes `vec2(gl_FragCoord.x, -gl_FragCoord.y)`.
-///     GLES counts up from the bottom left, so every lit shader and the edge
-///     blur would be mirrored. The flip is `(0, height, 1, -1)`.
+///     coordinate counts *down from the top left*. A game may rely on it: a
+///     shader finding its scene point as `u_fragment.xy + gl_FragCoord.xy *
+///     u_fragment.zw`, with `u_fragment = (visible.minX, visible.maxY,
+///     pixels, 0)`, only gets one if y runs down, and one may write
+///     `vec2(gl_FragCoord.x, -gl_FragCoord.y)`. GLES counts up from the
+///     bottom left, so every such shader would be mirrored. The flip is `(0, height, 1, -1)`.
 ///
 ///  2. **Whose pixels.** A draw counts the pixels of the target it draws
 ///     into. For what an `SKEffectNode` holds, that is the effect texture —
-///     which is why `SceneLighting.screen` exists, as a lit floor drawn
-///     inside the edge blur cannot find the screen from `gl_FragCoord`. The
-///     effect's *own* shader runs as its texture is composited, into
-///     whatever target holds the effect node, and counts that target's
-///     pixels: the screen's for the backdrop, the crop's own texture inside
-///     a crop node — which is why AGENTS.md warns that a crop node round an
-///     effect node moves the blur band, and why `EdgeShade.Blur` finds its
-///     band from `gl_FragCoord` at all.
+///     so a shader drawn inside an effect node cannot find the screen from
+///     `gl_FragCoord`. The effect's *own* shader runs as its texture is
+///     composited, into whatever target holds the effect node, and counts
+///     that target's pixels: the screen's for an effect node drawn straight
+///     to it, the crop's own texture inside a crop node — which is why a
+///     crop node round an effect node moves anything its shader places by
+///     `gl_FragCoord`.
 ///
 /// Both are one affine map per draw, pushed as `u_sk_frag`:
 ///
@@ -95,8 +93,8 @@ public struct FragCoordSpace: Equatable {
 ///    wherever they sit. Nothing clips it to the visible rect.
 ///  - **It renders at the scene's density, not the node's.** `density` is the
 ///    view's pixels per scene point, so magnifying inside the node (which is
-///    exactly what `BandedLayerNode` does — a band is scaled up by
-///    `pointsPerUnit` inside a cache scaled back down) does not resample.
+///    what a cache of bands does — a band scaled up by `pointsPerUnit`
+///    inside a cache scaled back down) does not resample.
 ///  - **`gl_FragCoord` is the texture's** for what the node holds, as its
 ///    contents draw into it (`contentsSpace`). Its own shader, run as it is
 ///    composited, counts the pixels of the target it lands in.
@@ -151,7 +149,8 @@ public struct EffectTexture: Equatable {
 
 /// Keeps offscreen targets alive between frames.
 ///
-/// Two kinds, and the difference is the whole reason `BandedLayerNode` works:
+/// Two kinds, and the difference is the whole reason a layer cached in bands
+/// (an effect node a band, one redrawn a frame) works:
 ///
 ///  - **Transient.** An effect node that re-renders every frame wants a
 ///    target of the right size and does not care which one. These are pooled
@@ -159,7 +158,7 @@ public struct EffectTexture: Equatable {
 ///  - **Kept.** An effect node with `shouldRasterize` keeps its pixels until
 ///    something invalidates them, so its target is held against the node's
 ///    identity and its contents are drawn again only when the generation or
-///    the size changes. `BandedLayerNode` redraws one band a frame by
+///    the size changes. A game can redraw one such node a frame by
 ///    toggling `shouldRasterize` off and on, which bumps that generation.
 public final class RenderTargetPool {
     public struct Key: Hashable {

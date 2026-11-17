@@ -57,7 +57,7 @@ let package = Package(
         // purchases and their acknowledgement, which achievements have
         // moved. The device half (SDL audio, a Play service) is behind a
         // protocol each, so this whole target builds and tests on the Mac.
-        // The AVFoundation stand-ins share films are written through take
+        // The AVFoundation stand-ins videos are written through take
         // the shim's CoreVideo pixel buffers, hence the dependency.
         .target(
             name: "PlatformShim",

@@ -7,10 +7,10 @@ import SpriteKitShim
 /// They used to be kept by the node they were baked from, the previous one
 /// dropped when that node baked again. But a bake's node is usually a
 /// throwaway canvas, freed as soon as the bake returns, and the next canvas
-/// often lands at the same address: Starry Sky's floor (the night's mottled
-/// blue, which its sky samples as `u_floor`) was deleted by the edge shade
-/// baked right after it, and the sky sampled a nearly transparent black
-/// shade map in its place, so the night came out dark and hardly blue.
+/// often lands at the same address: a texture baked for a shader to sample
+/// as a uniform was deleted by the next bake made right after it, and the
+/// shader sampled that one in its place, a nearly transparent map that drew
+/// it dark.
 public struct BakedTextures {
     private struct Entry {
         weak var texture: SKTexture?

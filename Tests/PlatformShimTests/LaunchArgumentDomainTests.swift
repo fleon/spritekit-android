@@ -6,40 +6,40 @@ import Testing
 /// what Foundation builds from a Mac process's argv for the same arguments.
 @Suite struct LaunchArgumentDomainTests {
     @Test func pairsKeysWithValuesAndSkipsTheProcessName() {
-        let domain = LaunchArgumentDomain.parse(["app_process", "-StartLevel", "reef-12", "-HideTips", "YES"])
-        #expect(domain["StartLevel"] as? String == "reef-12")
-        #expect(domain["HideTips"] as? String == "YES")
+        let domain = LaunchArgumentDomain.parse(["app_process", "-StartLevel", "level-12", "-Quiet", "YES"])
+        #expect(domain["StartLevel"] as? String == "level-12")
+        #expect(domain["Quiet"] as? String == "YES")
         #expect(domain.count == 2)
     }
 
     @Test func readsPropertyListsAndKeepsTheRestAsText() {
         let domain = LaunchArgumentDomain.parse([
             "-settings.musicEnabled", "<false/>",
-            "-progress.cleared", "(garden-1,garden-2)",
+            "-progress.done", "(level-1,level-2)",
             "-AppleLanguages", "(ja)",
-            "-Stills", "move 3@0.05;celebrate@0.7",
+            "-Steps", "a 3@0.05;b@0.7",
             "-TouchScript", "0.2:0.85,wait,0.8:0.1",
-            "-SolveTimes", "0,1.4,2.8",
+            "-Times", "0,1.4,2.8",
         ])
         #expect(domain["settings.musicEnabled"] as? Bool == false)
-        #expect(domain["progress.cleared"] as? [String] == ["garden-1", "garden-2"])
+        #expect(domain["progress.done"] as? [String] == ["level-1", "level-2"])
         #expect(domain["AppleLanguages"] as? [String] == ["ja"])
-        #expect(domain["Stills"] as? String == "move 3@0.05;celebrate@0.7")
+        #expect(domain["Steps"] as? String == "a 3@0.05;b@0.7")
         #expect(domain["TouchScript"] as? String == "0.2:0.85,wait,0.8:0.1")
-        #expect(domain["SolveTimes"] as? String == "0,1.4,2.8")
+        #expect(domain["Times"] as? String == "0,1.4,2.8")
     }
 
     @Test func aKeyWithNoValueIsSkipped() {
-        let domain = LaunchArgumentDomain.parse(["-Markers", "-StartLevel", "garden-1", "-Trailing"])
-        #expect(domain["Markers"] == nil)
-        #expect(domain["StartLevel"] as? String == "garden-1")
+        let domain = LaunchArgumentDomain.parse(["-Verbose", "-StartLevel", "level-1", "-Trailing"])
+        #expect(domain["Verbose"] == nil)
+        #expect(domain["StartLevel"] as? String == "level-1")
         #expect(domain["Trailing"] == nil)
     }
 
     /// As on Apple: nothing that starts with a dash is a value.
     @Test func dashesAreNeverValues() {
-        let domain = LaunchArgumentDomain.parse(["-BoardCentre", "-0.1", "-Lone", "-", "-Empty", "", "-Q", "\"quoted\""])
-        #expect(domain["BoardCentre"] == nil)
+        let domain = LaunchArgumentDomain.parse(["-Offset", "-0.1", "-Lone", "-", "-Empty", "", "-Q", "\"quoted\""])
+        #expect(domain["Offset"] == nil)
         #expect(domain["Lone"] == nil)
         #expect(domain["Empty"] as? String == "")
         #expect(domain["Q"] as? String == "quoted")
@@ -56,9 +56,9 @@ import Testing
     @Test func matchesFoundationsOwnArgumentDomain() throws {
         #if os(macOS)
         let arguments = [
-            "-StartLevel", "reef-12", "-HideTips", "YES", "-settings.musicEnabled", "<false/>",
-            "-progress.cleared", "(garden-1,garden-2)", "-Stills", "move 3@0.05;celebrate@0.7",
-            "-BoardCentre", "-0.1", "-Markers", "-Next", "x", "-Lone", "-", "-Empty", "",
+            "-StartLevel", "level-12", "-Quiet", "YES", "-settings.musicEnabled", "<false/>",
+            "-progress.done", "(level-1,level-2)", "-Steps", "a 3@0.05;b@0.7",
+            "-Offset", "-0.1", "-Verbose", "-Next", "x", "-Lone", "-", "-Empty", "",
             "-Spaced", "  spaced value ", "-Dict", "{a = 1;}", "-Q", "\"quoted\"",
         ]
         // JXA reads NSUserDefaults' argument domain of its own process,

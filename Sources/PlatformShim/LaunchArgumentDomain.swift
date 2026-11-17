@@ -1,7 +1,7 @@
 import Foundation
 
 /// What Foundation makes of a launch's arguments on Apple: `UserDefaults`'
-/// argument domain (`NSArgumentDomain`), which `LaunchArguments` and the
+/// argument domain (`NSArgumentDomain`), which a game's debug arguments and
 /// settings read.
 ///
 /// On Apple the process's argv fills it. An Android app's argv is the
@@ -9,11 +9,11 @@ import Foundation
 /// (`ShellArguments`) and puts this in the domain itself.
 public enum LaunchArgumentDomain {
     /// `-Key value` pairs, each value read as a property list where it is
-    /// one (`<false/>`, `(garden-1,garden-2)`, `{a = 1;}`, `"quoted"`), else
+    /// one (`<false/>`, `(level-1,level-2)`, `{a = 1;}`, `"quoted"`), else
     /// kept as text, so `YES` stays the string `bool(forKey:)` reads as true.
     /// A key with no value after it is skipped, and as on Apple anything
     /// starting with a dash is never a value (not `-0.1`, not `-`), so
-    /// `-Markers -StartLevel x` sets only `StartLevel`.
+    /// `-Verbose -StartLevel x` sets only `StartLevel`.
     public static func parse(_ values: [String]) -> [String: Any] {
         var domain: [String: Any] = [:]
         var index = 0

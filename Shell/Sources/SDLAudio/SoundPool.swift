@@ -11,7 +11,7 @@ import ShellCore
 /// clearing it and putting the whole clip in again, which is what
 /// `player.currentTime = 0` does there. SDL gives two things the game needs
 /// for free: a gain per stream, and a frequency ratio, which is how
-/// footsteps vary their pitch (`DesignSystem.stepRateVariation`).
+/// a game varies a sound's pitch.
 final class SoundPool {
     private final class Voice {
         let stream: OpaquePointer

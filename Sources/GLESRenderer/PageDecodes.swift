@@ -3,20 +3,20 @@ import Foundation
 /// Packed pages decoded ahead of their first draw, off the frame thread.
 ///
 /// SpriteKit's `SKTexture.preload` decodes on a queue of its own, and the
-/// game leans on it: the loading screen preloads the next scene's art, the
-/// world list the worlds either side (`WorldTextures`). Here a page used to
+/// a game may lean on it: a loading screen preloading the next scene's art,
+/// a paged screen its neighbours'. Here a page used to
 /// be read out of the APK, inflated and premultiplied on the frame thread
 /// the first time anything on it drew, a 2048-pixel page at a time: a stall
-/// the length of several frames on a phone, every time a new world's art
-/// came on screen. `decode(_:)` does that work on whichever thread preloads,
+/// the length of several frames on a phone, every time new art came on
+/// screen. `decode(_:)` does that work on whichever thread preloads,
 /// and the frame thread then only uploads what it finds here (`take`).
 ///
-/// They decode a few at a time. On a Galaxy M31 that took the loading
-/// screen's longest frame from 3.7–4.8 s to 2.6–3.3 s, the world list
-/// arriving about a second later (Android/README.md). A page decoded and never drawn is
+/// They decode a few at a time. On a Mali-G72 phone that took a loading
+/// screen's longest frame from 3.7–4.8 s to 2.6–3.3 s, the next scene
+/// arriving about a second sooner. A page decoded and never drawn is
 /// dropped, oldest first, once the pages waiting hold more than `capacity`
-/// bytes; one already uploaded is never
-/// decoded again until the GL context goes (`forgetResident`).
+/// bytes; one already uploaded is never decoded again until the GL context
+/// goes (`forgetResident`).
 public final class PageDecodes: @unchecked Sendable {
     public typealias Page = PageImage
 
@@ -30,13 +30,13 @@ public final class PageDecodes: @unchecked Sendable {
     private var bytes = 0
 
     /// How many pages decode at once: a scene's art spans a dozen pages,
-    /// and one thread decoding them in turn kept the loading screen up for
+    /// and one thread decoding them in turn kept a loading screen up for
     /// seconds longer than decoding them as they drew had.
     private let width: Int
 
     /// `load` reads and decodes one page, premultiplied, on the calling
-    /// thread. The default capacity holds a whole scene's pages (a world
-    /// list's page and its neighbours' art span about twenty): any less and
+    /// thread. The default capacity holds a whole scene's pages (a paged
+    /// screen and its neighbours' art can span about twenty): any less and
     /// the first were dropped before they drew, and decoded again. A phone
     /// with little memory keeps fewer, an eighth of what it has.
     public init(capacity: Int = PageDecodes.defaultCapacity, width: Int = max(1, min(3, ProcessInfo.processInfo.activeProcessorCount - 1)), load: @escaping (Int) -> Page?) {

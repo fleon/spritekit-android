@@ -1,12 +1,12 @@
 import Foundation
 
 /// What the game hands the system's share sheet, sorted the way Android's
-/// takes it: the files to send (a share film, or its picture) and the words
+/// takes it: the files to send (a video, or a picture) and the words
 /// that go with them (the line and the link, joined).
 ///
 /// UIKit's `UIActivityViewController` takes a mixed `[Any]` and works out
 /// what each item is; Android's `ACTION_SEND` takes one stream and one text
-/// extra. `ShareSheet.present` on Android sorts the game's items into this
+/// extra. A game's share code on Android sorts its items into this
 /// and hands it to `SystemShare.sheet`, which the shell installs.
 public struct ShareRequest: Equatable, Sendable {
     public var files: [URL]
