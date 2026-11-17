@@ -61,8 +61,8 @@ struct ThaiShapingTests {
 
     @Test("Marks take no width, and are nudged off the pen rather than stacked on it")
     func markPlacement() {
-        // สิทธิ์ — "right", a Thai word with three marks in it, two stacked.
-        let text = "\u{0E2A}\u{0E34}\u{0E17}\u{0E18}\u{0E34}\u{0E4C}"
+        // ติดตั้ง, "install", with three marks in it (two stacked).
+        let text = "\u{0E15}\u{0E34}\u{0E14}\u{0E15}\u{0E31}\u{0E49}\u{0E07}"
         let font = Fonts.koHo()
         let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
         let marks = glyphs.filter { $0.xAdvance == 0 }
@@ -93,15 +93,15 @@ struct ThaiShapingTests {
 struct ShapingTests {
     @Test("A Latin line's advances sum to its measured width")
     func latinAdvances() {
-        let font = Fonts.chiron()
-        for text in ["Salamanders", "Play", "Level 12", "Tap to bump and trade arrows"] {
+        let font = Fonts.display()
+        for text in ["Lightning", "Play", "Level 12", "Tap to bump and trade arrows"] {
             let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
             let sum = glyphs.reduce(0) { $0 + $1.xAdvance }
             let measured = Fonts.engine.measure(text, font: font)
             #expect(sum > 0)
             #expect(abs(measured.advance - sum) < 0.001, "\(text)")
-            // One glyph per character, nothing dropped: Latin in the test
-            // font has no ligatures these strings would hit.
+            // One glyph per character, nothing dropped: Latin in Montserrat has
+            // no ligatures a game would hit.
             #expect(glyphs.count == text.count)
         }
     }
@@ -109,14 +109,13 @@ struct ShapingTests {
     @Test("Clusters run in order and cover the whole string")
     func latinClusters() {
         let text = "Level 12"
-        let glyphs = (Fonts.engine.shape(text, font: Fonts.chiron()) ?? []).flatMap(\.glyphs)
+        let glyphs = (Fonts.engine.shape(text, font: Fonts.display()) ?? []).flatMap(\.glyphs)
         #expect(glyphs.map(\.cluster) == Array(0..<text.utf8.count))
     }
 
-    @Test("CJK shapes one glyph per ideograph, each with real width")
+    @Test("CJK shapes one glyph per ideograph, each with real width", .enabled(if: Fonts.hasCJK))
     func cjk() {
-        let font = Fonts.chiron()
-        for text in ["简体中文", "日本語", "한국어"] {
+        for (text, font) in [("简体中文", Fonts.han()), ("日本語", Fonts.han()), ("한국어", Fonts.hangul())] {
             let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
             #expect(glyphs.count == text.count, "\(text)")
             #expect(glyphs.allSatisfy { $0.glyph != 0 }, "\(text) has a missing glyph")
@@ -126,7 +125,7 @@ struct ShapingTests {
 
     @Test("A mixed string is itemised into one run per script")
     func itemisation() {
-        let runs = Fonts.engine.shape("Level 1 \u{0E2A}\u{0E27}\u{0E31}\u{0E2A}\u{0E14}\u{0E35}", font: Fonts.chiron()) ?? []
+        let runs = Fonts.engine.shape("Level 1 \u{0E2A}\u{0E27}\u{0E31}\u{0E2A}\u{0E14}\u{0E35}", font: Fonts.display()) ?? []
         #expect(runs.count == 2)
         #expect(runs.first?.script == .latin)
         #expect(runs.last?.script == .thai)
@@ -135,7 +134,7 @@ struct ShapingTests {
         #expect((runs.last?.glyphs.first?.cluster ?? 0) == 8)
     }
 
-    @Test("Script detection covers the scripts games commonly ship")
+    @Test("Script detection covers every script a game ships")
     func scripts() {
         #expect(script("A") == .latin)
         #expect(script("ä") == .latin)

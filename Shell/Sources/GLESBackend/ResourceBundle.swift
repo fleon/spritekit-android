@@ -17,15 +17,25 @@ import SpriteKitShim
 ///
 /// Where each file is staged in the APK is the game's Gradle project's to
 /// say (`Shell.start(resourceFolder:)`): by default fonts in `fonts/` and
-/// everything else in `resources/`. The strings are always in
+/// audio where `AudioAssets` plays it from (`audio/SFX`, `audio/Music`), so
+/// a game that opens a sound file itself (to read its length, say) finds the
+/// same file, and everything else in `resources/`. The strings are always in
 /// `lproj/<language>.lproj/`.
 public enum ResourceBundle {
     /// The APK folder a resource named `name` with extension `ext` is staged
     /// in.
     public typealias FolderRule = @Sendable (_ name: String, _ ext: String) -> String
 
-    /// Fonts in `fonts/`, everything else in `resources/`.
-    public static let defaultFolder: FolderRule = { _, ext in ext == "ttf" || ext == "otf" ? "fonts" : "resources" }
+    /// Fonts in `fonts/`, sounds in `audio/SFX/`, music in `audio/Music/`,
+    /// everything else in `resources/`.
+    public static let defaultFolder: FolderRule = { _, ext in
+        switch ext {
+        case "ttf", "otf": return "fonts"
+        case "wav": return "audio/SFX"
+        case "m4a", "mp3", "ogg": return "audio/Music"
+        default: return "resources"
+        }
+    }
 
     nonisolated(unsafe) static var folder: FolderRule = defaultFolder
 

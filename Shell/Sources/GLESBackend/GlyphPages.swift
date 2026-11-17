@@ -219,7 +219,8 @@ final class EngineGlyphSource: CoverageGeometry.GlyphSource {
                     made.append(CoverageGeometry.Glyph(
                         page: entry.page,
                         rect: entry.rect,
-                        frame: CGRect(x: left, y: top - height, width: width, height: height)
+                        frame: CGRect(x: left, y: top - height, width: width, height: height),
+                        cluster: glyph.cluster
                     ))
                 }
                 pen += glyph.xAdvance

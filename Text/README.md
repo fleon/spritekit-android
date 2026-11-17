@@ -36,10 +36,16 @@ swift build --swift-sdk swift-6.4.2-RELEASE_android \
             --triple x86_64-unknown-linux-android23
 ```
 
+The tests measure open-licensed fonts kept with them in `Tests/Fixtures/Fonts`
+(Montserrat, a variable font with named instances, and KoHo Bold for Thai,
+each with its licence), and the Mac's own Hiragino Sans GB and Apple SD Gothic
+Neo for Chinese, Japanese and Korean. Run them with `--build-system native`
+and `PKG_CONFIG_PATH` set to the absolute path of `Vendor/out/host/lib/pkgconfig`.
+
 `TextProbe` is a small command line over the whole stack:
 
 ```
-swift run TextProbe <fonts-directory> SomeThaiFont-Bold 32 สวัสดี
+swift run TextProbe Tests/Fixtures/Fonts KoHo-Bold 32 สวัสดี
 ```
 
 It exists mostly because a library build never links, so without an
