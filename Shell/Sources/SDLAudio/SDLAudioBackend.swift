@@ -98,6 +98,10 @@ public final class SDLAudioBackend: AudioBackend {
         Log.info("audio: \(loaded) sounds, \(poolSize) voices each")
     }
 
+    public func duration(ofSound name: String) -> TimeInterval? {
+        sounds[name]?.duration
+    }
+
     public func play(sound name: String, rate: Float) {
         sounds[name]?.play(rate: rate)
     }

@@ -53,6 +53,14 @@ public protocol AudioBackend: AnyObject {
 
     /// The app came back: pick the track up where `suspend()` left it.
     func resume()
+
+    /// How long a prepared sound plays, as `AVAudioPlayer.duration` tells a
+    /// game that times something to it; nil for a sound not prepared.
+    func duration(ofSound name: String) -> TimeInterval?
+}
+
+public extension AudioBackend {
+    func duration(ofSound name: String) -> TimeInterval? { nil }
 }
 
 /// A backend that hears everything and does nothing: what the game runs on
