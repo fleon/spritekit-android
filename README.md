@@ -207,6 +207,12 @@ A change to the shim's behaviour comes with a test of this kind.
   unsynchronised writes land over draws still pending).
 - **Meshes:** `SKTriangleMesh` and warped sprites batch as geometry with the
   sprites of their texture.
+- **Shapes** are rasterised on the CPU into coverage masks, cached by what
+  they draw. A shape whose path changes every frame (marching ants, a ring
+  drawing itself round) draws its last mask while the next is made on a
+  thread of the lowest priority (`MaskLag`), a frame or two behind; one
+  appearing gets its mask at once, and a fixed frame step makes every mask
+  at once. The frame report logs what masks have cost.
 - **Render scale:** fill rate decides frame time on mid-range GPUs, so the
   scene can draw at a share of the screen's size, the display scaling it up
   (`ANativeWindow_setBuffersGeometry`). `RenderScaleGovernor` picks the scale

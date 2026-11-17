@@ -737,7 +737,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             Log.info(
                 "coverage after \(frame.index) frames: "
                     + "\(glyphPages.uploads) glyph uploads (\(glyphPages.uploadedBytes / 1024) KB), "
-                    + "\(shapeMasks.rasterised) masks rasterised"
+                    + "\(shapeMasks.rasterised) masks rasterised "
+                    + "(\(Int((shapeMasks.rasteriseSeconds * 1000).rounded())) ms, "
+                    + "uploaded in \(Int((shapeMasks.uploadSeconds * 1000).rounded())) ms)"
             )
         }
     }
@@ -1678,7 +1680,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         }
 
         if shape.fillColor.alpha > 0,
-           let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale) {
+           let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale, owner: shape.owner) {
             drawCoverage(
                 CoverageGeometry.run(
                     mask: mask.bounds, transform: shape.transform,
@@ -1694,7 +1696,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
            let mask = shapeMasks.stroke(
                path, width: shape.lineWidth,
-               cap: shape.lineCap, join: shape.lineJoin, scale: scale
+               cap: shape.lineCap, join: shape.lineJoin, scale: scale, owner: shape.owner
            ) {
             drawCoverage(
                 CoverageGeometry.run(
@@ -1891,7 +1893,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         guard scale > 0 else { return [] }
         var parts: [CoverageGeometry.Staged.Part] = []
         if shape.fillColor.alpha > 0,
-           let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale) {
+           let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale, owner: shape.owner) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.fillColor, alpha: shape.alpha),
                 mask: mask.name,
@@ -1900,7 +1902,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             ))
         }
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
-           let mask = shapeMasks.stroke(path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale) {
+           let mask = shapeMasks.stroke(path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale, owner: shape.owner) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),
                 mask: mask.name,

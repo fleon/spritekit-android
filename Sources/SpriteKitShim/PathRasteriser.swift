@@ -607,55 +607,83 @@ public enum PathRasteriser {
         let width = box.width, height = box.height
         var pixels = [UInt8](repeating: 0, count: width * height)
         var row = [CGFloat](repeating: 0, count: width)
-        var crossings: [(x: CGFloat, winding: Int)] = []
-        crossings.reserveCapacity(16)
-        var active: [Int] = []
+        // The edges crossing the current row, copied in rather than looked up
+        // by index, and a sub-scanline's crossings, kept sorted as they're
+        // found: rarely more than a handful, so an insertion sort into fixed
+        // buffers beats sorting an array of tuples sixteen times a row.
+        var active: [Edge] = []
+        active.reserveCapacity(min(edges.count, 64))
+        var xs = [CGFloat](repeating: 0, count: edges.count)
+        var windings = [Int](repeating: 0, count: edges.count)
         var next = 0
         let weight = 1 / CGFloat(subSamples)
+        let evenOdd = rule == .evenOdd
 
         pixels.withUnsafeMutableBufferPointer { out in
+            xs.withUnsafeMutableBufferPointer { xs in
+            windings.withUnsafeMutableBufferPointer { windings in
             for y in 0 ..< height {
-                for i in row.indices { row[i] = 0 }
+                // Only the pixels a span touched are cleared and written: a
+                // thin outline (a dashed border round a big panel) touches a
+                // few pixels a row, and walking the whole width twice a row
+                // was most of its cost.
+                var touched = (low: width, high: -1)
                 let rowTop = CGFloat(y)
                 let rowBottom = rowTop + 1
 
                 while next < edges.count, edges[next].y0 < rowBottom {
-                    active.append(next)
+                    active.append(edges[next])
                     next += 1
                 }
-                active.removeAll { edges[$0].y1 <= rowTop }
+                var kept = 0
+                for index in active.indices where active[index].y1 > rowTop {
+                    active[kept] = active[index]
+                    kept += 1
+                }
+                active.removeLast(active.count - kept)
                 if active.isEmpty { continue }
 
                 for sample in 0 ..< subSamples {
                     let sy = rowTop + (CGFloat(sample) + 0.5) * weight
-                    crossings.removeAll(keepingCapacity: true)
-                    for index in active {
-                        let edge = edges[index]
+                    var count = 0
+                    for edge in active {
                         guard edge.y0 <= sy, sy < edge.y1 else { continue }
                         let t = (sy - edge.y0) / (edge.y1 - edge.y0)
-                        crossings.append((edge.x0 + (edge.x1 - edge.x0) * t, edge.winding))
+                        let x = edge.x0 + (edge.x1 - edge.x0) * t
+                        var slot = count
+                        while slot > 0, xs[slot - 1] > x {
+                            xs[slot] = xs[slot - 1]
+                            windings[slot] = windings[slot - 1]
+                            slot -= 1
+                        }
+                        xs[slot] = x
+                        windings[slot] = edge.winding
+                        count += 1
                     }
-                    guard crossings.count > 1 else { continue }
-                    crossings.sort { $0.x < $1.x }
+                    guard count > 1 else { continue }
 
                     var winding = 0
                     var spanStart: CGFloat = 0
-                    for crossing in crossings {
-                        let wasInside = inside(winding, rule)
-                        winding += rule == .evenOdd ? 1 : crossing.winding
-                        let isInside = inside(winding, rule)
+                    for index in 0 ..< count {
+                        let wasInside = evenOdd ? winding % 2 != 0 : winding != 0
+                        winding += evenOdd ? 1 : windings[index]
+                        let isInside = evenOdd ? winding % 2 != 0 : winding != 0
                         if !wasInside, isInside {
-                            spanStart = crossing.x
+                            spanStart = xs[index]
                         } else if wasInside, !isInside {
-                            add(span: spanStart, to: crossing.x, weight: weight, width: width, into: &row)
+                            add(span: spanStart, to: xs[index], weight: weight, width: width, into: &row, touched: &touched)
                         }
                     }
                 }
 
+                guard touched.low <= touched.high else { continue }
                 let base = y * width
-                for x in 0 ..< width where row[x] > 0 {
-                    out[base + x] = UInt8(max(0, min(255, (row[x] * 255).rounded())))
+                for x in touched.low ... touched.high {
+                    if row[x] > 0 { out[base + x] = UInt8(max(0, min(255, (row[x] * 255).rounded()))) }
+                    row[x] = 0
                 }
+            }
+            }
             }
         }
 
@@ -673,7 +701,8 @@ public enum PathRasteriser {
         to: CGFloat,
         weight: CGFloat,
         width: Int,
-        into row: inout [CGFloat]
+        into row: inout [CGFloat],
+        touched: inout (low: Int, high: Int)
     ) {
         let start = max(from, 0)
         let end = min(to, CGFloat(width))
@@ -681,6 +710,8 @@ public enum PathRasteriser {
 
         let firstPixel = Int(start)
         let lastPixel = min(Int(end), width - 1)
+        touched.low = min(touched.low, firstPixel)
+        touched.high = max(touched.high, lastPixel)
         if firstPixel == lastPixel {
             row[firstPixel] += (end - start) * weight
             return
