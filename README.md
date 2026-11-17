@@ -1141,6 +1141,15 @@ against Apple's own where Apple's runs on the Mac:
   program); an effect drawn in place carries its transform. Without these
   the level strip, the banner's text and the rigs in it were missing or
   misplaced.
+- `SKConstraint` (`positionX`/`positionY`, `distance`, `zRotation`,
+  `orient`), applied by the scene once a frame after the actions and before
+  `didApplyConstraints()`, as SpriteKit does; Hue Rings pins its title
+  buttons with them. Measured with `SKRenderer` on macOS 27.2
+  (`ConstraintTests`): nodes take turns in the order they were given
+  constraints or entered the scene with them, not in tree order; a node not
+  in a scene, or in a paused scene, is left alone; ranges clamp as
+  `max(lower, min(upper, v))`; `orient` brings its angle round by at most
+  one turn, and only one way.
 - Actions: `rotate(toAngle:duration:shortestUnitArc:)`, `colorize`,
   `setTexture`, `reversed()`; timing modes on **SpriteKit's measured
   curves** (ease in `2t² − t³`, ease out `t + t² − t³`, both smoothstep, read

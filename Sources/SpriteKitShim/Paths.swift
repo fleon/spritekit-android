@@ -158,23 +158,4 @@ public final class UIBezierPath: @unchecked Sendable {
     public var isEmpty: Bool { storage.elements.isEmpty }
 }
 
-/// SpriteKit's numeric range, used by the game's `range(_:_:)` helpers.
-public final class SKRange: @unchecked Sendable {
-    public var lowerLimit: CGFloat
-    public var upperLimit: CGFloat
-
-    public init(lowerLimit: CGFloat, upperLimit: CGFloat) {
-        self.lowerLimit = lowerLimit
-        self.upperLimit = upperLimit
-    }
-
-    public convenience init(constantValue: CGFloat) {
-        self.init(lowerLimit: constantValue, upperLimit: constantValue)
-    }
-
-    public convenience init(value: CGFloat, variance: CGFloat) {
-        self.init(lowerLimit: value - variance, upperLimit: value + variance)
-    }
-}
-
 #endif
