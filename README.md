@@ -180,6 +180,13 @@ through `SKRenderer` and pinned in host tests:
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
   descendants; a scaled 9-slice keeps its caps.
+- **Tile maps:** `SKTileMapNode` draws one sprite per filled cell, each
+  definition at its own size from its cell's bottom-left corner, turned
+  counter-clockwise within that rect by its rotation, and tinted by the
+  map's colour as a sprite is; cell centres and tile indices (clamped at 0,
+  not at the far edge) are SpriteKit's (`TileMapTests`). Animated
+  definitions show their first texture, and automapping keeps a group's
+  centre rule.
 - **Paths and contexts:** checked against CoreGraphics' own API, every blend
   mode included.
 
