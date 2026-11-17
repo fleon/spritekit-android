@@ -88,9 +88,9 @@ write_pc() { # prefix
     # One .pc for the single system-library target, so SwiftPM never has to
     # resolve a Requires: chain. Only -I, -L and -l, which is all SwiftPM's
     # pkg-config allowlist accepts.
-    cat > "$prefix/lib/pkgconfig/switchlings-text.pc" <<EOF
+    cat > "$prefix/lib/pkgconfig/spritekit-text.pc" <<EOF
 prefix=$prefix
-Name: switchlings-text
+Name: spritekit-text
 Description: FreeType $FREETYPE_VERSION and HarfBuzz $HARFBUZZ_VERSION, pinned by Android/Vendor
 Version: ${FREETYPE_VERSION}+${HARFBUZZ_VERSION}
 Cflags: -I\${prefix}/include -I\${prefix}/include/freetype2 -I\${prefix}/include/harfbuzz

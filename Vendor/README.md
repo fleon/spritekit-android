@@ -23,7 +23,7 @@ place to change to move either of them.
 
 Android needs `ANDROID_NDK_HOME`, or the NDK at
 `~/Library/Android/android-ndk-r30`. Each target lands in
-`out/<target>/{include,lib}` with a `lib/pkgconfig/switchlings-text.pc` that
+`out/<target>/{include,lib}` with a `lib/pkgconfig/spritekit-text.pc` that
 SwiftPM's `CTextShaping` system-library target resolves:
 
 ```

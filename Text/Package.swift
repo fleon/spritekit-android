@@ -28,7 +28,7 @@ let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 
 let package = Package(
-    name: "SwitchlingsText",
+    name: "SpriteKitText",
     products: [
         .library(name: "TextShaping", targets: ["TextShaping"]),
         // Linking is the thing a library build never checks. See its main.swift.
@@ -41,7 +41,7 @@ let package = Package(
         .systemLibrary(
             name: "CTextShaping",
             path: "Sources/CTextShaping",
-            pkgConfig: "switchlings-text"
+            pkgConfig: "spritekit-text"
         ),
         .target(
             name: "TextShaping",

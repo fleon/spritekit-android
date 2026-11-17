@@ -1,13 +1,11 @@
 import Foundation
 
-/// The device as the beta's solve log names it (`PlaytestLog`), where iOS
-/// has TestFlight's feedback: its maker and model ("Google Pixel 6"), its
-/// Android version ("17") and whether it's an emulator, which records no
-/// solves unless given `-Playtest YES`, as an iOS simulator records none.
+/// The device as a game's diagnostics name it, where iOS has TestFlight's
+/// feedback: its maker and model ("Google Pixel 9"), its Android version
+/// ("17") and whether it's an emulator, which gains `-Playtest NO` unless
+/// given `-Playtest YES`, as a game knows an iOS simulator at compile time.
 /// `MainActivity` puts them in the environment before the Swift libraries
-/// load (`SKA_DEVICE_MODEL`, `SKA_OS_VERSION`,
-/// `SKA_EMULATOR`). Comes out with the solve log before the store
-/// release.
+/// load (`SKA_DEVICE_MODEL`, `SKA_OS_VERSION`, `SKA_EMULATOR`).
 public struct AndroidDevice: Equatable, Sendable {
     public let model: String
     public let osVersion: String
@@ -16,8 +14,8 @@ public struct AndroidDevice: Equatable, Sendable {
     /// This device, as `MainActivity` described it.
     public static let current = AndroidDevice(environment: ProcessInfo.processInfo.environment)
 
-    /// The argument an emulator's launch gains unless it names it: what
-    /// `LaunchArguments.recordsPlaytests` reads, `Playtest`.
+    /// The argument an emulator's launch gains unless it names it, which a
+    /// game reads to tell whether to record playtests: `Playtest`.
     public static let playtestArgument = "Playtest"
 
     public init(environment: [String: String]) {
@@ -27,8 +25,8 @@ public struct AndroidDevice: Equatable, Sendable {
     }
 
     /// The launch's arguments as an emulator takes them: `-Playtest NO`
-    /// unless they say otherwise, since `LaunchArguments` only knows an iOS
-    /// simulator at compile time.
+    /// unless they say otherwise, since a game only knows an iOS simulator at
+    /// compile time.
     public func arguments(_ arguments: [String: Any]) -> [String: Any] {
         guard isEmulator, arguments[Self.playtestArgument] == nil else { return arguments }
         var arguments = arguments
@@ -38,21 +36,19 @@ public struct AndroidDevice: Equatable, Sendable {
 }
 
 /// Whether this build is a beta, for Play's testing tracks (internal, closed
-/// and open), which play the Level Designer's live feed and post each clear
-/// to its solve log (`DesignerFeed`, `PlaytestLog`), as every Apple build
-/// does during the beta. Play can't tell an app which track installed it, so
-/// it's chosen when the app is built (`-Pswitchlings.beta=true|false`, which
-/// a release build must name) and Gradle writes it into the base module's
-/// assets (`SwitchlingsBuild.json`), where `MainActivity` reads it into the
-/// environment (`SKA_BETA`) and `play.js` checks an upload to a
-/// testing track has it on. A production build is built with it off, never
-/// promoted from a testing track.
+/// and open), where a game may turn on what only its testers get (remote
+/// content, playtest records). Play can't tell an app which track installed
+/// it, so it's chosen when the app is built, as one of the app's build
+/// properties, and the Gradle project writes it into the app's assets, where
+/// `MainActivity` reads it into the environment (`SKA_BETA`). A production
+/// build is built with it off, never promoted from a testing track.
 public struct BetaBuild: Equatable, Sendable {
     public let isOn: Bool
 
     public static let current = BetaBuild(environment: ProcessInfo.processInfo.environment)
 
-    /// What `LaunchArguments` reads for the feed and the solve log.
+    /// The argument a game reads to load remote levels rather than its
+    /// bundled ones, `DesignerLevels`, beside `Playtest`.
     public static let feedArgument = "DesignerLevels"
 
     public init(environment: [String: String]) {
@@ -65,8 +61,9 @@ public struct BetaBuild: Equatable, Sendable {
 
     /// The launch's arguments as this build takes them: with beta off,
     /// `-DesignerLevels NO` and `-Playtest NO` unless they say otherwise, so
-    /// a debug build can still be pointed at the feed and the solve log. A
-    /// store build reads no arguments, and the two check `isOn` themselves.
+    /// a debug build can still be pointed at the remote levels and record
+    /// playtests. A store build reads no arguments, and a game checks `isOn`
+    /// itself.
     public func arguments(_ arguments: [String: Any]) -> [String: Any] {
         guard !isOn else { return arguments }
         var arguments = arguments
@@ -78,7 +75,7 @@ public struct BetaBuild: Equatable, Sendable {
 
     /// What the launch log says of it.
     public var description: String {
-        isOn ? "beta build: plays the Level Designer's feed and posts solves"
-             : "not a beta build: the bundled levels, no solves posted"
+        isOn ? "beta build: the launch's arguments as given"
+             : "not a beta build: -DesignerLevels NO and -Playtest NO unless the launch names them"
     }
 }

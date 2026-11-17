@@ -22,16 +22,21 @@ extension Shell {
     ///     ) -> Int32 {
     ///         Shell.start(argc: argc, argv: argv,
     ///                     app: AppIdentity(name: "My Game", bundleIdentifier: "com.example.mygame", key: "mygame"),
+    ///                     fonts: ["MyFont-Regular", "MyFont-Bold"],
     ///                     game: MyGameController.self)
     ///     }
     ///
-    /// The signature is fixed by SDL's `SDL_main_func`. `configure` runs
+    /// The signature is fixed by SDL's `SDL_main_func`. `fonts` names the
+    /// font files staged in the APK's `fonts/`, without their `.ttf`, the
+    /// first being what a label with no `fontName` falls back to (none: no
+    /// text draws). `configure` runs
     /// once the art and the clock are in place, before the game launches:
     /// for the game's own debug properties, say.
     nonisolated public static func start(
         argc: Int32,
         argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
         app: AppIdentity,
+        fonts: [String] = [],
         game: any GameHost.Type,
         configure: (@MainActor () -> Void)? = nil
     ) -> Int32 {
@@ -46,7 +51,7 @@ extension Shell {
             Log.error("could not claim the main thread — anything that primes a shader will trap")
         }
 
-        // What the game prints (`-Markers`' lines, above all) goes to logcat,
+        // What the game prints (lines tools wait for, above all) goes to logcat,
         // under the shell's own tag: an app's standard output goes nowhere.
         _ = ska_redirect_stdio(app.name)
 
@@ -76,6 +81,7 @@ extension Shell {
             // Hands the shell a real renderer. If the art is missing from the APK
             // the index does not load and every texture resolves to the white
             // placeholder — tinted rectangles, visibly wrong rather than blank.
+            AssetBundle.fontFiles = fonts
             GLESBackend.game = game
             GLESBackend.configureGame = configure
             GLESBackend.prepare()
