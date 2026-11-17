@@ -459,6 +459,15 @@ TestFlight shows nothing on iOS.
 - **Resources:** the process is `app_process`, so `Bundle.main` has no files;
   resources (data files, fonts, `.lproj` folders) are copied out of the APK on
   first use. The version comes from the APK.
+- **Localized strings:** `NSLocalizedString` reads the APK's
+  `lproj/<language>.lproj/<table>.strings`, choosing the language as
+  `Bundle.main` does: the first preferred language a folder serves, else the
+  app's development region (`AppIdentity.developmentRegion`, its own folder
+  or `Base`). A key the chosen table lacks is the value or the key
+  (`LocalizedStringsTests`, measured on a Mac). Only `NSLocalizedString`:
+  `Bundle.localizedString(forKey:value:table:)`, `String(localized:)` and
+  `.stringsdict` still answer with keys, and `bundle:` isn't read. A file
+  that imports only Foundation needs the shim re-exported in its module.
 - **Layout:** a point is a dp. The safe area includes the system bars, the
   cutout and the gesture handle; Back (and Android 16's predictive back)
   arrives as Escape.
