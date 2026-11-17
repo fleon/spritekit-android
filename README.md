@@ -262,6 +262,8 @@ and tested on a Mac against a fake Java:
 - **Audio:** sound effects through SDL's audio streams, music through the
   NDK's MediaCodec (the same AAC an iOS build ships), with loop points kept
   in presentation time.
+  A track with no loop points of its own repeats whole with
+  `MusicLoop.wholeTrack`, as `AVAudioPlayer`'s `numberOfLoops = -1` does.
 - **Media:** `AVAssetWriter`, `AVAudioFile` and composition stand-ins over
   MediaCodec and MediaMuxer, for games that render video.
 - **The device:** haptics (primitives where the vibrator has them), audio
