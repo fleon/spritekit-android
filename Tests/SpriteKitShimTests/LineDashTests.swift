@@ -18,6 +18,9 @@ final class LineDashTests: XCTestCase {
         Case(phase: 0, lengths: [6, 4], width: 2, cap: .butt),
         Case(phase: 3, lengths: [6, 4], width: 2, cap: .butt),
         Case(phase: 0, lengths: [5, 3, 1, 3], width: 3, cap: .square),
+        // Odd: the second time round, on and off swap.
+        Case(phase: 0, lengths: [5, 3, 2], width: 2, cap: .butt),
+        Case(phase: 4, lengths: [6], width: 2, cap: .butt),
     ]
 
     func testADashedLineCoversWhatCoreGraphicsCovers() throws {
@@ -57,6 +60,31 @@ final class LineDashTests: XCTestCase {
                 }
             }
             XCTAssertLessThanOrEqual(worst, 8, "case \(index): coverage differs by \(worst) of 255")
+        }
+    }
+
+    func testAnEllipseStartsWhereCoreGraphicsStartsIt() throws {
+        let rect = CGRect(x: 2, y: 3, width: 20, height: 10)
+        let apple = CGMutablePath()
+        apple.addEllipse(in: rect)
+        let theirs = apple.pathElements
+        let ours = BitmapContext.ellipse(in: rect)
+        XCTAssertEqual(ours.count, theirs.count)
+        func points(_ element: PathElement) -> [CGPoint] {
+            switch element {
+            case let .move(p), let .line(p): return [p]
+            case let .quadCurve(p, c): return [c, p]
+            case let .curve(p, c1, c2): return [c1, c2, p]
+            default: return []
+            }
+        }
+        for (a, b) in zip(ours, theirs) {
+            let pa = points(a), pb = points(b)
+            XCTAssertEqual(pa.count, pb.count, "\(a) vs \(b)")
+            for (x, y) in zip(pa, pb) {
+                XCTAssertEqual(x.x, y.x, accuracy: 0.01, "\(a) vs \(b)")
+                XCTAssertEqual(x.y, y.y, accuracy: 0.01, "\(a) vs \(b)")
+            }
         }
     }
 
