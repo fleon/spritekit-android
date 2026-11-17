@@ -1048,7 +1048,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             case let .coverage(staged):
                 draw(staged, projection: projection, mask: true)
             case let .label(label):
-                // A label mask (Zyl's gradient title) cuts by its glyphs'
+                // A label mask (a gradient cut to a word, say) cuts by its glyphs'
                 // coverage, at half as a shape's does.
                 draw(label, projection: projection, program: shapeMaskProgram)
             }

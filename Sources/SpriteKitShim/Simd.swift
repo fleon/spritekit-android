@@ -136,7 +136,7 @@ public typealias matrix_float2x2 = simd_float2x2
 
 // The vector types' C spellings, which Apple's simd module names Swift's
 // own SIMD types by (`vector_float2` is beside `SKWarpGeometryGrid`, its
-// first user). Zyl's `ColorHelpers` hands shaders a `vector_float3`.
+// first user).
 public typealias simd_float2 = SIMD2<Float>
 public typealias simd_float3 = SIMD3<Float>
 public typealias simd_float4 = SIMD4<Float>

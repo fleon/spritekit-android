@@ -34,7 +34,7 @@ struct AttributedLabelParityTests {
         let size: CGFloat = 20
         let nsFont = try #require(NSFont(name: "Geneva", size: size))
         var checked = 0, matched = 0
-        for text in ["Select a level", "12 of 300 completed", "W", "Zyl"] {
+        for text in ["Select a level", "12 of 300 completed", "W", "Play"] {
             for h in 0...2 {
                 let apple = SpriteKit.SKLabelNode()
                 apple.attributedText = NSAttributedString(string: text, attributes: [.font: nsFont, .kern: NSNumber(value: Float(kern))])

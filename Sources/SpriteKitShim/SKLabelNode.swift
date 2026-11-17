@@ -294,8 +294,7 @@ open class SKShapeNode: SKNode {
     open var blendMode: SKBlendMode = .alpha
     open var fillTexture: SKTexture?
     /// Stretched over the path's bounds and tinted by `strokeColor`, as
-    /// `fillTexture` is for the fill. Zyl's tutorial highlights give their
-    /// outlines a gradient through it.
+    /// `fillTexture` is for the fill.
     open var strokeTexture: SKTexture?
     open var fillShader: SKShader?
     /// Carried, not drawn: the game sets none, and only `ShaderPrimer` reads it.
