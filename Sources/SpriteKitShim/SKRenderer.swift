@@ -3,8 +3,7 @@ import Foundation
 
 /// SpriteKit's off-screen renderer: a scene with no view, updated to a time
 /// of the caller's choosing and drawn into a texture the caller hands it.
-/// The game's one user is `SolutionFilm`, which films a level's solution on
-/// a thread of its own.
+/// A game may use it to film a scene on a thread of its own.
 ///
 /// It is the view's pipeline with the view taken out. `update(atTime:)`
 /// does what `SKView.tick` does to a scene — its `update`, then its actions

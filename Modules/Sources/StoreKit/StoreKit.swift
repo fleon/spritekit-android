@@ -1,9 +1,8 @@
-// Stands in for StoreKit on Android. `StoreManager` has an Android body of
-// its own (Platform/StoreManager.swift); the one other file that imports
-// StoreKit, `SolutionShare`, asks it for the App Store storefront to link a
-// shared film to the right country's store. Play has no App Store
-// storefront, so it answers none; Android's `ShareSheet` then swaps the
-// App Store link for the game's Google Play page (`PlayStorePage`).
+// Stands in for StoreKit on Android, as far as the App Store storefront
+// goes: a game that links to the right country's store asks for it. Play has
+// no App Store storefront, so it answers none, and a game can swap an App
+// Store link for its Google Play page (`PlayStorePage`). Purchases go through
+// PlatformShim's `BillingBackend` instead.
 @_exported import SpriteKitShim
 
 public struct Storefront: Sendable {

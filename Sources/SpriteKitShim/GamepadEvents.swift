@@ -3,8 +3,8 @@ import Foundation
 
 /// A gamepad's input as the shell reads it from SDL (`SDL_EVENT_GAMEPAD_*`),
 /// in GameController's terms: an extended gamepad's d-pad, left stick and
-/// the buttons the game reads. The game's `GamepadInput` reads these on
-/// Android where it reads `GCController` on Apple.
+/// the buttons a game reads. A game reads these on Android where it reads
+/// `GCController` on Apple.
 public enum GamepadEvent: Equatable, Sendable {
     public enum Button: Sendable {
         case a, b, x, y, leftShoulder, rightShoulder, menu

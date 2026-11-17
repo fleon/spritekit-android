@@ -9,21 +9,21 @@ import ShellCore
 ///
 /// ## Why AAC through MediaCodec, rather than re-encoding the music
 ///
-/// The soundtrack is AAC in an MPEG-4 container, built from the WAV masters
-/// by `npm run music`. Android decodes AAC-LC, Ogg Vorbis and MP3 on every
+/// A game's soundtrack is AAC in an MPEG-4 container, as an Apple game ships
+/// it. Android decodes AAC-LC, Ogg Vorbis and MP3 on every
 /// device — the CDD makes all three mandatory — so there is no format
 /// Android "wants"; the choice falls to other things:
 ///
 ///  - The APK ships **the same bytes the IPA does**. One encode, one set of
 ///    loop points, nothing that can drift between the platforms, and no
-///    second 28 MB to build and keep in step.
+///    second copy of the music to build and keep in step.
 ///  - `libmediandk.so` is a system library and already on the shell's list
 ///    of libraries Android provides, so nothing is vendored, fetched or
 ///    built. Vorbis would have meant a decoder in the tree, and this
 ///    machine's ffmpeg has no libvorbis encoder to make the files with.
-///  - It is hardware-accelerated on a real phone. The game is GPU-bound with
-///    eight procedural backdrops; a software music decoder is the wrong
-///    place to spend CPU.
+///  - It is hardware-accelerated on a real phone. A SpriteKit game is
+///    usually GPU-bound; a software music decoder is the wrong place to
+///    spend CPU.
 ///
 /// And the choice is cheap to undo: `AMediaExtractor` reads the container
 /// and `AMediaCodec_createDecoderByType` takes the MIME type out of it, so
@@ -32,7 +32,7 @@ import ShellCore
 ///
 /// ## Loop points
 ///
-/// `MusicLoops.frames` counts frames of the master. An AAC decoder hands
+/// A game's loop points count frames of the master. An AAC decoder hands
 /// back the encoder's priming samples too, so counting decoded frames would
 /// sit a constant off the master. The mixer works in the container's
 /// presentation time instead — for both "where am I" and "where does the
@@ -66,7 +66,7 @@ public final class SDLAudioBackend: AudioBackend {
         // MediaCodec reads the music straight out of the APK, which needs the
         // activity's asset manager. SDL owns the activity, so it is the one
         // that can hand it over.
-        if !sw_audio_use_asset_manager(SDL_GetAndroidJNIEnv(), SDL_GetAndroidActivity()) {
+        if !ska_audio_use_asset_manager(SDL_GetAndroidJNIEnv(), SDL_GetAndroidActivity()) {
             Log.error("no asset manager — the soundtrack will not play")
         }
         mixer = MusicMixer(device: device, rate: Self.deviceRate)

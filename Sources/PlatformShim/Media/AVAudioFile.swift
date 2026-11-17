@@ -1,14 +1,13 @@
 import Foundation
 
-// AVFAudio, as `FilmSoundtrack` mixes a share film's soundtrack: its world's
-// music read from its AAC, round its loop, and the board's sounds read from
-// their WAVs, each into float buffers a channel apiece, then written out as
-// AAC a second at a time.
+// AVFAudio, as a game mixes a film's soundtrack: its music read from its
+// AAC, round its loop, and its sounds read from their WAVs, each into float
+// buffers a channel apiece, then written out as AAC a second at a time.
 //
 // Reading a WAV is plain Swift (`WAVFile`). AAC goes through the media
-// backend's decoder, positioned by presentation time as the game's own
-// soundtrack player positions it, so `framePosition` means what
-// `MusicLoops.frames` means; and the writer encodes through its AAC encoder,
+// backend's decoder, positioned by presentation time as the runtime's own
+// soundtrack player positions it, so `framePosition` means what a game's
+// loop points (`MusicLoop`) mean; and the writer encodes through its AAC encoder,
 // closing the file when the last reference to it goes, as AVAudioFile does.
 
 public typealias AVAudioFrameCount = UInt32

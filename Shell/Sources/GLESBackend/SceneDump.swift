@@ -11,7 +11,7 @@ import SpriteKitShim
 /// line a node, into `scene-dump.txt` in the app's cache (logcat drops
 /// lines that come that fast):
 ///
-///     adb shell run-as com.fleon.switchlings.scenes cat cache/scene-dump.txt
+///     adb shell run-as <package> cat cache/scene-dump.txt
 ///
 /// Debug plumbing only.
 enum SceneDump {

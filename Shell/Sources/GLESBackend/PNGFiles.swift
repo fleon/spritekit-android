@@ -4,8 +4,8 @@ import GLESRenderer
 import SpriteKitShim
 
 /// PNG files for `UIImage`, which the shim can't inflate or compress on its
-/// own: reading one (a share's avatar, drawn into its credit's disc) with
-/// the renderer's own decoder, and writing one (a share film's picture)
+/// own: reading one (an image the game draws into a context) with the
+/// renderer's own decoder, and writing one (a picture the game saves)
 /// through Android's zlib.
 public enum PNGFiles {
     public static func install() {
@@ -27,8 +27,8 @@ public enum PNGFiles {
     }
 
     private static let lock = NSLock()
-    /// The last page cut from: a share's avatar is one image, and the next
-    /// share's likely sits on the same page.
+    /// The last page cut from: images read one after another likely sit on
+    /// the same page.
     private nonisolated(unsafe) static var lastPage: (number: Int, page: PageImage)?
 
     /// An image set's rect of its page, premultiplied, top row first.
@@ -64,7 +64,7 @@ public enum PNGFiles {
         return RasterImage(width: width, height: height, pixels: pixels)
     }
 
-    /// A zlib stream of `data`, at zlib's default level: a share film's
+    /// A zlib stream of `data`, at zlib's default level: a full-screen
     /// picture is a few hundred kilobytes rather than eight megabytes.
     static func compress(_ data: Data) -> Data? {
         var length = compressBound(uLong(data.count))

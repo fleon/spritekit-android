@@ -420,8 +420,8 @@ struct TransitionTests {
 
 // MARK: - The delegate
 
-/// The shape of the game's `FilmDrawTurns`, member for member where it
-/// touches the view: its own `view` property, a `forwarded` delegate, and
+/// The shape of a game's forwarding view delegate, where it touches the
+/// view: its own `view` property, a `forwarded` delegate, and
 /// the Objective-C optional spelling it asks that delegate with.
 final class ForwardingDelegate: NSObject, SKViewDelegate {
     private weak var view: SKView?
@@ -517,7 +517,7 @@ struct ViewDelegateTests {
         #expect(thirty.enumerated().allSatisfy { $0.element == ($0.offset % 4 == 0) })
     }
 
-    @Test("A forwarding delegate asks the one before it, the way FilmDrawTurns does")
+    @Test("A forwarding delegate asks the one before it")
     func forwarding() {
         let view = SKView(bounds: CGRect(x: 0, y: 0, width: 10, height: 10))
         let first = AlternatingDelegate()
@@ -546,7 +546,7 @@ struct ViewDelegateTests {
 struct ActionClockTests {
     /// A scene built before it's presented, as the game builds its scenes
     /// off the main thread, with a 0.2 s wait on a parent and a child
-    /// ticking under it: `MechanicSampleNode` snapping its rigs.
+    /// ticking under it: a snapshot taken once its rigs have moved.
     private func presented(_ waited: @escaping () -> Void, ticks: @escaping () -> Void) -> SKView {
         let view = SKView(bounds: CGRect(x: 0, y: 0, width: 200, height: 100))
         let scene = SKScene(size: CGSize(width: 200, height: 100))

@@ -3,7 +3,7 @@ import Foundation
 
 /// Writes a PNG with no compression of its own: deflate's stored blocks,
 /// which need no zlib, so the shim can write one on any host. The shell
-/// installs a compressing encoder (`UIImage.encoder`), so a share film's
+/// installs a compressing encoder (`UIImage.encoder`), so a full-screen
 /// picture isn't eight megabytes; this is what stands when none is.
 ///
 /// The pixels go in as straight RGBA, since a PNG's alpha isn't

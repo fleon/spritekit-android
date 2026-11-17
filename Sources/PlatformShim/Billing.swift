@@ -1,26 +1,27 @@
 import Foundation
 
-/// Buying the full game, with StoreKit taken out from under `StoreManager`.
+/// Buying a game's products, with StoreKit taken out from under its store
+/// code.
 ///
-/// What a game keeps about what's owned is its own (Switchlings':
-/// `Entitlements`, in `SwitchlingsStore`). Behind it sits one of three backends: `PlayBilling` (Google Play, through
-/// `PlatformChannel`), `SimulatedBilling` (the Apple build's
-/// `-SimulatePurchases`: granted locally, no money moves) or `NoBilling`
-/// (no store at all, as on a host test).
+/// What a game keeps about what's owned is its own. Behind it sits one of
+/// three backends: `PlayBilling` (Google Play, through `PlatformChannel`),
+/// `SimulatedBilling` (a debug build's simulated purchases: granted
+/// locally, no money moves) or `NoBilling` (no store at all, as on a host
+/// test).
 public protocol BillingBackend: AnyObject {
     /// The product's price in the player's currency, once it is known.
     var displayPrice: String? { get }
     /// Products the player owns, as the service reports them.
     var ownedProducts: Set<String> { get }
-    /// Products that cost nothing where the player shops (China mainland).
+    /// Products that cost nothing where the player shops.
     var freeProducts: Set<String> { get }
     /// Loads prices and entitlements. Calls `changed` whenever either moves.
     func start(changed: @escaping () -> Void)
     func purchase(_ productID: String) async -> BillingResult
     /// Asks the service to hand back what the player already owns.
     func restore() async -> Bool
-    /// When each owned product was first bought, where the service says:
-    /// what the launch event's rule reads, in place of `Date()`.
+    /// When each owned product was first bought, where the service says
+    /// (StoreKit's `originalPurchaseDate`).
     var purchaseDates: [String: Date] { get }
 }
 
@@ -51,16 +52,16 @@ public final class NoBilling: BillingBackend {
 }
 
 /// Grants the purchase on this device at once, without a service, and keeps
-/// it across launches. The Apple build's `-SimulatePurchases` with somewhere
-/// to put the result.
+/// it across launches: a game's simulated purchases, as it may offer them on
+/// Apple, with somewhere to put the result.
 public final class SimulatedBilling: BillingBackend {
     private enum Key {
         static let simulated = "store.simulatedProducts"
     }
 
-    /// The full game's US price, as `-PreviewPrices` shows it when StoreKit
-    /// has no products.
-    public static let previewPrice = "$6.99"
+    /// The price a simulated product shows, as a game previewing prices
+    /// without a store shows it. A game sets its own.
+    nonisolated(unsafe) public static var previewPrice = "$0.99"
 
     private let defaults: UserDefaults
     private var changed: (() -> Void)?
@@ -92,7 +93,7 @@ public final class SimulatedBilling: BillingBackend {
         return !granted.isEmpty
     }
 
-    /// Takes the simulated purchase back, so the free game can be walked
+    /// Takes the simulated purchases back, so what's free can be walked
     /// through again without clearing the app's data.
     public func forgetPurchases() {
         granted = []
