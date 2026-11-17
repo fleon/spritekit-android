@@ -1668,7 +1668,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let program = program ?? coverageProgram
         guard program != 0, let path = shape.path else { return }
 
-        let scale = deviceScale * transformScale(shape.transform)
+        let scale = maskScale(for: shape, path: path)
         guard scale > 0 else { return }
 
         // A texture (not as a crop's mask, which cuts by coverage alone) is
@@ -1707,6 +1707,22 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 fill: textured(shape.strokeTexture).map { ($0, CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)) }
             )
         }
+    }
+
+    /// The density a shape's mask is rasterised at: the one it's drawn at,
+    /// unless that makes the mask longer than a texture can be (a scrolling
+    /// strip tall enough to scroll through a long list is tens of thousands of
+    /// pixels). Then less, so the mask fits and the shape still draws,
+    /// stretched; its edges soften where a texel spans more than a pixel.
+    private func maskScale(for shape: DrawList.Shape, path: CGPath) -> CGFloat {
+        let scale = deviceScale * transformScale(shape.transform)
+        let box = path.boundingBoxOfPath
+        // A stroke's mask reaches half its width past the path, and the
+        // rasteriser adds a margin of its own.
+        let reach = max(box.width, box.height) + max(shape.lineWidth, 0) + 4
+        let side = CGFloat(device.maximumTextureSide)
+        guard reach > 0, reach * scale > side else { return scale }
+        return side / reach
     }
 
     /// How much a transform scales: the square root of the area it
@@ -1887,7 +1903,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// A shape's fill and stroke as coverage runs over their masks.
     private func shapeParts(_ shape: DrawList.Shape) -> [CoverageGeometry.Staged.Part] {
         guard let path = shape.path else { return [] }
-        let scale = deviceScale * transformScale(shape.transform)
+        let scale = maskScale(for: shape, path: path)
         guard scale > 0 else { return [] }
         var parts: [CoverageGeometry.Staged.Part] = []
         if shape.fillColor.alpha > 0,

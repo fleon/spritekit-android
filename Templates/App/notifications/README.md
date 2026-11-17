@@ -48,9 +48,10 @@ notify, scheduling, listing and removing pending requests, its delegate's
 
 A tap opens the launcher activity with the notification on its intent,
 which is read as the activity resumes. The launcher activity must be
-`singleTask` or `singleInstance`, and must keep the newest intent: neither
-`SDLActivity` nor the base template does, so add this to the game's
-`MainActivity`, or a tap while the game runs is lost:
+`singleTask` or `singleInstance` and keep the newest intent. The base
+template's `MainActivity` does (`setIntent(intent)` in `onNewIntent`); a
+game whose activity doesn't come from the base adds it, or a tap while the
+game runs is lost:
 
 ```java
 @Override
@@ -59,9 +60,6 @@ protected void onNewIntent(Intent intent) {
     setIntent(intent);
 }
 ```
-
-(A `MainActivity` that already overrides `onNewIntent`, for links say,
-adds the `setIntent(intent)` line to its own.)
 
 ## The protocol
 

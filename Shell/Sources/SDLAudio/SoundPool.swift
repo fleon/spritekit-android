@@ -22,6 +22,8 @@ final class SoundPool {
     }
 
     private let pcm: [UInt8]
+    /// How long the sound plays as recorded.
+    let duration: TimeInterval
     private var voices: [Voice] = []
     private var next = 0
 
@@ -36,6 +38,9 @@ final class SoundPool {
         guard loaded, let buffer, length > 0 else { return nil }
         pcm = Array(UnsafeBufferPointer(start: buffer, count: Int(length)))
         SDL_free(buffer)
+        // SDL_AUDIO_BITSIZE: the format's low byte is its sample's bits.
+        let frameBytes = Int(UInt32(spec.format.rawValue) & 0xFF) / 8 * Int(spec.channels)
+        duration = frameBytes > 0 && spec.freq > 0 ? TimeInterval(pcm.count / frameBytes) / TimeInterval(spec.freq) : 0
 
         var source = spec
         var destination = SDL_AudioSpec(format: SKA_AUDIO_FORMAT, channels: spec.channels, freq: spec.freq)
