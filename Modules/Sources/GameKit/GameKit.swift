@@ -45,8 +45,12 @@ public final class GKLocalPlayer: GKPlayer {
     }
 }
 
-/// GameKit's errors, by Apple's codes.
-public struct GKError: Error, Equatable, Sendable {
+/// GameKit's errors, by Apple's codes, as Swift sees Apple's: `catch
+/// GKError.notAuthenticated`, `error.code`, and as an `NSError` in
+/// `GKErrorDomain` with the code's number.
+public let GKErrorDomain = "GKErrorDomain"
+
+public struct GKError: Error, Equatable, Sendable, CustomNSError {
     public enum Code: Int, Sendable {
         case unknown = 1
         case cancelled = 2
@@ -92,7 +96,9 @@ public struct GKError: Error, Equatable, Sendable {
         case friendRequestNotAvailable = 103
     }
 
-    public static let errorDomain = "GKErrorDomain"
+    public static var errorDomain: String { GKErrorDomain }
+    public var errorCode: Int { code.rawValue }
+    public var errorUserInfo: [String: Any] { [:] }
 
     public let code: Code
 
@@ -112,17 +118,59 @@ public struct GKError: Error, Equatable, Sendable {
     public static var unknown: Code { .unknown }
     public static var cancelled: Code { .cancelled }
     public static var communicationsFailure: Code { .communicationsFailure }
+    public static var userDenied: Code { .userDenied }
+    public static var invalidCredentials: Code { .invalidCredentials }
     public static var notAuthenticated: Code { .notAuthenticated }
+    public static var authenticationInProgress: Code { .authenticationInProgress }
+    public static var invalidPlayer: Code { .invalidPlayer }
+    public static var scoreNotSet: Code { .scoreNotSet }
+    public static var parentalControlsBlocked: Code { .parentalControlsBlocked }
+    public static var playerStatusExceedsMaximumLength: Code { .playerStatusExceedsMaximumLength }
+    public static var playerStatusInvalid: Code { .playerStatusInvalid }
+    public static var matchRequestInvalid: Code { .matchRequestInvalid }
+    public static var underage: Code { .underage }
+    public static var gameUnrecognized: Code { .gameUnrecognized }
     public static var notSupported: Code { .notSupported }
     public static var invalidParameter: Code { .invalidParameter }
+    public static var unexpectedConnection: Code { .unexpectedConnection }
+    public static var challengeInvalid: Code { .challengeInvalid }
+    public static var turnBasedMatchDataTooLarge: Code { .turnBasedMatchDataTooLarge }
+    public static var turnBasedTooManySessions: Code { .turnBasedTooManySessions }
+    public static var turnBasedInvalidParticipant: Code { .turnBasedInvalidParticipant }
+    public static var turnBasedInvalidTurn: Code { .turnBasedInvalidTurn }
+    public static var turnBasedInvalidState: Code { .turnBasedInvalidState }
+    public static var invitationsDisabled: Code { .invitationsDisabled }
+    public static var playerPhotoFailure: Code { .playerPhotoFailure }
+    public static var ubiquityContainerUnavailable: Code { .ubiquityContainerUnavailable }
+    public static var matchNotConnected: Code { .matchNotConnected }
+    public static var gameSessionRequestInvalid: Code { .gameSessionRequestInvalid }
+    public static var restrictedToAutomatch: Code { .restrictedToAutomatch }
+    public static var apiNotAvailable: Code { .apiNotAvailable }
+    public static var notAuthorized: Code { .notAuthorized }
+    public static var connectionTimeout: Code { .connectionTimeout }
+    public static var apiObsolete: Code { .apiObsolete }
+    public static var iCloudUnavailable: Code { .iCloudUnavailable }
+    public static var lockdownMode: Code { .lockdownMode }
+    public static var appUnlisted: Code { .appUnlisted }
+    public static var debugMode: Code { .debugMode }
+    public static var friendListDescriptionMissing: Code { .friendListDescriptionMissing }
+    public static var friendListRestricted: Code { .friendListRestricted }
+    public static var friendListDenied: Code { .friendListDenied }
+    public static var friendRequestNotAvailable: Code { .friendRequestNotAvailable }
+}
+
+/// `catch GKError.notAuthenticated`: a code matches a `GKError` with it, as
+/// Apple's bridged error codes do.
+public func ~= (code: GKError.Code, error: Error) -> Bool {
+    (error as? GKError)?.code == code
 }
 
 /// A Game Center leaderboard, on `backend` (Play Games once the game installs
 /// it, else nowhere). Every completion handler runs on the main actor, once:
 /// signed out with `.notAuthenticated`, without Play Games with
 /// `.notSupported`, and with `.communicationsFailure` when Play says no or
-/// doesn't answer in time.
-@MainActor
+/// doesn't answer in time. Not actor-isolated, as Apple's isn't; its
+/// asynchronous work runs on the main actor, where the backend lives.
 public final class GKLeaderboard {
     public enum TimeScope: Int, Sendable {
         case today = 0
@@ -163,7 +211,7 @@ public final class GKLeaderboard {
     }
 
     /// Where scores go. The game installs `PlayGamesLeaderboards` at launch.
-    public static var backend: LeaderboardsBackend = LocalLeaderboards()
+    @MainActor public static var backend: LeaderboardsBackend = LocalLeaderboards()
 
     public let baseLeaderboardID: String
     public let title: String?
@@ -194,6 +242,7 @@ public final class GKLeaderboard {
         }
     }
 
+    @MainActor
     public static func loadLeaderboards(IDs leaderboardIDs: [String]?) async throws -> [GKLeaderboard] {
         do {
             return try await backend.loadLeaderboards(leaderboardIDs).map(GKLeaderboard.init)
@@ -222,6 +271,7 @@ public final class GKLeaderboard {
         }
     }
 
+    @MainActor
     public static func submitScore(
         _ score: Int,
         context: Int,
@@ -244,6 +294,7 @@ public final class GKLeaderboard {
         Self.submitScore(score, context: context, player: player, leaderboardIDs: [baseLeaderboardID], completionHandler: completionHandler)
     }
 
+    @MainActor
     public func submitScore(_ score: Int, context: Int, player: GKPlayer) async throws {
         try await Self.submitScore(score, context: context, player: player, leaderboardIDs: [baseLeaderboardID])
     }
@@ -266,6 +317,7 @@ public final class GKLeaderboard {
         }
     }
 
+    @MainActor
     public func loadEntries(
         for playerScope: PlayerScope,
         timeScope: TimeScope,
@@ -296,6 +348,7 @@ public final class GKLeaderboard {
         }
     }
 
+    @MainActor
     public func loadEntries(for players: [GKPlayer], timeScope: TimeScope) async throws -> (Entry?, [Entry]) {
         let scores = try await load(.public, timeScope, nil)
         let local = scores.local.map(Entry.init)
@@ -303,6 +356,7 @@ public final class GKLeaderboard {
         return (local, [local].compactMap { $0 }.filter { asked.contains($0.player.gamePlayerID) })
     }
 
+    @MainActor
     private func load(
         _ collection: LeaderboardCollection, _ timeScope: TimeScope, _ ranks: ClosedRange<Int>?
     ) async throws -> LeaderboardScores {
@@ -346,9 +400,10 @@ public enum GKGameCenterViewControllerState: Int, Sendable {
 /// Game Center's access point. Android draws no widget, so `isActive` and
 /// `location` are only kept; `trigger` opens Play Games' leaderboards for
 /// `.leaderboards` and a leaderboard ID, and nothing for the other states.
-/// Each handler runs once the request has gone to Play Games.
-@MainActor
-public final class GKAccessPoint {
+/// Each handler runs once the request has gone to Play Games. Not
+/// actor-isolated, as Apple's isn't: the request reaches the backend on the
+/// main actor, at once when called there.
+public final class GKAccessPoint: @unchecked Sendable {
     public enum Location: Int, Sendable {
         case topLeading, topTrailing, bottomLeading, bottomTrailing
     }
@@ -368,7 +423,7 @@ public final class GKAccessPoint {
 
     public func trigger(state: GKGameCenterViewControllerState, handler: @escaping () -> Void) {
         if state == .leaderboards {
-            GKLeaderboard.backend.showLeaderboards(nil, timeSpan: .allTime, collection: .public)
+            Self.onMain { GKLeaderboard.backend.showLeaderboards(nil, timeSpan: .allTime, collection: .public) }
         }
         handler()
     }
@@ -379,14 +434,20 @@ public final class GKAccessPoint {
         timeScope: GKLeaderboard.TimeScope,
         handler: (() -> Void)? = nil
     ) {
-        GKLeaderboard.backend.showLeaderboards(
-            leaderboardID, timeSpan: timeScope.timeSpan, collection: playerScope.collection
-        )
+        let timeSpan = timeScope.timeSpan, collection = playerScope.collection
+        Self.onMain { GKLeaderboard.backend.showLeaderboards(leaderboardID, timeSpan: timeSpan, collection: collection) }
         handler?()
+    }
+
+    private static func onMain(_ body: @escaping @MainActor () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(body)
+        } else {
+            Task { @MainActor in body() }
+        }
     }
 }
 
-@MainActor
 public protocol GKGameCenterControllerDelegate: AnyObject {
     func gameCenterViewControllerDidFinish(_ gameCenterViewController: GKGameCenterViewController)
 }

@@ -57,9 +57,11 @@ import java.util.Map;
  * achievements, as Game Center's button leads to its sign-in.
  *
  * <p>Events, under {@code games}: {@code signIn}, {@code achievements},
- * {@code reported}, {@code scoresSubmitted}, {@code identity}, {@code player},
- * {@code snapshotOpened},
- * {@code snapshotCommitted}.
+ * {@code reported}, {@code scoresSubmitted}, {@code leaderboards},
+ * {@code scores}, {@code identity}, {@code player}, {@code snapshotOpened},
+ * {@code snapshotCommitted}. A request's answer repeats its {@code request}
+ * number, and one refused because nobody is signed in says
+ * {@code reason: "signedOut"}.
  */
 final class PlayGamesServices {
     private static final String SERVICE = "games";
@@ -451,21 +453,21 @@ final class PlayGamesServices {
             "score", score.getRawScore(),
             "formattedScore", score.getDisplayScore(),
             "tag", score.getScoreTag() == null ? "" : score.getScoreTag(),
-            "time", score.getTimestampMillis() / 1000.0,
+            "time", score.getTimestampMillis(),
             "playerId", score.getScoreHolder() == null ? "" : score.getScoreHolder().getPlayerId(),
             "name", score.getScoreHolderDisplayName());
     }
 
-    /** How many scores the leaderboard's variant at this span and collection holds; 0 when unknown. */
+    /** How many scores the leaderboard's variant at this span and collection holds; -1 when unknown. */
     private static long total(Task<AnnotatedData<Leaderboard>> meta, int span, int collection) {
-        if (!meta.isSuccessful() || meta.getResult() == null || meta.getResult().get() == null) return 0;
+        if (!meta.isSuccessful() || meta.getResult() == null || meta.getResult().get() == null) return -1;
         for (LeaderboardVariant variant : meta.getResult().get().getVariants()) {
             if (variant.getTimeSpan() == span && variant.getCollection() == collection) {
                 long scores = variant.getNumScores();
-                return scores == LeaderboardVariant.NUM_SCORES_UNKNOWN ? 0 : scores;
+                return scores == LeaderboardVariant.NUM_SCORES_UNKNOWN ? -1 : scores;
             }
         }
-        return 0;
+        return -1;
     }
 
     /** The signed-in player's ID and name. */

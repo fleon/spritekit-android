@@ -421,7 +421,9 @@ beside its achievements, or by default `LocalLeaderboards`, which has none.
 - `GKGameCenterViewController(state:)` and
   `(leaderboardID:playerScope:timeScope:)`, presented with
   `present(_:animated:completion:)`, with `gameCenterDelegate`.
-- `GKError`, with all of Apple's codes.
+- `GKError`, with all of Apple's codes as Swift sees them: `catch
+  GKError.notAuthenticated`, the static code shortcuts, and as an `NSError`
+  in `GKErrorDomain` with the code's number.
 
 Game Center leaderboard IDs map to Play's in the generated `PlayGamesMapping`
 file, under `leaderboards` (`{"leaderboard.high-score": {"id": "CgkI…"}}`).
@@ -452,8 +454,10 @@ Where it differs from Apple:
   leaderboards, an activity of its own over the game, and on the next turn
   tells its delegate it has finished, so the game's dismissal runs as on
   Apple. Play's list of all leaderboards takes no time span or collection.
-- `GKLeaderboard`, `GKAccessPoint` and `GKGameCenterViewController` are
-  main-actor isolated; `GKPlayer` isn't.
+- As on Apple, only `GKGameCenterViewController` (a view controller) is
+  main-actor isolated. `GKLeaderboard`'s asynchronous calls run on the main
+  actor, and `GKAccessPoint.trigger` reaches the backend there, since the
+  backend lives on the main thread.
 
 Play's half lives in the game's app, in its Play Games service, under
 `games`. Every request carries a `request` number its answer repeats; an
@@ -471,8 +475,10 @@ first.
 `timeSpan` is `daily`, `weekly` or `allTime` (`TIME_SPAN_*`); `collection`
 is `public` or `friends` (`COLLECTION_PUBLIC`, `COLLECTION_FRIENDS`). A
 score is `{rank, score, formattedScore, tag, time, playerId, name}`, from
-`LeaderboardScore` and its score holder; `count` 0 loads only the signed-in
-player's.
+`LeaderboardScore` and its score holder, `time` in milliseconds since 1970
+(`getTimestampMillis`); `total` is -1 when Play doesn't know it; `count` 0
+loads only the signed-in player's. The base template's `PlayGamesServices`
+answers all four.
 
 ### The shell
 
