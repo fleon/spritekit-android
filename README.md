@@ -200,6 +200,17 @@ through `SKRenderer` and pinned in host tests:
   definitions show their first texture, and automapping keeps a group's
   centre rule.
 - **Paths and contexts:** checked against CoreGraphics' own API, every blend
+  mode included.
+- **Core Image:** `CILinearGradient` and `CIRadialGradient` mix
+  premultiplied colour in linear light and encode sRGB as written (black to
+  white is 188 half way); pixels take their centre's colour; a fractional
+  rectangle ends in a part-covered pixel; `CIGaussianBlur`'s radius is
+  `applyingGaussianBlur`'s sigma, and an unclamped blur grows the extent by
+  Core Image's own margin (6 each side at sigma 2); an unknown filter name
+  gives an empty image (`CoreImageTests`, against Core Image's own output).
+  A bitmap cropped off whole pixels keeps every pixel it reaches, where
+  Core Image keeps the fraction. `SKEffectNode.filter` is kept, not yet
+  drawn.
   mode included; `setLineDash(phase:lengths:)` strokes in dashes as
   CoreGraphics does, the pattern scaled with the context (`LineDashTests`).
 
