@@ -1,18 +1,26 @@
 // Stands in for GameKit on Android: the signed-in player by their id and
-// alias, and leaderboard scores (`GKLeaderboard`) through PlatformShim's
-// `LeaderboardsBackend` (Play Games). Achievements and sign-in go through
-// PlatformShim's `AchievementsBackend` instead.
+// alias, and leaderboards (`GKLeaderboard`, `GKAccessPoint`,
+// `GKGameCenterViewController`) through PlatformShim's `LeaderboardsBackend`
+// (Play Games). Achievements and sign-in go through PlatformShim's
+// `AchievementsBackend` instead.
 import Foundation
 import PlatformShim
+import SpriteKitShim
 
-/// A Game Center player: here, the one signed in to Play Games.
-@MainActor
+/// A Game Center player: the one signed in to Play Games, or one named on a
+/// leaderboard. Not actor-isolated, as Apple's isn't; the platform layer
+/// updates the local player on the main thread.
 open class GKPlayer {
     public internal(set) var gamePlayerID = ""
     public internal(set) var alias = ""
     public var displayName: String { alias }
 
     init() {}
+
+    init(gamePlayerID: String, alias: String) {
+        self.gamePlayerID = gamePlayerID
+        self.alias = alias
+    }
 }
 
 /// The local player: the one signed in to Play Games, by their Play Games ID
@@ -20,13 +28,14 @@ open class GKPlayer {
 /// `PlayGamesAchievements.identity`), so a game can name them as it names a
 /// Game Center player on iOS. Signed out, `isAuthenticated` is false, as on
 /// iOS.
-@MainActor
 public final class GKLocalPlayer: GKPlayer {
     public static let local = GKLocalPlayer()
 
     public private(set) var isAuthenticated = false
 
-    private override init() {}
+    private override init() {
+        super.init()
+    }
 
     /// The Play Games player now signed in, or nil once nobody is.
     public func update(_ identity: (id: String, name: String)?) {
@@ -36,13 +45,51 @@ public final class GKLocalPlayer: GKPlayer {
     }
 }
 
-/// GameKit's errors, by Apple's codes, for the few a stand-in reports.
+/// GameKit's errors, by Apple's codes.
 public struct GKError: Error, Equatable, Sendable {
     public enum Code: Int, Sendable {
         case unknown = 1
         case cancelled = 2
         case communicationsFailure = 3
+        case userDenied = 4
+        case invalidCredentials = 5
         case notAuthenticated = 6
+        case authenticationInProgress = 7
+        case invalidPlayer = 8
+        case scoreNotSet = 9
+        case parentalControlsBlocked = 10
+        case playerStatusExceedsMaximumLength = 11
+        case playerStatusInvalid = 12
+        case matchRequestInvalid = 13
+        case underage = 14
+        case gameUnrecognized = 15
+        case notSupported = 16
+        case invalidParameter = 17
+        case unexpectedConnection = 18
+        case challengeInvalid = 19
+        case turnBasedMatchDataTooLarge = 20
+        case turnBasedTooManySessions = 21
+        case turnBasedInvalidParticipant = 22
+        case turnBasedInvalidTurn = 23
+        case turnBasedInvalidState = 24
+        case invitationsDisabled = 25
+        case playerPhotoFailure = 26
+        case ubiquityContainerUnavailable = 27
+        case matchNotConnected = 28
+        case gameSessionRequestInvalid = 29
+        case restrictedToAutomatch = 30
+        case apiNotAvailable = 31
+        case notAuthorized = 32
+        case connectionTimeout = 33
+        case apiObsolete = 34
+        case iCloudUnavailable = 35
+        case lockdownMode = 36
+        case appUnlisted = 37
+        case debugMode = 38
+        case friendListDescriptionMissing = 100
+        case friendListRestricted = 101
+        case friendListDenied = 102
+        case friendRequestNotAvailable = 103
     }
 
     public static let errorDomain = "GKErrorDomain"
@@ -53,26 +100,111 @@ public struct GKError: Error, Equatable, Sendable {
         self.code = code
     }
 
+    init(leaderboard error: Error) {
+        switch error as? LeaderboardError ?? .failed {
+        case .signedOut: code = .notAuthenticated
+        case .unavailable: code = .notSupported
+        case .unknownLeaderboard: code = .invalidParameter
+        case .failed: code = .communicationsFailure
+        }
+    }
+
     public static var unknown: Code { .unknown }
     public static var cancelled: Code { .cancelled }
     public static var communicationsFailure: Code { .communicationsFailure }
     public static var notAuthenticated: Code { .notAuthenticated }
+    public static var notSupported: Code { .notSupported }
+    public static var invalidParameter: Code { .invalidParameter }
 }
 
-/// A leaderboard, for sending scores to: `submitScore` as Game Center has
-/// it, on `backend` (Play Games once the game installs it, else nowhere).
+/// A Game Center leaderboard, on `backend` (Play Games once the game installs
+/// it, else nowhere). Every completion handler runs on the main actor, once:
+/// signed out with `.notAuthenticated`, without Play Games with
+/// `.notSupported`, and with `.communicationsFailure` when Play says no or
+/// doesn't answer in time.
 @MainActor
 public final class GKLeaderboard {
+    public enum TimeScope: Int, Sendable {
+        case today = 0
+        case week = 1
+        case allTime = 2
+    }
+
+    public enum PlayerScope: Int, Sendable {
+        case global = 0
+        case friendsOnly = 1
+    }
+
+    public enum LeaderboardType: Int, Sendable {
+        case classic = 0
+        case recurring = 1
+    }
+
+    /// One player's score.
+    public final class Entry {
+        public let player: GKPlayer
+        public let rank: Int
+        public let score: Int
+        public let formattedScore: String
+        public let context: Int
+        public let date: Date
+
+        init(_ score: LeaderboardScore) {
+            let local = GKLocalPlayer.local
+            player = local.isAuthenticated && local.gamePlayerID == score.playerID
+                ? local
+                : GKPlayer(gamePlayerID: score.playerID, alias: score.playerName)
+            rank = score.rank
+            self.score = score.score
+            formattedScore = score.formattedScore
+            context = score.context
+            date = score.date
+        }
+    }
+
     /// Where scores go. The game installs `PlayGamesLeaderboards` at launch.
     public static var backend: LeaderboardsBackend = LocalLeaderboards()
 
-    private init() {}
+    public let baseLeaderboardID: String
+    public let title: String?
+    /// Play's leaderboards don't recur.
+    public var type: LeaderboardType { .classic }
+    public var groupIdentifier: String? { nil }
+    public var startDate: Date? { nil }
+    public var nextStartDate: Date? { nil }
+    public var duration: TimeInterval { 0 }
+
+    private init(_ info: LeaderboardInfo) {
+        baseLeaderboardID = info.id
+        title = info.title
+    }
+
+    /// The leaderboards in `leaderboardIDs` that Play Games knows, or all of
+    /// the game's for nil.
+    public static func loadLeaderboards(
+        IDs leaderboardIDs: [String]?,
+        completionHandler: @escaping @MainActor ([GKLeaderboard]?, Error?) -> Void
+    ) {
+        Task { @MainActor in
+            do {
+                completionHandler(try await loadLeaderboards(IDs: leaderboardIDs), nil)
+            } catch {
+                completionHandler(nil, error)
+            }
+        }
+    }
+
+    public static func loadLeaderboards(IDs leaderboardIDs: [String]?) async throws -> [GKLeaderboard] {
+        do {
+            return try await backend.loadLeaderboards(leaderboardIDs).map(GKLeaderboard.init)
+        } catch {
+            throw GKError(leaderboard: error)
+        }
+    }
 
     /// Sends `score` to the leaderboards in `leaderboardIDs` for `player`
     /// (always the local player: Game Center accepts no other, and Play Games
-    /// knows only the one signed in). The handler runs on the main actor with
-    /// nil once they arrived, or `.communicationsFailure` when they didn't —
-    /// signed out included, since Play answers that rather than the player.
+    /// knows only the one signed in).
     public static func submitScore(
         _ score: Int,
         context: Int,
@@ -96,8 +228,205 @@ public final class GKLeaderboard {
         player: GKPlayer,
         leaderboardIDs: [String]
     ) async throws {
-        guard await backend.submit(score, context: context, to: leaderboardIDs) else {
-            throw GKError(.communicationsFailure)
+        do {
+            try await backend.submitScore(score, context: context, to: leaderboardIDs)
+        } catch {
+            throw GKError(leaderboard: error)
+        }
+    }
+
+    public func submitScore(
+        _ score: Int,
+        context: Int,
+        player: GKPlayer,
+        completionHandler: @escaping @MainActor (Error?) -> Void
+    ) {
+        Self.submitScore(score, context: context, player: player, leaderboardIDs: [baseLeaderboardID], completionHandler: completionHandler)
+    }
+
+    public func submitScore(_ score: Int, context: Int, player: GKPlayer) async throws {
+        try await Self.submitScore(score, context: context, player: player, leaderboardIDs: [baseLeaderboardID])
+    }
+
+    /// The scores at the ranks in `range` (from 1, up to 100 at a time), the
+    /// local player's, and how many players have one.
+    public func loadEntries(
+        for playerScope: PlayerScope,
+        timeScope: TimeScope,
+        range: NSRange,
+        completionHandler: @escaping @MainActor (Entry?, [Entry]?, Int, Error?) -> Void
+    ) {
+        Task { @MainActor in
+            do {
+                let (local, entries, total) = try await loadEntries(for: playerScope, timeScope: timeScope, range: range)
+                completionHandler(local, entries, total, nil)
+            } catch {
+                completionHandler(nil, nil, 0, error)
+            }
+        }
+    }
+
+    public func loadEntries(
+        for playerScope: PlayerScope,
+        timeScope: TimeScope,
+        range: NSRange
+    ) async throws -> (Entry?, [Entry], Int) {
+        guard range.location >= 1, (1...100).contains(range.length) else {
+            throw GKError(.invalidParameter)
+        }
+        let ranks = range.location...(range.location + range.length - 1)
+        let scores = try await load(playerScope.collection, timeScope, ranks)
+        return (scores.local.map(Entry.init), scores.entries.map(Entry.init), scores.total)
+    }
+
+    /// Play Games loads no other player's score by ID, so of `players` only
+    /// the local player's comes back.
+    public func loadEntries(
+        for players: [GKPlayer],
+        timeScope: TimeScope,
+        completionHandler: @escaping @MainActor (Entry?, [Entry]?, Error?) -> Void
+    ) {
+        Task { @MainActor in
+            do {
+                let (local, entries) = try await loadEntries(for: players, timeScope: timeScope)
+                completionHandler(local, entries, nil)
+            } catch {
+                completionHandler(nil, nil, error)
+            }
+        }
+    }
+
+    public func loadEntries(for players: [GKPlayer], timeScope: TimeScope) async throws -> (Entry?, [Entry]) {
+        let scores = try await load(.public, timeScope, nil)
+        let local = scores.local.map(Entry.init)
+        let asked = Set(players.map(\.gamePlayerID))
+        return (local, [local].compactMap { $0 }.filter { asked.contains($0.player.gamePlayerID) })
+    }
+
+    private func load(
+        _ collection: LeaderboardCollection, _ timeScope: TimeScope, _ ranks: ClosedRange<Int>?
+    ) async throws -> LeaderboardScores {
+        do {
+            return try await Self.backend.loadScores(
+                baseLeaderboardID, timeSpan: timeScope.timeSpan, collection: collection, range: ranks
+            )
+        } catch {
+            throw GKError(leaderboard: error)
+        }
+    }
+}
+
+extension GKLeaderboard.TimeScope {
+    var timeSpan: LeaderboardTimeSpan {
+        switch self {
+        case .today: .daily
+        case .week: .weekly
+        case .allTime: .allTime
+        }
+    }
+}
+
+extension GKLeaderboard.PlayerScope {
+    var collection: LeaderboardCollection {
+        self == .friendsOnly ? .friends : .public
+    }
+}
+
+/// What Game Center's own interface opens to.
+public enum GKGameCenterViewControllerState: Int, Sendable {
+    case `default` = -1
+    case leaderboards = 0
+    case achievements = 1
+    case challenges = 2
+    case localPlayerProfile = 3
+    case dashboard = 4
+    case localPlayerFriendsList = 5
+}
+
+/// Game Center's access point. Android draws no widget, so `isActive` and
+/// `location` are only kept; `trigger` opens Play Games' leaderboards for
+/// `.leaderboards` and a leaderboard ID, and nothing for the other states.
+/// Each handler runs once the request has gone to Play Games.
+@MainActor
+public final class GKAccessPoint {
+    public enum Location: Int, Sendable {
+        case topLeading, topTrailing, bottomLeading, bottomTrailing
+    }
+
+    public static let shared = GKAccessPoint()
+
+    public var isActive = false
+    public var location = Location.topLeading
+    public var isVisible: Bool { false }
+    public var isPresentingGameCenter: Bool { false }
+
+    private init() {}
+
+    public func trigger(handler: @escaping () -> Void) {
+        trigger(state: .default, handler: handler)
+    }
+
+    public func trigger(state: GKGameCenterViewControllerState, handler: @escaping () -> Void) {
+        if state == .leaderboards {
+            GKLeaderboard.backend.showLeaderboards(nil, timeSpan: .allTime, collection: .public)
+        }
+        handler()
+    }
+
+    public func trigger(
+        leaderboardID: String,
+        playerScope: GKLeaderboard.PlayerScope,
+        timeScope: GKLeaderboard.TimeScope,
+        handler: (() -> Void)? = nil
+    ) {
+        GKLeaderboard.backend.showLeaderboards(
+            leaderboardID, timeSpan: timeScope.timeSpan, collection: playerScope.collection
+        )
+        handler?()
+    }
+}
+
+@MainActor
+public protocol GKGameCenterControllerDelegate: AnyObject {
+    func gameCenterViewControllerDidFinish(_ gameCenterViewController: GKGameCenterViewController)
+}
+
+/// Game Center's interface, presented as on iOS. Play Games' leaderboards
+/// are an activity of their own over the game, so once presented this opens
+/// them (for `.leaderboards` or a leaderboard ID; nothing for the other
+/// states) and tells its delegate it has finished.
+@MainActor
+open class GKGameCenterViewController: UIViewController {
+    public weak var gameCenterDelegate: GKGameCenterControllerDelegate?
+
+    private let state: GKGameCenterViewControllerState
+    private let leaderboard: (id: String, playerScope: GKLeaderboard.PlayerScope, timeScope: GKLeaderboard.TimeScope)?
+
+    public init(state: GKGameCenterViewControllerState) {
+        self.state = state
+        leaderboard = nil
+        super.init()
+    }
+
+    public init(leaderboardID: String, playerScope: GKLeaderboard.PlayerScope, timeScope: GKLeaderboard.TimeScope) {
+        state = .leaderboards
+        leaderboard = (leaderboardID, playerScope, timeScope)
+        super.init()
+    }
+
+    open override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if let leaderboard {
+            GKAccessPoint.shared.trigger(
+                leaderboardID: leaderboard.id, playerScope: leaderboard.playerScope, timeScope: leaderboard.timeScope
+            )
+        } else {
+            GKAccessPoint.shared.trigger(state: state) {}
+        }
+        // After `present` returns, so the delegate can dismiss.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            gameCenterDelegate?.gameCenterViewControllerDidFinish(self)
         }
     }
 }

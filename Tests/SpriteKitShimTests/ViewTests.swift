@@ -607,3 +607,37 @@ struct ActionClockTests {
         #expect(waited)
     }
 }
+
+@Suite("View controllers")
+struct ViewControllerTests {
+    private final class Presented: UIViewController {
+        var appeared: [Bool] = []
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            appeared.append(animated)
+        }
+    }
+
+    @Test("Presenting appears the presented controller at once, and either side dismisses it")
+    func presentAndDismiss() {
+        let root = UIViewController()
+        let presented = Presented()
+        var completed = 0
+        root.present(presented, animated: true) { completed += 1 }
+        #expect(presented.appeared == [true])
+        #expect(root.presentedViewController === presented)
+        #expect(presented.presentingViewController === root)
+        #expect(completed == 1)
+
+        presented.dismiss(animated: true) { completed += 1 }
+        #expect(root.presentedViewController == nil)
+        #expect(presented.presentingViewController == nil)
+        #expect(completed == 2)
+
+        root.present(presented, animated: false)
+        root.dismiss(animated: false)
+        #expect(root.presentedViewController == nil)
+        #expect(presented.appeared == [true, false])
+    }
+}

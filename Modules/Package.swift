@@ -65,7 +65,7 @@ let package = Package(
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
         // Two a game may import to describe the player and the network.
         .target(name: "GameKit",
-                dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
+                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), .product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
         .target(name: "Network",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],

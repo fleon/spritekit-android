@@ -168,11 +168,36 @@ open class UIView {
 /// What the game names as the thing that presents: Game Center's sign-in
 /// takes one, and the share sheet presents from one. On Android the
 /// presenter is the activity, so this only carries the view.
+///
+/// Presenting draws nothing: it calls the presented controller's
+/// `viewDidAppear(_:)` at once, so a stand-in for a system controller (Game
+/// Center's) can open the Android counterpart from there.
 @MainActor
 open class UIViewController {
     open var view: UIView!
 
+    public private(set) var presentedViewController: UIViewController?
+    public private(set) weak var presentingViewController: UIViewController?
+
     public init() {}
+
+    open func viewDidAppear(_ animated: Bool) {}
+
+    open func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
+        presentedViewController = viewControllerToPresent
+        viewControllerToPresent.presentingViewController = self
+        viewControllerToPresent.viewDidAppear(flag)
+        completion?()
+    }
+
+    /// Dismisses what this controller presented, or, presenting nothing,
+    /// this controller itself, as UIKit does.
+    open func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
+        let presenter = presentedViewController == nil ? presentingViewController : self
+        presenter?.presentedViewController?.presentingViewController = nil
+        presenter?.presentedViewController = nil
+        completion?()
+    }
 }
 
 #endif

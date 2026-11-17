@@ -32,17 +32,15 @@ Package.swift        SpriteKitShim, GLESRenderer, PlatformShim and their
 Sources/
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
-                     camera, SKRenderer, the UIKit / CoreGraphics /
-                     CoreText / CoreImage surface, and Foundation's
-                     NSUbiquitousKeyValueStore. On Apple platforms it
+                     camera, SKRenderer, and the UIKit / CoreGraphics /
+                     CoreText / CoreImage surface. On Apple platforms it
                      re-exports the real SpriteKit.
   GLESRenderer/      The GL-free half of the renderer: shader translation,
                      batching, render targets, compressed pages, the render
                      scale governor. Host-tested.
   PlatformShim/      The Android stand-ins for Apple's services, without the
-                     device: Play Billing, Play Games, Saved Games (the
-                     key-value store's cloud) and the sync engine,
-                     MediaCodec-backed AVFoundation, haptics,
+                     device: Play Billing, Play Games, Saved Games and the
+                     sync engine, MediaCodec-backed AVFoundation, haptics,
                      sharing, the launch-argument domain.
 Tests/               Host tests: no device or GL context.
 Modules/             Android-only. Targets that exist to own a module name
@@ -60,9 +58,6 @@ Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
 Scripts/             Building SDL and a game's shell library, checking the
                      runtime alone, launching with arguments, the emulator
                      pool.
-Templates/App/       The Android app a game copies: the Gradle project,
-                     MainActivity and the Java half of each platform
-                     service (Templates/App/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -82,8 +77,7 @@ directory's name, and the manifests here refer to this package as
 <game>/Android/
   spritekit-android/   this repository (submodule)
   Game/                the game's package (GAME_PACKAGE_DIR)
-  App/                 the game's Gradle project (APP_DIR), copied from
-                       Templates/App/base
+  App/                 the game's Gradle project (APP_DIR)
 ```
 
 The game's package depends on `../spritekit-android`,
@@ -319,14 +313,13 @@ and tested on a Mac against a fake Java:
 - **Achievements and the player** (Play Games Services v2): silent sign-in,
   achievements mapped from Game Center's IDs, incremental ones from Game
   Center's percentages.
+- **Leaderboards** (Play Games Services v2): scores, entries and Play's
+  leaderboard screens behind GameKit's own calls (below).
 - **Saved data** (Play Games Saved Games): a key-value store's records in one
   snapshot, merged commutatively so a conflict resolves without loss.
-- **Audio:** sound effects (`.wav`) through SDL's audio streams, music
-  through the NDK's MediaCodec, with loop points kept in presentation time.
-  A track may be AAC in `.m4a`, MP3 or Ogg Vorbis (`.ogg`), looked for in
-  that order, so the files an iOS build ships play as they are. Gradle
-  stages them in `audio/SFX` and `audio/Music`, and `Bundle.main` finds them
-  there too (`ResourceBundle.defaultFolder`).
+- **Audio:** sound effects through SDL's audio streams, music through the
+  NDK's MediaCodec (the same AAC an iOS build ships), with loop points kept
+  in presentation time.
   A track with no loop points of its own repeats whole with
   `MusicLoop.wholeTrack`, as `AVAudioPlayer`'s `numberOfLoops = -1` does.
 - **Media:** `AVAssetWriter`, `AVAudioFile` and composition stand-ins over
@@ -334,57 +327,78 @@ and tested on a Mac against a fake Java:
 - **The device:** haptics (primitives where the vibrator has them), audio
   focus, battery saver as Low Power Mode, sharing through Android's chooser.
 
-### iCloud's key-value store, as Apple names it
+### Leaderboards
 
-A game that talks to `NSUbiquitousKeyValueStore` itself (keeping its
-progress there as one `Data`, say) gets Apple's API
-(`Sources/SpriteKitShim/UbiquitousKeyValueStore.swift`). Values are kept on
-the device in user defaults, each with the time it was set, and synced
-through any `CloudKeyValueStore` the game installs as its `cloud` (Play
-Games Saved Games), one record per key under `ubiquitous.<key>`. When two
-devices write one key, the later write wins, as with iCloud; two writes at
-the same instant settle on the same value everywhere. The keys that change
-here are posted as `didChangeExternallyNotification`. The reason is the
-initial sync for the first merge that hears from the cloud (installed with
-data there, or the first fetch after Play signs in), and a server change
-after that. A removal is a record too, so it travels. With no cloud the
-store is the device's alone, as with iCloud off. It is safe from any
-thread; the cloud is spoken to on the main thread. A game uses this or
-`ICloudSyncManager`'s `SyncEngine` on one cloud, not both: each takes the
-cloud's `externalChanges`.
+The `GameKit` module answers a game's leaderboard code with Apple's
+signatures, on `GKLeaderboard.backend`: `PlayGamesLeaderboards`
+(`Sources/PlatformShim/Leaderboards.swift`), which a game installs at launch
+beside its achievements, or by default `LocalLeaderboards`, which has none.
 
-Where it differs from Apple's:
+- `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:)`, and the
+  instance `submitScore(_:context:player:)`, each with a completion handler
+  or `async throws`.
+- `GKLeaderboard.loadLeaderboards(IDs:)`, with `baseLeaderboardID` and
+  `title` (Play's display name).
+- `loadEntries(for:timeScope:range:)` and `loadEntries(for:timeScope:)`,
+  giving `GKLeaderboard.Entry` (`player`, `rank`, `score`, `formattedScore`,
+  `context`, `date`), with `TimeScope` and `PlayerScope`.
+- `GKAccessPoint.shared.trigger(state: .leaderboards, handler:)` and
+  `trigger(leaderboardID:playerScope:timeScope:handler:)`.
+- `GKGameCenterViewController(state:)` and
+  `(leaderboardID:playerScope:timeScope:)`, presented with
+  `present(_:animated:completion:)`, with `gameCenterDelegate`.
+- `GKError`, with all of Apple's codes.
 
-- No limits are enforced: not the 1 MB total, the 1,024 keys, the 1 MB per
-  value, or the 128-character keys.
-- `QuotaViolationChange` and `AccountChange` are never posted (the
-  constants exist). If the player switches Play account, the new account's
-  values merge with what the device holds.
-- `synchronize()` always returns `true`.
-- Writes are timestamped by the device's clock, so a device whose clock is
-  far off can win or lose a key it shouldn't. A fresh install that writes
-  before Play's snapshot arrives competes on time with the snapshot's
-  values.
-- The type is visible only through a module that re-exports
-  `SpriteKitShim` (`Foundation` itself can't gain it).
+Game Center leaderboard IDs map to Play's in the generated `PlayGamesMapping`
+file, under `leaderboards` (`{"leaderboard.high-score": {"id": "CgkI…"}}`).
+`today`, `week` and `allTime` are Play's daily, weekly and all-time spans;
+`global` and `friendsOnly` its public and friends collections. A score's
+64-bit context travels as Play's score tag, in decimal digits (none for 0),
+and Play keeps a player's best (`submitScoreImmediate`), as Game Center does.
 
-### Ratings: Play In-App Review
+Where it differs from Apple:
 
-`SKStoreReviewController.requestReview(in:)` (and `requestReview()`,
-`AppStore.requestReview(in:)`) in the `StoreKit` module go to
-`StoreReview.request()` (`Sources/PlatformShim/StoreReview.swift`):
-`PlayInAppReview` over the shell's channel, nothing in a host build. As on
-iOS, the request is fire-and-forget and the store decides whether a card
-shows; a game's own rules about when to ask stay its own. One request is
-with Play at a time; one that gets no answer within a minute stops holding
-the next one back.
+- **Every completion handler runs, once:** signed out with
+  `.notAuthenticated`; without Play Games on the device, or with no backend,
+  `.notSupported`; for a leaderboard ID with no Play counterpart,
+  `.invalidParameter`; and with `.communicationsFailure` when Play says no
+  or doesn't answer within 30 seconds. Game Center queues an offline score
+  and sends it later; Play's immediate submission doesn't, so a game that
+  must not lose one retries.
+- **Leaderboards are classic:** no recurring occurrences, start dates or
+  leaderboard sets.
+- **Other players:** `loadEntries(for players:timeScope:)` returns only the
+  local player's entry, as Play loads no other player's score by ID.
+- **No widget:** the access point draws nothing (`isActive` and `location`
+  are kept, `isVisible` is false). `trigger` opens Play's leaderboards for
+  `.leaderboards` or a leaderboard ID and nothing for other states
+  (achievements open through `AchievementsBackend.showDashboard()`); its
+  handler runs once Play has been asked.
+- **No view:** a presented `GKGameCenterViewController` opens Play's
+  leaderboards, an activity of its own over the game, and on the next turn
+  tells its delegate it has finished, so the game's dismissal runs as on
+  Apple. Play's list of all leaderboards takes no time span or collection.
+- `GKLeaderboard`, `GKAccessPoint` and `GKGameCenterViewController` are
+  main-actor isolated; `GKPlayer` isn't.
 
-The Java half is a class of its own in the game's app (`PlayReview`, on
-`com.google.android.play:review`), under `review`:
-`request` runs `ReviewManager.requestReviewFlow()` then
-`launchReviewFlow(activity, info)` and posts `requested {ok}` when the flow
-is over. A build not installed from Play runs the flow and shows nothing, as
-TestFlight shows nothing on iOS.
+Play's half lives in the game's app, in its Play Games service, under
+`games`. Every request carries a `request` number its answer repeats; an
+answer with `ok: false` may add `reason: "signedOut"`, which Java answers at
+once when nobody is signed in. The leaderboard screens sign the player in
+first.
+
+| Call | Answer | Play Games Services v2 |
+|---|---|---|
+| `submitScores {items: [{id, score, tag}]}` | `scoresSubmitted {ok}` | `submitScoreImmediate` for each, then `Tasks.whenAll` |
+| `loadLeaderboards {ids?}` | `leaderboards {ok, items: [{id, title}]}` | `loadLeaderboardMetadata` |
+| `loadScores {id, timeSpan, collection, count}` | `scores {ok, items, local?, total}` | `loadTopScores`, then `loadMoreScores` up to `count`; `loadCurrentPlayerLeaderboardScore`; the variant's `getNumScores()` |
+| `showLeaderboards {id?, timeSpan?, collection?}` | — | `getLeaderboardIntent(id, timeSpan, collection)`, or `getAllLeaderboardsIntent()` |
+
+`timeSpan` is `daily`, `weekly` or `allTime` (`TIME_SPAN_*`); `collection`
+is `public` or `friends` (`COLLECTION_PUBLIC`, `COLLECTION_FRIENDS`). A
+score is `{rank, score, formattedScore, tag, time, playerId, name}`, from
+`LeaderboardScore` and its score holder; `count` 0 loads only the signed-in
+player's.
 
 ### The shell
 
