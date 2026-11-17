@@ -691,11 +691,9 @@ nothing did, so the game was silent on every device while `-AudioProbe`,
 which talks to the backend itself, played fine. `audio: 19 sounds, 3 voices
 each` in logcat says the game's sounds reached it.
 
-A game whose soundtrack isn't AAC names its container in its entry's
-`configure` (`AudioAssets.musicExtension = "mp3"`: MediaCodec reads the
-format from the file, so only the name changes), and a track with no loop
-points of its own repeats whole with `MusicLoop.wholeTrack`, as an
-`AVAudioPlayer` with `numberOfLoops = -1` does.
+A track with no loop points of its own repeats whole with
+`MusicLoop.wholeTrack`, as an `AVAudioPlayer` with `numberOfLoops = -1`
+does.
 
 ### Google Play and the device: one channel
 
