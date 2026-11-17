@@ -235,6 +235,62 @@ the page. Pages are ASTC with mip levels where the GPU samples ASTC
 their own, so they can repeat; packed images keep a 4 px gutter so filtering
 and block compression never reach a neighbour. Shaders sample level 0 only.
 
+### Packing art from an asset catalog
+
+A game with no exporter of its own packs its Apple asset catalogs straight
+into the art above with `Tools/Art/xcassets-art.js`:
+
+```
+Tools/Art/ASTC/build-astcenc.sh     # once per checkout: astcenc into Tools/Art/ASTC/out (gitignored)
+node Tools/guard.js 12 -- node Tools/Art/xcassets-art.js <outDir> <Assets.xcassets> [<more.xcassets> ...] [--png]
+node Tools/Art/check-xcassets-art.js   # the packer against Tools/Art/Fixtures
+```
+
+`Tools/guard.js` kills the run if it passes 12 GB (it never comes near:
+the packer holds one decoded image and one page at a time). `--png` writes
+PNG pages and needs no encoder; without it pages are ASTC with mip levels,
+exactly as above. `outDir` is cleared first, so it must be empty, missing
+or an earlier pack.
+
+It reads a catalog as Xcode does:
+
+- **Names.** Every `*.imageset` at any depth is an asset named after the
+  set, prefixed `Folder/` for each folder whose `Contents.json` sets
+  `provides-namespace`: `SystemSymbols/clock.fill.imageset` is
+  `SystemSymbols/clock.fill`. Several catalogs pack into one index (a game's
+  own art and its SF Symbols pre-rendered into a second catalog); a name
+  two of them share is an error naming both.
+- **Pixels and size.** Each set's highest-scale PNG (3x, 2x, 1x, then a
+  single-scale image as 1x), universal before iPhone before iPad, leaving
+  out dark-mode, size-class, P3 and right-to-left variants. `size` is its
+  pixels over that scale, so `SKTexture(imageNamed:).size()` is Apple's.
+  The index's one `scale` is the most common; an asset taken at another
+  carries its own `scale`, which `AssetIndex` does not read (it only
+  affects `UIImage(named:).scale`; sizes are right either way).
+- **Slicing.** An image's `resizing` (the Slicing inspector) gives `caps`:
+  its `cap-insets` are pixels, written as points. actool cuts out the
+  pixels between the end of the `center` and the far cap, and so does the
+  packer, so a sliced image's packed pixels and size are the ones the app
+  gets on Apple (checked against actool's own output). A centre that tiles
+  on Apple stretches here, as SpriteKit's `centerRect` does; it is noted.
+- **Left out, and said so.** PDF and SVG images, JPEGs and interlaced PNGs
+  are skipped by name; colour sets, app icons, data sets and the other
+  kinds of set are ignored by kind. `template-rendering-intent` and
+  `preserves-vector-representation` are ignored.
+
+Every PNG form decodes (palette, grey, 1 to 16 bits, `tRNS`). Packing is
+deterministic, so two runs are byte for byte the same. A whole page over
+4096 px is packed with a warning: GLES guarantees 2048.
+
+`Tools/Art/Fixtures` holds two small catalogs and their pack: the Node
+check holds the packer to it byte for byte, and `PackedArtTests` reads it
+through `AssetIndex`. After changing the packer on purpose,
+`node Tools/Art/check-xcassets-art.js --update` rewrites it.
+
+Measured 2026-11-17 on a catalog of 304 image sets (122 MB): 5 atlas pages
+and 37 whole, 78 MB of KTX (72 MB as PNGs, 356 MB as RGBA8) in 72 s, at a
+peak of 1 GB.
+
 ### Text
 
 HarfBuzz shapes and FreeType measures and rasterises (`Text/`), behind
