@@ -76,6 +76,10 @@ public struct DrawList {
         public var lineCap: CGLineCap
         public var lineJoin: CGLineJoin
         public var alpha: CGFloat
+        /// The fill's and the stroke's textures, each stretched over the
+        /// path's bounds and tinted by its colour.
+        public var fillTexture: SKTexture? = nil
+        public var strokeTexture: SKTexture? = nil
     }
 
     public struct Label {
@@ -344,7 +348,9 @@ public struct DrawList {
                 lineWidth: shape.lineWidth,
                 lineCap: shape.lineCap,
                 lineJoin: shape.lineJoin,
-                alpha: alpha
+                alpha: alpha,
+                fillTexture: shape.fillTexture,
+                strokeTexture: shape.strokeTexture
             ))))
         } else if let label = node as? SKLabelNode, let text = label.text, !text.isEmpty {
             entries.append((z, .label(Label(

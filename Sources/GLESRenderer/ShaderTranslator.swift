@@ -327,6 +327,32 @@ public enum ShaderTranslator {
     /// game's scroll areas clip with) is drawn with while the stencil is
     /// written: its rasterised coverage, which is single-channel like the
     /// coverage shader's, cut where the shape does not reach.
+    /// A shape's fill or stroke with a texture (`SKShapeNode.fillTexture`,
+    /// `strokeTexture`): the mask's coverage, the texture stretched over the
+    /// path's bounds (`u_fill_map` takes the mask's 0…1 to the texture's),
+    /// and the colour tinting it, as SpriteKit multiplies the two.
+    public static let texturedCoverageFragmentShader = """
+    #version 300 es
+
+    precision mediump float;
+
+    in highp vec2 v_tex_coord;
+    in vec4 v_color_mix;
+    in float v_blend;
+
+    uniform sampler2D u_texture;
+    uniform sampler2D u_fill;
+    uniform highp vec4 u_fill_map;
+
+    out vec4 \(fragColor);
+
+    void main() {
+        float coverage = texture(u_texture, v_tex_coord).r * v_color_mix.a;
+        vec4 fill = texture(u_fill, u_fill_map.xy + v_tex_coord * u_fill_map.zw);
+        \(fragColor) = vec4(v_color_mix.rgb * fill.rgb, fill.a) * coverage;
+    }
+    """
+
     public static let coverageMaskFragmentShader = """
     #version 300 es
 

@@ -293,8 +293,9 @@ open class SKShapeNode: SKNode {
     open var isAntialiased: Bool = true
     open var blendMode: SKBlendMode = .alpha
     open var fillTexture: SKTexture?
-    /// Carried, not drawn yet: the stroke draws in `strokeColor` alone.
-    /// Zyl's tutorial highlights give their outlines a gradient through it.
+    /// Stretched over the path's bounds and tinted by `strokeColor`, as
+    /// `fillTexture` is for the fill. Zyl's tutorial highlights give their
+    /// outlines a gradient through it.
     open var strokeTexture: SKTexture?
     open var fillShader: SKShader?
     /// Carried, not drawn: the game sets none, and only `ShaderPrimer` reads it.
