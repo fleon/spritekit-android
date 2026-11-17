@@ -55,7 +55,7 @@ struct CameraTests {
             scene.camera = camera
             scene.addChild(marker(at: CGPoint(x: 300, y: -40)))
             let list = view.tick(currentTime: 0, delta: 0)
-            #expect(close(origin(of: list) ?? .zero, CGPoint(x: scene.visibleFrame.midX, y: scene.visibleFrame.midY)))
+            #expect(close(origin(of: list) ?? .zero, CGPoint(x: scene.viewVisibleFrame.midX, y: scene.viewVisibleFrame.midY)))
             // And it is the middle of the view, in the view's own points.
             #expect(close(scene.convertPoint(toView: CGPoint(x: 300, y: -40)), CGPoint(x: 100, y: 50)))
         }
@@ -409,10 +409,10 @@ struct TransitionTests {
             return
         }
         #expect(fill.color === SKColor.red)
-        #expect(CGRect(origin: CGPoint.zero.applying(fill.transform), size: fill.size) == scene.visibleFrame)
+        #expect(CGRect(origin: CGPoint.zero.applying(fill.transform), size: fill.size) == scene.viewVisibleFrame)
         // Aspect fill on a wider view fills its width and loses some height,
         // shared top and bottom.
-        let shown = scene.visibleFrame
+        let shown = scene.viewVisibleFrame
         #expect(close(shown.origin, CGPoint(x: 0, y: 50.0 / 3), 1e-9))
         #expect(abs(shown.width - 200) < 1e-9 && abs(shown.height - 200.0 / 3) < 1e-9)
     }
