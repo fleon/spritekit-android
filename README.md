@@ -1236,6 +1236,16 @@ against Apple's own where Apple's runs on the Mac:
   CoreGraphics. The software context has every CoreGraphics blend mode, the
   four non-separable ones and the two plus modes included (and soft light
   is CoreGraphics' formula, not the PDF's).
+- Core Image by name (`CoreImageFilters.swift`): `CILinearGradient` and
+  `CIRadialGradient` as generators a `CIContext` draws over any rectangle,
+  and `CIGaussianBlur` (`inputRadius` is `applyingGaussianBlur`'s sigma);
+  `CIColor`, `CIVector`, `CIFilter(name:parameters:)`, the `kCI…` keys.
+  Measured against Core Image on macOS 27.2 (`CoreImageTests`): gradients
+  mix premultiplied colour in linear light and encode sRGB as they're
+  written (black to white is 188 half way), a pixel takes its centre's
+  colour, a fractional rectangle ends in a part-covered pixel, and a radial
+  gradient that ends clear has its outer circle's box for an extent. `SKEffectNode.filter`
+  is kept; the renderer doesn't draw it yet.
 - `SKTexture.cgImage()`, a snapshot's pixels read back from the GPU, and
   alpha-only bitmaps: the collection and the tips fit each sample by what it
   draws.
