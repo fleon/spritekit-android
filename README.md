@@ -60,6 +60,9 @@ Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
 Scripts/             Building SDL and a game's shell library, checking the
                      runtime alone, launching with arguments, the emulator
                      pool.
+Templates/App/       The Android app a game copies: the Gradle project,
+                     MainActivity and the Java half of each platform
+                     service (Templates/App/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -79,7 +82,8 @@ directory's name, and the manifests here refer to this package as
 <game>/Android/
   spritekit-android/   this repository (submodule)
   Game/                the game's package (GAME_PACKAGE_DIR)
-  App/                 the game's Gradle project (APP_DIR)
+  App/                 the game's Gradle project (APP_DIR), copied from
+                       Templates/App/base
 ```
 
 The game's package depends on `../spritekit-android`,
