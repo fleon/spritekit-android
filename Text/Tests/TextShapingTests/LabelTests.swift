@@ -112,13 +112,14 @@ struct LabelTests {
         #expect(layout.lines.map(\.line.text) == ["Bump", "and", "trade"])
     }
 
-    @Test("Lines stack by the font's line height")
+    @Test("Lines stack by the font's ascent, descent and leading, each rounded, as SpriteKit's do")
     func lineStacking() throws {
         let node = label("Bump\nand\ntrade", size: 20)
         node.numberOfLines = 0
         node.verticalAlignmentMode = .baseline
         let layout = try #require(node.layout)
-        let lineHeight = try #require(Fonts.engine.fontMetrics(Fonts.display(20))).lineHeight
+        let metrics = try #require(Fonts.engine.fontMetrics(Fonts.display(20)))
+        let lineHeight = metrics.ascent.rounded() + metrics.descent.rounded() + metrics.leading.rounded()
 
         #expect(layout.lines[0].origin.y == 0)
         #expect(abs(layout.lines[1].origin.y + lineHeight) < 0.001)

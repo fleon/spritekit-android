@@ -109,10 +109,6 @@ public final class UITextField: UIView {
     public var tintColor: UIColor?
     public var borderStyle = UITextBorderStyle.none
     public var selectedTextRange: UITextRange?
-    public var frame: CGRect = .zero {
-        didSet { bounds = CGRect(origin: .zero, size: frame.size) }
-    }
-    public private(set) weak var superview: UIView?
 
     /// The field taking typing now, if any.
     public private(set) static weak var firstResponder: UITextField?
@@ -149,8 +145,6 @@ public final class UITextField: UIView {
     }
 
     public var isFirstResponder: Bool { Self.firstResponder === self }
-
-    func moved(to view: UIView?) { superview = view }
 
     // MARK: - Touches
 
@@ -193,10 +187,6 @@ public final class UITextField: UIView {
         }
     }
 
-    public func removeFromSuperview() {
-        superview = nil
-    }
-
     /// What the keyboard typed, as the shell reads it from SDL.
     public enum Typing: Equatable, Sendable {
         case insert(String)
@@ -227,22 +217,23 @@ public final class UITextField: UIView {
     }
 }
 
-public extension UIView {
-    func addSubview(_ view: UIView) {
-        (view as? UITextField)?.moved(to: self)
-    }
-}
-
 /// UIKit's coordinate spaces, as far as the code prompt names them: the
 /// keyboard's frame comes in the screen's, which on Android is the view's.
 @MainActor
-public protocol UICoordinateSpace: AnyObject {}
+public protocol UICoordinateSpace: AnyObject {
+    var bounds: CGRect { get }
+}
 
 extension UIView: UICoordinateSpace {}
 extension UIScreen: UICoordinateSpace {}
 
 public extension UIScreen {
     var coordinateSpace: UICoordinateSpace { self }
+}
+
+public extension UIWindowScene {
+    /// The scene's space: its screen's.
+    var coordinateSpace: any UICoordinateSpace { screen }
 }
 
 public extension UIView {
