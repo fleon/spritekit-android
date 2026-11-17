@@ -818,6 +818,21 @@ Play Games can't run — no Google Play services on the device or out of date
 the scene runs it, before it's drawn. The game always shows the button, so
 the icon is the one place the port can decide without touching `Source/`.
 
+### iCloud's key-value store, as Apple names it
+
+A game that talks to `NSUbiquitousKeyValueStore` itself (Zyl's
+`LevelManager` keeps its whole progress in one `Data` there) gets it with
+Apple's API (`Sources/SpriteKitShim/UbiquitousKeyValueStore.swift`): values
+kept on the device in user defaults, each with when it was set, and synced
+through any `CloudKeyValueStore` the game installs as its `cloud` (Play
+Games Saved Games, below), one record a key under `ubiquitous.<key>`. Two
+devices' writes to one key resolve as iCloud resolves them, the later wins;
+the keys that changed here are posted as `didChangeExternallyNotification`
+with the server-change reason (the initial-sync reason for the first merge).
+A removal is a record too, so it travels. With no cloud the store is the
+device's alone, as with iCloud off. A game uses this or `ICloudSyncManager`'s
+`SyncEngine` on one cloud, not both: each takes its `externalChanges`.
+
 ### Saved data — Play Games Saved Games
 
 `ICloudSyncManager` keeps its shape exactly — `set` / `insert` /
