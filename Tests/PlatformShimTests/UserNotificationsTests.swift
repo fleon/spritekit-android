@@ -24,7 +24,7 @@ private func content(title: String = "Reminder", body: String = "Something new i
 
 /// As a game's `AppDelegate` writes it: the completion-handler forms,
 /// spelled without `@Sendable`.
-private final class CompletionDelegate: UNUserNotificationCenterDelegate {
+private final class CompletionDelegate: NSObject, UNUserNotificationCenterDelegate {
     var presented: [UNNotification] = []
     var responses: [UNNotificationResponse] = []
     var options: UNNotificationPresentationOptions = [.banner, .sound]
@@ -49,7 +49,7 @@ private final class CompletionDelegate: UNUserNotificationCenterDelegate {
 }
 
 /// The async forms instead.
-private final class AsyncDelegate: UNUserNotificationCenterDelegate {
+private final class AsyncDelegate: NSObject, UNUserNotificationCenterDelegate {
     var responses: [UNNotificationResponse] = []
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
@@ -451,5 +451,67 @@ struct UserNotificationsMemoryTests {
         #expect((request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() == reminderDate)
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         #expect(await center.pendingNotificationRequests().isEmpty)
+    }
+}
+
+@Suite("UserNotifications: the rest of Apple's surface")
+@MainActor
+struct UserNotificationsSurfaceTests {
+    @Test("Interruption levels, action and category options have Apple's raw values")
+    func rawValues() {
+        #expect([UNNotificationInterruptionLevel.passive, .active, .timeSensitive, .critical].map(\.rawValue) == [0, 1, 2, 3])
+        #expect([UNNotificationAction.Options.authenticationRequired, .destructive, .foreground].map(\.rawValue) == [1, 2, 4])
+        #expect([UNNotificationCategory.Options.customDismissAction, .allowInCarPlay, .hiddenPreviewsShowTitle,
+                 .hiddenPreviewsShowSubtitle, .allowAnnouncement].map(\.rawValue) == [1, 2, 4, 8, 16])
+        #expect(UNError.notificationsNotAllowed.rawValue == 1)
+        #expect(UNError.badgeInputInvalid.rawValue == 1600)
+    }
+
+    @Test("New content is active, unscored and unfiltered; a request keeps what was set")
+    func contentFields() {
+        let content = UNMutableNotificationContent()
+        #expect(content.interruptionLevel == .active)
+        #expect(content.relevanceScore == 0)
+        #expect(content.filterCriteria == nil)
+        #expect(content.attachments.isEmpty)
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 0.5
+        content.filterCriteria = "work"
+        let request = UNNotificationRequest(identifier: "x", content: content, trigger: nil)
+        content.interruptionLevel = .passive
+        #expect(request.content.interruptionLevel == .timeSensitive)
+        #expect(request.content.relevanceScore == 0.5)
+        #expect(request.content.filterCriteria == "work")
+    }
+
+    @Test("The new fields travel to Java and back")
+    func roundTrip() throws {
+        let content = UNMutableNotificationContent()
+        content.title = "Hello"
+        content.interruptionLevel = .passive
+        content.relevanceScore = 0.25
+        let request = UNNotificationRequest(identifier: "r", content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 90, repeats: false))
+        let encoded = NotificationCodec.encode(request, now: Date())
+        let decoded = try #require(NotificationCodec.decodeRequest(encoded))
+        #expect(decoded.content.interruptionLevel == .passive)
+        #expect(decoded.content.relevanceScore == 0.25)
+        #expect(decoded.content.title == "Hello")
+    }
+
+    @Test("The center keeps the categories it's given")
+    func categories() async {
+        let center = UNUserNotificationCenter(channel: nil)
+        let action = UNNotificationAction(identifier: "open", title: "Open", options: [.foreground])
+        center.setNotificationCategories([UNNotificationCategory(identifier: "remind", actions: [action], intentIdentifiers: [])])
+        let categories = await center.notificationCategories()
+        #expect(categories.map(\.identifier) == ["remind"])
+        #expect(categories.first?.actions.first?.options == [.foreground])
+    }
+
+    @Test("An attachment needs a file that exists")
+    func attachment() {
+        #expect(throws: UNError.self) {
+            _ = try UNNotificationAttachment(identifier: "a", url: URL(fileURLWithPath: "/no/such/file.png"))
+        }
     }
 }
