@@ -64,7 +64,37 @@ open class SKLabelNode: SKNode {
     /// `.kern` (`NSKern`), 0 without one.
     public private(set) var kern: CGFloat = 0 { didSet { invalidateLayout() } }
 
+    /// One stretch of attributed text in a style of its own: its font,
+    /// colour, letter spacing and how far it sits above the baseline
+    /// (`.baselineOffset`).
+    public struct Run: Equatable {
+        public var text: String
+        public var fontName: String?
+        public var fontSize: CGFloat
+        public var color: SKColor?
+        public var kern: CGFloat
+        public var baselineOffset: CGFloat
+
+        public static func == (a: Run, b: Run) -> Bool {
+            a.text == b.text && a.hasSameStyle(as: b)
+        }
+
+        func hasSameStyle(as other: Run) -> Bool {
+            func components(_ color: SKColor?) -> [CGFloat]? {
+                color.map { [$0.red, $0.green, $0.blue, $0.alpha] }
+            }
+            return fontName == other.fontName && fontSize == other.fontSize && kern == other.kern
+                && baselineOffset == other.baselineOffset && components(color) == components(other.color)
+        }
+    }
+
+    /// The attributed text's runs when they differ in style, each drawn in
+    /// its own on one line, as SpriteKit draws them; nil when one style
+    /// covers the text, which then draws as `text` in the label's font.
+    public private(set) var runs: [Run]? { didSet { invalidateLayout() } }
+
     private func adoptAttributes() {
+        defer { runs = Self.styledRuns(of: attributedText, fontName: fontName, fontSize: fontSize, color: fontColor) }
         guard let attributedText else {
             kern = 0
             return
@@ -90,7 +120,41 @@ open class SKLabelNode: SKNode {
         }
     }
 
+    /// The text's attribute runs, merged where neighbours share a style;
+    /// nil when there are fewer than two styles.
+    static func styledRuns(of text: NSAttributedString?, fontName: String?, fontSize: CGFloat, color: SKColor?) -> [Run]? {
+        guard let text, text.length > 0 else { return nil }
+        var runs: [Run] = []
+        let string = text.string as NSString
+        text.enumerateAttributes(in: NSRange(location: 0, length: text.length), options: []) { attributes, range, _ in
+            let font = attributes[NSAttributedString.Key("NSFont")] as? LabelFont
+            func number(_ value: Any?) -> CGFloat {
+                switch value {
+                case let number as NSNumber: return CGFloat(number.doubleValue)
+                case let value as CGFloat: return value
+                case let value as Double: return CGFloat(value)
+                default: return 0
+                }
+            }
+            let run = Run(
+                text: string.substring(with: range),
+                fontName: font?.fontName ?? fontName,
+                fontSize: font?.pointSize ?? fontSize,
+                color: attributes[NSAttributedString.Key("NSColor")] as? SKColor ?? color,
+                kern: number(attributes[NSAttributedString.Key("NSKern")]),
+                baselineOffset: number(attributes[NSAttributedString.Key("NSBaselineOffset")])
+            )
+            if let last = runs.last, last.hasSameStyle(as: run) {
+                runs[runs.count - 1].text += run.text
+            } else {
+                runs.append(run)
+            }
+        }
+        return runs.count > 1 ? runs : nil
+    }
+
     private struct LayoutInput: Equatable {
+        var runs: [Run]?
         var text: String?
         var kern: CGFloat
         var fontName: String?
@@ -139,6 +203,7 @@ open class SKLabelNode: SKNode {
 
     private var layoutKey: LayoutInput {
         LayoutInput(
+            runs: runs,
             text: text,
             kern: kern,
             fontName: fontName,
@@ -152,6 +217,7 @@ open class SKLabelNode: SKNode {
 
     private func makeLayout() -> TextLayout? {
         guard let text, !text.isEmpty, let provider = TextMetrics.provider else { return nil }
+        if let runs, numberOfLines == 1 { return runLayout(runs, provider: provider) }
         let font = FontKey(name: fontName ?? "", size: fontSize)
         guard let metrics = provider.fontMetrics(font) else { return nil }
 
@@ -213,6 +279,42 @@ open class SKLabelNode: SKNode {
         }
 
         return TextLayout(lines: placed, bounds: bounds)
+    }
+
+    /// Styled runs on one line, as SpriteKit lays an attributed label out
+    /// (measured on a Mac: `AttributedLabelRunTests`): end to end on a shared
+    /// baseline, each raised by its `baselineOffset`, the whole line placed
+    /// by its combined ink as a one-style line is. One placed line per run,
+    /// in `runs`' order.
+    private func runLayout(_ runs: [Run], provider: TextProvider) -> TextLayout? {
+        var pen: CGFloat = 0
+        var measured: [(line: TextLine, offset: CGPoint)] = []
+        var ink: CGRect?
+        for run in runs {
+            var line = provider.measure(run.text, font: FontKey(name: run.fontName ?? "", size: run.fontSize))
+            if run.kern != 0 {
+                let count = CGFloat(run.text.count)
+                line.advance += run.kern * count
+                if !line.inkBounds.isEmpty { line.inkBounds.size.width += run.kern * max(count - 1, 0) }
+            }
+            let offset = CGPoint(x: pen, y: run.baselineOffset)
+            measured.append((line, offset))
+            if !line.inkBounds.isEmpty {
+                let placed = line.inkBounds.offsetBy(dx: offset.x, dy: offset.y)
+                ink = ink.map { $0.union(placed) } ?? placed
+            }
+            pen += line.advance
+        }
+        guard let ink else { return nil }
+        let whole = TextLine(text: runs.map(\.text).joined(), advance: pen, inkBounds: ink)
+        let placed = Self.spriteKitLine(whole, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+        guard let origin = placed.lines.first?.origin else { return nil }
+        return TextLayout(
+            lines: measured.map {
+                TextLayout.Placed(line: $0.line, origin: CGPoint(x: origin.x + $0.offset.x, y: origin.y + $0.offset.y))
+            },
+            bounds: placed.bounds
+        )
     }
 
     /// One line as SpriteKit lays it out (see the type's comment): its frame

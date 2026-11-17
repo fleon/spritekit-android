@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/fleon/git/phantom-words-android/Android/spritekit-android/Tools/Art/ASTC/src/build-5.7.1/cmake_install.cmake",
+		"/Users/fleon/git/phantom-words-android/Android/spritekit-android/Tools/Art/ASTC/src/build-5.7.1/Source/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
