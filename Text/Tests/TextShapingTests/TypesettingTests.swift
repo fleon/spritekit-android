@@ -3,13 +3,13 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// What stands behind `Source/Utils/TextHelpers.swift` on Android. That file
-/// now compiles there unchanged, so these are the numbers its `wrappedLines`
-/// and `capitalsOffset` will actually get.
+/// What stands behind a game's CoreText line wrapping and capital centring
+/// on Android, which compile there unchanged: these are the numbers they
+/// will actually get.
 @Suite("Typesetting")
 struct TypesettingTests {
-    /// `wrappedLines` itself, since the real one is three lines of
-    /// `CTTypesetter` over this and is not compiled on the host.
+    /// A wrapping loop as a game writes one: a few lines of `CTTypesetter`
+    /// over this, which is not compiled on the host.
     private func wrapped(_ text: String, maxWidth: CGFloat, font: FontKey) -> [String] {
         _ = Fonts.engine
         var lines: [String] = []
@@ -115,9 +115,9 @@ struct TypesettingTests {
         #expect(abs(typographic.minY + metrics.descent) < 0.001)
     }
 
-    @Test("capitalsOffset comes out of this, and is what buttons lean on")
+    @Test("A capitals offset comes out of this, and is what buttons lean on")
     func capitalsOffset() throws {
-        // The real one is `CTLineGetBoundsWithOptions(.useGlyphPathBounds).midY
+        // A game's is `CTLineGetBoundsWithOptions(.useGlyphPathBounds).midY
         // - capHeight / 2`. A line of capitals needs almost no correction; one
         // with a descender needs a real one, downwards.
         let font = Fonts.chiron(32)
@@ -143,7 +143,7 @@ struct TypesettingTests {
     @Test("An unknown face gives one unbroken line, not a loop")
     func unknownFace() {
         // Measured as nothing, so everything fits and the whole string comes
-        // back in one go. That matters more than it looks: `wrappedLines`
+        // back in one go. That matters more than it looks: a wrapping loop
         // walks forward by whatever this returns, so anything that could
         // return 0 for a string it has not reached the end of would spin.
         // The engine must be registered, or the shim reports no provider

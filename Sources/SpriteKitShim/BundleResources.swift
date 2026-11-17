@@ -34,7 +34,8 @@ public enum BundleResources {
     }
 
     /// Answers with a readable folder for a resource that is one: a
-    /// language's `.lproj`, which `Localization` opens with `Bundle(path:)`.
+    /// language's `.lproj`, which a game's localization opens with
+    /// `Bundle(path:)`.
     public nonisolated(unsafe) static var folderProvider: ((_ name: String, _ extension: String) -> String?)?
 }
 
@@ -48,8 +49,8 @@ public extension Bundle {
         return url(forResource: name, withExtension: ext)
     }
 
-    /// The same for `path(forResource:ofType:)`, which `Localization` asks
-    /// for a language's `.lproj` folder.
+    /// The same for `path(forResource:ofType:)`, which a game's localization
+    /// asks for a language's `.lproj` folder.
     func path(forResource name: String, ofType ext: String) -> String? {
         if let path = BundleResources.folderProvider?(name, ext) { return path }
         if let url = BundleResources.url(forResource: name, withExtension: ext) { return url.path }
@@ -63,9 +64,9 @@ public extension Bundle {
     /// answers it: the first preference that any of `localizations` serves,
     /// matched exactly, then by language and script, then by language alone
     /// (`zh-TW` takes `zh-Hant`, `pt` takes `pt-PT`, `en-US` takes `en`).
-    /// corelibs Foundation's answers otherwise, so `Localization` picked a
-    /// language the device never asked for. The game passes a plain array,
-    /// so this overload is the one it calls; Foundation's takes an optional.
+    /// corelibs Foundation's answers otherwise, so a game picked a language
+    /// the device never asked for. A game passes a plain array, so this
+    /// overload is the one it calls; Foundation's takes an optional.
     class func preferredLocalizations(from localizations: [String], forPreferences preferences: [String]) -> [String] {
         LocalizationMatch.best(of: localizations, for: preferences).map { [$0] } ?? []
     }

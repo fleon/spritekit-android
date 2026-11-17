@@ -88,9 +88,9 @@ struct LabelTests {
 
         // Both are centred on their own ink. The one with a descender has a
         // taller box hanging below the baseline, so centring it pushes its
-        // capitals up — exactly the drift `TextHelpers.capitalsOffset`
-        // exists to undo on buttons, and it only has to exist because
-        // SpriteKit centres ink rather than the typographic box.
+        // capitals up — exactly the drift a game centring capitals by their
+        // glyph-path bounds undoes on buttons, which only has to exist
+        // because SpriteKit centres ink rather than the typographic box.
         #expect(hanging.contentFrame.maxY > caps.contentFrame.maxY)
         #expect(hanging.contentFrame.minY < caps.contentFrame.minY)
     }

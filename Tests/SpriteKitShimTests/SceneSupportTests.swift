@@ -6,8 +6,8 @@ import Testing
 import CoreGraphics
 #endif
 
-// What the game's real scenes needed from the shim (the scenes ring): the
-// language match `Localization` makes, the path calls CoreGraphics works out
+// What real scenes need from the shim: the language match a game's
+// localization makes, the path calls CoreGraphics works out
 // itself (fillets and dashes), quaternions, and actions SpriteKit has that
 // the scenes call. Each is checked against Apple's own on the Mac where
 // Apple's exists.

@@ -56,8 +56,8 @@ public enum Typesetting {
             guard width(upTo: place) <= maxWidth else { break }
             best = place
         }
-        // Never zero: CoreText always advances, and so must the loop in
-        // `wrappedLines` that calls this.
+        // Never zero: CoreText always advances, and so must the wrapping
+        // loop that calls this.
         if best > 0 { return best }
         return places.first ?? whole
     }

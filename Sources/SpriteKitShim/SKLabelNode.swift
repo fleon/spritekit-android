@@ -30,10 +30,10 @@ public enum SKLabelVerticalAlignmentMode: Int, Sendable {
 /// right edge; `.baseline` puts its bottom where the ink's rounded-down
 /// bottom is, `.center` its middle, `.top` and `.bottom` its edges. So both
 /// axes work on the **ink**, not the advance: a descender moves a centred
-/// label, which the game undoes for buttons (`TextHelpers`'
-/// `capitalsOffset`), and every frame is a little wider and taller than the
-/// ink, which the game's pills and buttons are sized by. Several lines keep
-/// the simpler layout below: the game never asks for them.
+/// label, which a game undoes for buttons (from a `CTLine`'s glyph-path
+/// bounds), and every frame is a little wider and taller than the ink,
+/// which a game's pills and buttons are sized by. Several lines keep the
+/// simpler layout below.
 open class SKLabelNode: SKNode {
     open var text: String? { didSet { invalidateLayout() } }
     open var fontName: String? { didSet { invalidateLayout() } }

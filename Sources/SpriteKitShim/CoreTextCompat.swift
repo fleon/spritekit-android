@@ -41,7 +41,7 @@ extension NSString {
 
 // MARK: - Typesetter
 
-/// Enough of a `CTTypesetter` for `wrappedLines`: the string and the font it
+/// Enough of a `CTTypesetter` for wrapping lines: the string and the font it
 /// was given, so each suggested break can be measured.
 public final class CTTypesetter {
     let text: String
@@ -60,7 +60,7 @@ public func CTTypesetterCreateWithAttributedString(_ string: NSAttributedString)
 /// How many UTF-16 units from `start` fit in `width`.
 ///
 /// Returns 0 when the font is unknown, as it does when it runs off the end
-/// of the string — `wrappedLines` guards with `max(1, …)`, so a label in a
+/// of the string — a wrapping loop guards with `max(1, …)`, so a label in a
 /// face that was never registered comes out as one unbroken line rather
 /// than looping.
 public func CTTypesetterSuggestLineBreak(
@@ -79,7 +79,7 @@ public func CTTypesetterSuggestLineBreak(
 
 // MARK: - Lines
 
-/// Enough of a `CTLine` for `capitalsOffset`.
+/// Enough of a `CTLine` for a line's glyph-path bounds.
 public final class CTLine {
     let text: String
     let font: FontKey?
@@ -99,8 +99,8 @@ public struct CTLineBoundsOptions: OptionSet, Sendable {
     public init(rawValue: UInt) { self.rawValue = rawValue }
 
     /// The box the glyphs' outlines cover, rather than the typographic one.
-    /// This is the only one the game asks for, and the one that makes
-    /// `capitalsOffset` mean anything.
+    /// This is the one that centres capitals by what they draw, and the only
+    /// one here.
     public static let useGlyphPathBounds = CTLineBoundsOptions(rawValue: 1 << 5)
 
     // Named so the file reads against Apple's, and so reaching for one that

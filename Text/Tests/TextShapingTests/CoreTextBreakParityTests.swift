@@ -5,7 +5,7 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// `wrappedLines` on both platforms: the shim's `Typesetting` against Core
+/// Line wrapping on both platforms: the shim's `Typesetting` against Core
 /// Text's typesetter, on the same font files, line by line across a sweep of
 /// widths, so a line of a game's text breaks where it breaks on iOS.
 @Suite("Line breaks as Core Text makes them") struct CoreTextBreakParityTests {
