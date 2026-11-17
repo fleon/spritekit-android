@@ -346,7 +346,7 @@ public struct DrawList {
                 lineJoin: shape.lineJoin,
                 alpha: alpha
             ))))
-        } else if let label = node as? SKLabelNode, let runs = label.runs, let layout = label.layout,
+        } else if let label = node as? SKLabelNode, let layout = label.layout, let runs = label.laidOutRuns,
                   layout.lines.count == runs.count {
             // An attributed label in several styles: each run a label of its
             // own, placed where the line's layout put it.

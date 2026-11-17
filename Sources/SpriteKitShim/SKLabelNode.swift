@@ -93,6 +93,11 @@ open class SKLabelNode: SKNode {
     /// covers the text, which then draws as `text` in the label's font.
     public private(set) var runs: [Run]? { didSet { invalidateLayout() } }
 
+    /// The runs `layout` placed, one line each, when it laid them out as
+    /// one line (`runLayout`); nil when the layout is the label's own text.
+    /// Read after `layout`, which sets it.
+    public private(set) var laidOutRuns: [Run]?
+
     private func adoptAttributes() {
         defer { runs = Self.styledRuns(of: attributedText, fontName: fontName, fontSize: fontSize, color: fontColor) }
         guard let attributedText else {
@@ -150,7 +155,8 @@ open class SKLabelNode: SKNode {
                 runs.append(run)
             }
         }
-        return runs.count > 1 ? runs : nil
+        // One style still draws as a run when it sits off the baseline.
+        return runs.count > 1 || runs.first?.baselineOffset != 0 ? runs : nil
     }
 
     private struct LayoutInput: Equatable {
@@ -190,6 +196,7 @@ open class SKLabelNode: SKNode {
     open var layout: TextLayout? {
         let key = layoutKey
         if cachedFor == key, let cachedLayout { return cachedLayout }
+        laidOutRuns = nil
         let made = makeLayout()
         cachedLayout = made
         cachedFor = made == nil ? nil : key
@@ -217,7 +224,11 @@ open class SKLabelNode: SKNode {
 
     private func makeLayout() -> TextLayout? {
         guard let text, !text.isEmpty, let provider = TextMetrics.provider else { return nil }
-        if let runs, numberOfLines == 1 { return runLayout(runs, provider: provider) }
+        if let runs, numberOfLines == 1 {
+            let laidOut = runLayout(runs, provider: provider)
+            laidOutRuns = laidOut == nil ? nil : runs
+            return laidOut
+        }
         let font = FontKey(name: fontName ?? "", size: fontSize)
         guard let metrics = provider.fontMetrics(font) else { return nil }
 

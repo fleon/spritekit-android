@@ -21,11 +21,11 @@ struct AttributedLabelRunTests {
 
     static let geneva = "/System/Library/Fonts/Geneva.ttf"
 
+    /// The suite's one shared engine (`Fonts.engine`), with Geneva added:
+    /// swapping in an engine of its own would change every other test's text.
     static let engine: TextEngine = {
-        let library = FontLibrary()
-        let engine = TextEngine(library: library, atlas: GlyphAtlas(library: library))
-        _ = try? library.register(path: geneva)
-        engine.install()
+        let engine = Fonts.engine
+        _ = try? engine.library.register(path: geneva)
         return engine
     }()
 
@@ -112,6 +112,33 @@ struct AttributedLabelRunTests {
         #expect(abs(origins[2].x - (origins[1].x + layout.lines[1].line.advance)) < 0.001)
         #expect(abs(origins[1].y - origins[0].y - 10) < 0.001)
         #expect(origins[2].y == origins[0].y)
+    }
+
+    @Test("A wrapped label in several styles draws as its own text, not as runs")
+    func wrapped() {
+        _ = Self.engine
+        let label = SpriteKitShim.SKLabelNode()
+        label.attributedText = ours([Piece(text: "Hi", size: 20), Piece(text: " there you", size: 30)])
+        label.numberOfLines = 0
+        label.preferredMaxLayoutWidth = 120
+        _ = label.layout
+        #expect(label.runs != nil)
+        #expect(label.laidOutRuns == nil)
+    }
+
+    @Test("One style raised off the baseline draws as a run")
+    func raisedAlone() throws {
+        _ = Self.engine
+        let label = SpriteKitShim.SKLabelNode()
+        label.attributedText = ours([Piece(text: "Up", size: 20, baselineOffset: 6)])
+        label.horizontalAlignmentMode = .left
+        let layout = try #require(label.layout)
+        #expect(label.laidOutRuns?.count == 1)
+        let plain = SpriteKitShim.SKLabelNode()
+        plain.attributedText = ours([Piece(text: "Up", size: 20)])
+        plain.horizontalAlignmentMode = .left
+        let base = try #require(plain.layout)
+        #expect(abs(layout.lines[0].origin.y - base.lines[0].origin.y - 6) < 1.001)
     }
 
     @Test("One style throughout draws as plain text")

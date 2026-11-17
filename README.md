@@ -580,6 +580,20 @@ phone is not a 24-pixel bitmap magnified.
 What text still needs is the localisation ring: `FontRegistry` and
 `Localization.scriptFontName` are the last stubs in `GameCompat`.
 
+
+### Attributed labels in several styles
+
+An `SKLabelNode`'s `attributedText` whose runs differ in font, colour,
+`.kern` or `.baselineOffset` draws each run in its own style when the label
+is one line (`numberOfLines` 1), as SpriteKit does: the runs end to end on
+one baseline, each raised by its `.baselineOffset`, and the whole line
+placed by its combined ink as a one-style line is, so `frame` and every
+alignment mode agree with SpriteKit's (`AttributedLabelRunTests`, against
+Apple's `SKLabelNode` on the same font file). `SKLabelNode.runs` holds the
+runs; `laidOutRuns` is set when the layout placed them, and the draw list
+then emits one label command per run. A wrapped label in several styles
+still draws in its first run's style.
+
 ## Rasterising
 
 `PathRasteriser` in `Sources/GLESRenderer` fills and strokes a `CGPath`
