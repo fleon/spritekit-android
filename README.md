@@ -329,6 +329,35 @@ runs; `laidOutRuns` is set when the layout placed them, and the draw list
 then emits one label command per run. A wrapped label in several styles
 still draws in its first run's style.
 
+### UIKit around the scene
+
+A game's SpriteKit code also reads UIKit, so the shim carries the parts it
+reaches for, kept as values where Android has nothing to show:
+
+- **Views:** `UIView`'s `frame`, `subviews`, `isUserInteractionEnabled`,
+  `contentMode`, `autoresizingMask` and `clipsToBounds`, `UIImageView`,
+  `SKView(frame:)`. Only the game's `SKView` draws; other views are kept, not
+  composited, and `snapshotView(afterScreenUpdates:)` and `drawHierarchy`
+  answer nil and false, as UIKit does for a view it can't render.
+- **Reserved regions** (iOS 27.1): `reservedRegions(kind:options:)` answers
+  from `reservedRegionList`, which the shell may fill (a foldable's hinge);
+  none by default, as on a phone without one.
+- **Windows and scenes:** a window joins its scene through `windowScene`;
+  the scene's `windows`, `keyWindow` and `coordinateSpace` follow.
+- **SF Symbols:** Android has no symbol font, so
+  `UIImage(systemName:withConfiguration:)` looks a symbol up in the packed
+  art as `SystemSymbols/<name>`. `Tools/Art/system-symbols.sh` renders the
+  symbols a game names into an asset catalog for the packer, with UIKit as
+  a Mac Catalyst tool (AppKit rounds symbol sizes up to whole points); the
+  configuration a game passes is the one it rendered them with.
+- **Text types:** `NSParagraphStyle`/`NSMutableParagraphStyle`,
+  `NSTextAlignment`, `NSLineBreakMode` and the `.paragraphStyle` and
+  `.baselineOffset` keys, which corelibs Foundation leaves to the UI
+  frameworks; `NSMutableString(initialCapacity:)` (corelibs has only
+  `init(capacity:)`, and an extension can't add `init()`).
+- **Settings:** `UIApplication.openSettingsURLString` opens the app's own
+  page in Android's settings (`device.openAppSettings` on the channel).
+
 ### The platform layer
 
 Everything Apple-shaped that needs a device goes through one channel

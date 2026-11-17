@@ -47,7 +47,13 @@ open class SKLabelNode: SKNode {
     }
     open var numberOfLines: Int = 1 { didSet { invalidateLayout() } }
     open var preferredMaxLayoutWidth: CGFloat = 0 { didSet { invalidateLayout() } }
+    #if canImport(Darwin)
     open var lineBreakMode: Int = 0
+    #else
+    /// Carried, as SpriteKit's starts it (measured); the layout wraps at
+    /// words whenever it wraps.
+    open var lineBreakMode: NSLineBreakMode = .byTruncatingTail
+    #endif
     open var blendMode: SKBlendMode = .alpha
 
     /// The text with its attributes, as SpriteKit takes it. What the games
