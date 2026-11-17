@@ -1151,8 +1151,7 @@ against Apple's own where Apple's runs on the Mac:
   what follows starts only on time left over, so a `.run` after a step that
   ends right on a frame runs on the next one; a group runs a finished child
   no more (`ActionTimingTests`, each case measured with `SKRenderer`).
-- `SKAction.timingFunction` (Hue Rings' easing closures are
-  `SKActionTimingFunction`s), measured the same way on macOS 27.2
+- `SKAction.timingFunction` (and `SKActionTimingFunction`), measured the same way on macOS 27.2
   (`ActionTimingFunctionTests`): it runs on what the timing mode gives,
   `f(mode(t))`; what it returns is clamped to 0...1, so an overshooting
   curve holds at the end, and the action is done once it reaches 1 (a back
@@ -1162,8 +1161,8 @@ against Apple's own where Apple's runs on the Mac:
   too, which the shim once left out. A repeat ignores both. `reversed()`
   keeps the mode and the function as they are: SpriteKit does not mirror an
   ease-in into an ease-out.
-- `SKShader` is open, so a game can wrap a shader in a type of its own (Hue
-  Rings' `CirclePattern`). Its designated initialisers are main-actor
+- `SKShader` is open, so a game can wrap a shader and its uniforms in a
+  type of its own. Its designated initialisers are main-actor
   isolated (`@preconcurrency`, so a building thread may still make one): a
   game that builds main-actor by default gets Swift's initialiser stubs in
   its subclass isolated that way, and a nonisolated original made them a

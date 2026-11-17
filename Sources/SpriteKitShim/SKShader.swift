@@ -10,8 +10,8 @@ import Foundation
 /// change is textual and belongs in one place, not in 31 files.
 ///
 /// Open, as SpriteKit's is: a game may subclass it to wrap one shader and its
-/// uniforms in a type (Hue Rings' `CirclePattern` and `PlusPattern` call
-/// `super.init(source:uniforms:)` and set their uniforms from properties).
+/// uniforms in a type, calling `super.init(source:uniforms:)` and setting the
+/// uniforms from properties.
 open class SKShader: @unchecked Sendable {
     open var source: String? { didSet { revision &+= 1 } }
     open var uniforms: [SKUniform] { didSet { revision &+= 1 } }

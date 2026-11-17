@@ -230,7 +230,7 @@ struct ActionTimingFunctionTests {
 @Suite("Shaders: subclassing")
 @MainActor
 struct ShaderSubclassTests {
-    /// A shader wrapped in a type, as Hue Rings' `CirclePattern` is.
+    /// A shader wrapped in a type of its own.
     final class Pattern: SKShader {
         var progress: CGFloat { didSet { uniformNamed("u_progress")?.floatValue = Float(progress) } }
 
