@@ -8,10 +8,14 @@ import Foundation
 /// `gl_FragColor` sites, so the shim keeps the source verbatim and the
 /// renderer rewrites the preamble to GLSL ES 3.0 at upload — the dialect
 /// change is textual and belongs in one place, not in 31 files.
-public final class SKShader: @unchecked Sendable {
-    public var source: String? { didSet { revision &+= 1 } }
-    public var uniforms: [SKUniform] { didSet { revision &+= 1 } }
-    public var attributes: [SKAttribute] = [] { didSet { revision &+= 1 } }
+///
+/// Open, as SpriteKit's is: a game may subclass it to wrap one shader and its
+/// uniforms in a type, calling `super.init(source:uniforms:)` and setting the
+/// uniforms from properties.
+open class SKShader: @unchecked Sendable {
+    open var source: String? { didSet { revision &+= 1 } }
+    open var uniforms: [SKUniform] { didSet { revision &+= 1 } }
+    open var attributes: [SKAttribute] = [] { didSet { revision &+= 1 } }
 
     /// Set by the renderer once compiled and linked.
     public var glProgram: UInt32 = 0
@@ -22,12 +26,21 @@ public final class SKShader: @unchecked Sendable {
     /// `revision` as it stood when `glProgram` was built.
     public var glProgramRevision = 0
 
+    // The designated initialisers are main-actor isolated (and
+    // `@preconcurrency`, so a shader may still be made on a building thread,
+    // as below). A game builds main-actor by default, and a subclass in it
+    // that has initialisers of its own gets Swift's stubs for these two,
+    // isolated as the subclass is: a nonisolated original here makes those
+    // stubs an isolation mismatch and the subclass fails to compile.
+    // SpriteKit's own, Objective-C, has no stubs to disagree.
+    @preconcurrency @MainActor
     public init(source: String) {
         self.source = source
         uniforms = []
         Self.noteMade(self)
     }
 
+    @preconcurrency @MainActor
     public init(source: String, uniforms: [SKUniform]) {
         self.source = source
         self.uniforms = uniforms
@@ -85,15 +98,15 @@ public final class SKShader: @unchecked Sendable {
 
     public var name: String?
 
-    public func addUniform(_ uniform: SKUniform) {
+    open func addUniform(_ uniform: SKUniform) {
         uniforms.append(uniform)
     }
 
-    public func uniformNamed(_ name: String) -> SKUniform? {
+    open func uniformNamed(_ name: String) -> SKUniform? {
         uniforms.first { $0.name == name }
     }
 
-    public func removeUniformNamed(_ name: String) {
+    open func removeUniformNamed(_ name: String) {
         uniforms.removeAll { $0.name == name }
     }
 }

@@ -28,6 +28,7 @@ let package = Package(
         .library(name: "StoreKit", targets: ["StoreKit"]),
         .library(name: "CryptoKit", targets: ["CryptoKit"]),
         .library(name: "GameKit", targets: ["GameKit"]),
+        .library(name: "GameplayKit", targets: ["GameplayKit"]),
         .library(name: "Network", targets: ["Network"]),
         .library(name: "Metal", targets: ["Metal"]),
         .library(name: "CoreVideo", targets: ["CoreVideo"]),
@@ -66,6 +67,9 @@ let package = Package(
         // The beta's solve log's two (`PlaytestLog`).
         .target(name: "GameKit",
                 path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
+        // Empty: the SpriteKit template's unused `import GameplayKit`.
+        .target(name: "GameplayKit",
+                path: "Sources/GameplayKit", swiftSettings: [v5, shimDefine]),
         .target(name: "Network",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/Network", swiftSettings: [v5, shimDefine]),

@@ -38,10 +38,12 @@ final class BackdropRingTests: XCTestCase {
         XCTAssertEqual(node.position.x, 0, accuracy: 0.001)
     }
 
-    func testReversingAnEaseInEasesOut() {
+    func testReversingKeepsTheEase() {
+        // SpriteKit keeps the mode on a reversed action (measured with
+        // `SKRenderer` on a Mac, `ActionTimingFunctionTests`).
         let move = SKAction.moveBy(x: 1, y: 0, duration: 1)
         move.timingMode = .easeIn
-        XCTAssertEqual(move.reversed().timingMode, .easeOut)
+        XCTAssertEqual(move.reversed().timingMode, .easeIn)
     }
 
     func testFollowGoesAlongThePathAtAnEvenSpeed() {
