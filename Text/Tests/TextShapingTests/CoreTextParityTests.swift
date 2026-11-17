@@ -54,5 +54,20 @@ import Testing
             }
         }
     }
+
+    @Test("Vertical metrics match Core Text's, unrounded", arguments: ["Montserrat-Regular", "Montserrat-SemiBold", "KoHo-Bold"])
+    func verticalMetricsMatch(font: String) throws {
+        _ = Self.registered
+        // Small and fractional sizes, where whole-pixel rounding moves a
+        // label's line a point or more.
+        for size: CGFloat in [10, 12, 15.5, 32] {
+            let ours = try #require(Fonts.engine.fontMetrics(FontKey(name: font, size: size)))
+            let ctFont = CTFontCreateWithName(font as CFString, size, nil)
+            let theirs = (ascent: CTFontGetAscent(ctFont), descent: CTFontGetDescent(ctFont), leading: CTFontGetLeading(ctFont))
+            #expect(abs(ours.ascent - theirs.ascent) < 0.01, "\(font) \(size) ascent: \(ours.ascent) against \(theirs.ascent)")
+            #expect(abs(ours.descent - theirs.descent) < 0.01, "\(font) \(size) descent: \(ours.descent) against \(theirs.descent)")
+            #expect(abs(ours.leading - theirs.leading) < 0.01, "\(font) \(size) leading: \(ours.leading) against \(theirs.leading)")
+        }
+    }
 }
 #endif

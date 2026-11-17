@@ -213,11 +213,16 @@ final class FaceHandle {
             return FontMetrics(ascent: 0, descent: 0, leading: 0, capHeight: 0, xHeight: 0)
         }
         let scaled = size.pointee.metrics
-        let ascent = CGFloat(scaled.ascender) / 64
-        let descent = -CGFloat(scaled.descender) / 64          // FreeType's is negative
-        let lineHeight = CGFloat(scaled.height) / 64
         let upem = CGFloat(ftFace.pointee.units_per_EM)
         let scale = upem > 0 ? self.size / upem : 0
+        // A scalable face's size metrics are rounded out to whole pixels
+        // (ascender up, descender down), a point apiece at 72 dpi; CoreText's
+        // are the font's units scaled, so those are read instead.
+        let face = ftFace.pointee
+        let isScalable = face.face_flags & FT_Long(FT_FACE_FLAG_SCALABLE) != 0 && scale > 0
+        let ascent = isScalable ? CGFloat(face.ascender) * scale : CGFloat(scaled.ascender) / 64
+        let descent = isScalable ? -CGFloat(face.descender) * scale : -CGFloat(scaled.descender) / 64 // FreeType's is negative
+        let lineHeight = isScalable ? CGFloat(face.height) * scale : CGFloat(scaled.height) / 64
 
         var capHeight = ascent * 0.7
         var xHeight = ascent * 0.5

@@ -22,11 +22,10 @@ struct MetricsTests {
     func scaling() throws {
         let small = try #require(Fonts.engine.fontMetrics(Fonts.display(20)))
         let large = try #require(Fonts.engine.fontMetrics(Fonts.display(40)))
-        // FreeType grid-fits a face's global metrics to whole pixels, so
-        // doubling the size doubles them to within a few per cent rather
-        // than exactly.
-        #expect(abs(large.ascent - small.ascent * 2) / large.ascent < 0.05)
-        #expect(abs(large.lineHeight - small.lineHeight * 2) / large.lineHeight < 0.05)
+        // A scalable face's metrics are its units scaled, as Core Text's
+        // are, so doubling the size doubles them.
+        #expect(abs(large.ascent - small.ascent * 2) < 0.001)
+        #expect(abs(large.lineHeight - small.lineHeight * 2) < 0.001)
     }
 
     @Test("Measurement is stable across repeated calls")
