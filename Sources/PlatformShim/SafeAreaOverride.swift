@@ -1,10 +1,10 @@
 import Foundation
 
 /// `-SafeAreaInsets top,left,bottom,right`, in points: a debug launch
-/// argument of the Android port's alone, which has the game laid out within
-/// those insets instead of the device's (`AndroidGameController.layout`), so
-/// a parity run can give the emulator an iPhone's safe area as well as its
-/// screen (`Tools/Capture/parity.js`). Release builds never read it.
+/// argument of the runtime's alone, which has the game laid out within
+/// those insets instead of the device's, so a run comparing Android with
+/// Apple can give the emulator an iPhone's safe area as well as its screen.
+/// Release builds never read it.
 public struct SafeAreaOverride: Equatable, Sendable {
     public var top: CGFloat
     public var left: CGFloat

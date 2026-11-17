@@ -1,7 +1,7 @@
 import Foundation
 
-/// Google Play Billing behind `BillingBackend`: the full game's price, buying
-/// it, acknowledging it, and what the player owns.
+/// Google Play Billing behind `BillingBackend`: a product's price, buying it,
+/// acknowledging it, and what the player owns.
 ///
 /// The Billing Library itself is in Java (`PlayBilling.java`), which only
 /// reports. The decisions are here, where the host tests reach them:
@@ -13,13 +13,13 @@ import Foundation
 ///     share), as StoreKit's revocations do on Apple.
 ///   - **A purchase** ends `.purchased`, `.pending` (cash at a shop, a
 ///     parent's approval: it completes later, by an update or the next
-///     query, and the game unlocks then), `.cancelled` or `.failed`. Play's
+///     query, and the game grants it then), `.cancelled` or `.failed`. Play's
 ///     "already owned" is taken as a restore: the query that follows decides.
 ///   - **Acknowledgement**: every purchased, unacknowledged purchase is
 ///     acknowledged once a session (Play refunds one left unacknowledged for
 ///     three days); one that fails is tried again after the next query.
 ///   - **When it was bought** is Play's `purchaseTime`, which stands in for
-///     StoreKit's `originalPurchaseDate` in the launch event's rule.
+///     StoreKit's `originalPurchaseDate`.
 public final class PlayBilling: BillingBackend {
     public enum State: String, Sendable {
         case purchased
@@ -72,8 +72,9 @@ public final class PlayBilling: BillingBackend {
         Set(purchases.filter { $0.state == .purchased }.flatMap(\.products))
     }
 
-    /// Play isn't offered in mainland China, the one place the full game is
-    /// free on the App Store, so nothing is free here.
+    /// Nothing is free here: a product priced free in one territory on the
+    /// App Store (mainland China, say, where Play isn't offered) has no such
+    /// price on Play.
     public var freeProducts: Set<String> { [] }
 
     /// The earliest purchase time of each product owned.
@@ -200,7 +201,7 @@ public final class PlayBilling: BillingBackend {
             finish(product, .cancelled)
         case "owned":
             // Bought already (on another device, or before a reinstall):
-            // the query decides, and the game unlocks if it is so.
+            // the query decides, and the game grants it if it is so.
             awaitingOwned.formUnion(product.map { [$0] } ?? Array(purchaseWaiters.keys))
             channel.call("billing.restore")
         default:

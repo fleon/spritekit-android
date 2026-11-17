@@ -11,7 +11,7 @@ import Glibc
 // Without these, a game expression mixing `SIMD2<Float>` arithmetic with
 // `sin(angle)` on a `Float` has no answer, and the type checker searches every
 // operator until it gives up ("unable to type-check this expression in
-// reasonable time") — `BackdropWarp.crown` was the first to hit it.
+// reasonable time").
 
 @_transparent public func sin(_ x: Float) -> Float { sinf(x) }
 @_transparent public func cos(_ x: Float) -> Float { cosf(x) }
@@ -37,7 +37,7 @@ import Glibc
 // corelibs Foundation gives `CGFloat` the transcendental functions but not
 // the rounding ones, which Darwin's CoreGraphics overlay does. Without them a
 // `ceil(optionalLabel?.frame.width ?? 0)` takes the `Double` overload and
-// cannot convert the optional (`SelectButtonNode`).
+// cannot convert the optional.
 @_transparent public func floor(_ x: CGFloat) -> CGFloat { x.rounded(.down) }
 @_transparent public func ceil(_ x: CGFloat) -> CGFloat { x.rounded(.up) }
 @_transparent public func round(_ x: CGFloat) -> CGFloat { x.rounded() }

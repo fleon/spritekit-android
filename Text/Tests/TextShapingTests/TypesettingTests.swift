@@ -60,7 +60,7 @@ struct TypesettingTests {
         #expect(count > 0)
         #expect(count <= text.utf16.count)
 
-        // The slice the game would take is valid text, not a cut codepoint.
+        // The slice a game would take is valid text, not a cut codepoint.
         let utf16 = Array(text.utf16)
         let piece = String(decoding: utf16[0..<count], as: UTF16.self)
         #expect(piece.unicodeScalars.allSatisfy { $0.value >= 0x0E00 && $0.value <= 0x0E7F })
@@ -68,7 +68,7 @@ struct TypesettingTests {
 
     @Test("Starting part-way through continues from there")
     func resumes() {
-        let text = "Unlock the full game and keep it forever"
+        let text = "Unlock every level and keep them forever"
         let font = Fonts.display(18)
         let first = Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: 100)
         let second = Typesetting.suggestLineBreak(text, font: font, startingAt: first, maxWidth: 100)

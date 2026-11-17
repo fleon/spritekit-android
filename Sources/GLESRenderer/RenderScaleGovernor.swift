@@ -4,8 +4,8 @@ import Foundation
 /// scale) for Auto, once for a device, from how frames kept time.
 ///
 /// A phone's GPU can be too slow to fill every pixel of its screen a frame:
-/// a Galaxy M31 (Mali-G72 MP3, 1080 × 2340) drew Sunny Garden at 19 fps at
-/// full size, 39 at 0.67 and 60 at 0.5, almost exactly in step with the
+/// a Mali-G72 MP3 phone (1080 × 2340) drew a scene of full-screen shaders
+/// at 19 fps at full size, 39 at 0.67 and 60 at 0.5, almost exactly in step with the
 /// pixels drawn. So the renderer can draw each frame at a scale and stretch
 /// it onto the screen.
 ///
@@ -17,19 +17,17 @@ import Foundation
 /// windows (`heavyShare`) within their budget, as soon as that choice is the
 /// same from the first half of what it measured as from all of it, or else
 /// at `longestMeasure`. Callers keep the choice for the device, so it never
-/// changes again (`decided`). A graphics setting the player picks takes the
-/// choice away; a picked rate has a choice of its own.
+/// changes again (`decided`). A graphics setting a game lets the player pick
+/// takes the choice away; a picked rate has a choice of its own.
 ///
 /// It judges by the wall clock, every `window` frames, from their mean (how
 /// many frames a second it kept up: frames paced on whole refreshes mix
 /// on-time and doubled ones as the GPU runs past its budget). GPU timer
-/// queries can't be trusted for it: the M31's driver answers a frame that
+/// queries can't be trusted for it: a Mali-G72's driver answers a frame that
 /// draws into more than one target with nonsense.
 ///
-/// Shared by both platforms: Android's renderer (`SceneRenderer`, through a
-/// symlink in `Android/Sources/GLESRenderer`; the game's own copy, for
-/// `DisplaySettings`, through another in GameCompat) and the Apple game view
-/// (`RenderScaleController`).
+/// Plain Swift with no GL in it, so a game can use the same governor on
+/// Apple for its own view; on Android the renderer runs it (`SceneRenderer`).
 nonisolated public struct RenderScaleGovernor: Equatable {
     /// A frame rate and render scale to draw at.
     public struct Rung: Equatable, CustomStringConvertible {
@@ -44,8 +42,8 @@ nonisolated public struct RenderScaleGovernor: Equatable {
         public var description: String { "\(rate) fps at \(String(format: "%.2f", scale))" }
     }
 
-    /// The settings' five graphics tiers, Highest to Lowest, evenly spaced
-    /// in sharpness.
+    /// Five render-scale tiers, Highest to Lowest, evenly spaced in
+    /// sharpness, for a game's graphics setting.
     public static let steps: [Double] = [1, 0.875, 0.75, 0.625, 0.5]
     /// The tiers Auto chooses between: Highest to Medium.
     public static let autoSteps: [Double] = Array(steps.prefix(3))
@@ -167,7 +165,7 @@ nonisolated public struct RenderScaleGovernor: Equatable {
     /// The largest of `scales` whose share of the first one's pixels would
     /// have brought the heavier of `demands` (measured at it) within their
     /// budget, else the smallest: the GPU's work falls with the pixels, as
-    /// on the M31.
+    /// on a Mali-G72.
     static func choose(_ scales: [Double], demands: ArraySlice<Double>) -> Double {
         guard !demands.isEmpty else { return scales[0] }
         let sorted = demands.sorted()

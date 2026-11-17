@@ -3,9 +3,9 @@
 Shaping, metrics, rasterising and a glyph atlas: HarfBuzz and FreeType under
 a Swift API, and the `TextProvider` the shim asks for its label layout.
 
-A package of its own, like `Compat`, and for the same kind of reason. It is
-the only part of the port with C dependencies, and putting them in
-`../Package.swift` would make `swift build` there need a cmake run first —
+A package of its own, like `Modules` and `Shell`. It has C dependencies of
+its own (FreeType and HarfBuzz), and putting them in `../Package.swift` would
+make `swift build` there need a cmake run first —
 for everyone working on the scene graph, the actions or the renderer, none of
 whom need text. So the shim never links FreeType. It calls whatever provider
 has been registered with `TextMetrics`, and with none registered a label
@@ -55,9 +55,9 @@ ABIs does.
 ## The API
 
 ```swift
-let engine = try TextEngine.install(fontsAt: "…/Assets/Fonts")   // once, at start-up
+let engine = try TextEngine.install(fontsAt: "…/Fonts")   // once, at start-up
 
-let font = FontKey(name: "ChironGoRoundTC-Black", size: 32)
+let font = FontKey(name: "SomeFont-Black", size: 32)
 engine.fontMetrics(font)                  // ascent, descent, leading, cap and x height
 engine.measure("Play", font: font)        // advance and ink box
 engine.breakLines(text, font: font, maxWidth: 180)
@@ -65,24 +65,25 @@ engine.shape(text, font: font)            // [ShapedRun] of [ShapedGlyph]
 engine.placedGlyphs(text, font: font)     // the same, rasterised into the atlas
 ```
 
-`install` registers the three files in `Assets/Fonts` and sets itself as
-`TextMetrics.provider`, which is what gives `SKLabelNode.contentFrame` and
+`install` registers the `.ttf` files in that directory (or the ones it is
+handed, in order: `files:`) and sets itself as `TextMetrics.provider`, which is what gives `SKLabelNode.contentFrame` and
 `UIFont.lineHeight` real answers.
 
 ### Faces
 
-The game asks for faces by the names in `GeometryHelpers.swift` —
-`ChironGoRoundTC-Black`, `-ExtraBold`, `-SemiBold` — and those are **named
-instances of one variable file**, not three faces. Registering
-`ChironGoRoundTC-Variable.ttf` makes all of them available: the names come
-out of the font's own name table (each instance's PostScript name), and
-asking for one sets the axis with `FT_Set_Named_Instance` before the
-`hb_font_t` is made. `KoHo-Bold` is an ordinary static face.
+A game asks for faces by PostScript name — `SomeFont-Black`, `-ExtraBold`,
+`-SemiBold` — and a variable font's are **named instances of one file**, not
+separate faces. Registering `SomeFont-Variable.ttf` makes all of them
+available: the names come out of the font's own name table (each instance's
+PostScript name), and asking for one sets the axis with
+`FT_Set_Named_Instance` before the `hb_font_t` is made. A static face is
+registered under its own name.
 
 A face is made per size rather than resized, over bytes shared across every
-size of a file, because an `FT_Face` carries its size as state — and Chiron
-is 50 MB, so the bytes are worth sharing. Sizes are kept to FreeType's own
-1/64 pt grain, so animating a label's scale cannot make a face per frame.
+size of a file, because an `FT_Face` carries its size as state — and a large
+variable font can be tens of megabytes, so the bytes are worth sharing.
+Sizes are kept to FreeType's own 1/64 pt grain, so animating a label's
+scale cannot make a face per frame.
 
 A face is also **stateful within one size**: `FT_Load_Glyph` writes into one
 glyph slot, so two threads measuring different strings in the same font
@@ -99,7 +100,7 @@ one run per script so HarfBuzz gets the right script tag, with digits, spaces
 and punctuation joining whichever run they sit in.
 
 Lines are shaped and measured as Core Text measures them on Apple, which
-the game is laid out by: HarfBuzz shapes with its own OpenType functions
+a game is laid out by: HarfBuzz shapes with its own OpenType functions
 over the face at 64 units to the font unit (`FaceHandle.exactFont`, with the
 named instance's variations), so advances come out in floating point rather
 than FreeType's 1/64 point a glyph, and a glyph's ink is the box round its
@@ -122,13 +123,13 @@ each with a test of its own against what `FT_Get_Char_Index` alone gives:
 | ลำ | SARA AM splits into NIKHAHIT + SARA AA, **reordered** so the mark comes first: 2 characters, **3 glyphs**, clusters `0, 3, 3` | 2 glyphs, neither of them the right one |
 | ที่ | the tone mark takes its shifted form over a consonant with an ascender | the plain mark, colliding |
 | ญุ | the consonant swaps for its **tail-less** form so the below-vowel fits | the tailed form, overlapping |
-| สวิตช์ลิง | marks carry no advance and are nudged into place by GPOS | marks drawn at the pen |
+| สิทธิ์ | marks carry no advance and are nudged into place by GPOS | marks drawn at the pen |
 
 ### Line breaking
 
-`LineBreak` is not UAX #14 and not ICU — the game ships no ICU and the Swift
-SDK for Android carries no line-break tables. It covers the three cases the
-19 languages need: after spaces and hyphens; between almost any two Chinese
+`LineBreak` is not UAX #14 and not ICU — an app need not ship ICU and the
+Swift SDK for Android carries no line-break tables. It covers the three
+cases the supported scripts need: after spaces and hyphens; between almost any two Chinese
 or Japanese characters, held off by a small kinsoku set; and, for Thai, at
 each grapheme-cluster boundary **except** straight after a leading vowel
 (เ แ โ ใ ไ), which is written before the consonant it sounds after and must
@@ -136,7 +137,7 @@ never be stranded at a line end.
 
 Thai is properly broken with a dictionary, and there isn't one here. The
 fallback breaks mid-word, which is wrong and visible; it never breaks a
-cluster, which would be wrong and unreadable. If the Thai copy starts looking
+cluster, which would be wrong and unreadable. If Thai text starts looking
 bad, a dictionary is the fix, and it goes behind this one function.
 
 ### The atlas
@@ -175,21 +176,19 @@ the alignment modes place, on both axes: `.left` puts its left edge on the
 origin, `.center` its middle (rounded down), `.right` its right edge;
 `.baseline` puts its bottom at the ink's rounded-down bottom, `.center` its
 middle, `.top` and `.bottom` its edges. So a descender lifts a centred label
-(`TextHelpers.capitalsOffset` undoes it for buttons), and every frame is a
-point or two wider and taller than the ink, which the game's pills, buttons
-and language rows are sized by. Every Black frame matches SpriteKit's to the
+(a game undoes it with a line's glyph-path bounds to centre capitals), and
+every frame is a point or two wider and taller than the ink, which a game's
+pills and buttons are sized by. Every Black frame matches SpriteKit's to the
 point; in the lighter instances 2% come out a point narrower, where a long
 line's fractional advance deltas (above) tip its ink over a whole point.
-Several lines (`numberOfLines` other than 1, which the game never sets) keep
-a simpler layout.
+Several lines (`numberOfLines` other than 1) keep a simpler layout.
 
-## CoreText, and `TextHelpers.swift`
+## CoreText
 
-`Source/Utils/TextHelpers.swift` compiles on Android **unchanged** and runs
-there. It is pure CoreText — `wrappedLines` runs a `CTTypesetter`,
-`capitalsOffset` reads a `CTLine`'s glyph-path bounds, `TextBlockNode`
-measures each line with `NSString.size(withAttributes:)` — and all of that
-now resolves:
+A game's own text helpers may be pure CoreText — a `CTTypesetter` to wrap
+lines, a `CTLine`'s glyph-path bounds to centre capitals,
+`NSString.size(withAttributes:)` to measure — and all of that resolves on
+Android unchanged:
 
 - `SpriteKitShim/Typesetting.swift` does the work, over
   `TextMetrics.provider`, so it carries **no C dependency** and is
@@ -199,21 +198,16 @@ now resolves:
   `NSAttributedString.Key.font` and `NSString.size(withAttributes:)`. It is
   Android-only, because on Apple the real ones are right there.
 
-That the file *compiles* a build proves. That it *works* it cannot: on
-Android its `NSAttributedString` is corelibs Foundation's holding a Swift
-`UIFont`, and its typesetter is the shim reading that back out. `../Probe`
-runs the real `wrappedLines`, `capitalsOffset` and `TextBlockNode` on a
-device and checks what they produce.
+That such a file *compiles* a build proves. That it *works* only a device
+can: on Android its `NSAttributedString` is corelibs Foundation's holding a
+Swift `UIFont`, and its typesetter is the shim reading that back out.
+`CoreTextBreakParityTests` holds the typesetter to Core Text's on the Mac.
 
 ## Next
 
-- **`Compat/Sources/GameCompat/Stubs.swift`** still stubs `FontRegistry` and
-  `Localization.scriptFontName` / `lineHeightRatio`. All three become one
-  call to `TextEngine.install` plus the language pick, and land with the
-  localisation ring.
-- **Colour and bitmap strikes** are rejected rather than drawn. The game has
-  no emoji in its own text, but a player-typed level name might.
+- **Colour and bitmap strikes** are rejected rather than drawn. Emoji in
+  player-typed text would need them.
 - **Sub-pixel positioning.** Glyphs are rasterised on the pixel grid and the
-  shaper's fractional offsets ride on top. At the sizes the game uses that is
-  what SpriteKit does too; if small text looks uneven on a device, the fix is
-  a few horizontal sub-pixel variants per glyph in the atlas.
+  shaper's fractional offsets ride on top. At usual UI sizes that is what
+  SpriteKit does too; if small text looks uneven on a device, the fix is a
+  few horizontal sub-pixel variants per glyph in the atlas.

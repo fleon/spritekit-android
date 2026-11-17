@@ -1,10 +1,9 @@
 #if !canImport(Darwin)
 import Foundation
 
-// The two CoreFoundation calls the game makes, which corelibs keeps to
-// itself: `JSONText.canonical` (`DesignerFeed`) tells a JSON `true` from a
-// `1` by asking whether an `NSNumber` is a `CFBoolean`, so a level's
-// fingerprint writes `true` as the Level Designer's does.
+// Two CoreFoundation calls, which corelibs keeps to itself: code writing
+// canonical JSON tells a JSON `true` from a `1` by asking whether an
+// `NSNumber` is a `CFBoolean`, so it writes `true` as Apple's does.
 
 public typealias CFTypeID = UInt
 

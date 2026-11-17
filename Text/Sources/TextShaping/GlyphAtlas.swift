@@ -176,8 +176,8 @@ public final class GlyphAtlas: @unchecked Sendable {
 
             let page = AtlasPage(width: pageSize, height: pageSize)
             guard let rect = page.place(width: width, height: height, padding: padding) else {
-                // Bigger than a whole page: a font size the game does not
-                // use. Better nothing than a silently cropped glyph.
+                // Bigger than a whole page: a font size no label should use.
+                // Better nothing than a silently cropped glyph.
                 return nil
             }
             store.append(page)

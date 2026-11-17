@@ -25,6 +25,10 @@ enum Fonts {
 
     static let hiragino = "/System/Library/Fonts/Hiragino Sans GB.ttc"
     static let appleSDGothic = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+    /// Whether the Mac's Han and Hangul faces are there; the tests that
+    /// need them are skipped where they aren't.
+    static let hasCJK = FileManager.default.fileExists(atPath: hiragino)
+        && FileManager.default.fileExists(atPath: appleSDGothic)
 
     /// One engine for the whole run, every size sharing each file's bytes.
     static let engine: TextEngine = {
