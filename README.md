@@ -504,9 +504,12 @@ Where it differs from Apple:
   tells its delegate it has finished, so the game's dismissal runs as on
   Apple. Play's list of all leaderboards takes no time span or collection.
 - As on Apple, only `GKGameCenterViewController` (a view controller) is
-  main-actor isolated. `GKLeaderboard`'s asynchronous calls run on the main
-  actor, and `GKAccessPoint.trigger` reaches the backend there, since the
-  backend lives on the main thread.
+  main-actor isolated. `GKLeaderboard`'s `async` calls are nonisolated and
+  run on their caller's actor, so Swift 6 code awaits them from any actor,
+  as it does Apple's; they reach the backend on the main actor, where
+  it lives, as `GKAccessPoint.trigger` does. `Modules/Checks` holds game
+  code calling GameKit in Swift 6, Swift 5, and Swift 5 with the main actor
+  as default, which `Scripts/check-android.sh` compiles.
 
 Play's half lives in the game's app, in its Play Games service, under
 `games`. Every request carries a `request` number its answer repeats; an

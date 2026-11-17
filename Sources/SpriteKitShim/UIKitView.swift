@@ -325,7 +325,7 @@ open class UIView {
 /// Presenting draws nothing: it calls the presented controller's
 /// `viewDidAppear(_:)` at once, so a stand-in for a system controller (Game
 /// Center's) can open the Android counterpart from there.
-@MainActor
+@preconcurrency @MainActor
 open class UIViewController {
     open var view: UIView!
 

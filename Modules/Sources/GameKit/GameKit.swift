@@ -169,8 +169,10 @@ public func ~= (code: GKError.Code, error: Error) -> Bool {
 /// it, else nowhere). Every completion handler runs on the main actor, once:
 /// signed out with `.notAuthenticated`, without Play Games with
 /// `.notSupported`, and with `.communicationsFailure` when Play says no or
-/// doesn't answer in time. Not actor-isolated, as Apple's isn't; its
-/// asynchronous work runs on the main actor, where the backend lives.
+/// doesn't answer in time. Not actor-isolated, as Apple's isn't, and its
+/// `async` calls are nonisolated, running on the caller's actor: a caller on
+/// any actor awaits them, while the backend's work runs on the main actor,
+/// where it lives.
 public final class GKLeaderboard {
     public enum TimeScope: Int, Sendable {
         case today = 0
@@ -235,20 +237,15 @@ public final class GKLeaderboard {
     ) {
         Task { @MainActor in
             do {
-                completionHandler(try await loadLeaderboards(IDs: leaderboardIDs), nil)
+                completionHandler(try await leaderboardInfo(leaderboardIDs).map(GKLeaderboard.init), nil)
             } catch {
                 completionHandler(nil, error)
             }
         }
     }
 
-    @MainActor
-    public static func loadLeaderboards(IDs leaderboardIDs: [String]?) async throws -> [GKLeaderboard] {
-        do {
-            return try await backend.loadLeaderboards(leaderboardIDs).map(GKLeaderboard.init)
-        } catch {
-            throw GKError(leaderboard: error)
-        }
+    nonisolated(nonsending) public static func loadLeaderboards(IDs leaderboardIDs: [String]?) async throws -> [GKLeaderboard] {
+        try await leaderboardInfo(leaderboardIDs).map(GKLeaderboard.init)
     }
 
     /// Sends `score` to the leaderboards in `leaderboardIDs` for `player`
@@ -263,7 +260,7 @@ public final class GKLeaderboard {
     ) {
         Task { @MainActor in
             do {
-                try await submitScore(score, context: context, player: player, leaderboardIDs: leaderboardIDs)
+                try await send(score, context: context, to: leaderboardIDs)
                 completionHandler(nil)
             } catch {
                 completionHandler(error)
@@ -271,18 +268,13 @@ public final class GKLeaderboard {
         }
     }
 
-    @MainActor
-    public static func submitScore(
+    nonisolated(nonsending) public static func submitScore(
         _ score: Int,
         context: Int,
         player: GKPlayer,
         leaderboardIDs: [String]
     ) async throws {
-        do {
-            try await backend.submitScore(score, context: context, to: leaderboardIDs)
-        } catch {
-            throw GKError(leaderboard: error)
-        }
+        try await send(score, context: context, to: leaderboardIDs)
     }
 
     public func submitScore(
@@ -294,9 +286,8 @@ public final class GKLeaderboard {
         Self.submitScore(score, context: context, player: player, leaderboardIDs: [baseLeaderboardID], completionHandler: completionHandler)
     }
 
-    @MainActor
-    public func submitScore(_ score: Int, context: Int, player: GKPlayer) async throws {
-        try await Self.submitScore(score, context: context, player: player, leaderboardIDs: [baseLeaderboardID])
+    nonisolated(nonsending) public func submitScore(_ score: Int, context: Int, player: GKPlayer) async throws {
+        try await Self.send(score, context: context, to: [baseLeaderboardID])
     }
 
     /// The scores at the ranks in `range` (from 1, up to 100 at a time), the
@@ -307,27 +298,23 @@ public final class GKLeaderboard {
         range: NSRange,
         completionHandler: @escaping @MainActor (Entry?, [Entry]?, Int, Error?) -> Void
     ) {
+        let id = baseLeaderboardID
         Task { @MainActor in
             do {
-                let (local, entries, total) = try await loadEntries(for: playerScope, timeScope: timeScope, range: range)
-                completionHandler(local, entries, total, nil)
+                let scores = try await Self.scores(id, playerScope.collection, timeScope.timeSpan, Self.ranks(range))
+                completionHandler(scores.local.map(Entry.init), scores.entries.map(Entry.init), scores.total, nil)
             } catch {
                 completionHandler(nil, nil, 0, error)
             }
         }
     }
 
-    @MainActor
-    public func loadEntries(
+    nonisolated(nonsending) public func loadEntries(
         for playerScope: PlayerScope,
         timeScope: TimeScope,
         range: NSRange
     ) async throws -> (Entry?, [Entry], Int) {
-        guard range.location >= 1, (1...100).contains(range.length) else {
-            throw GKError(.invalidParameter)
-        }
-        let ranks = range.location...(range.location + range.length - 1)
-        let scores = try await load(playerScope.collection, timeScope, ranks)
+        let scores = try await Self.scores(baseLeaderboardID, playerScope.collection, timeScope.timeSpan, Self.ranks(range))
         return (scores.local.map(Entry.init), scores.entries.map(Entry.init), scores.total)
     }
 
@@ -338,9 +325,11 @@ public final class GKLeaderboard {
         timeScope: TimeScope,
         completionHandler: @escaping @MainActor (Entry?, [Entry]?, Error?) -> Void
     ) {
+        let id = baseLeaderboardID, asked = Set(players.map(\.gamePlayerID))
         Task { @MainActor in
             do {
-                let (local, entries) = try await loadEntries(for: players, timeScope: timeScope)
+                let scores = try await Self.scores(id, .public, timeScope.timeSpan, nil)
+                let (local, entries) = Self.entries(scores, asked)
                 completionHandler(local, entries, nil)
             } catch {
                 completionHandler(nil, nil, error)
@@ -348,25 +337,58 @@ public final class GKLeaderboard {
         }
     }
 
-    @MainActor
-    public func loadEntries(for players: [GKPlayer], timeScope: TimeScope) async throws -> (Entry?, [Entry]) {
-        let scores = try await load(.public, timeScope, nil)
-        let local = scores.local.map(Entry.init)
+    nonisolated(nonsending) public func loadEntries(for players: [GKPlayer], timeScope: TimeScope) async throws -> (Entry?, [Entry]) {
         let asked = Set(players.map(\.gamePlayerID))
-        return (local, [local].compactMap { $0 }.filter { asked.contains($0.player.gamePlayerID) })
+        return Self.entries(try await Self.scores(baseLeaderboardID, .public, timeScope.timeSpan, nil), asked)
     }
 
+    // The async entry points are nonisolated, as Apple's are, and run on
+    // their caller's actor, so a caller on any actor, the main one included,
+    // can await them and keep using the leaderboard and entries it gets. Each
+    // reaches the backend, which lives on the main actor, through one of
+    // these, handing it only Sendable values and taking Sendable values
+    // back; the GameKit objects are made on the caller's side.
+
     @MainActor
-    private func load(
-        _ collection: LeaderboardCollection, _ timeScope: TimeScope, _ ranks: ClosedRange<Int>?
-    ) async throws -> LeaderboardScores {
+    private static func leaderboardInfo(_ ids: [String]?) async throws -> [LeaderboardInfo] {
         do {
-            return try await Self.backend.loadScores(
-                baseLeaderboardID, timeSpan: timeScope.timeSpan, collection: collection, range: ranks
-            )
+            return try await backend.loadLeaderboards(ids)
         } catch {
             throw GKError(leaderboard: error)
         }
+    }
+
+    @MainActor
+    private static func send(_ score: Int, context: Int, to ids: [String]) async throws {
+        do {
+            try await backend.submitScore(score, context: context, to: ids)
+        } catch {
+            throw GKError(leaderboard: error)
+        }
+    }
+
+    @MainActor
+    private static func scores(
+        _ id: String, _ collection: LeaderboardCollection, _ timeSpan: LeaderboardTimeSpan, _ ranks: ClosedRange<Int>?
+    ) async throws -> LeaderboardScores {
+        do {
+            return try await backend.loadScores(id, timeSpan: timeSpan, collection: collection, range: ranks)
+        } catch {
+            throw GKError(leaderboard: error)
+        }
+    }
+
+    /// Game Center's range as ranks, or `.invalidParameter`.
+    private static func ranks(_ range: NSRange) throws -> ClosedRange<Int> {
+        guard range.location >= 1, (1...100).contains(range.length) else {
+            throw GKError(.invalidParameter)
+        }
+        return range.location...(range.location + range.length - 1)
+    }
+
+    private static func entries(_ scores: LeaderboardScores, _ asked: Set<String>) -> (Entry?, [Entry]) {
+        let local = scores.local.map(Entry.init)
+        return (local, [local].compactMap { $0 }.filter { asked.contains($0.player.gamePlayerID) })
     }
 }
 
