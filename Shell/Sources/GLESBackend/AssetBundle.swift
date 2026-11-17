@@ -86,8 +86,8 @@ public enum AssetBundle {
     }
 
     /// Every font file the game staged in the APK's `fonts/`, as an iOS app
-    /// lists its own in `UIAppFonts`. The text stack's own three come first,
-    /// in its order (`TextEngine.fontFileNames`), since the first face
+    /// lists its own in `UIAppFonts`. Any of the text stack's preferred files
+    /// (`TextEngine.fontFileNames`) come first, in its order, since the first face
     /// registered is what a label with no font name draws in; the rest
     /// follow by name.
     static func fontFiles() -> [String] {

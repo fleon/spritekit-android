@@ -124,11 +124,11 @@ public func CTLineGetBoundsWithOptions(_ line: CTLine, _ options: CTLineBoundsOp
 
 
 // MARK: Registering fonts
-
-/// Switchlings' `FontRegistry` registers the bundled faces through this. On
-/// Android the shell has registered every file in the APK's `fonts/` before
-/// the first scene (`AssetBundle.installFonts`, as an iOS app's `UIAppFonts`
-/// are), so there is nothing left to do; the call answers yes.
+//
+// The shell registers every file in the APK's `fonts/` before the first
+// scene (`AssetBundle.installFonts`, as an iOS app's `UIAppFonts` are); a
+// game that registers a file itself goes through the font manager below, as
+// on Apple.
 public typealias CFURL = URL
 public typealias CFString = String
 
@@ -145,11 +145,20 @@ public enum CTFontManagerScope: UInt32, Sendable {
     case none = 0, process, persistent, session, user
 }
 
+/// Registers the font file at `fontURL` with the text stack. False, with the
+/// error, for a file registered before or one that isn't a font, as on Apple.
+/// A file the shell registered at launch registers once for the game without
+/// being read again. With no text stack installed, yes.
 @discardableResult
 public func CTFontManagerRegisterFontsForURL(
     _ fontURL: CFURL, _ scope: CTFontManagerScope, _ error: UnsafeMutablePointer<Unmanaged<CFError>?>?
 ) -> Bool {
-    true
+    let result = TextMetrics.catalog?.registerFont(at: fontURL.path) ?? .registered
+    guard result == .registered else {
+        error?.pointee = Unmanaged.passRetained(CFError(result))
+        return false
+    }
+    return true
 }
 
 /// Registers each font file in `fontURLs` (`URL`s) with the text stack, then
