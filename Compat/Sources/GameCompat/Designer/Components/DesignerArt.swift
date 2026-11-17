@@ -1,1 +1,0 @@
-../../../../../../Source/Designer/Components/DesignerArt.swift

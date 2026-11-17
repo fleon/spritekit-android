@@ -47,20 +47,20 @@ let package = Package(
             name: "TextShaping",
             dependencies: [
                 "CTextShaping",
-                .product(name: "SpriteKitShim", package: "Android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             path: "Sources/TextShaping",
             swiftSettings: [v5, shimDefine]
         ),
         .executableTarget(
             name: "TextProbe",
-            dependencies: ["TextShaping", .product(name: "SpriteKitShim", package: "Android")],
+            dependencies: ["TextShaping", .product(name: "SpriteKitShim", package: "spritekit-android")],
             path: "Sources/TextProbe",
             swiftSettings: [v5, shimDefine]
         ),
         .testTarget(
             name: "TextShapingTests",
-            dependencies: ["TextShaping", .product(name: "SpriteKitShim", package: "Android")],
+            dependencies: ["TextShaping", .product(name: "SpriteKitShim", package: "spritekit-android")],
             path: "Tests/TextShapingTests",
             swiftSettings: [v5, shimDefine]
         ),

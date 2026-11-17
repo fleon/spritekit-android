@@ -26,7 +26,7 @@ import PackageDescription
 // The targets, and why there are four:
 //
 //   CAndroidShell  the C the clang importer cannot reach on its own.
-//   CSwitchlingsAudio  the AAC decoder, over Android's MediaCodec.
+//   CAndroidAudio  the AAC decoder, over Android's MediaCodec.
 //   SDLAudio       the audio backend: SDL3 for output and sound effects,
 //                  the decoder above for the soundtrack.
 //   CZlib          Android's own zlib, for inflating the art's PNGs.
@@ -44,8 +44,8 @@ import PackageDescription
 //                  calls. It depends on GLESBackend only to install it;
 //                  nothing in the shell knows what a sprite is.
 //
-// No target here depends on a game. The game's package (../Compat for
-// Switchlings) depends on this one and builds the APK's library.
+// No target here depends on a game. The game's package depends on this one
+// and builds the APK's library (its `AndroidShell` product).
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 // The frame loop, the renderer and the game share one thread, which is the
@@ -55,12 +55,12 @@ let v5 = SwiftSetting.swiftLanguageMode(.v5)
 let mainActor = SwiftSetting.defaultIsolation(MainActor.self)
 
 let package = Package(
-    name: "SwitchlingsShell",
+    name: "SpriteKitAndroidShell",
     products: [
         // The shell, for a game's package to build its app library from: the
         // game's entry target calls `Shell.start(argc:argv:game:)` from its
         // `SDL_main` and the game's package makes the dynamic library the APK
-        // loads (Switchlings': `AndroidShell` in ../Compat). The shell
+        // loads. The shell
         // depends on no game.
         .library(name: "AndroidShellKit", targets: ["AndroidShell", "GLESBackend", "ShellCore"]),
     ],
@@ -72,16 +72,16 @@ let package = Package(
     ],
     targets: [
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
-        .target(name: "CSwitchlingsAudio", path: "Sources/CSwitchlingsAudio"),
-        .target(name: "CSwitchlingsMedia", path: "Sources/CSwitchlingsMedia"),
+        .target(name: "CAndroidAudio", path: "Sources/CAndroidAudio"),
+        .target(name: "CAndroidMedia", path: "Sources/CAndroidMedia"),
         // A share film's encoding, over MediaCodec and MediaMuxer: the
         // device half of PlatformShim's AVFoundation stand-ins.
         .target(
             name: "FilmMedia",
             dependencies: [
-                "CSwitchlingsAudio",
-                "CSwitchlingsMedia",
-                .product(name: "PlatformShim", package: "Android"),
+                "CAndroidAudio",
+                "CAndroidMedia",
+                .product(name: "PlatformShim", package: "spritekit-android"),
             ],
             path: "Sources/FilmMedia",
             swiftSettings: [v5, shimDefine]
@@ -92,7 +92,7 @@ let package = Package(
             name: "ShellCore",
             dependencies: [
                 "CAndroidShell",
-                .product(name: "SpriteKitShim", package: "Android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             path: "Sources/ShellCore",
             swiftSettings: [v5, shimDefine, mainActor]
@@ -102,9 +102,9 @@ let package = Package(
             name: "SDLAudio",
             dependencies: [
                 "CAndroidShell",
-                "CSwitchlingsAudio",
+                "CAndroidAudio",
                 "ShellCore",
-                .product(name: "PlatformShim", package: "Android"),
+                .product(name: "PlatformShim", package: "spritekit-android"),
             ],
             path: "Sources/SDLAudio",
             swiftSettings: [v5, shimDefine, mainActor]
@@ -116,10 +116,10 @@ let package = Package(
                 "CAndroidShell",
                 "CZlib",
                 "ShellCore",
-                .product(name: "SpriteKitShim", package: "Android"),
-                .product(name: "GLESRenderer", package: "Android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
+                .product(name: "GLESRenderer", package: "spritekit-android"),
                 .product(name: "TextShaping", package: "Text"),
-                .product(name: "PlatformShim", package: "Android"),
+                .product(name: "PlatformShim", package: "spritekit-android"),
             ],
             path: "Sources/GLESBackend",
             swiftSettings: [v5, shimDefine, mainActor]
@@ -133,7 +133,7 @@ let package = Package(
                 "GLESBackend",
                 "SDLAudio",
                 "FilmMedia",
-                .product(name: "SpriteKitShim", package: "Android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             path: "Sources/AndroidShell",
             swiftSettings: [v5, shimDefine],
@@ -154,7 +154,7 @@ let package = Package(
                 // Android's own media stack, for decoding the soundtrack's AAC.
                 .linkedLibrary("mediandk", .when(platforms: [.android])),
                 // The main queue's drain, which the frame loop calls
-                // (`switchlings_drain_main_queue`).
+                // (`ska_drain_main_queue`).
                 .linkedLibrary("dispatch", .when(platforms: [.android])),
             ]
         ),

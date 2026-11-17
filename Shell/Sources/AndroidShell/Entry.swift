@@ -20,7 +20,9 @@ extension Shell {
     ///         _ argc: Int32,
     ///         _ argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
     ///     ) -> Int32 {
-    ///         Shell.start(argc: argc, argv: argv, game: MyGameController.self)
+    ///         Shell.start(argc: argc, argv: argv,
+    ///                     app: AppIdentity(name: "My Game", bundleIdentifier: "com.example.mygame", key: "mygame"),
+    ///                     game: MyGameController.self)
     ///     }
     ///
     /// The signature is fixed by SDL's `SDL_main_func`. `configure` runs
@@ -29,9 +31,13 @@ extension Shell {
     nonisolated public static func start(
         argc: Int32,
         argv: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+        app: AppIdentity,
         game: any GameHost.Type,
         configure: (@MainActor () -> Void)? = nil
     ) -> Int32 {
+        // Who the app is, before anything logs or reads a property.
+        AppIdentity.current = app
+
         // SDL runs this on a thread of its own, not the process's first one,
         // and the game asserts it is on the main thread before it primes a
         // shader. This is where that becomes true; it has to be the first thing
@@ -42,11 +48,11 @@ extension Shell {
 
         // What the game prints (`-Markers`' lines, above all) goes to logcat,
         // under the shell's own tag: an app's standard output goes nowhere.
-        _ = switchlings_redirect_stdio("Switchlings")
+        _ = ska_redirect_stdio(app.name)
 
         // `Task { @MainActor in … }` runs on this thread too, between frames.
         let executor = MainActorJobs.executorReference
-        if switchlings_set_main_executor(executor.identity, UInt(executor.implementation)) == 0 || !MainActorJobs.isInstalled {
+        if ska_set_main_executor(executor.identity, UInt(executor.implementation)) == 0 || !MainActorJobs.isInstalled {
             Log.error("could not take over the main executor — main-actor work will never run")
         }
         // From here on this thread is the main actor's: everything the game,

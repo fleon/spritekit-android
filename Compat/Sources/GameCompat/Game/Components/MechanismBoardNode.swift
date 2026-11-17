@@ -1,1 +1,0 @@
-../../../../../../Source/Game/Components/MechanismBoardNode.swift

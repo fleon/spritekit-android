@@ -5,7 +5,7 @@ import Foundation
 // MP4, an AAC encoder writing an M4A, a compressed-audio decoder, and a
 // remux that copies tracks from files into one. On Android these are the
 // NDK's MediaCodec, MediaMuxer and MediaExtractor (`Shell/Sources/
-// CSwitchlingsMedia`), as the soundtrack's decoder already is; everything
+// CAndroidMedia`), as the soundtrack's decoder already is; everything
 // above them — the AVFoundation names, the frame timing, the colour
 // conversion, WAV files, the mix's buffers — is here and tested on the Mac.
 

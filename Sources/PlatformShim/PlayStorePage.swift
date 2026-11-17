@@ -1,12 +1,14 @@
 import Foundation
+import SpriteKitShim
 
 /// The game's page on Google Play, which Android's shares link in place of
 /// the App Store's. The game builds its App Store link itself
 /// (`SolutionShare.appStoreLink`, in a file the port compiles unchanged), so
 /// the share sheet swaps it for this as it sorts the items (`ShareRequest`).
 public enum PlayStorePage {
-    /// The release app's ID: a debug build's suffix never has a page of its own.
-    public static let packageName = "com.fleon.switchlings"
+    /// The release app's ID (`AppIdentity`): a debug build's suffix never
+    /// has a page of its own.
+    public static var packageName: String { AppIdentity.current.bundleIdentifier }
 
     /// The page, in `language` (an `AppLanguage` code) when given.
     public static func url(language: String? = nil) -> URL {

@@ -1,7 +1,7 @@
 import CAndroidShell
 import ShellCore
 
-/// `debug.switchlings.poison` (debug builds only), to make a forgiving GPU
+/// `debug.<app>.poison` (debug builds only), to make a forgiving GPU
 /// draw as Adreno's did, comma-separated:
 /// - `targets`: every off-screen target's colour and stencil filled with
 ///   junk before its own clear, so a clear that leaves anything behind shows.
@@ -11,7 +11,7 @@ import ShellCore
 enum RenderPoison {
     #if DEBUG
     static let flags: Set<Substring> = {
-        guard let value = DebugProperty.string("debug.switchlings.poison") else { return [] }
+        guard let value = DebugProperty.string("poison") else { return [] }
         let flags = Set(value.split(separator: ","))
         Log.info("poison: \(value)")
         return flags

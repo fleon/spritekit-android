@@ -37,14 +37,14 @@ public enum Shell {
     public static func run(
         makeRenderer factory: ((RenderContext) -> FrameRenderer)? = nil
     ) -> Int32 {
-        Log.info("Switchlings Android shell starting (SDL \(sdlVersion))")
+        Log.info("\(AppIdentity.current.name) Android shell starting (SDL \(sdlVersion))")
         // `DispatchQueue.main` and the main actor run on this thread, drained
         // once a frame below — but only if libdispatch bound its main queue
         // here, which it does to whichever thread loaded it first. That is
         // this one because `MainActivity.loadLibraries` leaves
         // libAndroidShell.so to SDL's own dlopen. Without it every
         // `DispatchQueue.main.async` in the game waits for ever.
-        let ownsMainQueue = switchlings_owns_main_queue()
+        let ownsMainQueue = ska_owns_main_queue()
         if ownsMainQueue {
             DispatchQueue.main.async { Log.info("the main queue runs on the game's thread") }
         } else {
@@ -58,7 +58,7 @@ public enum Shell {
         // back or leaves (`SDL_SendAndroidBackButton` when it leaves).
         SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1")
 
-        guard SDL_Init(SWITCHLINGS_INIT_FLAGS) else {
+        guard SDL_Init(SKA_INIT_FLAGS) else {
             Log.error("SDL_Init failed: \(sdlError)")
             return 1
         }
@@ -92,7 +92,7 @@ public enum Shell {
         }
 
         // Android picks the size; the 0 × 0 is ignored for a fullscreen window.
-        guard let window = SDL_CreateWindow("Switchlings", 0, 0, SWITCHLINGS_WINDOW_FLAGS) else {
+        guard let window = SDL_CreateWindow(AppIdentity.current.name, 0, 0, SKA_WINDOW_FLAGS) else {
             Log.error("SDL_CreateWindow failed: \(sdlError)")
             return 1
         }
@@ -131,7 +131,7 @@ public enum Shell {
         SystemBridge.install(window: window)
         // Links while running, the soft keyboard and Paste come from
         // `MainActivity` outside SDL's events (`SystemInbox`).
-        if !switchlings_register_natives() { Log.error("could not register MainActivity's native methods: no links while running, keyboard frame or Paste") }
+        if !ska_register_natives() { Log.error("could not register MainActivity's native methods: no links while running, keyboard frame or Paste") }
         let renderer = (factory ?? makeRenderer ?? { ClearScreenRenderer(context: $0) })(info)
         renderer.rendererDidStart(info)
         renderer.drawableSizeDidChange(to: size)
@@ -157,7 +157,7 @@ public enum Shell {
             let vsync = foreground ? pacer?.nextFrame() : nil
             // What the game queued for the main thread since the last
             // frame: a film's progress and its finish, a sync's catch-up.
-            if ownsMainQueue { switchlings_drain_main_queue() }
+            if ownsMainQueue { ska_drain_main_queue() }
             // Play's and the device's news: a purchase, a sign-in, a saved game.
             PlatformBridge.deliverPendingEvents()
 

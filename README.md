@@ -1,10 +1,67 @@
-# Android
+# SpriteKit for Android
 
-A prototype of the SpriteKit compatibility layer for an Android port, plus
-proof that the game's own presentation sources compile against it unchanged.
+A Swift runtime that runs SpriteKit games on Android: the games' own sources
+compile unedited against it, keeping `import SpriteKit`, `import UIKit`,
+`import CoreGraphics` and the rest, and it draws them with GLES 3 through
+SDL3, with Google Play's billing, achievements and saved games behind the
+games' own managers.
 
-Nothing here is wired into the app: `Switchlings.xcodeproj` does not reference
-it, and the iOS, Mac and Apple TV builds are untouched.
+It was built for Switchlings (fleon/switchlings, from November 2026), whose
+Android port is its first game: 219 of that game's 236 source files compile
+for Android as they are. Most of this README records how each part was
+built and measured there, and so names Switchlings' scenes, worlds and
+devices; what it describes is the runtime's.
+
+## Using it in a game
+
+Check this repository out as a submodule named `spritekit-android` inside
+the game's Android directory (a package's identity is its directory's name,
+and the manifests here refer to this package as "spritekit-android"):
+
+```
+<game>/Android/
+  spritekit-android/   this repository (submodule)
+  Game/                the game's package (Switchlings calls it Compat/)
+  App/                 the game's Gradle project
+```
+
+The game's package depends on these packages by path
+(`spritekit-android`, `spritekit-android/Modules`, `spritekit-android/Shell`)
+and holds:
+
+- **GameCompat**: symlinks into the game's `Source/` at their own paths,
+  leaving out the Apple app's entry (`AppDelegate`, `SceneDelegate`,
+  `GameViewController`) and the managers that reach Apple's services.
+- **The controller**: the Android counterpart of `GameViewController`,
+  adopting `GameHost` (`Shell/Sources/GLESBackend/GameHost.swift`).
+- **The managers' bodies**: the game's `AudioManager`, `StoreManager`,
+  `GameCenterManager`, `ICloudSyncManager` and `HapticsManager`, their API
+  kept name for name, over `PlatformShim`.
+- **The entry**: a target exporting `SDL_main`, which calls
+  `Shell.start(argc:argv:app:game:configure:)` with the app's
+  `AppIdentity` and the controller's type, and a dynamic library product
+  named `AndroidShell` (the library SDL loads).
+
+Scripts find the game from the runtime's parent directory, or from
+`GAME_ANDROID_DIR`, `GAME_PACKAGE_DIR` and `APP_DIR` (`Scripts/config.sh`).
+`Scripts/launch.js` takes the app's package and activity from
+`SKA_APP_PACKAGE` and `SKA_APP_ACTIVITY`. Debug properties are
+`debug.<AppIdentity.key>.*`.
+
+An API a game needs that's missing here is added here, with SpriteKit's
+signatures and behaviour measured against SpriteKit on a Mac, and a host
+test, never worked around in the game.
+
+```
+swift test                                  # host tests, Mac
+Vendor/build.sh android                     # FreeType + HarfBuzz
+Scripts/build-sdl.sh arm64-v8a              # SDL 3.4.20
+Scripts/build-shell.sh --debug arm64-v8a    # the game's AndroidShell
+```
+
+`Scripts/emulators.sh` is the pool of four emulators every project on the
+machine shares (its AVDs and state keep Switchlings' names, since sessions
+use it as it is).
 
 ## Why a shim rather than an engine
 
@@ -55,9 +112,9 @@ imports no game, and the runtime names no product: `PlayBilling` is told
 which products to query.
 
 Still Switchlings-named in the runtime, to go with the move: the C
-functions' `switchlings_` prefix, the log tag, `debug.switchlings.*`
-properties, the `SWITCHLINGS_*` environment variables `MainActivity` sets,
-`CSwitchlingsAudio`/`CSwitchlingsMedia`, the Java package, and
+functions' `ska_` prefix, the log tag, `debug.switchlings.*`
+properties, the `SKA_*` environment variables `MainActivity` sets,
+`CAndroidAudio`/`CAndroidMedia`, the Java package, and
 `RenderScaleGovernor.swift`, which `GLESRenderer` symlinks from `Source/`.
 
 ## Layout
@@ -599,7 +656,7 @@ footsteps, music waiting while the app is away. What went is AVFoundation.
   `SDL_AudioStream` voices each so repeats overlap. SDL's per-stream gain
   and frequency ratio give the volume and the footstep pitch for free.
 - **The soundtrack**: AAC, decoded by Android's own MediaCodec through the
-  NDK's C API (`Shell/Sources/CSwitchlingsAudio`), mixed on a thread of its
+  NDK's C API (`Shell/Sources/CAndroidAudio`), mixed on a thread of its
   own with sample-accurate gain ramps.
 
 Why AAC rather than re-encoding to Ogg or MP3: Android's CDD makes all three
@@ -881,7 +938,7 @@ closed, open), `-Pswitchlings.beta=false` for production. A release build
 must name it (`checkBetaChoice`); a debug build is a beta unless told
 otherwise. Gradle writes it into the base module's assets
 (`SwitchlingsBuild.json`), `MainActivity` puts it in the environment
-(`SWITCHLINGS_BETA`, read by `BetaBuild`), the shell logs which it is at
+(`SKA_BETA`, read by `BetaBuild`), the shell logs which it is at
 launch ("beta build: …" / "not a beta build: …"), and
 `Tools/Play/play.js release` refuses to upload a build that isn't a beta. A
 production release is its own `false` build, never promoted from a testing
@@ -1229,7 +1286,7 @@ clear, `stream` keeps the frame's store rather than orphaning it.
 
 ### What the emulator says, and what it does not
 
-Measured on the shared `switchlings_shell` AVD, which reports
+Measured on the shared `ska_shell` AVD, which reports
 `Android Emulator OpenGL ES Translator (Apple M4 Max)` — it passes through to
 the host GPU, so **the frame times flatter a phone and the draw-call and
 render-target counts do not**. 1080×2400, a six-by-five board of Sky's
@@ -1404,7 +1461,7 @@ go to libdispatch's main queue, which nothing on SDL's thread drained.
 `MainActorJobs` gives the main actor an executor of its own, a queue the
 shell runs at the top of every pass of its loop, on SDL's thread. The
 runtime is told through `swift_task_getMainExecutor_hook`, set in C
-(`switchlings_set_main_executor` in `CAndroidShell`), because its functions
+(`ska_set_main_executor` in `CAndroidShell`), because its functions
 pass a two-word struct in Swift's calling convention; the enqueue hook beside
 it is never reached for the main actor since Swift 6.2, and SE-0469's
 `ExecutorFactory` is not public in the 6.4 Android SDK. The shell logs
@@ -1458,7 +1515,7 @@ cleared level shows a Share button (a tap elsewhere goes on).
 | `SKRenderer` `update(atTime:)`, `render(withViewport:commandBuffer:renderPassDescriptor:)` | `Sources/SpriteKitShim/SKRenderer.swift`: the view's own update (the scene's `update`, then its actions by the time since the last), then the scene flattened into a `DrawList` value, recorded into the command buffer |
 | `MTLDevice`, queue, command buffer, render pass, textures, `waitUntilCompleted` | `Metal.swift`: a command buffer is the passes recorded into it; `commit` hands it to `MetalExecution.executor`, `waitUntilCompleted` blocks on it |
 | `CVPixelBuffer`, its pool, `CVMetalTextureCache` | `CoreVideo.swift`: CPU memory in the format it says (32-bit BGRA); a texture made over one is where a render lands |
-| `AVAssetWriter` + H.264 input + pixel buffer adaptor | `Sources/PlatformShim/Media`: each frame converted to BT.709 video-range YUV (`YUVConversion`) and encoded with MediaCodec into an MP4 (`Shell/Sources/CSwitchlingsMedia`) |
+| `AVAssetWriter` + H.264 input + pixel buffer adaptor | `Sources/PlatformShim/Media`: each frame converted to BT.709 video-range YUV (`YUVConversion`) and encoded with MediaCodec into an MP4 (`Shell/Sources/CAndroidMedia`) |
 | `AVAudioFile`, `AVAudioPCMBuffer`, `AVAudioFormat` | WAV read in Swift (`WAVFile`); AAC read through the soundtrack's own MediaCodec decoder, positioned by presentation time as the game's player is; AAC written through MediaCodec into an M4A, closed when the file goes |
 | `AVMutableComposition` + passthrough `AVAssetExportSession` | MediaExtractor copying each track into one MediaMuxer, interleaved by time |
 | `UIActivityViewController` (`ShareSheet.swift`) | `Compat/.../Platform/ShareSheet.swift`, the platform part: JNI into `MainActivity.shareFile`, `ACTION_SEND` with a `content://` URI from `FilmProvider` (androidx's `FileProvider` contract for the cache directory, without the dependency) |
@@ -1499,7 +1556,7 @@ queue to whichever thread runs its constructor, which was Android's UI
 thread (`System.loadLibrary`), and nothing drained it. `MainActivity` now
 leaves `libAndroidShell.so` to SDL's own `dlopen` on `SDLThread`, so the
 queue is bound there, and `Shell.run` drains it once a frame
-(`switchlings_drain_main_queue`). The shell logs "the main queue runs on
+(`ska_drain_main_queue`). The shell logs "the main queue runs on
 the game's thread" when it took.
 
 ### What the stage shows
@@ -1987,7 +2044,7 @@ game's `LevelShare.code(opening:)` reads only its own scheme.
 
 `MainActivity`'s three natives (`nativeOpenLink`, `nativePaste`,
 `nativeKeyboard`) are registered by the shell on the activity's class
-(`switchlings_register_natives`), since SDL dlopens `libAndroidShell.so`
+(`ska_register_natives`), since SDL dlopens `libAndroidShell.so`
 itself and the class loader never looks there; they leave what they're
 handed in a small locked inbox the frame loop empties (`SystemInbox`). A
 link that arrives before the shell has registered them waits in the
@@ -2058,7 +2115,7 @@ each the `GameViewController` method of the same name:
 
 | argument | on Android |
 |---|---|
-| `-Markers`, `-MarkerClock` | the game's `print` reaches logcat under `Switchlings` (`switchlings_redirect_stdio` pipes stdout and stderr into it, line buffered) |
+| `-Markers`, `-MarkerClock` | the game's `print` reaches logcat under `Switchlings` (`ska_redirect_stdio` pipes stdout and stderr into it, line buffered) |
 | `-Stills` | holds the view still after each marker, as on Apple, its 2.5 s counted from the frame it paused in reaching the screen (an unoptimised build can take longer than that to draw a scene's first frame); the renderer then logs `view held: its last frame is on screen` once the frame it paused in has been swapped (an unoptimised build can take a second or two to draw it), and that's when `adb exec-out screencap -p` takes the still |
 | `-FixedFrameStep 1/30` | the shell's clock (`MediaTime`, the one behind `CACurrentMediaTime()`, every shader's `u_time` and the frames' times) stands still between frames and moves on by exactly that much for each frame drawn, and the view's frame-rate cap stands aside; while the game holds the clock (`MediaClock.hold`, around its builds off the main thread) the shell draws nothing. MainActivity also sets `SWIFT_DETERMINISTIC_HASHING` before Swift loads, so every `Dictionary` and `Set` keeps one order from launch to launch. Apple ignores it |
 | `-SnapshotEvery`, `-SnapshotLevels`, `-FrameLog` | write into the app's cache (`FileManager`'s caches directory is `XDG_CACHE_HOME`, the app's `cache/`): `adb exec-out run-as <package> cat cache/levels/garden-1.png > garden-1.png`. The frame is read back from the renderer before it's swapped (`SceneRenderer.captureNextFrame`) |

@@ -19,7 +19,7 @@ import Foundation
 /// holds.
 ///
 /// The runtime is told through `swift_task_getMainExecutor_hook`, which the
-/// shell sets in C (`switchlings_set_main_executor`, given
+/// shell sets in C (`ska_set_main_executor`, given
 /// `executorReference`): its functions pass a two-word struct in Swift's
 /// calling convention, which a `@convention(c)` Swift function cannot. The
 /// enqueue hook beside it is never reached for the main actor since Swift

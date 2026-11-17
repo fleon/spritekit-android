@@ -20,10 +20,21 @@ ABIS=("arm64-v8a" "x86_64")
 # allowed and deliberate — a binary may require less than the app declares.
 ANDROID_API=23
 
-ANDROID_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENDOR_DIR="$ANDROID_DIR/Vendor"
+# The runtime's own checkout: its vendored builds (SDL, FreeType, HarfBuzz)
+# live under it, gitignored.
+RUNTIME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENDOR_DIR="$RUNTIME_DIR/Vendor"
+
+# The game being built. The runtime is checked out as a submodule named
+# spritekit-android inside the game's Android directory, so that directory
+# is the runtime's parent unless GAME_ANDROID_DIR says otherwise. The game's
+# package (the one with the AndroidShell product: its sources, its entry and
+# the shell) and its Gradle project default to Game/ and App/ there.
+GAME_ANDROID_DIR="${GAME_ANDROID_DIR:-$(cd "$RUNTIME_DIR/.." && pwd)}"
+GAME_PACKAGE_DIR="${GAME_PACKAGE_DIR:-$GAME_ANDROID_DIR/Game}"
+APP_DIR="${APP_DIR:-$GAME_ANDROID_DIR/App}"
 SDL_SRC="$VENDOR_DIR/SDL"
-JNI_LIBS="$ANDROID_DIR/App/app/src/main/jniLibs"
+JNI_LIBS="$APP_DIR/app/src/main/jniLibs"
 
 # What Vendor/build.sh calls an ABI's prefix, e.g. arm64-v8a ->
 # aarch64-linux-android. Not the Swift triple: that carries the API level.

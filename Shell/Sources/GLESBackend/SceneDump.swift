@@ -5,7 +5,7 @@ import SpriteKitShim
 
 /// Logs the scene graph, for finding what draws where on a device:
 ///
-///     adb shell setprop debug.switchlings.dump 1    # then 2, 3… for more
+///     adb shell setprop debug.<app>.dump 1    # then 2, 3… for more
 ///
 /// Read once a second; each new value dumps the scene on screen once, a
 /// line a node, into `scene-dump.txt` in the app's cache (logcat drops
@@ -21,7 +21,7 @@ enum SceneDump {
     static func check(_ view: SKView, at time: TimeInterval) {
         guard time - lastCheck >= 1 else { return }
         lastCheck = time
-        let value = DebugProperty.string("debug.switchlings.dump")
+        let value = DebugProperty.string("dump")
         guard let value, value != last else { return }
         let first = last == nil
         last = value

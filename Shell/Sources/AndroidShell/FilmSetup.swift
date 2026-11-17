@@ -26,7 +26,7 @@ enum FilmSetup {
                 Log.error("a share with no file — Android's share sheet sends one")
                 return false
             }
-            let shared = switchlings_share_file(file.path, ShareRequest.mimeType(of: file), request.text)
+            let shared = ska_share_file(file.path, ShareRequest.mimeType(of: file), request.text)
             if !shared { Log.error("the share sheet could not be opened for \(file.lastPathComponent)") }
             return shared
         }

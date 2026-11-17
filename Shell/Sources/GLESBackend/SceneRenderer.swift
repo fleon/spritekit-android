@@ -230,7 +230,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Whether a scene's frames measure how the game draws (not the
     /// loading screen's).
     public var measuresScene: (SKScene?) -> Bool = { $0 != nil }
-    /// Set once something chose `renderScale` (`debug.switchlings.renderscale`):
+    /// Set once something chose `renderScale` (`debug.<app>.renderscale`):
     /// the governor leaves it alone.
     public var pinsRenderScale = false
     private var sceneTarget: RenderTargetHandle = .none
@@ -1589,7 +1589,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     /// Every action and transition runs this many times slower
-    /// (`debug.switchlings.slowdown`, as the game's `-AnimationSlowdown`), so
+    /// (`debug.<app>.slowdown`, as the game's `-AnimationSlowdown`), so
     /// a 0.1-second fade can be filmed on an emulator.
     public var slowdown: Double = 1
 

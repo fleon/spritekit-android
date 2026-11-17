@@ -110,7 +110,7 @@ public enum GLESBackend {
             // controller's `viewDidAppear`.
             renderer.onAppear = { controller.didAppear() }
         }
-        if let slowdown = DebugProperty.string("debug.switchlings.transitionslowdown").flatMap(Double.init), slowdown > 1 {
+        if let slowdown = DebugProperty.string("transitionslowdown").flatMap(Double.init), slowdown > 1 {
             renderer.view.transitionSpeed = 1 / slowdown
             Log.info("transitions \(slowdown)x slower")
         }
@@ -120,7 +120,7 @@ public enum GLESBackend {
             renderer.pinsRenderScale = true
             Log.info("render scale held at \(pinned)")
         }
-        if let scale = DebugProperty.string("debug.switchlings.renderscale").flatMap(Double.init), scale > 0 {
+        if let scale = DebugProperty.string("renderscale").flatMap(Double.init), scale > 0 {
             renderer.renderScale = scale
             renderer.pinsRenderScale = true
             Log.info("render scale held at \(scale)")
@@ -137,11 +137,11 @@ public enum GLESBackend {
             let choices = host.displayChoices
             renderer?.configure(rate: choices.rate, scales: choices.scales, governs: choices.governs, decided: choices.decided, fromCurrent: true)
         }
-        if let slowdown = DebugProperty.string("debug.switchlings.slowdown").flatMap(Double.init), slowdown > 1 {
+        if let slowdown = DebugProperty.string("slowdown").flatMap(Double.init), slowdown > 1 {
             renderer.slowdown = slowdown
             Log.info("everything \(slowdown)x slower")
         }
-        if DebugProperty.string("debug.switchlings.bandblur") == "off" {
+        if DebugProperty.string("bandblur") == "off" {
             renderer.blursBandsOnly = false
             Log.info("edge blur through the whole backdrop")
         }

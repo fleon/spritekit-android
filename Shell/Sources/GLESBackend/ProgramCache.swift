@@ -22,7 +22,7 @@ import SpriteKitShim
 /// until the folder holds `capacity`; past that the least recently used
 /// (programs an update left behind among them) go at the next launch.
 ///
-/// `debug.switchlings.programcache`, read at start: `off` neither loads nor
+/// `debug.<app>.programcache`, read at start: `off` neither loads nor
 /// keeps any, `clear` deletes every kept program first (every launch while
 /// it's set: cold launches, for measuring).
 ///
@@ -68,7 +68,7 @@ nonisolated final class ProgramCache: @unchecked Sendable {
     /// Made on a thread with a context current. Nil when it's turned off,
     /// the driver offers no binary formats or there's nowhere to keep them.
     init?(driver: String) {
-        let setting = DebugProperty.string("debug.switchlings.programcache")
+        let setting = DebugProperty.string("programcache")
         if setting == "off" {
             Log.info("program cache off")
             return nil

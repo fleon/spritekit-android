@@ -1,4 +1,5 @@
 import Foundation
+import SpriteKitShim
 
 /// iCloud's key-value store, on Play Games **Saved Games**: what
 /// `ICloudSyncManager` syncs (levels cleared, the level left part-way,
@@ -23,7 +24,7 @@ import Foundation
 /// nothing and the game keeps its saved data on the device, as under
 /// `-ICloudOff`.
 public final class PlaySavedGamesCloud: CloudKeyValueStore {
-    public static let snapshotName = "switchlings-progress"
+    public static var snapshotName: String { "\(AppIdentity.current.key)-progress" }
     public static let commitDelay: TimeInterval = 5
     public static let pollInterval: TimeInterval = 120
 
@@ -165,7 +166,7 @@ public final class PlaySavedGamesCloud: CloudKeyValueStore {
         channel.call("games.commitSnapshot", [
             "handle": handle,
             "data": data.base64EncodedString(),
-            "description": "Switchlings",
+            "description": AppIdentity.current.name,
         ])
     }
 

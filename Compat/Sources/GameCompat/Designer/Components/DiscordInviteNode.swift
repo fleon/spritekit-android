@@ -1,1 +1,0 @@
-../../../../../../Source/Designer/Components/DiscordInviteNode.swift

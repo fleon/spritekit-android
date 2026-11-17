@@ -1,5 +1,5 @@
 import CAndroidShell
-import CSwitchlingsAudio
+import CAndroidAudio
 import Foundation
 import PlatformShim
 import ShellCore
@@ -57,8 +57,8 @@ public final class SDLAudioBackend: AudioBackend {
             Log.error("no audio: \(String(cString: SDL_GetError()))")
             return nil
         }
-        var spec = SDL_AudioSpec(format: SWITCHLINGS_AUDIO_FORMAT, channels: Self.channels, freq: Self.deviceRate)
-        let device = SDL_OpenAudioDevice(SWITCHLINGS_DEFAULT_PLAYBACK, &spec)
+        var spec = SDL_AudioSpec(format: SKA_AUDIO_FORMAT, channels: Self.channels, freq: Self.deviceRate)
+        let device = SDL_OpenAudioDevice(SKA_DEFAULT_PLAYBACK, &spec)
         guard device != 0 else {
             Log.error("no audio device: \(String(cString: SDL_GetError()))")
             return nil

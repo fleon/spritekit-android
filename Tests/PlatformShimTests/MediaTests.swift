@@ -325,10 +325,11 @@ struct ShareRequestTests {
 
     @Test("An App Store link becomes the Google Play page; other links stay")
     func linksPlay() {
+        AppIdentity.current = .example
         let film = URL(fileURLWithPath: "/data/user/0/app/cache/Sunny Garden 1.png")
         let appStore = URL(string: "https://apps.apple.com/us/app/switchlings/id6818995219")!
         let play = PlayStorePage.url(language: "ja")
-        #expect(play.absoluteString == "https://play.google.com/store/apps/details?id=com.fleon.switchlings&hl=ja")
+        #expect(play.absoluteString == "https://play.google.com/store/apps/details?id=com.example.game&hl=ja")
         let request = ShareRequest(items: ["I got everyone home.", appStore, film], storePage: play)
         #expect(request.text == "I got everyone home. \(play.absoluteString)")
         #expect(request.files == [film])
@@ -338,12 +339,19 @@ struct ShareRequestTests {
 
     @Test("Play's language names: script subtags become regions, Mexico's Spanish Latin America's")
     func playLanguages() {
-        #expect(PlayStorePage.url().absoluteString == "https://play.google.com/store/apps/details?id=com.fleon.switchlings")
-        #expect(PlayStorePage.url(language: "zh-Hans").query == "id=com.fleon.switchlings&hl=zh-CN")
-        #expect(PlayStorePage.url(language: "zh-Hant").query == "id=com.fleon.switchlings&hl=zh-TW")
-        #expect(PlayStorePage.url(language: "es-MX").query == "id=com.fleon.switchlings&hl=es-419")
-        #expect(PlayStorePage.url(language: "pt-BR").query == "id=com.fleon.switchlings&hl=pt-BR")
+        AppIdentity.current = .example
+        #expect(PlayStorePage.url().absoluteString == "https://play.google.com/store/apps/details?id=com.example.game")
+        #expect(PlayStorePage.url(language: "zh-Hans").query == "id=com.example.game&hl=zh-CN")
+        #expect(PlayStorePage.url(language: "zh-Hant").query == "id=com.example.game&hl=zh-TW")
+        #expect(PlayStorePage.url(language: "es-MX").query == "id=com.example.game&hl=es-419")
+        #expect(PlayStorePage.url(language: "pt-BR").query == "id=com.example.game&hl=pt-BR")
         #expect(PlayStorePage.isAppStorePage(URL(string: "https://itunes.apple.com/app/id1")!))
         #expect(!PlayStorePage.isAppStorePage(URL(string: "https://switchlings.fleon.com/l/ABC123")!))
     }
+}
+
+extension AppIdentity {
+    /// The app the store-page tests stand in for. Every test that sets the
+    /// identity sets this one, so tests running at once agree on it.
+    static let example = AppIdentity(name: "Example", bundleIdentifier: "com.example.game", key: "example")
 }

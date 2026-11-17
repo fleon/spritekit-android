@@ -5,8 +5,8 @@ import Foundation
 /// here is `/system/bin` (the process is `app_process`), which has no
 /// Info.plist, so the title's version line read "Version ()". The app's
 /// `MainActivity` puts the APK's `versionName` and `versionCode` in the
-/// environment before the Swift libraries load (`SWITCHLINGS_VERSION_NAME`,
-/// `SWITCHLINGS_VERSION_CODE`), and this answers with them under Apple's
+/// environment before the Swift libraries load (`SKA_VERSION_NAME`,
+/// `SKA_VERSION_CODE`), and this answers with them under Apple's
 /// keys.
 ///
 /// It shadows Foundation's `infoDictionary`: a member declared in a module
@@ -16,9 +16,9 @@ import Foundation
 public extension Bundle {
     var infoDictionary: [String: Any]? {
         let environment = ProcessInfo.processInfo.environment
-        var info: [String: Any] = ["CFBundleIdentifier": "com.fleon.switchlings", "CFBundleName": "Switchlings"]
-        if let name = environment["SWITCHLINGS_VERSION_NAME"] { info["CFBundleShortVersionString"] = name }
-        if let code = environment["SWITCHLINGS_VERSION_CODE"] { info["CFBundleVersion"] = code }
+        var info: [String: Any] = ["CFBundleIdentifier": AppIdentity.current.bundleIdentifier, "CFBundleName": AppIdentity.current.name]
+        if let name = environment["SKA_VERSION_NAME"] { info["CFBundleShortVersionString"] = name }
+        if let code = environment["SKA_VERSION_CODE"] { info["CFBundleVersion"] = code }
         return info
     }
 

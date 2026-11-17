@@ -1,1 +1,0 @@
-../../Sources/SpriteKitShim/BundleResources.swift

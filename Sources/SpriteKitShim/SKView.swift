@@ -84,7 +84,7 @@ open class SKView: UIView {
 
     /// How fast transitions play: the port's own, for filming a 0.1-second
     /// fade on an emulator that draws a few frames a second
-    /// (`debug.switchlings.transitionslowdown`). Not SpriteKit API.
+    /// (`debug.<app>.transitionslowdown`). Not SpriteKit API.
     public var transitionSpeed: Double = 1
 
     /// A transition under way: the scene leaving, still drawn and still in

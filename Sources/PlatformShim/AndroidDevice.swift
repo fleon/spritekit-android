@@ -5,8 +5,8 @@ import Foundation
 /// Android version ("17") and whether it's an emulator, which records no
 /// solves unless given `-Playtest YES`, as an iOS simulator records none.
 /// `MainActivity` puts them in the environment before the Swift libraries
-/// load (`SWITCHLINGS_DEVICE_MODEL`, `SWITCHLINGS_OS_VERSION`,
-/// `SWITCHLINGS_EMULATOR`). Comes out with the solve log before the store
+/// load (`SKA_DEVICE_MODEL`, `SKA_OS_VERSION`,
+/// `SKA_EMULATOR`). Comes out with the solve log before the store
 /// release.
 public struct AndroidDevice: Equatable, Sendable {
     public let model: String
@@ -21,9 +21,9 @@ public struct AndroidDevice: Equatable, Sendable {
     public static let playtestArgument = "Playtest"
 
     public init(environment: [String: String]) {
-        model = environment["SWITCHLINGS_DEVICE_MODEL"] ?? ""
-        osVersion = environment["SWITCHLINGS_OS_VERSION"] ?? ""
-        isEmulator = environment["SWITCHLINGS_EMULATOR"] == "1"
+        model = environment["SKA_DEVICE_MODEL"] ?? ""
+        osVersion = environment["SKA_OS_VERSION"] ?? ""
+        isEmulator = environment["SKA_EMULATOR"] == "1"
     }
 
     /// The launch's arguments as an emulator takes them: `-Playtest NO`
@@ -44,7 +44,7 @@ public struct AndroidDevice: Equatable, Sendable {
 /// it's chosen when the app is built (`-Pswitchlings.beta=true|false`, which
 /// a release build must name) and Gradle writes it into the base module's
 /// assets (`SwitchlingsBuild.json`), where `MainActivity` reads it into the
-/// environment (`SWITCHLINGS_BETA`) and `play.js` checks an upload to a
+/// environment (`SKA_BETA`) and `play.js` checks an upload to a
 /// testing track has it on. A production build is built with it off, never
 /// promoted from a testing track.
 public struct BetaBuild: Equatable, Sendable {
@@ -56,7 +56,7 @@ public struct BetaBuild: Equatable, Sendable {
     public static let feedArgument = "DesignerLevels"
 
     public init(environment: [String: String]) {
-        isOn = environment["SWITCHLINGS_BETA"] == "1"
+        isOn = environment["SKA_BETA"] == "1"
     }
 
     public init(isOn: Bool) {

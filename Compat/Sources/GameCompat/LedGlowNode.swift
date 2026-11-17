@@ -1,1 +1,0 @@
-../../../../Source/Game/Components/Rig/LedGlowNode.swift

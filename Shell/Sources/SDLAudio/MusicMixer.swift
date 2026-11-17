@@ -1,5 +1,5 @@
 import CAndroidShell
-import CSwitchlingsAudio
+import CAndroidAudio
 import Foundation
 import PlatformShim
 import ShellCore
@@ -109,11 +109,11 @@ final class MusicMixer {
     private var out: [Int16]
     private var scratch: [Int16]
 
-    private let opener = DispatchQueue(label: "com.fleon.switchlings.music-open", qos: .userInitiated)
+    private let opener = DispatchQueue(label: "spritekit.music-open", qos: .userInitiated)
 
     init?(device: SDL_AudioDeviceID, rate: Int32) {
         deviceRate = rate
-        var source = SDL_AudioSpec(format: SWITCHLINGS_AUDIO_FORMAT, channels: Int32(Self.channels), freq: rate)
+        var source = SDL_AudioSpec(format: SKA_AUDIO_FORMAT, channels: Int32(Self.channels), freq: rate)
         var destination = source
         guard let stream = SDL_CreateAudioStream(&source, &destination) else { return nil }
         self.stream = stream
@@ -123,7 +123,7 @@ final class MusicMixer {
         scratch = [Int16](repeating: 0, count: Self.blockFrames * Self.channels)
 
         let thread = Thread { [weak self] in self?.run() }
-        thread.name = "switchlings.music"
+        thread.name = "spritekit.music"
         thread.stackSize = 256 * 1024
         thread.start()
     }

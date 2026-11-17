@@ -159,12 +159,13 @@ struct FrameReport {
     }
 }
 
-/// Reads an Android system property, so a measuring run can be set up with
-/// `adb shell setprop` and no rebuild.
+/// Reads one of the app's Android system properties, `debug.<key>.<name>`
+/// (`AppIdentity.key`), so a measuring run can be set up with `adb shell
+/// setprop` and no rebuild.
 nonisolated public enum DebugProperty {
     public static func string(_ name: String) -> String? {
         var buffer = [CChar](repeating: 0, count: 128)
-        let length = switchlings_property(name, &buffer, Int32(buffer.count))
+        let length = ska_property("debug.\(AppIdentity.current.key).\(name)", &buffer, Int32(buffer.count))
         guard length > 0 else { return nil }
         return String(cString: buffer)
     }

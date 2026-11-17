@@ -1,1 +1,0 @@
-../../../../../Source/Utils/SVGPath.swift

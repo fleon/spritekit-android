@@ -4,8 +4,8 @@
 // pkg-config file (switchlings-text.pc, written by Android/Vendor/build.sh)
 // instead of a Requires: chain, and hb-ft.h gets FreeType's headers in the
 // same include path it expects.
-#ifndef SWITCHLINGS_TEXT_SHIM_H
-#define SWITCHLINGS_TEXT_SHIM_H
+#ifndef SKA_TEXT_SHIM_H
+#define SKA_TEXT_SHIM_H
 
 #include <ft2build.h>
 #include <freetype/freetype.h>

@@ -1,11 +1,11 @@
-import CSwitchlingsAudio
-import CSwitchlingsMedia
+import CAndroidAudio
+import CAndroidMedia
 import Foundation
 import PlatformShim
 
 /// The AVFoundation stand-ins' device half on Android: the NDK's MediaCodec,
-/// MediaMuxer and MediaExtractor, through `CSwitchlingsMedia`, and the
-/// soundtrack's own AAC decoder (`CSwitchlingsAudio`) for reading music.
+/// MediaMuxer and MediaExtractor, through `CAndroidMedia`, and the
+/// soundtrack's own AAC decoder (`CAndroidAudio`) for reading music.
 public final class NDKMediaBackend: MediaBackend {
     public init() {}
 

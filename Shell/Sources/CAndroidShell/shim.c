@@ -9,11 +9,11 @@
 #include <stdio.h>
 #include <unistd.h>
 
-void switchlings_log(int priority, const char *tag, const char *message) {
+void ska_log(int priority, const char *tag, const char *message) {
     __android_log_write(priority, tag, message);
 }
 
-int switchlings_property(const char *name, char *out, int capacity) {
+int ska_property(const char *name, char *out, int capacity) {
     char value[PROP_VALUE_MAX];
     int length = __system_property_get(name, value);
     if (length <= 0 || capacity <= 0) {
@@ -31,25 +31,25 @@ int switchlings_property(const char *name, char *out, int capacity) {
 typedef struct {
     const void *identity;
     uintptr_t implementation;
-} SwitchlingsExecutorRef;
+} SkaExecutorRef;
 
-typedef SwitchlingsExecutorRef (__attribute__((swiftcall)) *SwitchlingsGetMainOriginal)(void);
-typedef SwitchlingsExecutorRef (__attribute__((swiftcall)) *SwitchlingsGetMainHook)(SwitchlingsGetMainOriginal);
+typedef SkaExecutorRef (__attribute__((swiftcall)) *SkaGetMainOriginal)(void);
+typedef SkaExecutorRef (__attribute__((swiftcall)) *SkaGetMainHook)(SkaGetMainOriginal);
 
-static SwitchlingsExecutorRef switchlings_main_executor;
+static SkaExecutorRef ska_main_executor;
 
-static SwitchlingsExecutorRef __attribute__((swiftcall))
-switchlings_get_main_executor(SwitchlingsGetMainOriginal original) {
+static SkaExecutorRef __attribute__((swiftcall))
+ska_get_main_executor(SkaGetMainOriginal original) {
     (void)original;
-    return switchlings_main_executor;
+    return ska_main_executor;
 }
 
-int switchlings_set_main_executor(const void *identity, uintptr_t implementation) {
-    SwitchlingsGetMainHook *hook = (SwitchlingsGetMainHook *)dlsym(RTLD_DEFAULT, "swift_task_getMainExecutor_hook");
+int ska_set_main_executor(const void *identity, uintptr_t implementation) {
+    SkaGetMainHook *hook = (SkaGetMainHook *)dlsym(RTLD_DEFAULT, "swift_task_getMainExecutor_hook");
     if (hook == NULL) { return 0; }
-    switchlings_main_executor.identity = identity;
-    switchlings_main_executor.implementation = implementation;
-    *hook = switchlings_get_main_executor;
+    ska_main_executor.identity = identity;
+    ska_main_executor.implementation = implementation;
+    *hook = ska_get_main_executor;
     return 1;
 }
 
@@ -61,15 +61,15 @@ extern char _dispatch_main_q;
 extern void *dispatch_get_current_queue(void);
 extern void _dispatch_main_queue_callback_4CF(void *ignored);
 
-bool switchlings_owns_main_queue(void) {
+bool ska_owns_main_queue(void) {
     return dispatch_get_current_queue() == (void *)&_dispatch_main_q;
 }
 
-void switchlings_drain_main_queue(void) {
+void ska_drain_main_queue(void) {
     _dispatch_main_queue_callback_4CF(0);
 }
 
-bool switchlings_share_file(const char *path, const char *mime, const char *text) {
+bool ska_share_file(const char *path, const char *mime, const char *text) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject activity = (jobject)SDL_GetAndroidActivity();
     if (env == NULL || activity == NULL) return false;
@@ -94,21 +94,21 @@ bool switchlings_share_file(const char *path, const char *mime, const char *text
     return ok;
 }
 
-static atomic_int switchlings_platform_pending;
+static atomic_int ska_platform_pending;
 
-static void JNICALL switchlings_platform_events_ready(JNIEnv *env, jclass cls) {
+static void JNICALL ska_platform_events_ready(JNIEnv *env, jclass cls) {
     (void)env;
     (void)cls;
-    atomic_store(&switchlings_platform_pending, 1);
+    atomic_store(&ska_platform_pending, 1);
 }
 
-bool switchlings_platform_install(void) {
+bool ska_platform_install(void) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject activity = (jobject)SDL_GetAndroidActivity();
     if (env == NULL || activity == NULL) return false;
     jclass cls = (*env)->GetObjectClass(env, activity);
     JNINativeMethod methods[] = {
-        { "nativePlatformEventsReady", "()V", (void *)switchlings_platform_events_ready },
+        { "nativePlatformEventsReady", "()V", (void *)ska_platform_events_ready },
     };
     bool ok = (*env)->RegisterNatives(env, cls, methods, 1) == JNI_OK;
     if ((*env)->ExceptionCheck(env)) {
@@ -123,16 +123,16 @@ bool switchlings_platform_install(void) {
     (*env)->DeleteLocalRef(env, cls);
     (*env)->DeleteLocalRef(env, activity);
     // Whatever Java queued before the method existed is drained now.
-    atomic_store(&switchlings_platform_pending, 1);
+    atomic_store(&ska_platform_pending, 1);
     return ok;
 }
 
-bool switchlings_platform_take_pending(void) {
-    return atomic_exchange(&switchlings_platform_pending, 0) != 0;
+bool ska_platform_take_pending(void) {
+    return atomic_exchange(&ska_platform_pending, 0) != 0;
 }
 
 /* Copies a Java byte[] into a malloc'd buffer, or NULL. Frees the local ref. */
-static unsigned char *switchlings_copy_bytes(JNIEnv *env, jbyteArray array, int *out_length) {
+static unsigned char *ska_copy_bytes(JNIEnv *env, jbyteArray array, int *out_length) {
     *out_length = 0;
     if (array == NULL) return NULL;
     jsize length = (*env)->GetArrayLength(env, array);
@@ -146,7 +146,7 @@ static unsigned char *switchlings_copy_bytes(JNIEnv *env, jbyteArray array, int 
     return buffer;
 }
 
-static unsigned char *switchlings_platform_invoke(const char *method, const char *signature, const char *name,
+static unsigned char *ska_platform_invoke(const char *method, const char *signature, const char *name,
                                                   const unsigned char *args, int length, int *out_length) {
     *out_length = 0;
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
@@ -171,7 +171,7 @@ static unsigned char *switchlings_platform_invoke(const char *method, const char
             (*env)->ExceptionClear(env);
             answer = NULL;
         }
-        result = switchlings_copy_bytes(env, answer, out_length);
+        result = ska_copy_bytes(env, answer, out_length);
     }
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     (*env)->DeleteLocalRef(env, cls);
@@ -179,31 +179,32 @@ static unsigned char *switchlings_platform_invoke(const char *method, const char
     return result;
 }
 
-unsigned char *switchlings_platform_call(const char *name, const unsigned char *args, int length, int *out_length) {
-    return switchlings_platform_invoke("platformCall", "(Ljava/lang/String;[B)[B", name, args, length, out_length);
+unsigned char *ska_platform_call(const char *name, const unsigned char *args, int length, int *out_length) {
+    return ska_platform_invoke("platformCall", "(Ljava/lang/String;[B)[B", name, args, length, out_length);
 }
 
-unsigned char *switchlings_platform_drain(int *out_length) {
-    return switchlings_platform_invoke("platformDrain", "()[B", NULL, NULL, 0, out_length);
+unsigned char *ska_platform_drain(int *out_length) {
+    return ska_platform_invoke("platformDrain", "()[B", NULL, NULL, 0, out_length);
 }
 
 /* What the game prints, line by line, into logcat. */
-static int switchlings_stdio_pipe[2] = { -1, -1 };
-static const char *switchlings_stdio_tag = "Switchlings";
+static int ska_stdio_pipe[2] = { -1, -1 };
+/* The app's logcat tag, for C that logs too: `ska_redirect_stdio` sets it. */
+const char *ska_log_tag = "SpriteKit";
 
-static void *switchlings_pump_stdio(void *ignored) {
+static void *ska_pump_stdio(void *ignored) {
     (void)ignored;
     char buffer[4096];
     size_t used = 0;
     for (;;) {
-        ssize_t got = read(switchlings_stdio_pipe[0], buffer + used, sizeof(buffer) - 1 - used);
+        ssize_t got = read(ska_stdio_pipe[0], buffer + used, sizeof(buffer) - 1 - used);
         if (got <= 0) break;
         used += (size_t)got;
         size_t start = 0;
         for (size_t at = 0; at < used; at++) {
             if (buffer[at] != '\n') continue;
             buffer[at] = '\0';
-            __android_log_write(ANDROID_LOG_INFO, switchlings_stdio_tag, buffer + start);
+            __android_log_write(ANDROID_LOG_INFO, ska_log_tag, buffer + start);
             start = at + 1;
         }
         if (start > 0) {
@@ -212,23 +213,23 @@ static void *switchlings_pump_stdio(void *ignored) {
         } else if (used == sizeof(buffer) - 1) {
             /* A line longer than the buffer goes out in pieces. */
             buffer[used] = '\0';
-            __android_log_write(ANDROID_LOG_INFO, switchlings_stdio_tag, buffer);
+            __android_log_write(ANDROID_LOG_INFO, ska_log_tag, buffer);
             used = 0;
         }
     }
     return NULL;
 }
 
-bool switchlings_redirect_stdio(const char *tag) {
-    if (switchlings_stdio_pipe[0] >= 0) return true;
-    if (pipe(switchlings_stdio_pipe) != 0) return false;
-    switchlings_stdio_tag = strdup(tag);
+bool ska_redirect_stdio(const char *tag) {
+    if (ska_stdio_pipe[0] >= 0) return true;
+    if (pipe(ska_stdio_pipe) != 0) return false;
+    ska_log_tag = strdup(tag);
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
-    dup2(switchlings_stdio_pipe[1], STDOUT_FILENO);
-    dup2(switchlings_stdio_pipe[1], STDERR_FILENO);
+    dup2(ska_stdio_pipe[1], STDOUT_FILENO);
+    dup2(ska_stdio_pipe[1], STDERR_FILENO);
     pthread_t thread;
-    if (pthread_create(&thread, NULL, switchlings_pump_stdio, NULL) != 0) return false;
+    if (pthread_create(&thread, NULL, ska_pump_stdio, NULL) != 0) return false;
     pthread_detach(thread);
     return true;
 }
@@ -242,56 +243,56 @@ bool switchlings_redirect_stdio(const char *tag) {
 #include <pthread.h>
 #include <stdlib.h>
 
-static pthread_mutex_t switchlings_inbox_lock = PTHREAD_MUTEX_INITIALIZER;
-#define SWITCHLINGS_INBOX_CAPACITY 8
-static char *switchlings_links[SWITCHLINGS_INBOX_CAPACITY];
-static int switchlings_link_count;
-static char *switchlings_pastes[SWITCHLINGS_INBOX_CAPACITY];
-static int switchlings_paste_count;
-static int switchlings_keyboard[2];
-static bool switchlings_keyboard_changed;
+static pthread_mutex_t ska_inbox_lock = PTHREAD_MUTEX_INITIALIZER;
+#define SKA_INBOX_CAPACITY 8
+static char *ska_links[SKA_INBOX_CAPACITY];
+static int ska_link_count;
+static char *ska_pastes[SKA_INBOX_CAPACITY];
+static int ska_paste_count;
+static int ska_keyboard[2];
+static bool ska_keyboard_changed;
 
-static void switchlings_push(JNIEnv *env, jstring text, char **queue, int *count) {
+static void ska_push(JNIEnv *env, jstring text, char **queue, int *count) {
     if (text == NULL) return;
     const char *utf = (*env)->GetStringUTFChars(env, text, NULL);
     if (utf == NULL) return;
-    pthread_mutex_lock(&switchlings_inbox_lock);
-    if (*count < SWITCHLINGS_INBOX_CAPACITY) {
+    pthread_mutex_lock(&ska_inbox_lock);
+    if (*count < SKA_INBOX_CAPACITY) {
         queue[(*count)++] = strdup(utf);
     }
-    pthread_mutex_unlock(&switchlings_inbox_lock);
+    pthread_mutex_unlock(&ska_inbox_lock);
     (*env)->ReleaseStringUTFChars(env, text, utf);
 }
 
-static void JNICALL switchlings_native_open_link(JNIEnv *env, jclass cls, jstring link) {
+static void JNICALL ska_native_open_link(JNIEnv *env, jclass cls, jstring link) {
     (void)cls;
-    switchlings_push(env, link, switchlings_links, &switchlings_link_count);
+    ska_push(env, link, ska_links, &ska_link_count);
 }
 
-static void JNICALL switchlings_native_paste(JNIEnv *env, jclass cls, jstring text) {
+static void JNICALL ska_native_paste(JNIEnv *env, jclass cls, jstring text) {
     (void)cls;
-    switchlings_push(env, text, switchlings_pastes, &switchlings_paste_count);
+    ska_push(env, text, ska_pastes, &ska_paste_count);
 }
 
-static void JNICALL switchlings_native_keyboard(JNIEnv *env, jclass cls, jint height, jint viewHeight) {
+static void JNICALL ska_native_keyboard(JNIEnv *env, jclass cls, jint height, jint viewHeight) {
     (void)env;
     (void)cls;
-    pthread_mutex_lock(&switchlings_inbox_lock);
-    switchlings_keyboard[0] = height;
-    switchlings_keyboard[1] = viewHeight;
-    switchlings_keyboard_changed = true;
-    pthread_mutex_unlock(&switchlings_inbox_lock);
+    pthread_mutex_lock(&ska_inbox_lock);
+    ska_keyboard[0] = height;
+    ska_keyboard[1] = viewHeight;
+    ska_keyboard_changed = true;
+    pthread_mutex_unlock(&ska_inbox_lock);
 }
 
-bool switchlings_register_natives(void) {
+bool ska_register_natives(void) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject activity = (jobject)SDL_GetAndroidActivity();
     if (env == NULL || activity == NULL) return false;
     jclass cls = (*env)->GetObjectClass(env, activity);
     JNINativeMethod methods[] = {
-        { "nativeOpenLink", "(Ljava/lang/String;)V", (void *)switchlings_native_open_link },
-        { "nativePaste", "(Ljava/lang/String;)V", (void *)switchlings_native_paste },
-        { "nativeKeyboard", "(II)V", (void *)switchlings_native_keyboard },
+        { "nativeOpenLink", "(Ljava/lang/String;)V", (void *)ska_native_open_link },
+        { "nativePaste", "(Ljava/lang/String;)V", (void *)ska_native_paste },
+        { "nativeKeyboard", "(II)V", (void *)ska_native_keyboard },
     };
     bool ok = (*env)->RegisterNatives(env, cls, methods, sizeof(methods) / sizeof(methods[0])) == JNI_OK;
     if ((*env)->ExceptionCheck(env)) {
@@ -308,35 +309,35 @@ bool switchlings_register_natives(void) {
     return ok;
 }
 
-static char *switchlings_pop(char **queue, int *count) {
-    pthread_mutex_lock(&switchlings_inbox_lock);
+static char *ska_pop(char **queue, int *count) {
+    pthread_mutex_lock(&ska_inbox_lock);
     char *first = NULL;
     if (*count > 0) {
         first = queue[0];
         memmove(queue, queue + 1, sizeof(char *) * (size_t)(*count - 1));
         (*count)--;
     }
-    pthread_mutex_unlock(&switchlings_inbox_lock);
+    pthread_mutex_unlock(&ska_inbox_lock);
     return first;
 }
 
-char *switchlings_take_link(void) { return switchlings_pop(switchlings_links, &switchlings_link_count); }
+char *ska_take_link(void) { return ska_pop(ska_links, &ska_link_count); }
 
-char *switchlings_take_paste(void) { return switchlings_pop(switchlings_pastes, &switchlings_paste_count); }
+char *ska_take_paste(void) { return ska_pop(ska_pastes, &ska_paste_count); }
 
-bool switchlings_take_keyboard(int *height, int *viewHeight) {
-    pthread_mutex_lock(&switchlings_inbox_lock);
-    bool changed = switchlings_keyboard_changed;
+bool ska_take_keyboard(int *height, int *viewHeight) {
+    pthread_mutex_lock(&ska_inbox_lock);
+    bool changed = ska_keyboard_changed;
     if (changed) {
-        *height = switchlings_keyboard[0];
-        *viewHeight = switchlings_keyboard[1];
-        switchlings_keyboard_changed = false;
+        *height = ska_keyboard[0];
+        *viewHeight = ska_keyboard[1];
+        ska_keyboard_changed = false;
     }
-    pthread_mutex_unlock(&switchlings_inbox_lock);
+    pthread_mutex_unlock(&ska_inbox_lock);
     return changed;
 }
 
-bool switchlings_offer_paste(float x, float y) {
+bool ska_offer_paste(float x, float y) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject activity = (jobject)SDL_GetAndroidActivity();
     if (env == NULL || activity == NULL) return false;
@@ -362,28 +363,28 @@ typedef struct {
     EGLDisplay display;
     EGLContext context;
     EGLSurface surface;
-} switchlings_gl_share;
+} ska_gl_share;
 
-static void *switchlings_gl_share_fail(const char *step) {
+static void *ska_gl_share_fail(const char *step) {
     char message[160];
     snprintf(message, sizeof message, "no shared GL context: %s failed (EGL error 0x%x)", step, eglGetError());
-    switchlings_log(ANDROID_LOG_WARN, "Switchlings", message);
+    ska_log(ANDROID_LOG_WARN, ska_log_tag, message);
     return NULL;
 }
 
-void *switchlings_gl_share_create(void) {
+void *ska_gl_share_create(void) {
     EGLDisplay display = eglGetCurrentDisplay();
     EGLContext current = eglGetCurrentContext();
-    if (display == EGL_NO_DISPLAY || current == EGL_NO_CONTEXT) { return switchlings_gl_share_fail("finding the current context"); }
+    if (display == EGL_NO_DISPLAY || current == EGL_NO_CONTEXT) { return ska_gl_share_fail("finding the current context"); }
     EGLint configID = 0;
-    if (!eglQueryContext(display, current, EGL_CONFIG_ID, &configID)) { return switchlings_gl_share_fail("eglQueryContext"); }
+    if (!eglQueryContext(display, current, EGL_CONFIG_ID, &configID)) { return ska_gl_share_fail("eglQueryContext"); }
     const EGLint configAttributes[] = { EGL_CONFIG_ID, configID, EGL_NONE };
     EGLConfig config;
     EGLint found = 0;
-    if (!eglChooseConfig(display, configAttributes, &config, 1, &found) || found < 1) { return switchlings_gl_share_fail("eglChooseConfig"); }
+    if (!eglChooseConfig(display, configAttributes, &config, 1, &found) || found < 1) { return ska_gl_share_fail("eglChooseConfig"); }
     const EGLint contextAttributes[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
     EGLContext context = eglCreateContext(display, config, current, contextAttributes);
-    if (context == EGL_NO_CONTEXT) { return switchlings_gl_share_fail("eglCreateContext"); }
+    if (context == EGL_NO_CONTEXT) { return ska_gl_share_fail("eglCreateContext"); }
     // No surface where the driver allows it; a pixel of pbuffer where not.
     EGLSurface surface = EGL_NO_SURFACE;
     const char *extensions = eglQueryString(display, EGL_EXTENSIONS);
@@ -391,12 +392,12 @@ void *switchlings_gl_share_create(void) {
         const EGLint surfaceAttributes[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
         surface = eglCreatePbufferSurface(display, config, surfaceAttributes);
         if (surface == EGL_NO_SURFACE) {
-            switchlings_gl_share_fail("eglCreatePbufferSurface");
+            ska_gl_share_fail("eglCreatePbufferSurface");
             eglDestroyContext(display, context);
             return NULL;
         }
     }
-    switchlings_gl_share *share = calloc(1, sizeof(switchlings_gl_share));
+    ska_gl_share *share = calloc(1, sizeof(ska_gl_share));
     if (!share) {
         if (surface != EGL_NO_SURFACE) { eglDestroySurface(display, surface); }
         eglDestroyContext(display, context);
@@ -408,20 +409,20 @@ void *switchlings_gl_share_create(void) {
     return share;
 }
 
-int switchlings_gl_share_make_current(void *handle) {
-    switchlings_gl_share *share = handle;
+int ska_gl_share_make_current(void *handle) {
+    ska_gl_share *share = handle;
     if (!share) { return 0; }
     return eglMakeCurrent(share->display, share->surface, share->surface, share->context) ? 1 : 0;
 }
 
-void switchlings_gl_share_release(void *handle) {
-    switchlings_gl_share *share = handle;
+void ska_gl_share_release(void *handle) {
+    ska_gl_share *share = handle;
     if (!share) { return; }
     eglMakeCurrent(share->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 }
 
-void switchlings_gl_share_destroy(void *handle) {
-    switchlings_gl_share *share = handle;
+void ska_gl_share_destroy(void *handle) {
+    ska_gl_share *share = handle;
     if (!share) { return; }
     if (share->surface != EGL_NO_SURFACE) { eglDestroySurface(share->display, share->surface); }
     eglDestroyContext(share->display, share->context);
@@ -440,109 +441,109 @@ void switchlings_gl_share_destroy(void *handle) {
 #include <time.h>
 
 typedef struct AChoreographer AChoreographer;
-typedef void (*switchlings_frame_cb)(long frameTimeNanos, void *data);
-typedef void (*switchlings_frame_cb64)(int64_t frameTimeNanos, void *data);
+typedef void (*ska_frame_cb)(long frameTimeNanos, void *data);
+typedef void (*ska_frame_cb64)(int64_t frameTimeNanos, void *data);
 
 static struct {
     int state; /* 0 not tried, 1 running, -1 unavailable */
     AChoreographer *choreographer;
-    void (*post)(AChoreographer *, switchlings_frame_cb, void *);
-    void (*post64)(AChoreographer *, switchlings_frame_cb64, void *);
+    void (*post)(AChoreographer *, ska_frame_cb, void *);
+    void (*post64)(AChoreographer *, ska_frame_cb64, void *);
     int64_t latest;
     int64_t fired;
-} switchlings_vsync;
+} ska_vsync;
 
-static void *switchlings_libandroid(void) {
+static void *ska_libandroid(void) {
     static void *library;
     if (!library) { library = dlopen("libandroid.so", RTLD_NOW | RTLD_LOCAL); }
     return library;
 }
 
-static void switchlings_vsync_post(void);
+static void ska_vsync_post(void);
 
-static void switchlings_on_vsync64(int64_t nanos, void *data) {
+static void ska_on_vsync64(int64_t nanos, void *data) {
     (void)data;
-    if (nanos > switchlings_vsync.latest) { switchlings_vsync.latest = nanos; }
-    switchlings_vsync.fired += 1;
+    if (nanos > ska_vsync.latest) { ska_vsync.latest = nanos; }
+    ska_vsync.fired += 1;
     /* Always one waiting, so the next vsync's timestamp is in hand as soon
        as the frame thread looks, however long its frame took. */
-    switchlings_vsync_post();
+    ska_vsync_post();
 }
 
-static void switchlings_on_vsync(long nanos, void *data) { switchlings_on_vsync64((int64_t)nanos, data); }
+static void ska_on_vsync(long nanos, void *data) { ska_on_vsync64((int64_t)nanos, data); }
 
-static void switchlings_vsync_post(void) {
-    if (switchlings_vsync.post64) {
-        switchlings_vsync.post64(switchlings_vsync.choreographer, switchlings_on_vsync64, NULL);
+static void ska_vsync_post(void) {
+    if (ska_vsync.post64) {
+        ska_vsync.post64(ska_vsync.choreographer, ska_on_vsync64, NULL);
     } else {
-        switchlings_vsync.post(switchlings_vsync.choreographer, switchlings_on_vsync, NULL);
+        ska_vsync.post(ska_vsync.choreographer, ska_on_vsync, NULL);
     }
 }
 
-bool switchlings_vsync_start(void) {
-    if (switchlings_vsync.state != 0) { return switchlings_vsync.state == 1; }
-    switchlings_vsync.state = -1;
-    void *library = switchlings_libandroid();
+bool ska_vsync_start(void) {
+    if (ska_vsync.state != 0) { return ska_vsync.state == 1; }
+    ska_vsync.state = -1;
+    void *library = ska_libandroid();
     if (!library) { return false; }
     AChoreographer *(*instance)(void) = (AChoreographer *(*)(void))dlsym(library, "AChoreographer_getInstance");
-    switchlings_vsync.post64 = (void (*)(AChoreographer *, switchlings_frame_cb64, void *))dlsym(library, "AChoreographer_postFrameCallback64");
-    switchlings_vsync.post = (void (*)(AChoreographer *, switchlings_frame_cb, void *))dlsym(library, "AChoreographer_postFrameCallback");
-    if (!instance || (!switchlings_vsync.post64 && !switchlings_vsync.post)) { return false; }
+    ska_vsync.post64 = (void (*)(AChoreographer *, ska_frame_cb64, void *))dlsym(library, "AChoreographer_postFrameCallback64");
+    ska_vsync.post = (void (*)(AChoreographer *, ska_frame_cb, void *))dlsym(library, "AChoreographer_postFrameCallback");
+    if (!instance || (!ska_vsync.post64 && !ska_vsync.post)) { return false; }
     /* The choreographer delivers on the calling thread's looper, which a
        native thread has to be given. */
     if (!ALooper_prepare(ALOOPER_PREPARE_ALLOW_NON_CALLBACKS)) { return false; }
-    switchlings_vsync.choreographer = instance();
-    if (!switchlings_vsync.choreographer) { return false; }
-    switchlings_vsync.state = 1;
-    switchlings_vsync_post();
+    ska_vsync.choreographer = instance();
+    if (!ska_vsync.choreographer) { return false; }
+    ska_vsync.state = 1;
+    ska_vsync_post();
     return true;
 }
 
-int64_t switchlings_monotonic_ns(void) {
+int64_t ska_monotonic_ns(void) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
 }
 
-int64_t switchlings_vsync_poll(int timeout_ms) {
-    if (switchlings_vsync.state != 1) { return 0; }
-    const int64_t before = switchlings_vsync.fired;
+int64_t ska_vsync_poll(int timeout_ms) {
+    if (ska_vsync.state != 1) { return 0; }
+    const int64_t before = ska_vsync.fired;
     /* What's already due, without waiting. */
     while (ALooper_pollOnce(0, NULL, NULL, NULL) == ALOOPER_POLL_CALLBACK) {}
-    if (timeout_ms > 0 && switchlings_vsync.fired == before) {
-        const int64_t deadline = switchlings_monotonic_ns() + (int64_t)timeout_ms * 1000000LL;
-        while (switchlings_vsync.fired == before) {
-            const int64_t left = deadline - switchlings_monotonic_ns();
+    if (timeout_ms > 0 && ska_vsync.fired == before) {
+        const int64_t deadline = ska_monotonic_ns() + (int64_t)timeout_ms * 1000000LL;
+        while (ska_vsync.fired == before) {
+            const int64_t left = deadline - ska_monotonic_ns();
             if (left <= 0) { break; }
             int wait = (int)((left + 999999) / 1000000);
             if (ALooper_pollOnce(wait, NULL, NULL, NULL) == ALOOPER_POLL_TIMEOUT) { break; }
         }
     }
-    return switchlings_vsync.latest;
+    return ska_vsync.latest;
 }
 
-void *switchlings_native_window(SDL_Window *window) {
+void *ska_native_window(SDL_Window *window) {
     return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, NULL);
 }
 
-void *switchlings_egl_surface(SDL_Window *window) {
+void *ska_egl_surface(SDL_Window *window) {
     return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_SURFACE_POINTER, NULL);
 }
 
-int switchlings_native_window_set_buffers(void *window, int width, int height) {
+int ska_native_window_set_buffers(void *window, int width, int height) {
     if (!window) { return -1; }
     ANativeWindow *native = window;
     /* Keep the format SDL chose from the EGL config. */
     return ANativeWindow_setBuffersGeometry(native, width, height, ANativeWindow_getFormat(native));
 }
 
-int switchlings_native_window_set_frame_rate(void *window, float rate) {
+int ska_native_window_set_frame_rate(void *window, float rate) {
     if (!window) { return -1; }
     static int (*setFrameRate)(ANativeWindow *, float, int8_t);
     static int looked;
     if (!looked) {
         looked = 1;
-        void *library = switchlings_libandroid();
+        void *library = ska_libandroid();
         if (library) { setFrameRate = (int (*)(ANativeWindow *, float, int8_t))dlsym(library, "ANativeWindow_setFrameRate"); }
     }
     if (!setFrameRate) { return -1; }
@@ -550,7 +551,7 @@ int switchlings_native_window_set_frame_rate(void *window, float rate) {
     return setFrameRate((ANativeWindow *)window, rate, 0);
 }
 
-bool switchlings_surface_size(int *width, int *height) {
+bool ska_surface_size(int *width, int *height) {
     EGLDisplay display = eglGetCurrentDisplay();
     EGLSurface surface = eglGetCurrentSurface(EGL_DRAW);
     if (display == EGL_NO_DISPLAY || surface == EGL_NO_SURFACE) { return false; }

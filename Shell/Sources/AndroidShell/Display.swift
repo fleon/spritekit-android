@@ -31,8 +31,8 @@ struct VsyncPacer {
     /// Nil where Android gives no choreographer: the loop then runs on the
     /// swap, as it did.
     init?(refreshRate: Int) {
-        guard switchlings_vsync_start() else { return nil }
-        let monotonic = switchlings_monotonic_ns()
+        guard ska_vsync_start() else { return nil }
+        let monotonic = ska_monotonic_ns()
         offset = ShellClock.now - TimeInterval(monotonic) / 1_000_000_000
         period = 1 / Double(max(refreshRate, 1))
     }
@@ -47,9 +47,9 @@ struct VsyncPacer {
     /// The next frame's time, waiting for a vsync if the last frame's hasn't
     /// passed yet.
     mutating func nextFrame() -> TimeInterval {
-        var time = grid(switchlings_vsync_poll(0))
+        var time = grid(ska_vsync_poll(0))
         if let last, time < last + period / 2 {
-            time = grid(switchlings_vsync_poll(Self.waitLimit))
+            time = grid(ska_vsync_poll(Self.waitLimit))
             if time < last + period / 2 { time = last + period }
         }
         last = time
@@ -91,9 +91,9 @@ struct SurfaceScaler {
 
     mutating func apply(scale: CGFloat, drawable: CGSize, frameRate rate: Int, window sdlWindow: OpaquePointer) {
         guard !unsupported else { return }
-        let native = switchlings_native_window(sdlWindow)
+        let native = ska_native_window(sdlWindow)
         guard let native else { return }
-        let egl = switchlings_egl_surface(sdlWindow)
+        let egl = ska_egl_surface(sdlWindow)
         if native != window || egl != surface {
             window = native
             surface = egl
@@ -104,7 +104,7 @@ struct SurfaceScaler {
         let pixels = wanted == drawable ? CGSize.zero : wanted
         if pixels != applied {
             let started = ShellClock.now
-            if switchlings_native_window_set_buffers(native, Int32(pixels.width), Int32(pixels.height)) == 0 {
+            if ska_native_window_set_buffers(native, Int32(pixels.width), Int32(pixels.height)) == 0 {
                 applied = pixels
                 let took = (ShellClock.now - started) * 1000
                 Log.info(pixels == .zero
@@ -117,7 +117,7 @@ struct SurfaceScaler {
         }
         if rate > 0, rate != frameRate {
             frameRate = rate
-            _ = switchlings_native_window_set_frame_rate(native, Float(rate))
+            _ = ska_native_window_set_frame_rate(native, Float(rate))
         }
     }
 
@@ -130,7 +130,7 @@ struct SurfaceScaler {
     /// The buffer being drawn into now, as EGL has it.
     static func current(or drawable: CGSize) -> CGSize {
         var width: Int32 = 0, height: Int32 = 0
-        guard switchlings_surface_size(&width, &height) else { return drawable }
+        guard ska_surface_size(&width, &height) else { return drawable }
         return CGSize(width: CGFloat(width), height: CGFloat(height))
     }
 }

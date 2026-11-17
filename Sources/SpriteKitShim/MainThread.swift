@@ -65,7 +65,7 @@ public enum MainThread {
 /// Stands in for CoreFoundation's own, as `MainThread` explains. Before a
 /// claim it answers the same way CoreFoundation's does.
 @_cdecl("_CFIsMainThread")
-public func switchlingsIsMainThread() -> UInt8 {
+public func skaIsMainThread() -> UInt8 {
     if let claimed = MainThread.claimed {
         return pthread_equal(pthread_self(), claimed) != 0 ? 1 : 0
     }

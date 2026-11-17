@@ -6,7 +6,7 @@
 // syntax): they go as `args64`, base64 of a JSON array, which no shell on
 // the way splits (MainActivity.getArguments).
 //
-//   node Android/Scripts/launch.js [--package com.fleon.switchlings.parity] -- \
+//   node Scripts/launch.js [--package com.example.game.debug] -- \
 //       -StartLevel reef-12 -Stills "move 3@0.05;celebrate@0.7" -settings.musicEnabled "<false/>"
 //
 // Stops the app first, so it starts afresh. Targets $ANDROID_SERIAL
@@ -14,12 +14,14 @@
 // a release build ignores the extra.
 const { execFileSync } = require('child_process');
 
-const DEFAULT_PACKAGE = 'com.fleon.switchlings';
+// The game's wrapper sets these; --package overrides the first.
+const DEFAULT_PACKAGE = process.env.SKA_APP_PACKAGE || '';
+const ACTIVITY = process.env.SKA_APP_ACTIVITY || '';
 
 // The `am start` arguments that hand `args` to the game.
 function startArguments(pkg, args) {
   const encoded = Buffer.from(JSON.stringify(args), 'utf8').toString('base64');
-  return ['shell', 'am', 'start', '-S', '-W', '-n', `${pkg}/com.fleon.switchlings.MainActivity`, '--es', 'args64', encoded];
+  return ['shell', 'am', 'start', '-S', '-W', '-n', `${pkg}/${ACTIVITY || `${DEFAULT_PACKAGE || pkg}.MainActivity`}`, '--es', 'args64', encoded];
 }
 
 function launch(pkg, args, { adb = 'adb', serial } = {}) {

@@ -1,7 +1,9 @@
 #!/bin/bash
 #
-# Cross-compile the Swift shell for the ABIs in config.sh and stage it, with
-# exactly the runtime libraries it needs, into the Gradle project's jniLibs.
+# Cross-compile the game's AndroidShell library (its package, GAME_PACKAGE_DIR
+# in config.sh, which builds the shell with the game in it) for the ABIs in
+# config.sh and stage it, with exactly the runtime libraries it needs, into
+# the game's Gradle project's jniLibs.
 #
 # Needs Scripts/build-sdl.sh to have run first: the shell compiles against
 # SDL's headers and links its .so, and Vendor/build.sh android, because the
@@ -66,7 +68,7 @@ for abi in "${targets[@]}"; do
     # One array so the build and the --show-bin-path query cannot drift: a
     # mismatched flag there gives a path for a build that never happened.
     swiftpm=(
-        --package-path "$ANDROID_DIR/Compat"
+        --package-path "$GAME_PACKAGE_DIR"
         --product AndroidShell
         --swift-sdk "$SWIFT_SDK"
         --triple "$triple"
@@ -89,7 +91,7 @@ for abi in "${targets[@]}"; do
     fi
     # -lSDL3, -lGLESv3, -llog and -lmediandk used to be passed here. They cannot
     # be: `-Xlinker` reaches every link in the build, and since the shell
-    # started linking GameCompat the build also makes a *host* macro plugin
+    # started linking the game the build also makes a *host* macro plugin
     # (Macros, for @NSCodingUnsupported), whose macOS link then went looking
     # for libGLESv3. The libraries are named in Shell/Package.swift instead,
     # on the target that actually needs them. The search path above stays

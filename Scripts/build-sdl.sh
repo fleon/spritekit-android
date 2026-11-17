@@ -2,7 +2,7 @@
 #
 # Cross-compile SDL3 for the ABIs in config.sh and stage it for the APK.
 #
-# Fetches the pinned SDL tag (shallow) into Android/Vendor/SDL, builds a
+# Fetches the pinned SDL tag (shallow) into Vendor/SDL, builds a
 # shared libSDL3.so per ABI, and copies SDL's own Java sources into the
 # Gradle project. Nothing binary is checked in; this script is the source of
 # truth for what ends up in the APK.
@@ -52,8 +52,8 @@ done
 # SDL's Android glue is Java: the activity, the GL surface, input, audio.
 # It is part of SDL, not of this project, so it is copied rather than forked.
 java_src="$SDL_SRC/android-project/app/src/main/java/org/libsdl/app"
-java_dst="$ANDROID_DIR/App/app/src/main/java/org/libsdl/app"
+java_dst="$APP_DIR/app/src/main/java/org/libsdl/app"
 rm -rf "$java_dst"
 mkdir -p "$java_dst"
 cp "$java_src"/*.java "$java_dst/"
-echo "==> copied $(ls "$java_dst" | wc -l | tr -d ' ') SDL Java sources to App/app/src/main/java/org/libsdl/app"
+echo "==> copied $(ls "$java_dst" | wc -l | tr -d ' ') SDL Java sources to $java_dst"

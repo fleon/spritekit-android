@@ -117,7 +117,7 @@ enum SystemBridge {
         }
         TextInput.offerPaste = { point in
             let scale = CGFloat(SDL_GetWindowDisplayScale(window))
-            _ = switchlings_offer_paste(Float(point.x * scale), Float(point.y * scale))
+            _ = ska_offer_paste(Float(point.x * scale), Float(point.y * scale))
         }
     }
 }
@@ -161,7 +161,7 @@ enum AndroidInputType {
 @MainActor
 enum SystemInbox {
     static func drain(into renderer: FrameRenderer, window: OpaquePointer) {
-        while let link = switchlings_take_link() {
+        while let link = ska_take_link() {
             defer { free(link) }
             let text = String(cString: link)
             if let url = URL(string: text) {
@@ -169,12 +169,12 @@ enum SystemInbox {
                 _ = renderer.receive(.link(url))
             }
         }
-        while let paste = switchlings_take_paste() {
+        while let paste = ska_take_paste() {
             defer { free(paste) }
             _ = renderer.receive(.text(String(cString: paste)))
         }
         var height: Int32 = 0, viewHeight: Int32 = 0
-        if switchlings_take_keyboard(&height, &viewHeight) {
+        if ska_take_keyboard(&height, &viewHeight) {
             let scale = CGFloat(SDL_GetWindowDisplayScale(window))
             var w: Int32 = 0, h: Int32 = 0
             SDL_GetWindowSizeInPixels(window, &w, &h)

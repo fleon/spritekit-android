@@ -1,5 +1,5 @@
 import CAndroidShell
-import CSwitchlingsAudio
+import CAndroidAudio
 import Foundation
 import ShellCore
 
@@ -38,7 +38,7 @@ final class SoundPool {
         SDL_free(buffer)
 
         var source = spec
-        var destination = SDL_AudioSpec(format: SWITCHLINGS_AUDIO_FORMAT, channels: spec.channels, freq: spec.freq)
+        var destination = SDL_AudioSpec(format: SKA_AUDIO_FORMAT, channels: spec.channels, freq: spec.freq)
         for _ in 0..<count {
             guard let stream = SDL_CreateAudioStream(&source, &destination) else { continue }
             SDL_SetAudioStreamGain(stream, volume)

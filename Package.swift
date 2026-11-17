@@ -1,18 +1,26 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// The Android port's SpriteKit compatibility layer.
+// SpriteKit for Android: the scene graph, the renderer's GL-free half and the
+// platform layer.
 //
 // On Apple platforms SpriteKitShim is a no-op that re-exports the real
-// SpriteKit, so the game's presentation code compiles unchanged on both
-// sides. On Android it provides its own implementation of the SpriteKit
-// surface the game actually uses.
+// SpriteKit, so a game's presentation code compiles unchanged on both sides.
+// On Android it provides its own implementation of the SpriteKit surface the
+// games use.
 //
 // This package builds and tests on macOS as well as cross-compiling, so the
 // layer can be developed with a normal edit-test loop rather than only on a
-// device. The module-name shims (SpriteKit, UIKit, CoreGraphics, CoreText)
-// live in Compat/ instead, because a target named CoreGraphics cycles with
-// the system module when the package is built on a Mac.
+// device. The module-name targets (SpriteKit, UIKit, CoreGraphics, …) live in
+// Modules/ instead, because a target named CoreGraphics cycles with the
+// system module when the package is built on a Mac; the shell (Shell/) and
+// the text stack (Text/) are packages of their own for the reasons in their
+// manifests.
+//
+// A game depends on these packages by path, with this repository checked
+// out as a submodule named `spritekit-android` (a package's identity is its
+// directory's name, so the name matters: manifests here refer to this
+// package as "spritekit-android").
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 // SpriteKit's nodes and UIKit's views are main-actor isolated, as on Apple
@@ -21,16 +29,11 @@ let v5 = SwiftSetting.swiftLanguageMode(.v5)
 let testIsolation = SwiftSetting.defaultIsolation(MainActor.self)
 
 let package = Package(
-    name: "SwitchlingsAndroid",
+    name: "SpriteKitAndroid",
     products: [
         .library(name: "SpriteKitShim", targets: ["SpriteKitShim"]),
         .library(name: "GLESRenderer", targets: ["GLESRenderer"]),
         .library(name: "PlatformShim", targets: ["PlatformShim"]),
-        // Switchlings' own, not the runtime's: what it keeps about what's
-        // owned (its product, its launch event, its reward). Here so it tests
-        // on the host; it leaves with the game when the runtime moves to a
-        // repository of its own.
-        .library(name: "SwitchlingsStore", targets: ["SwitchlingsStore"]),
     ],
     targets: [
         .target(
@@ -47,14 +50,13 @@ let package = Package(
             path: "Sources/GLESRenderer",
             swiftSettings: [v5, shimDefine]
         ),
-        // The platform ring: the Android stand-ins for the Apple services
-        // the game's managers sit on — AVFoundation, iCloud's key-value
-        // store, StoreKit and GameKit. Only the parts with no device in
-        // them live here, which is most of each: the merge saved data
-        // depends on, what the full game being owned means, which
-        // achievements have moved. The device half (SDL audio, a Play
-        // service) is behind a protocol each, so this whole target builds
-        // and tests on the Mac.
+        // The platform layer: the Android stand-ins for the Apple services a
+        // game's managers sit on — AVFoundation, iCloud's key-value store,
+        // StoreKit and GameKit. Only the parts with no device in them live
+        // here, which is most of each: the merge saved data depends on,
+        // purchases and their acknowledgement, which achievements have
+        // moved. The device half (SDL audio, a Play service) is behind a
+        // protocol each, so this whole target builds and tests on the Mac.
         // The AVFoundation stand-ins share films are written through take
         // the shim's CoreVideo pixel buffers, hence the dependency.
         .target(
@@ -62,17 +64,6 @@ let package = Package(
             dependencies: ["SpriteKitShim"],
             path: "Sources/PlatformShim",
             swiftSettings: [v5, shimDefine]
-        ),
-        .target(
-            name: "SwitchlingsStore",
-            path: "Sources/SwitchlingsStore",
-            swiftSettings: [v5, shimDefine]
-        ),
-        .testTarget(
-            name: "SwitchlingsStoreTests",
-            dependencies: ["SwitchlingsStore"],
-            path: "Tests/SwitchlingsStoreTests",
-            swiftSettings: [v5, shimDefine, testIsolation]
         ),
         .testTarget(
             name: "PlatformShimTests",
@@ -84,28 +75,6 @@ let package = Package(
             name: "SpriteKitShimTests",
             dependencies: ["SpriteKitShim"],
             path: "Tests/SpriteKitShimTests",
-            swiftSettings: [v5, shimDefine, testIsolation]
-        ),
-        // The rig runtime, run against the real rigs in Assets/Rigs.
-        //
-        // RigData.swift and RigPose.swift are symlinked in rather than
-        // depended on: they are pure Foundation and CoreGraphics, so on the
-        // host they compile against the system's own and need neither the
-        // shim nor a device. A test target is also the one place a game
-        // source can live in this package without the Android build trying
-        // to compile it — `swift build` does not build test targets, and
-        // `import CoreGraphics` has nothing to resolve to there. The real
-        // Android build of these two files is Compat/.
-        .testTarget(
-            name: "RigRuntimeTests",
-            path: "Tests/RigRuntimeTests",
-            swiftSettings: [v5, shimDefine, testIsolation]
-        ),
-        // The game's seeded randomness (`-RandomSeed`), Random.swift
-        // symlinked in as the rig runtime's sources are.
-        .testTarget(
-            name: "RandomTests",
-            path: "Tests/RandomTests",
             swiftSettings: [v5, shimDefine, testIsolation]
         ),
         .testTarget(

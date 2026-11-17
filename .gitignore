@@ -1,17 +1,15 @@
 # Everything the build scripts fetch or produce. None of it is checked in:
-# Scripts/build-sdl.sh and Scripts/build-shell.sh are the source of truth for
-# what ends up in the APK.
+# Scripts/build-sdl.sh, Vendor/build.sh and Scripts/build-shell.sh are the
+# source of truth for what ends up in a game's APK.
 
-# Pinned SDL checkout and its per-ABI builds and install prefixes.
-Vendor/
+# Pinned SDL checkout, FreeType and HarfBuzz, and their per-ABI builds.
+Vendor/*
+!Vendor/.gitignore
+!Vendor/README.md
+!Vendor/build.sh
+!Vendor/versions.sh
 
-# Cross-compiled .so files, staged by Scripts/build-shell.sh.
-App/app/src/main/jniLibs/
-
-# SDL's own Java glue, copied in by Scripts/build-sdl.sh. It belongs to SDL,
-# and copying rather than forking is what keeps the pin honest.
-App/app/src/main/java/org/libsdl/
-
-# Gradle
-App/.gradle/
-App/local.properties
+.build/
+.swiftpm/
+*/.build/
+*/.swiftpm/
