@@ -86,8 +86,8 @@ extension SKScene {
 
     /// `visibleRect` for this scene in its view, or the scene itself when it
     /// is in none. Internal, and not `visibleFrame`: SpriteKit has no such
-    /// member, and games declare one of their own on their scenes (Zyl's
-    /// `GameScene`), which a public one here would collide with.
+    /// member, and a game may declare one of its own on its scenes, which a
+    /// public one here would collide with.
     var viewVisibleFrame: CGRect {
         SKScene.visibleRect(
             sceneSize: size, anchorPoint: anchorPoint, scaleMode: scaleMode,
