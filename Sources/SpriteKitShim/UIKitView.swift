@@ -55,11 +55,18 @@ public final class UIScreen {
 
     /// The screen the game shows on: Android has one, the last made. A game
     /// reads its size here, where iOS finds it through its window scenes.
-    public private(set) static weak var main: UIScreen?
+    /// Implicitly unwrapped, as UIKit's is not optional: `UIScreen.main.scale`
+    /// compiles as written, and `UIScreen.main?.bounds` still does too. Nil
+    /// only before the shell has made the window.
+    public private(set) static weak var main: UIScreen!
 
     public var bounds: CGRect
     public var nativeBounds: CGRect
     public var nativeScale: CGFloat
+
+    /// Pixels a point. UIKit's is a whole 2 or 3 and its `nativeScale` the
+    /// panel's own; an Android display has only its density, which is both.
+    public var scale: CGFloat { nativeScale }
 
     /// Its bounds upright, whichever way it's turned, as UIKit's fixed
     /// coordinate space gives them.
