@@ -19,8 +19,7 @@ public struct MusicLoop: Equatable, Sendable {
     }
 
     /// The whole file, again and again: what `AVAudioPlayer`'s
-    /// `numberOfLoops = -1` does for a track with no loop points (Hue Rings'
-    /// soundtrack). Its end is past any file's (a day at 192 kHz), so the
+    /// `numberOfLoops = -1` does for a track with no loop points. Its end is past any file's (a day at 192 kHz), so the
     /// mixer reaches the file's own end first and goes back to its start.
     public static let wholeTrack = MusicLoop(start: 0, end: 192_000 * 86_400)
 }

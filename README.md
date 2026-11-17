@@ -695,7 +695,7 @@ A game whose soundtrack isn't AAC names its container in its entry's
 `configure` (`AudioAssets.musicExtension = "mp3"`: MediaCodec reads the
 format from the file, so only the name changes), and a track with no loop
 points of its own repeats whole with `MusicLoop.wholeTrack`, as an
-`AVAudioPlayer` with `numberOfLoops = -1` does (Hue Rings).
+`AVAudioPlayer` with `numberOfLoops = -1` does.
 
 ### Google Play and the device: one channel
 

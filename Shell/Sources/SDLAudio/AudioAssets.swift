@@ -12,8 +12,8 @@ import ShellCore
 /// WAV gains nothing from being deflated anyway.
 public enum AudioAssets {
     public static let root = "audio"
-    /// The soundtrack's container, as the game ships it: Switchlings' m4a
-    /// (AAC), Hue Rings' mp3. MediaCodec takes the format from the file
+    /// The soundtrack's container, as the game ships it: m4a (AAC) unless
+    /// the game says otherwise (mp3, ogg). MediaCodec takes the format from the file
     /// itself, so only the name changes; a game sets this in its entry's
     /// `configure`, before the audio device opens.
     public nonisolated(unsafe) static var musicExtension = "m4a"
