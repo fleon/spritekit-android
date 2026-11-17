@@ -80,7 +80,14 @@ final class GamepadBridge {
 /// opening a link, the clipboard, keeping the screen on and the keyboard.
 enum SystemBridge {
     static func install(window: OpaquePointer) {
-        SystemServices.openURL = { url in SDL_OpenURL(url.absoluteString) }
+        SystemServices.openURL = { url in
+            // `UIApplication.openSettingsURLString`: the app's own page in
+            // the system settings, which only the activity can open.
+            if url.absoluteString == UIApplication.openSettingsURLString {
+                return PlatformChannel.shared?.call("device.openAppSettings")?.bool("ok") ?? false
+            }
+            return SDL_OpenURL(url.absoluteString)
+        }
         SystemServices.clipboard = (
             get: {
                 guard SDL_HasClipboardText(), let text = SDL_GetClipboardText() else { return nil }
