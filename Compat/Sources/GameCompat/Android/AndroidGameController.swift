@@ -101,28 +101,20 @@ public final class AndroidGameController {
         AudioManager.use(backend)
     }
 
-    /// The frame rates and render scales the renderer may draw at, fastest
-    /// and largest first (one, where the player picked or something pins
-    /// it), and whether Auto moves between them at all
-    /// (`DisplaySettings.choices`).
-    public static var displayChoices: (rates: [Int], scales: [Double], governs: Bool) {
+    /// The frame rate the renderer draws at, the render scales it may draw
+    /// at, largest first (one, where the player picked or something pins
+    /// it), whether Auto still chooses between them, and the one this
+    /// device chose before (`DisplaySettings.choices`).
+    public static var displayChoices: (rate: Int, scales: [Double], governs: Bool, decided: Double?) {
         DisplaySettings.choices
     }
 
     /// A render scale nothing moves (`-RenderScale`, or a capture running).
     public static var pinnedRenderScale: Double? { DisplaySettings.pinnedRenderScale }
 
-    /// Where Auto starts: the load (pixels a second, in screens) this device
-    /// settled at last time.
-    public static var startingLoad: Double? { DisplaySettings.startingLoad }
-
-    /// Rungs at least this costly aren't tried this launch: one ran late
-    /// on this device lately.
-    public static var startingBlock: Double? { DisplaySettings.startingBlock }
-
-    /// A rung this costly ran late: kept for a few launches.
-    public static func noteBlocked(load: Double) {
-        DisplaySettings.noteBlocked(load)
+    /// Auto chose `scale` at `rate`: this device keeps it for good.
+    public static func noteAutoChosen(rate: Int, scale: Double) {
+        DisplaySettings.noteAutoChosen(.init(rate: rate, scale: scale))
     }
 
     /// Calls `changed` whenever the player picks a frame rate or quality (or
@@ -155,12 +147,6 @@ public final class AndroidGameController {
     public static var bandedLayerBands: Int {
         get { BandedLayerNode.bandCount }
         set { BandedLayerNode.bandCount = max(newValue, 1) }
-    }
-
-    /// Where Auto stood as it judged a window of frames: a running average
-    /// of these is where the next launch starts.
-    public static func noteAuto(rate: Int, scale: Double) {
-        DisplaySettings.noteAuto(.init(rate: rate, scale: scale))
     }
 
     /// What the renderer draws at now, which the settings show as Auto's.

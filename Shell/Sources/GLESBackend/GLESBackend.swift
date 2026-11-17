@@ -121,22 +121,17 @@ public enum GLESBackend {
             renderer.pinsRenderScale = true
             Log.info("render scale held at \(scale)")
         }
-        // The frame rate and render scale: what the player picked, and on
-        // each side left at Auto, what the renderer's governor finds holds,
-        // from where this device settled last time; a pick applies at once.
+        // The frame rate and render scale: what the player picked, else
+        // Auto's rate and the scale the renderer's governor chooses once for
+        // this device (kept); a pick applies at once.
         renderer.measuresScene = { AndroidGameController.isMeasured($0) }
-        renderer.onAutoJudged = { AndroidGameController.noteAuto(rate: $0, scale: $1) }
         renderer.onRunning = { AndroidGameController.setRunning(rate: $0, scale: $1) }
-        renderer.onBlocked = { AndroidGameController.noteBlocked(load: $0) }
+        renderer.onChosen = { AndroidGameController.noteAutoChosen(rate: $0, scale: $1) }
         let choices = AndroidGameController.displayChoices
-        let blocked = AndroidGameController.startingBlock
-        renderer.configure(
-            rates: choices.rates, scales: choices.scales, governs: choices.governs,
-            load: AndroidGameController.startingLoad, blocked: blocked
-        )
+        renderer.configure(rate: choices.rate, scales: choices.scales, governs: choices.governs, decided: choices.decided)
         AndroidGameController.observeDisplayChoices { [weak renderer] in
             let choices = AndroidGameController.displayChoices
-            renderer?.configure(rates: choices.rates, scales: choices.scales, governs: choices.governs, fromCurrent: true)
+            renderer?.configure(rate: choices.rate, scales: choices.scales, governs: choices.governs, decided: choices.decided, fromCurrent: true)
         }
         if let slowdown = DebugProperty.string("debug.switchlings.slowdown").flatMap(Double.init), slowdown > 1 {
             renderer.slowdown = slowdown
