@@ -199,6 +199,14 @@ through `SKRenderer` and pinned in host tests:
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
   descendants; a scaled 9-slice keeps its caps.
+- **Constraints:** applied after the actions each frame, before
+  `didApplyConstraints()`; nodes take turns in the order they were given
+  constraints or entered the scene, not in tree order, and each set after
+  a pass adds another turn while keeping the earlier ones, as SpriteKit's
+  list grows; ranges clamp as `max(lower, min(upper, v))`; `orient`
+  clamps between the target's direction, in [−π/2, 3π/2), plus its limits,
+  unwrapping nothing (`ConstraintTests`). A `zRotation` constraint's
+  `referenceNode` is ignored: SpriteKit's use of it follows no rule found.
 - **Scenes:** a scene's `frame` is its size placed by its anchor point, and
   its position and scale stay out of it and of its accumulated frame; a
   scene is never among its own `nodes(at:)` (`SceneFrameTests`).
