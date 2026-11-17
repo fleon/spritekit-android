@@ -66,11 +66,15 @@ public enum CoverageGeometry {
         /// Where to draw it, in points, relative to the line's pen origin on
         /// the baseline, y up.
         public var frame: CGRect
+        /// The UTF-8 offset in the line of the character it came from
+        /// (HarfBuzz's cluster), for letter spacing.
+        public var cluster: Int
 
-        public init(page: Int, rect: CGRect, frame: CGRect) {
+        public init(page: Int, rect: CGRect, frame: CGRect, cluster: Int = 0) {
             self.page = page
             self.rect = rect
             self.frame = frame
+            self.cluster = cluster
         }
     }
 
@@ -102,11 +106,16 @@ public enum CoverageGeometry {
         var order: [Int] = []
 
         for placed in layout.lines {
+            let characterStarts = label.kern == 0 ? [] : Self.characterStarts(placed.line.text)
             for glyph in source.glyphs(for: placed.line.text, font: font) {
                 guard let page = source.pageSize(glyph.page), page.width > 0, page.height > 0
                 else { continue }
 
-                let frame = glyph.frame.offsetBy(dx: placed.origin.x, dy: placed.origin.y)
+                // Letter spacing (an attributed label's `.kern`): each
+                // character moves on by the spacing of every one before it.
+                let spacing = label.kern == 0 ? 0
+                    : label.kern * CGFloat(characterStarts.lastIndex { $0 <= glyph.cluster } ?? 0)
+                let frame = glyph.frame.offsetBy(dx: placed.origin.x + spacing, dy: placed.origin.y)
                 guard frame.width > 0, frame.height > 0 else { continue }
 
                 if runs[glyph.page] == nil {
@@ -123,6 +132,18 @@ public enum CoverageGeometry {
         }
 
         return order.compactMap { runs[$0] }
+    }
+
+    /// Where each character of `text` starts, as UTF-8 offsets (glyphs'
+    /// clusters are counted in those).
+    static func characterStarts(_ text: String) -> [Int] {
+        var starts: [Int] = []
+        var offset = 0
+        for character in text {
+            starts.append(offset)
+            offset += character.utf8.count
+        }
+        return starts
     }
 
     /// A glyph's rect on its page as texture coordinates.

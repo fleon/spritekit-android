@@ -60,6 +60,9 @@ Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
 Scripts/             Building SDL and a game's shell library, checking the
                      runtime alone, launching with arguments, the emulator
                      pool.
+Templates/App/       The Android app a game copies: the Gradle project,
+                     MainActivity and the Java half of each platform
+                     service (Templates/App/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -79,7 +82,8 @@ directory's name, and the manifests here refer to this package as
 <game>/Android/
   spritekit-android/   this repository (submodule)
   Game/                the game's package (GAME_PACKAGE_DIR)
-  App/                 the game's Gradle project (APP_DIR)
+  App/                 the game's Gradle project (APP_DIR), copied from
+                       Templates/App/base
 ```
 
 The game's package depends on `../spritekit-android`,
@@ -363,6 +367,24 @@ Where it differs from Apple's:
   values.
 - The type is visible only through a module that re-exports
   `SpriteKitShim` (`Foundation` itself can't gain it).
+
+### Ratings: Play In-App Review
+
+`SKStoreReviewController.requestReview(in:)` (and `requestReview()`,
+`AppStore.requestReview(in:)`) in the `StoreKit` module go to
+`StoreReview.request()` (`Sources/PlatformShim/StoreReview.swift`):
+`PlayInAppReview` over the shell's channel, nothing in a host build. As on
+iOS, the request is fire-and-forget and the store decides whether a card
+shows; a game's own rules about when to ask stay its own. One request is
+with Play at a time; one that gets no answer within a minute stops holding
+the next one back.
+
+The Java half is a class of its own in the game's app (`PlayReview`, on
+`com.google.android.play:review`), under `review`:
+`request` runs `ReviewManager.requestReviewFlow()` then
+`launchReviewFlow(activity, info)` and posts `requested {ok}` when the flow
+is over. A build not installed from Play runs the flow and shows nothing, as
+TestFlight shows nothing on iOS.
 
 ### The shell
 

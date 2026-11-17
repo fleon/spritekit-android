@@ -11,7 +11,7 @@ import Foundation
 ///
 /// With no provider registered the metrics are zero, as they were before any
 /// of this landed — an obvious nothing rather than plausible wrong numbers.
-public final class UIFont: @unchecked Sendable {
+public final class UIFont: LabelFont, @unchecked Sendable {
     public struct Weight: Hashable, Sendable, RawRepresentable {
         public var rawValue: CGFloat
         public init(rawValue: CGFloat) { self.rawValue = rawValue }
