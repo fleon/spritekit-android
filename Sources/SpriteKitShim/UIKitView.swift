@@ -1,17 +1,16 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// What the game reads off its view as a UIKit view, rather than as
-// SpriteKit's: `SceneLayout` takes the safe area, the trait collection and
-// the window — the window for the display's rounded corners and which way
-// the device is turned — and the loading screen builds its next scene with
-// the view's traits current.
+// What a game reads off its view as a UIKit view, rather than as
+// SpriteKit's: the safe area, the trait collection and the window — the
+// window for the display's rounded corners and which way the device is
+// turned — and the view's traits current while a scene builds.
 //
 // On Android the view is the whole window, so the window is the view's own
 // rectangle and the screen is the window's. There is no window yet: SDL
-// owns the real one, and the corner radii the game keeps are measured off
-// Apple's simulators, so `SceneLayout` takes its square-cornered path, as it
-// does for a view that is not full screen. The safe area is whatever the
+// owns the real one, so a game that keeps corner radii per screen finds
+// none and takes its square-cornered path, as it does for a view that is
+// not full screen. The safe area is whatever the
 // shell sets.
 
 public enum UIUserInterfaceIdiom: Int, Sendable {
@@ -54,21 +53,13 @@ public final class UIScreen {
         public let bounds: CGRect
     }
 
-    /// The screen the game shows on: Android has one, the last made. The
-    /// beta's solve log reads its size (`PlaytestLog.screen`), where iOS
-    /// finds it through its window scenes. Implicitly unwrapped, as UIKit's
-    /// is not optional: `UIScreen.main.scale` compiles as
-    /// written, and `UIScreen.main?.bounds` still does too. Nil
-    /// only before the shell has made the window.
-    public private(set) static weak var main: UIScreen!
+    /// The screen the game shows on: Android has one, the last made. A game
+    /// reads its size here, where iOS finds it through its window scenes.
+    public private(set) static weak var main: UIScreen?
 
     public var bounds: CGRect
     public var nativeBounds: CGRect
     public var nativeScale: CGFloat
-
-    /// Pixels a point. UIKit's is a whole 2 or 3 and its `nativeScale` the
-    /// panel's own; an Android display has only its density, which is both.
-    public var scale: CGFloat { nativeScale }
 
     /// Its bounds upright, whichever way it's turned, as UIKit's fixed
     /// coordinate space gives them.
@@ -101,11 +92,11 @@ open class UIWindowScene {
         effectiveGeometry = Geometry(interfaceOrientation: interfaceOrientation)
     }
 
-    /// The scene's space: its screen's bounds.
-    public var coordinateSpace: UIScreen.CoordinateSpace { UIScreen.CoordinateSpace(bounds: screen.bounds) }
+    /// The scene's windows: those whose `windowScene` is this scene.
+    public fileprivate(set) var windows: [UIWindow] = []
 
-    /// The window the scene shows, where the shell has made one.
-    public var keyWindow: UIWindow?
+    /// The window the scene shows (Android has one).
+    public var keyWindow: UIWindow? { windows.first }
 }
 
 /// What `UIImage` draws into a view; kept, not shown (see `addSubview`).
@@ -123,23 +114,34 @@ open class UIImageView: UIView {
 open class UIWindow {
     public var bounds: CGRect
     public var safeAreaInsets: UIEdgeInsets = .zero
-    public var windowScene: UIWindowScene?
+    /// Weak, as UIKit's: the scene holds its windows.
+    public weak var windowScene: UIWindowScene? {
+        didSet {
+            oldValue?.windows.removeAll { $0 === self }
+            if let windowScene, !windowScene.windows.contains(where: { $0 === self }) {
+                windowScene.windows.append(self)
+            }
+        }
+    }
     public var traitCollection: UITraitCollection { UITraitCollection.current }
+
+    /// Whether this is its scene's key window.
+    public var isKeyWindow: Bool { windowScene?.keyWindow === self }
 
     public init(bounds: CGRect) {
         self.bounds = bounds
     }
 
     /// Every touch event passes through here before the scene takes it
-    /// (`SKScene.deliverTouch`); the game's `TouchOriginWindow` overrides it
-    /// to note where the player touched.
+    /// (`SKScene.deliverTouch`); a window subclass may override it to note
+    /// where the player touched.
     open func sendEvent(_ event: UIEvent) {
         observer?(event)
     }
 
     /// Hears every event that reaches the window's own `sendEvent`, after
-    /// any subclass has: the port's controller takes focus back from a
-    /// gamepad on a touch, as the Apple controller's `TouchWatcher` does.
+    /// any subclass has: a game's controller may take focus back from a
+    /// gamepad on a touch.
     public var observer: ((UIEvent) -> Void)?
 }
 
@@ -150,7 +152,7 @@ open class UIView {
     public var bounds: CGRect
 
     /// The layer the view draws into. On Apple an `SKView`'s is a
-    /// `CAMetalLayer`, which `EdgeShade` asks for its drawable size; here
+    /// `CAMetalLayer`, which a game may ask for its drawable size; here
     /// there is no layer tree, so it is a plain one and the game falls back
     /// to `bounds` times `contentScaleFactor`, the same number.
     public let layer = CALayer()
@@ -171,9 +173,8 @@ open class UIView {
     }
 
     /// Where the view sits in its superview. Android shows one view, the
-    /// game's, so this only keeps what the game sets (the edge-swipe
-    /// previews size theirs to the view's bounds).
-    public var frame: CGRect {
+    /// game's, so this only keeps what is set, for code that reads it back.
+    open var frame: CGRect {
         get { CGRect(origin: origin, size: bounds.size) }
         set {
             origin = newValue.origin
@@ -237,6 +238,7 @@ open class UIView {
         reservedRegionList.filter { $0.kind == kind && ($0.isActive || options.contains(.includeInactive)) }
     }
 
+    /// Runtime seam, not UIKit API: what the shell reports.
     public var reservedRegionList: [ReservedRegion] = []
 
     public struct ReservedRegion: Equatable, Hashable, Identifiable {
@@ -263,6 +265,7 @@ open class UIView {
         public let margins: UIEdgeInsets
         public let isActive: Bool
 
+        /// Runtime seam, not UIKit API: how the shell makes one.
         public init(id: ID, kind: Kind, frame: CGRect, margins: UIEdgeInsets = .zero, isActive: Bool = true) {
             self.id = id
             self.kind = kind
@@ -321,7 +324,7 @@ open class CALayer {
     public init() {}
 }
 
-/// Named by `EdgeShade`'s `view.layer as? CAMetalLayer`; nothing is one here.
+/// Named by a game's `view.layer as? CAMetalLayer`; nothing is one here.
 public final class CAMetalLayer: CALayer {
     public var drawableSize = CGSize.zero
 }

@@ -123,15 +123,14 @@ open class SKView: UIView {
         bounds = CGRect(x: 0, y: 0, width: pixels.width / scale, height: pixels.height / scale)
     }
 
-    public init(bounds: CGRect) {
-        super.init(frame: bounds)
+    public convenience init(bounds: CGRect) {
+        self.init(frame: bounds)
         self.bounds = bounds
     }
 
-    /// UIKit's spelling: a view as big as `frame`, its own space at the origin.
-    public override convenience init(frame: CGRect) {
-        self.init(bounds: CGRect(origin: .zero, size: frame.size))
-        self.frame = frame
+    /// UIKit's: a view as big as `frame`, its own space at the origin.
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
     }
 
     /// Whether a transition is playing.

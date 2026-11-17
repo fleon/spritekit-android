@@ -4,26 +4,34 @@
 // `SystemSymbols/<name>` (UIImage.swift); this writes those image sets, to be
 // packed with the game's own catalog (Tools/Art/xcassets-art.js).
 //
-// Run on a Mac, where the symbols are, with Xcode's Swift (`xcrun`; a
-// swiftly toolchain cannot load AppKit):
+// It is UIKit's rendering, not AppKit's: AppKit rounds a symbol image's size
+// up to whole points (lock.fill 24 black is 26×29 there, 25×29 in UIKit), so
+// it runs as a Mac Catalyst tool with a phone's traits at 3x. Build and run it
+// through the wrapper:
 //
-//   xcrun swift Tools/Art/system-symbols.swift <out.xcassets> <name>:<pointSize>:<weight> ...
-//   xcrun swift Tools/Art/system-symbols.swift Symbols.xcassets lock.fill:24:black
+//   Tools/Art/system-symbols.sh <out.xcassets> <name>:<pointSize>:<weight> ...
+//   Tools/Art/system-symbols.sh Symbols.xcassets lock.fill:24:black
 //
-// Each symbol is drawn black on clear at 3x, at the size AppKit gives the
-// symbol image for that configuration (the size UIKit's has too), so a game
-// that draws it into a rect and tints it gets the same shape.
-import AppKit
+// Each symbol is drawn black on clear at the size UIKit gives the symbol
+// image for that configuration on an iPhone, so a game that draws it into a
+// rect and tints it gets the same shape.
+import UIKit
 
-let weights: [String: NSFont.Weight] = [
+let weights: [String: UIImage.SymbolWeight] = [
     "ultraLight": .ultraLight, "thin": .thin, "light": .light, "regular": .regular,
     "medium": .medium, "semibold": .semibold, "bold": .bold, "heavy": .heavy, "black": .black,
 ]
 
 let arguments = CommandLine.arguments.dropFirst()
 guard let output = arguments.first, arguments.count > 1 else {
-    FileHandle.standardError.write("usage: system-symbols.swift <out.xcassets> <name>:<pointSize>:<weight> ...\n".data(using: .utf8)!)
+    FileHandle.standardError.write(Data("usage: system-symbols.sh <out.xcassets> <name>:<pointSize>:<weight> ...\n".utf8))
     exit(2)
+}
+
+let scale: CGFloat = 3
+let phone = UITraitCollection {
+    $0.displayScale = scale
+    $0.userInterfaceIdiom = .phone
 }
 
 let fileManager = FileManager.default
@@ -43,40 +51,32 @@ try writeJSON(["info": ["author": "xcode", "version": 1], "properties": ["provid
 for spec in arguments.dropFirst() {
     let parts = spec.split(separator: ":").map(String.init)
     guard parts.count == 3, let pointSize = Double(parts[1]), let weight = weights[parts[2]] else {
-        FileHandle.standardError.write("bad symbol spec \(spec): want name:pointSize:weight\n".data(using: .utf8)!)
+        FileHandle.standardError.write(Data("bad symbol spec \(spec): want name:pointSize:weight\n".utf8))
         exit(2)
     }
     let name = parts[0]
-    let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
-    guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-        .withSymbolConfiguration(configuration) else {
-        FileHandle.standardError.write("no symbol named \(name)\n".data(using: .utf8)!)
+    let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: weight).withTraitCollection(phone)
+    guard let symbol = UIImage(systemName: name, withConfiguration: configuration) else {
+        FileHandle.standardError.write(Data("no symbol named \(name)\n".utf8))
         exit(1)
     }
-    let scale = 3
     let size = symbol.size
-    let pixelsWide = Int((size.width * CGFloat(scale)).rounded(.up))
-    let pixelsHigh = Int((size.height * CGFloat(scale)).rounded(.up))
-    guard let bitmap = NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: pixelsWide, pixelsHigh: pixelsHigh,
-        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-    ) else { exit(1) }
-    bitmap.size = size
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-    symbol.draw(in: NSRect(origin: .zero, size: size))
-    NSGraphicsContext.restoreGraphicsState()
+    let format = UIGraphicsImageRendererFormat(for: phone)
+    format.scale = scale
+    format.opaque = false
+    let rendered = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+        symbol.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: CGRect(origin: .zero, size: size))
+    }
+    guard let png = rendered.pngData(), let pixels = rendered.cgImage else { exit(1) }
 
     let set = folder.appendingPathComponent("\(name).imageset")
     try fileManager.createDirectory(at: set, withIntermediateDirectories: true)
     let file = "\(name)@3x.png"
-    guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(1) }
     try png.write(to: set.appendingPathComponent(file))
     try writeJSON([
         "images": [["filename": file, "idiom": "universal", "scale": "3x"]],
         "info": ["author": "xcode", "version": 1],
         "properties": ["template-rendering-intent": "template"],
     ], to: set.appendingPathComponent("Contents.json"))
-    print("\(name): \(size.width)×\(size.height) pt, \(pixelsWide)×\(pixelsHigh) px")
+    print("\(name): \(size.width)×\(size.height) pt, \(pixels.width)×\(pixels.height) px")
 }

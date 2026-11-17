@@ -92,7 +92,7 @@ public extension UIApplication {
         completionHandler?(opened)
     }
 
-    /// The async spelling, which the game awaits.
+    /// The async spelling.
     @discardableResult
     func open(_ url: URL, options: [String: Any] = [:]) async -> Bool {
         SystemServices.openURL(url)
