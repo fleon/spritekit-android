@@ -180,6 +180,9 @@ through `SKRenderer` and pinned in host tests:
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
   descendants; a scaled 9-slice keeps its caps.
+- **Scenes:** a scene's `frame` is its size placed by its anchor point, and
+  its position and scale stay out of it and of its accumulated frame; a
+  scene is never among its own `nodes(at:)` (`SceneFrameTests`).
 - **Paths and contexts:** checked against CoreGraphics' own API, every blend
   mode included.
 
@@ -209,6 +212,10 @@ A change to the shim's behaviour comes with a test of this kind.
   step moves the scene a whole number of refreshes.
 - **Programs** are kept as driver binaries between launches, keyed by source
   and driver, so an app update doesn't relink what didn't change.
+- **Shapes** are rasterised on the CPU into coverage masks at the density
+  they're drawn at, except that no mask is made larger than the GPU's
+  biggest texture: a very long shape is rasterised coarser instead, its
+  edges a little softer.
 
 ### Art
 

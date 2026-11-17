@@ -140,7 +140,8 @@ public extension SKNode {
     ) {
         guard !isHidden, alpha > 0 else { return }
         let depth = z + zPosition
-        if contentFrame != .zero, contentFrame.contains(point) {
+        // A scene is never among its own nodes, wherever the point falls.
+        if !(self is SKScene), contentFrame != .zero, contentFrame.contains(point) {
             found.append((self, depth, found.count))
         }
         for child in children {
