@@ -1151,6 +1151,11 @@ against Apple's own where Apple's runs on the Mac:
   what follows starts only on time left over, so a `.run` after a step that
   ends right on a frame runs on the next one; a group runs a finished child
   no more (`ActionTimingTests`, each case measured with `SKRenderer`).
+- Paths: `addArc(tangent1End:tangent2End:radius:)`,
+  `copy(dashingWithPhase:lengths:)` and `currentPoint`, checked against
+  CoreGraphics. The software context has every CoreGraphics blend mode, the
+  four non-separable ones and the two plus modes included (and soft light
+  is CoreGraphics' formula, not the PDF's).
 - Core Image by name (`CoreImageFilters.swift`): `CILinearGradient` and
   `CIRadialGradient` as generators a `CIContext` draws over any rectangle,
   and `CIGaussianBlur` (`inputRadius` is `applyingGaussianBlur`'s sigma);
@@ -1163,11 +1168,6 @@ against Apple's own where Apple's runs on the Mac:
   Rings and Zyl draw their gradient textures this way. `SKEffectNode.filter`
   is kept for Zyl's and Phantom Words' blurs; the renderer doesn't draw it
   yet.
-- Paths: `addArc(tangent1End:tangent2End:radius:)`,
-  `copy(dashingWithPhase:lengths:)` and `currentPoint`, checked against
-  CoreGraphics. The software context has every CoreGraphics blend mode, the
-  four non-separable ones and the two plus modes included (and soft light
-  is CoreGraphics' formula, not the PDF's).
 - `SKTexture.cgImage()`, a snapshot's pixels read back from the GPU, and
   alpha-only bitmaps: the collection and the tips fit each sample by what it
   draws.
