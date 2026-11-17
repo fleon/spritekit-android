@@ -36,10 +36,16 @@ public enum CoverageGeometry {
             public var mask: UInt32
             /// Where its indices start in the frame's stream; -1 until written.
             public var streamFirstIndex: Int = -1
+            /// A shape's fill or stroke texture, and where it is sampled
+            /// from the mask's coordinates (`fillMap`).
+            public var texture: SKTexture?
+            public var textureMap: SIMD4<Float>
 
-            public init(run: Run, mask: UInt32) {
+            public init(run: Run, mask: UInt32, texture: SKTexture? = nil, textureMap: SIMD4<Float> = .zero) {
                 self.run = run
                 self.mask = mask
+                self.texture = texture
+                self.textureMap = textureMap
             }
         }
 
@@ -183,6 +189,22 @@ public enum CoverageGeometry {
             colour: tint(colour, alpha: alpha)
         )
         return run
+    }
+
+    /// Where a shape's texture is sampled from a mask's texture coordinate:
+    /// `fill = map.xy + mask * map.zw`. The texture is stretched over the
+    /// path's bounds (top row at the top, as an image is uploaded); the mask
+    /// covers `mask` (its row 0 at the top as well), which is the path's
+    /// bounds and the stroke's reach, so the texture runs a little past 0…1
+    /// at its edges and clamps there.
+    public static func fillMap(mask: CGRect, path: CGRect) -> SIMD4<Float> {
+        guard path.width > 0, path.height > 0 else { return SIMD4(0, 0, 0, 0) }
+        return SIMD4(
+            Float((mask.minX - path.minX) / path.width),
+            Float((path.maxY - mask.maxY) / path.height),
+            Float(mask.width / path.width),
+            Float(mask.height / path.height)
+        )
     }
 
     // MARK: - Shared
