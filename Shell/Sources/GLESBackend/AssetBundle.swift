@@ -64,24 +64,50 @@ public enum AssetBundle {
     @discardableResult
     public static func installFonts() -> Bool {
         var loaded: [(name: String, data: Data)] = []
-        for name in TextEngine.fontFileNames {
-            guard let data = load(path("\(fontsRoot)/\(name).ttf")) else {
-                Log.error("no \(name).ttf in the APK — text will not draw")
+        for file in fontFiles() {
+            guard let data = load(path("\(fontsRoot)/\(file)")) else {
+                Log.error("no \(file) in the APK — its text will not draw")
                 continue
             }
-            loaded.append((name, data))
+            loaded.append(((file as NSString).deletingPathExtension, data))
         }
-        guard !loaded.isEmpty else { return false }
 
         do {
             let engine = try TextEngine.install(fonts: loaded)
-            Log.info("fonts: \(loaded.map(\.name).joined(separator: ", "))")
+            // The device's own face, for `UIFont.systemFont`.
+            let system = engine.registerSystemFonts()
+            Log.info("fonts: \(loaded.map(\.name).joined(separator: ", ")); system: \(system.count) faces")
             Log.info("faces: \(engine.library.registeredNames.joined(separator: ", "))")
-            return true
+            return !loaded.isEmpty || !system.isEmpty
         } catch {
             Log.error("the fonts would not register: \(error)")
             return false
         }
+    }
+
+    /// Every font file the game staged in the APK's `fonts/`, as an iOS app
+    /// lists its own in `UIAppFonts`. Any of the text stack's preferred files
+    /// (`TextEngine.fontFileNames`) come first, in its order, since the first face
+    /// registered is what a label with no font name draws in; the rest
+    /// follow by name.
+    static func fontFiles() -> [String] {
+        final class Listing { var files: [String] = [] }
+        let listing = Listing()
+        let found = SDL_EnumerateDirectory(path(fontsRoot), { userdata, _, name in
+            guard let userdata, let name else { return SDL_ENUM_CONTINUE }
+            let file = String(cString: name)
+            let ext = (file as NSString).pathExtension.lowercased()
+            if ext == "ttf" || ext == "otf" {
+                Unmanaged<Listing>.fromOpaque(userdata).takeUnretainedValue().files.append(file)
+            }
+            return SDL_ENUM_CONTINUE
+        }, Unmanaged.passUnretained(listing).toOpaque())
+        guard found else {
+            Log.error("could not list \(fontsRoot)/ in the APK: \(String(cString: SDL_GetError()))")
+            return TextEngine.fontFileNames.map { "\($0).ttf" }
+        }
+        let first = TextEngine.fontFileNames.map { "\($0).ttf" }.filter(listing.files.contains)
+        return first + listing.files.filter { !first.contains($0) }.sorted()
     }
 
     /// One packed page: its ASTC levels as they ship (a `.ktx`, read as it
