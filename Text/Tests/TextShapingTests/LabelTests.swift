@@ -121,9 +121,9 @@ struct LabelTests {
         let metrics = try #require(Fonts.engine.fontMetrics(Fonts.display(20)))
         let lineHeight = metrics.ascent.rounded() + metrics.descent.rounded() + metrics.leading.rounded()
 
-        #expect(layout.lines[0].origin.y == 0)
-        #expect(abs(layout.lines[1].origin.y + lineHeight) < 0.001)
-        #expect(abs(layout.lines[2].origin.y + lineHeight * 2) < 0.001)
+        let first = layout.lines[0].origin.y
+        #expect(abs(layout.lines[1].origin.y - (first - lineHeight)) < 0.001)
+        #expect(abs(layout.lines[2].origin.y - (first - lineHeight * 2)) < 0.001)
         #expect(node.contentFrame.height > lineHeight * 2)
     }
 

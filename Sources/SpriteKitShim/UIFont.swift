@@ -52,9 +52,11 @@ public final class UIFont: @unchecked Sendable {
         TextMetrics.provider?.fontMetrics(FontKey(name: fontName, size: pointSize))
     }
 
-    /// `ascent + descent + leading`, as UIKit reports it, so the game's
-    /// `lineHeightRatio` constants keep the meaning they were tuned with.
-    public var lineHeight: CGFloat { metrics?.lineHeight ?? 0 }
+    /// `ascender − descender`, without the leading, as UIKit reports it
+    /// (measured on the iOS simulator: Geneva 12 is 15.0 with a leading of
+    /// 1.0), so a game's line-height constants keep the meaning they were
+    /// tuned with.
+    public var lineHeight: CGFloat { metrics.map { $0.ascent + $0.descent } ?? 0 }
 
     /// Positive above the baseline, as UIKit has it.
     public var ascender: CGFloat { metrics?.ascent ?? 0 }

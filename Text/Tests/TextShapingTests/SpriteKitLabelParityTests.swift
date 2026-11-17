@@ -55,6 +55,40 @@ struct SpriteKitLabelParityTests {
         #expect(Double(matched) >= Double(checked) * share, "\(matched) of \(checked) frames match")
     }
 
+    @Test("Multi-line frames match SpriteKit's in every alignment", arguments: ["Montserrat-SemiBold", "Montserrat-Black", "KoHo-Bold", "Geneva"])
+    func multiLineFramesMatch(font: String) {
+        _ = Self.registered
+        _ = Fonts.engine
+        var checked = 0, matched = 0
+        for size in [13, 20, 27.5] as [CGFloat] {
+            for text in ["Hx", "H\nH", "gpqy\nHELLO", "A\nlonger second line\nB", "Level\nSelect", "All done!\n0 of 30 cleared"] {
+                for h in 0...2 {
+                    for v in 0...3 {
+                        let apple = SpriteKit.SKLabelNode(fontNamed: font)
+                        apple.fontSize = size
+                        apple.numberOfLines = 0
+                        apple.text = text
+                        apple.horizontalAlignmentMode = SpriteKit.SKLabelHorizontalAlignmentMode(rawValue: h)!
+                        apple.verticalAlignmentMode = SpriteKit.SKLabelVerticalAlignmentMode(rawValue: v)!
+                        let ours = SpriteKitShim.SKLabelNode(fontNamed: font)
+                        ours.fontSize = size
+                        ours.numberOfLines = 0
+                        ours.text = text
+                        ours.horizontalAlignmentMode = SpriteKitShim.SKLabelHorizontalAlignmentMode(rawValue: h)!
+                        ours.verticalAlignmentMode = SpriteKitShim.SKLabelVerticalAlignmentMode(rawValue: v)!
+                        checked += 1
+                        if apple.frame == ours.contentFrame { matched += 1 } else {
+                            print("\(font) \(size) '\(text)' h\(h) v\(v): SpriteKit \(apple.frame) shim \(ours.contentFrame)")
+                        }
+                    }
+                }
+            }
+        }
+        // As for one line: Core Text's fractional instance advances can tip
+        // the widest line over a whole point.
+        #expect(Double(matched) >= Double(checked) * 0.98, "\(matched) of \(checked) frames match")
+    }
+
     @Test("Lines are as far apart as SpriteKit's", arguments: ["Montserrat-SemiBold", "Montserrat-Black", "KoHo-Bold"])
     func lineSpacingMatches(font: String) {
         _ = Self.registered
