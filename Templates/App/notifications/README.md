@@ -8,20 +8,24 @@ notify, scheduling, listing and removing pending requests, its delegate's
 
 | File | What it does |
 | --- | --- |
-| `PlatformNotifications.java` | The `notifications` service: permission, scheduling, the pending list, showing, taps |
-| `NotificationReceiver.java` | A scheduled notification's alarm going off |
-| `NotificationBootReceiver.java` | Re-arms the alarms after a reboot or an update, and on a time zone or clock change |
+| `app/src/main/java/PACKAGE_PATH/PlatformNotifications.java` | The `notifications` service: permission, scheduling, the pending list, showing, taps |
+| `app/src/main/java/PACKAGE_PATH/NotificationReceiver.java` | A scheduled notification's alarm going off |
+| `app/src/main/java/PACKAGE_PATH/NotificationBootReceiver.java` | Re-arms the alarms after a reboot or an update, and on a time zone or clock change |
 | `AndroidManifest-snippet.xml` | The two permissions and the two receivers |
-| `res/drawable/ic_stat_notification.xml` | The status bar icon (a bell: swap in the game's own one-colour silhouette) |
+| `app/src/main/res/drawable/ic_stat_notification.xml` | The status bar icon (a bell: swap in the game's own one-colour silhouette) |
 
 ## Copying it into a game
 
-1. Copy the three `.java` files next to the app's `PlatformServices.java`
-   and change their first line, `package PACKAGE_NAME;`, to the app's
-   package. They use `PlatformServices.post`, `PlatformServices.object` and
+1. Copy `app/` over the game's copy of `base/` (the same tree), so the
+   three `.java` files land beside `PlatformServices.java` and the drawable
+   in `res/drawable/`. Replace the placeholders as for `base/`: `PACKAGE_NAME`
+   (each file's `package` line) and `PACKAGE_PATH` (the folder). The others
+   (`APP_NAME`, `XCODE_PROJECT`, `GAME_KEY`) don't appear here: the
+   notification channel takes the app's label at run time. The classes use
+   `PlatformServices.post`, `PlatformServices.object` and
    `PlatformServices.TAG` from that package.
-2. Copy `res/drawable/ic_stat_notification.xml` into the app's
-   `res/drawable/`. Without it the app's launcher icon is used, which
+2. Keep `ic_stat_notification.xml` or replace it with the game's own
+   one-colour silhouette. Without it the app's launcher icon is used, which
    Android draws as a white blob.
 3. Merge `AndroidManifest-snippet.xml` into the app's manifest.
 4. Wire the service into `PlatformServices`: a field, its construction, and
