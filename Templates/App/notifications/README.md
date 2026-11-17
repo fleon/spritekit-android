@@ -94,7 +94,7 @@ repeat). No trigger shows it now. Dates are milliseconds since 1970.
 - **Alarms.** `setAndAllowWhileIdle`: delivered in Doze, with no permission
   to ask for. Exact alarms need `SCHEDULE_EXACT_ALARM` from Android 12 —
   off by default from Android 14, and a Play Console declaration — and a
-  daily reminder doesn't need to land on the minute, so Android may deliver
+  reminder doesn't need to land on the minute, so Android may deliver
   one up to an hour late. Where exact alarms are allowed anyway (before
   Android 12, or an app that declares and holds the permission) they're
   used. One alarm per pending request; Android allows an app 500.

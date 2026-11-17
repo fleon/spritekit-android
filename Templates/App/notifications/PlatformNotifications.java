@@ -70,7 +70,7 @@ import java.util.TimeZone;
  * <p><b>Alarms.</b> {@code setAndAllowWhileIdle}: delivered in Doze, and
  * with no permission to ask for. Exact alarms need
  * {@code SCHEDULE_EXACT_ALARM} from Android 12, which is off by default from
- * Android 14 and a Play policy declaration besides; a daily reminder doesn't
+ * Android 14 and a Play policy declaration besides; a reminder doesn't
  * need to the minute. Android may deliver an inexact alarm up to an hour
  * late. Where exact alarms are allowed anyway (before Android 12, or an app
  * that declares and holds the permission) they're used.

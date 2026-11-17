@@ -13,16 +13,16 @@ private func date(_ text: String) -> Date {
     ISO8601DateFormatter().date(from: text)!
 }
 
-private func content(title: String = "Daily Challenge", body: String = "A new puzzle is waiting") -> UNMutableNotificationContent {
+private func content(title: String = "Reminder", body: String = "Something new is waiting") -> UNMutableNotificationContent {
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
     content.sound = .default
-    content.userInfo = ["route": "dailyChallenge"]
+    content.userInfo = ["route": "reminder"]
     return content
 }
 
-/// As Phantom Words' `AppDelegate` writes it: the completion-handler forms,
+/// As a game's `AppDelegate` writes it: the completion-handler forms,
 /// spelled without `@Sendable`.
 private final class CompletionDelegate: UNUserNotificationCenterDelegate {
     var presented: [UNNotification] = []
@@ -104,7 +104,7 @@ struct UserNotificationsValuesTests {
         let trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: 18, minute: 0), repeats: true)
         let request = UNNotificationRequest(identifier: "id", content: mutable, trigger: trigger)
         mutable.title = "changed"
-        #expect(request.content.title == "Daily Challenge")
+        #expect(request.content.title == "Reminder")
         #expect(!(request.content is UNMutableNotificationContent))
         #expect(request.content !== mutable)
         #expect(request.trigger === trigger)
@@ -224,20 +224,20 @@ struct UserNotificationsChannelTests {
         mutable.subtitle = "Day 12"
         mutable.badge = 3
         mutable.threadIdentifier = "daily"
-        let request = UNNotificationRequest(identifier: "dailyChallenge.reminder.12", content: mutable, trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
+        let request = UNNotificationRequest(identifier: "reminder.12", content: mutable, trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
         try await center.add(request)
 
         let sent = try #require(java.calls.last?.arguments["request"] as? [String: Any])
         #expect(java.calls.last?.name == "notifications.schedule")
-        #expect(sent["identifier"] as? String == "dailyChallenge.reminder.12")
+        #expect(sent["identifier"] as? String == "reminder.12")
         let body = try #require(sent["content"] as? [String: Any])
-        #expect(body["title"] as? String == "Daily Challenge")
+        #expect(body["title"] as? String == "Reminder")
         #expect(body["subtitle"] as? String == "Day 12")
-        #expect(body["body"] as? String == "A new puzzle is waiting")
+        #expect(body["body"] as? String == "Something new is waiting")
         #expect(body["sound"] as? String == "default")
         #expect(body["badge"] as? Int == 3)
         #expect(body["threadIdentifier"] as? String == "daily")
-        #expect(body["userInfo"] as? [String: String] == ["route": "dailyChallenge"])
+        #expect(body["userInfo"] as? [String: String] == ["route": "reminder"])
         let trigger = try #require(sent["trigger"] as? [String: Any])
         #expect(trigger["type"] as? String == "calendar")
         #expect(trigger["repeats"] as? Bool == false)
@@ -294,9 +294,9 @@ struct UserNotificationsChannelTests {
         components.minute = 0
         components.timeZone = TimeZone.current
         let requests = [
-            UNNotificationRequest(identifier: "dailyChallenge.reminder.1", content: content(), trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)),
+            UNNotificationRequest(identifier: "reminder.1", content: content(), trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)),
             UNNotificationRequest(identifier: "weekly", content: content(title: "Week"), trigger: UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: 9, minute: 30, weekday: 2), repeats: true)),
-            UNNotificationRequest(identifier: "dailyChallenge.test.launch", content: content(), trigger: UNTimeIntervalNotificationTrigger(timeInterval: 90, repeats: false)),
+            UNNotificationRequest(identifier: "reminder.launch", content: content(), trigger: UNTimeIntervalNotificationTrigger(timeInterval: 90, repeats: false)),
         ]
         for request in requests { try await center.add(request) }
         // Java keeps them as sent; hand them back as its pending list.
@@ -306,7 +306,7 @@ struct UserNotificationsChannelTests {
         let pending = await center.pendingNotificationRequests()
         #expect(pending == requests)
         #expect(pending.map(\.identifier) == requests.map(\.identifier))
-        #expect(pending[0].content.userInfo["route"] as? String == "dailyChallenge")
+        #expect(pending[0].content.userInfo["route"] as? String == "reminder")
         #expect(pending[0].content.sound == .default)
         #expect((pending[1].trigger as? UNCalendarNotificationTrigger)?.dateComponents.weekday == 2)
         #expect(pending[1].trigger?.repeats == true)
@@ -336,13 +336,13 @@ struct UserNotificationsChannelTests {
         let center = UNUserNotificationCenter(channel: java.channel)
         let delegate = CompletionDelegate()
         center.delegate = delegate
-        let request = UNNotificationRequest(identifier: "dailyChallenge.reminder.7", content: content(), trigger: nil)
+        let request = UNNotificationRequest(identifier: "reminder.7", content: content(), trigger: nil)
         java.send("notifications", "opened", ["request": NotificationCodec.encode(request), "date": 1_790_000_000_000.0, "action": "default"])
         await settle { !delegate.responses.isEmpty }
         let response = try #require(delegate.responses.first)
         #expect(response.actionIdentifier == UNNotificationDefaultActionIdentifier)
         #expect(response.notification.request == request)
-        #expect(response.notification.request.content.userInfo["route"] as? String == "dailyChallenge")
+        #expect(response.notification.request.content.userInfo["route"] as? String == "reminder")
         #expect(response.notification.date == Date(timeIntervalSince1970: 1_790_000_000))
     }
 
@@ -391,19 +391,19 @@ struct UserNotificationsMemoryTests {
         #expect(try await !center.requestAuthorization(options: [.alert, .sound]))
         #expect(await center.notificationSettings().authorizationStatus == .notDetermined)
 
-        let daily = UNNotificationRequest(identifier: "dailyChallenge.reminder.1", content: content(), trigger: UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: 18, minute: 0), repeats: true))
+        let daily = UNNotificationRequest(identifier: "reminder.1", content: content(), trigger: UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: 18, minute: 0), repeats: true))
         let soon = UNNotificationRequest(identifier: "soon", content: content(), trigger: UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false))
         let past = UNNotificationRequest(identifier: "past", content: content(), trigger: UNCalendarNotificationTrigger(dateMatching: DateComponents(year: 2020, month: 1, day: 1, hour: 9), repeats: false))
         let now = UNNotificationRequest(identifier: "now", content: content(), trigger: nil)
         for request in [daily, soon, past, now] { try await center.add(request) }
-        #expect(await center.pendingNotificationRequests().map(\.identifier) == ["dailyChallenge.reminder.1", "soon"])
+        #expect(await center.pendingNotificationRequests().map(\.identifier) == ["reminder.1", "soon"])
 
         // Adding the same identifier replaces it.
         let replaced = UNNotificationRequest(identifier: "soon", content: content(title: "Again"), trigger: UNTimeIntervalNotificationTrigger(timeInterval: 120, repeats: false))
         try await center.add(replaced)
-        #expect(await center.pendingNotificationRequests().map(\.content.title) == ["Daily Challenge", "Again"])
+        #expect(await center.pendingNotificationRequests().map(\.content.title) == ["Reminder", "Again"])
 
-        center.removePendingNotificationRequests(withIdentifiers: ["dailyChallenge.reminder.1"])
+        center.removePendingNotificationRequests(withIdentifiers: ["reminder.1"])
         #expect(await center.pendingNotificationRequests() == [replaced])
         center.removeAllPendingNotificationRequests()
         #expect(await center.pendingNotificationRequests().isEmpty)
@@ -418,10 +418,10 @@ struct UserNotificationsMemoryTests {
         #expect(await center.pendingNotificationRequests().map(\.identifier) == ["a"])
     }
 
-    /// Phantom Words' `DailyChallengeNotificationManager`, in brief: the
+    /// A game's reminder scheduling, in brief: the
     /// calls it makes, spelled as it spells them, compile and do what it
     /// expects of them.
-    @Test("The game's reminder bookkeeping works against the center")
+    @Test("Reminder bookkeeping works against the center")
     func consumerShape() async throws {
         let center = UNUserNotificationCenter(channel: nil)
         let settings = await center.notificationSettings()
@@ -442,12 +442,12 @@ struct UserNotificationsMemoryTests {
         date.hour = 18
         date.minute = 0
         date.timeZone = calendar.timeZone
-        let request = UNNotificationRequest(identifier: "dailyChallenge.reminder.x", content: content(), trigger: UNCalendarNotificationTrigger(dateMatching: date, repeats: false))
+        let request = UNNotificationRequest(identifier: "reminder.x", content: content(), trigger: UNCalendarNotificationTrigger(dateMatching: date, repeats: false))
         try await center.add(request)
         let identifiers = await center.pendingNotificationRequests()
             .map(\.identifier)
-            .filter { $0.hasPrefix("dailyChallenge.reminder.") }
-        #expect(identifiers == ["dailyChallenge.reminder.x"])
+            .filter { $0.hasPrefix("reminder.") }
+        #expect(identifiers == ["reminder.x"])
         #expect((request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() == reminderDate)
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         #expect(await center.pendingNotificationRequests().isEmpty)
