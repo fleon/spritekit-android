@@ -11,8 +11,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- The launcher icon: an adaptive icon and legacy PNGs below Android 8
-         (the game's own, in res/mipmap-*). The name under it is the app's
-         name (@string/app_name). -->
+         (a placeholder in res/mipmap*, which the game replaces with its
+         own). The name under it is the app's name (@string/app_name). -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -35,6 +35,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The share sheet's files (MainActivity.shareFile): content:// URIs
+             for what the game writes under the cache, granted per share. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/shared_files" />
+        </provider>
 
         <!-- Play Games Services' project (empty in a build without one;
              PlayGamesServices then never initializes the SDK). -->
