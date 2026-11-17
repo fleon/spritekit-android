@@ -158,7 +158,9 @@ open class SKLabelNode: SKNode {
         let broken = brokenLines(text, font: font, provider: provider)
         guard !broken.isEmpty else { return nil }
 
-        let lineHeight = metrics.lineHeight
+        // SpriteKit advances a line by the font's ascent, descent and
+        // leading each rounded to whole points (measured on macOS and iOS).
+        let lineHeight = metrics.ascent.rounded() + metrics.descent.rounded() + metrics.leading.rounded()
         var placed: [TextLayout.Placed] = []
         var box: CGRect?
 

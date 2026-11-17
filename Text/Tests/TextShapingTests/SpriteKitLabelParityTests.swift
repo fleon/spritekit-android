@@ -54,5 +54,34 @@ struct SpriteKitLabelParityTests {
         let share = font == "Montserrat-Black" ? 1.0 : 0.98
         #expect(Double(matched) >= Double(checked) * share, "\(matched) of \(checked) frames match")
     }
+
+    @Test("Lines are as far apart as SpriteKit's", arguments: ["Montserrat-SemiBold", "Montserrat-Black", "KoHo-Bold"])
+    func lineSpacingMatches(font: String) {
+        _ = Self.registered
+        _ = Fonts.engine
+        // A 21-line label's height less a 1-line one's is 20 line advances,
+        // whatever SpriteKit pads the block with.
+        let many = Array(repeating: "Hx", count: 21).joined(separator: "\n")
+        for size in [9, 12, 15.5, 20, 33] as [CGFloat] {
+            func apple(_ text: String) -> CGFloat {
+                let node = SpriteKit.SKLabelNode(fontNamed: font)
+                node.fontSize = size
+                node.numberOfLines = 0
+                node.text = text
+                return node.frame.height
+            }
+            func ours(_ text: String) -> CGFloat {
+                let node = SpriteKitShim.SKLabelNode(fontNamed: font)
+                node.fontSize = size
+                node.numberOfLines = 0
+                node.text = text
+                guard let lines = node.layout?.lines, lines.count > 1 else { return 0 }
+                return lines[0].origin.y - lines[lines.count - 1].origin.y
+            }
+            let theirs = (apple(many) - apple("Hx")) / 20
+            let mine = ours(many) / 20
+            #expect(abs(mine - theirs) < 0.001, "\(font) \(size): \(mine) against SpriteKit's \(theirs)")
+        }
+    }
 }
 #endif
