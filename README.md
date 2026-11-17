@@ -181,7 +181,8 @@ through `SKRenderer` and pinned in host tests:
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
   descendants; a scaled 9-slice keeps its caps.
 - **Paths and contexts:** checked against CoreGraphics' own API, every blend
-  mode included.
+  mode included; `setLineDash(phase:lengths:)` strokes in dashes as
+  CoreGraphics does, the pattern scaled with the context (`LineDashTests`).
 
 A change to the shim's behaviour comes with a test of this kind.
 
@@ -320,6 +321,8 @@ and tested on a Mac against a fake Java:
   in presentation time.
   A track with no loop points of its own repeats whole with
   `MusicLoop.wholeTrack`, as `AVAudioPlayer`'s `numberOfLoops = -1` does.
+  `AudioBackend.duration(ofSound:)` is a prepared sound's length (from its
+  WAV), what a game reads from `AVAudioPlayer.duration`.
 - **Media:** `AVAssetWriter`, `AVAudioFile` and composition stand-ins over
   MediaCodec and MediaMuxer, for games that render video.
 - **The device:** haptics (primitives where the vibrator has them), audio
