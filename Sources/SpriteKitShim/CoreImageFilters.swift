@@ -1,10 +1,9 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// Core Image's filters by name, as the games build them: Hue Rings' and
-// Zyl's gradient textures (`CILinearGradient`, `CIRadialGradient`, read back
-// through a `CIContext`) and the blur Zyl and Phantom Words hang on an
-// `SKEffectNode` (`CIGaussianBlur`, which the renderer draws). Measured
+// Core Image's filters by name: gradient textures (`CILinearGradient`,
+// `CIRadialGradient`, read back through a `CIContext`) and the blur a game
+// may hang on an `SKEffectNode` (`CIGaussianBlur`). Measured
 // against Core Image on a Mac (macOS 27.2) and pinned in `CoreImageTests`:
 //
 // - Gradients mix premultiplied colour in linear light and encode it to

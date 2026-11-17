@@ -121,7 +121,7 @@ struct CoreImageTests {
             filter.setValue(r1, forKey: "inputRadius1")
             return filter.outputImage!
         }
-        // Hue Rings' glow: a colour at full alpha in the middle, clear at the edge.
+        // A glow: a colour at full alpha in the middle, clear at the edge.
         let glow = radial(CIColor(red: 1, green: 0.5, blue: 0.25, alpha: 1), CIColor(red: 1, green: 0.5, blue: 0.25, alpha: 0),
                           center: CGPoint(x: 10, y: 10), r0: 0, r1: 10)
         #expect(glow.extent == CGRect(x: 0, y: 0, width: 20, height: 20))

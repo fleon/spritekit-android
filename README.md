@@ -1164,10 +1164,8 @@ against Apple's own where Apple's runs on the Mac:
   mix premultiplied colour in linear light and encode sRGB as they're
   written (black to white is 188 half way), a pixel takes its centre's
   colour, a fractional rectangle ends in a part-covered pixel, and a radial
-  gradient that ends clear has its outer circle's box for an extent. Hue
-  Rings and Zyl draw their gradient textures this way. `SKEffectNode.filter`
-  is kept for Zyl's and Phantom Words' blurs; the renderer doesn't draw it
-  yet.
+  gradient that ends clear has its outer circle's box for an extent. `SKEffectNode.filter`
+  is kept; the renderer doesn't draw it yet.
 - `SKTexture.cgImage()`, a snapshot's pixels read back from the GPU, and
   alpha-only bitmaps: the collection and the tips fit each sample by what it
   draws.

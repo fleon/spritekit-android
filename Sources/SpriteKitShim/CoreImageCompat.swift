@@ -1,12 +1,11 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// Core Image, as much of it as the games use: soft fields drawn from a
-// mask (Switchlings' `LawnNode` clearing round the board, `BoardGroundingArt`'s
-// glow and shadow), each `clampedToExtent().applyingGaussianBlur(sigma:).cropped(to:)`
-// and read back through a `CIContext`; and three filters by name
-// (`CoreImageFilters.swift`): Hue Rings' and Zyl's linear and radial gradient
-// textures and the Gaussian blur Zyl and Phantom Words put on effect nodes.
+// Core Image, as much of it as games use: soft fields drawn from a mask,
+// each `clampedToExtent().applyingGaussianBlur(sigma:).cropped(to:)` and read
+// back through a `CIContext`; and three filters by name
+// (`CoreImageFilters.swift`): linear and radial gradients and the Gaussian
+// blur, which a game may also put on an effect node.
 // Android has no Core Image, so all of it runs here on the CPU, over the
 // premultiplied pixels the software `CGContext` drew.
 //
@@ -226,7 +225,7 @@ public struct CIContextOption: Hashable, Sendable {
 public final class CIContext: @unchecked Sendable {
     public init(options: [CIContextOption: Any]? = nil) {}
 
-    /// A bitmap's pixels as they are (the games read back the whole
+    /// A bitmap's pixels as they are (read back over the whole
     /// extent), or a generator drawn over `rect`.
     public func createCGImage(_ image: CIImage, from rect: CGRect) -> RasterImage? {
         if image.field != nil { return image.render(rect) }
