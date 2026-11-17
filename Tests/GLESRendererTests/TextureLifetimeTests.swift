@@ -5,10 +5,10 @@ import Testing
 
 @Suite("Baked textures")
 struct BakedTexturesTests {
-    /// Starry Sky's floor and the edge shade baked after it are both
-    /// throwaway canvases, freed as each bake returns, so the second could
-    /// land at the first's address. Keyed by that node, the edge shade's
-    /// bake deleted the floor the sky still sampled.
+    /// A floor and a shade map baked after it are both throwaway canvases,
+    /// freed as each bake returns, so the second could land at the first's
+    /// address. Keyed by that node, the shade map's bake deleted the floor
+    /// a shader still sampled.
     @Test("A bake from a canvas at a freed one's address keeps the first texture")
     func reusedAddress() {
         var baked = BakedTextures()
@@ -41,8 +41,8 @@ struct BakedTexturesTests {
 
 @Suite("Premultiplied alpha")
 struct PremultiplyTests {
-    /// An edge pixel of `RigFarmB.png`: the chick's yellow at full strength
-    /// where it's a quarter covered, as a PNG keeps it.
+    /// An edge pixel of a painted sprite: yellow at full strength where it's
+    /// a quarter covered, as a PNG keeps it.
     @Test("A straight edge pixel is scaled by its alpha; opaque and clear ones keep theirs")
     func scales() {
         let straight = Data([247, 206, 37, 62, 10, 20, 30, 255, 200, 100, 50, 0])

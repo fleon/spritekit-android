@@ -14,10 +14,8 @@ open class SKWarpGeometry {
 /// left): each vertex samples the picture at its source position and is drawn
 /// at its destination position.
 ///
-/// The game builds one for every pose of a swaying plant, beating wing,
-/// stirring crown, swimming fish and tapped prop (`BackdropWarp`,
-/// `BackdropTouch`, the critter, swim and tail rigs), always over a regular
-/// source grid.
+/// A game may build one for every pose of a swaying plant, beating wing or
+/// swimming fish, usually over a regular source grid.
 open class SKWarpGeometryGrid: SKWarpGeometry {
     public let numberOfColumns: Int
     public let numberOfRows: Int

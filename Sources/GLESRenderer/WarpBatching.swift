@@ -17,8 +17,8 @@ extension SpriteBatcher {
     /// Writes the grid's mesh (`WarpMesh`: the same vertices, in the same
     /// order, and the same triangles) straight into the batch, through the
     /// sprite's frame and transform in one affine step, so a frame builds no
-    /// mesh of its own for each warped sprite: Bug Woods' crowns and plants
-    /// draw a new pose every frame.
+    /// mesh of its own for each warped sprite: a scene of swaying plants may
+    /// draw a new pose for each every frame.
     func addWarp(_ grid: SKWarpGeometryGrid, _ sprite: DrawList.Sprite, to batch: inout Batch) {
         let columns = grid.numberOfColumns, rows = grid.numberOfRows
         let level = WarpMesh.isUntouched(grid) ? 0 : min(max(sprite.subdivisionLevels, 0), WarpMesh.deepestLevel)

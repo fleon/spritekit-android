@@ -57,8 +57,8 @@ struct PreambleTests {
     func defaultShadingTintsAndFades() {
         // A Mac's SpriteKit: a white sprite tinted red (colorBlendFactor 1)
         // draws red through SKDefaultShading, and at alpha 0.5 half as bright,
-        // nothing multiplied after the shader. A lit signpost's ink arrow and
-        // a pressed plate's fading cap depend on it.
+        // nothing multiplied after the shader. A tinted sprite drawn through
+        // a lit shader, or one fading out, depends on it.
         let out = ShaderTranslator.fragmentShader(from: "void main() { gl_FragColor = SKDefaultShading(); }")
         #expect(out.contains("in float v_blend;"))
         #expect(out.contains("mediump vec4 tint = v_color_mix;"))
@@ -118,7 +118,7 @@ struct RewriteTests {
     /// "ERROR: 0:14: 'sample' : syntax error" and says nothing about why.
     @Test("Words ES 3.0 reserved but ES 1.0 allowed are renamed")
     func reservedWords() {
-        // Exactly what CrumbleNode composes when a world lights its cracks.
+        // What a shader composed with a lighting function reads.
         let source = """
         void main() {
             vec4 sample = texture2D(u_normal, v_tex_coord);
@@ -150,11 +150,11 @@ struct RewriteTests {
     }
 }
 
-@Suite("Real game shaders")
+@Suite("Realistic shaders")
 struct RealShaderTests {
-    /// Verbatim from Source/Game/Components/Board/HedgeNode.swift — the light
-    /// pillars. Helper functions, nested calls, early returns, `fract`.
-    static let hedge = """
+    /// A shader of the kind games write: helper functions, nested calls,
+    /// early returns, `fract`.
+    static let outline = """
     float sq(float x) { return x * x; }
 
     float roundRect(vec2 p, float b, float r) {
@@ -187,9 +187,9 @@ struct RealShaderTests {
     """
 
     @Test("A real shader keeps its helper functions and control flow")
-    func hedgeShader() {
+    func helperShader() {
         let out = ShaderTranslator.fragmentShader(
-            from: Self.hedge,
+            from: Self.outline,
             inputs: ShaderTranslator.Inputs(uniforms: [("u_colour", "vec4")])
         )
         // Helpers survive untouched.
@@ -207,9 +207,9 @@ struct RealShaderTests {
         #expect(!out.contains("texture2D"))
     }
 
-    /// The game composes shaders at run time: a world's light function is
-    /// prepended and a line is swapped in by string replacement (see
-    /// CrumbleNode.source(light:)). Translation must work on the result.
+    /// A game may compose shaders at run time: a light function is
+    /// prepended and a line is swapped in by string replacement.
+    /// Translation must work on the result.
     @Test("A composed shader translates as a whole")
     func composed() {
         let lightFunction = """
@@ -253,7 +253,7 @@ struct VertexTests {
 
     @Test("Per-node SKAttributes are not vertex inputs")
     func attributes() {
-        // RigMeshNode's triangle runs are uniforms of the fragment stage:
+        // A mesh sprite's triangle runs are uniforms of the fragment stage:
         // twelve varyings dropped triangles on a Mali-G72.
         let out = ShaderTranslator.spriteVertexShader()
         #expect(!out.contains("a_a_run"))

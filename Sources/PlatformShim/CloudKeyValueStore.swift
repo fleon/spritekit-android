@@ -1,7 +1,8 @@
 import Foundation
+import SpriteKitShim
 
-/// The small part of `NSUbiquitousKeyValueStore` that `ICloudSyncManager`
-/// actually uses: a dictionary per key, a nudge to fetch, and news that
+/// The small part of `NSUbiquitousKeyValueStore` a game's sync code
+/// actually needs: a dictionary per key, a nudge to fetch, and news that
 /// another device changed something.
 ///
 /// ## Why this shape, and how Play Saved Games fits it
@@ -12,7 +13,7 @@ import Foundation
 /// without seeing each other.
 ///
 /// That is a worse API in general and an irrelevant difference here, because
-/// of how `ICloudSyncManager` merges. Every record it writes is either a
+/// of how `SyncEngine` merges. Every record it writes is either a
 /// value with the time it changed, or a set of items each with the time it
 /// was added plus the time the set was last reset. Merging two of those is
 /// commutative and idempotent — latest wins, unions pool, resets drop what
@@ -22,22 +23,28 @@ import Foundation
 ///
 /// So one snapshot holding `[key: record]` gives this protocol exactly:
 /// `PlaySavedGamesCloud` is that store. `LocalOnlyCloud` is what runs without
-/// Play Games (a build without its IDs, `-ICloudOff`, a host test), keeping
+/// Play Games (a build without its IDs, a game with sync off, a host test), keeping
 /// saved data on the device.
-public protocol CloudKeyValueStore: AnyObject {
+///
+/// Every one is also a cloud for `NSUbiquitousKeyValueStore`
+/// (`UbiquitousCloud`), which keeps its keys apart under a prefix. One game
+/// uses one or the other: both set `externalChanges`.
+public protocol CloudKeyValueStore: UbiquitousCloud {
     func dictionary(forKey key: String) -> [String: Any]?
     func set(_ dictionary: [String: Any], forKey key: String)
     /// Asks the service for news. Returns whether anything may have changed.
     @discardableResult func synchronize() -> Bool
     /// Called when another device's changes arrive, on the main thread.
     var externalChanges: (() -> Void)? { get set }
+    /// Every key held.
+    var keys: [String] { get }
 }
 
 /// No cloud at all: every read is empty and every write goes nowhere, so the
 /// merge engine above degrades to "this device's values, kept locally".
 ///
-/// What an Android build without Play Games uses, and the same path the
-/// Apple build takes under `-ICloudOff`, which is why the semantics the game
+/// What an Android build without Play Games uses, and the same path an
+/// Apple build with iCloud off takes, which is why the semantics a game
 /// depends on — latest wins, sets pool, a reset empties — are not a separate
 /// code path that could drift: they are the merge engine running with
 /// nothing on the other side.
@@ -49,6 +56,7 @@ public final class LocalOnlyCloud: CloudKeyValueStore {
     public func dictionary(forKey key: String) -> [String: Any]? { nil }
     public func set(_ dictionary: [String: Any], forKey key: String) {}
     @discardableResult public func synchronize() -> Bool { false }
+    public var keys: [String] { [] }
 }
 
 /// A cloud in memory, so the merge can be tested with two devices.
@@ -63,6 +71,8 @@ public final class MemoryCloud: CloudKeyValueStore {
     public func set(_ dictionary: [String: Any], forKey key: String) {
         contents[key] = dictionary
     }
+
+    public var keys: [String] { Array(contents.keys) }
 
     @discardableResult public func synchronize() -> Bool { true }
 

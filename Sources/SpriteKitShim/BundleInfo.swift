@@ -3,7 +3,7 @@ import Foundation
 
 /// `Bundle.main`'s Info.plist values, as Android has them. The main bundle
 /// here is `/system/bin` (the process is `app_process`), which has no
-/// Info.plist, so the title's version line read "Version ()". The app's
+/// Info.plist, so a version line read from it said "Version ()". The app's
 /// `MainActivity` puts the APK's `versionName` and `versionCode` in the
 /// environment before the Swift libraries load (`SKA_VERSION_NAME`,
 /// `SKA_VERSION_CODE`), and this answers with them under Apple's

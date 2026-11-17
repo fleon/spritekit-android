@@ -34,6 +34,7 @@ let package = Package(
         .library(name: "AVFoundation", targets: ["AVFoundation"]),
         .library(name: "os", targets: ["os"]),
         .library(name: "simd", targets: ["simd"]),
+        .library(name: "UserNotifications", targets: ["UserNotifications"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -63,13 +64,13 @@ let package = Package(
         .target(name: "CryptoKit",
                 dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
-        // The beta's solve log's two (`PlaytestLog`).
+        // Two a game may import to describe the player and the network.
         .target(name: "GameKit",
                 path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
         .target(name: "Network",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/Network", swiftSettings: [v5, shimDefine]),
-        // The share film's three (`SolutionFilm`, `FilmSoundtrack`).
+        // The three a game writing video and audio files imports.
         .target(name: "Metal",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/Metal", swiftSettings: [v5, shimDefine]),
@@ -90,5 +91,10 @@ let package = Package(
         .target(name: "simd",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/simd", swiftSettings: [v5, shimDefine]),
+        // Local notifications (`UNUserNotificationCenter`), from the
+        // platform layer.
+        .target(name: "UserNotifications",
+                dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
+                path: "Sources/UserNotifications", swiftSettings: [v5, shimDefine]),
     ]
 )

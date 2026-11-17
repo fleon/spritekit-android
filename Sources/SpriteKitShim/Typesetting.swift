@@ -3,9 +3,8 @@ import Foundation
 
 /// Line breaking and line bounds as CoreText reports them.
 ///
-/// `Source/Utils/TextHelpers.swift` is pure CoreText — `wrappedLines` runs a
-/// `CTTypesetter` and `capitalsOffset` reads a `CTLine`'s glyph-path bounds —
-/// and it is the file the whole interface positions text with. This is what
+/// A game's text layout may be pure CoreText — a `CTTypesetter` to wrap
+/// lines, a `CTLine`'s glyph-path bounds to place them. This is what
 /// stands behind those calls on Android.
 ///
 /// It lives here rather than in `TextShaping` so it can be built and tested
@@ -57,8 +56,8 @@ public enum Typesetting {
             guard width(upTo: place) <= maxWidth else { break }
             best = place
         }
-        // Never zero: CoreText always advances, and so must the loop in
-        // `wrappedLines` that calls this.
+        // Never zero: CoreText always advances, and so must the wrapping
+        // loop that calls this.
         if best > 0 { return best }
         return places.first ?? whole
     }

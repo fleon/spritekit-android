@@ -1,10 +1,9 @@
 import Foundation
 import SpriteKitShim
 
-/// iCloud's key-value store, on Play Games **Saved Games**: what
-/// `ICloudSyncManager` syncs (levels cleared, the level left part-way,
-/// settings, language, board firsts…) follows the player to every Android
-/// device signed in to the same Play Games profile.
+/// iCloud's key-value store, on Play Games **Saved Games**: what a game syncs
+/// (progress, settings…) follows the player to every Android device signed in
+/// to the same Play Games profile.
 ///
 /// One snapshot holds every key's record (`[key: record]`, a binary property
 /// list, so a Bool stays a Bool). A **sync** opens it, takes what Play holds
@@ -19,10 +18,10 @@ import SpriteKitShim
 /// A sync runs as Play Games signs in, when the game asks (`synchronize()`:
 /// at launch and coming back to the front), a few seconds after the game
 /// saves something (`commitDelay`), every couple of minutes while it plays
-/// (`pollInterval`, so another device's clears turn up without a relaunch),
+/// (`pollInterval`, so another device's progress turns up without a relaunch),
 /// and at once as it goes to the background (`flush()`). Signed out it does
-/// nothing and the game keeps its saved data on the device, as under
-/// `-ICloudOff`.
+/// nothing and the game keeps its saved data on the device, as with iCloud
+/// off.
 public final class PlaySavedGamesCloud: CloudKeyValueStore {
     public static var snapshotName: String { "\(AppIdentity.current.key)-progress" }
     public static let commitDelay: TimeInterval = 5
@@ -59,6 +58,8 @@ public final class PlaySavedGamesCloud: CloudKeyValueStore {
     // MARK: - CloudKeyValueStore
 
     public func dictionary(forKey key: String) -> [String: Any]? { contents[key] }
+
+    public var keys: [String] { Array(contents.keys) }
 
     public func set(_ dictionary: [String: Any], forKey key: String) {
         contents[key] = dictionary

@@ -3,9 +3,7 @@ import Foundation
 
 /// The point a scene is drawn from.
 ///
-/// The game's own scenes never set one: only the debug Mac tools that film
-/// the App Store videos do (`EventVideo`, which pans after whoever moves). It
-/// is here so a scene that does draws as SpriteKit would, and because the
+/// It is here so a scene that sets one draws as SpriteKit would, and because the
 /// view's mapping between its points and the scene's runs through it.
 ///
 /// What SpriteKit does with a scene's camera, and this does too:
@@ -167,7 +165,7 @@ extension SKScene {
 
 public extension SKView {
     /// SpriteKit's `SKView.convert(_:from:)`: a point in `scene` to the
-    /// view's points (y down), as `LightCanvas.pixels` asks.
+    /// view's points (y down).
     func convert(_ point: CGPoint, from scene: SKScene) -> CGPoint {
         scene.convertPoint(toView: point)
     }

@@ -15,7 +15,7 @@ public enum SKLabelVerticalAlignmentMode: Int, Sendable {
 /// reports the box the ink covers. The measuring behind it — shaping with
 /// HarfBuzz, metrics from FreeType — comes from whatever `TextProvider` has
 /// been registered with `TextMetrics`, which keeps those two C libraries out
-/// of this package. See `Android/Text`.
+/// of this package. See `Text/`.
 ///
 /// With no provider registered the frame is `.zero`, as it was before any of
 /// this landed. That is deliberate: a label that measures nothing is obvious,
@@ -30,10 +30,10 @@ public enum SKLabelVerticalAlignmentMode: Int, Sendable {
 /// right edge; `.baseline` puts its bottom where the ink's rounded-down
 /// bottom is, `.center` its middle, `.top` and `.bottom` its edges. So both
 /// axes work on the **ink**, not the advance: a descender moves a centred
-/// label, which the game undoes for buttons (`TextHelpers`'
-/// `capitalsOffset`), and every frame is a little wider and taller than the
-/// ink, which the game's pills and buttons are sized by. Several lines keep
-/// the simpler layout below: the game never asks for them.
+/// label, which a game undoes for buttons (from a `CTLine`'s glyph-path
+/// bounds), and every frame is a little wider and taller than the ink,
+/// which a game's pills and buttons are sized by. Several lines keep the
+/// simpler layout below.
 open class SKLabelNode: SKNode {
     open var text: String? { didSet { invalidateLayout() } }
     open var fontName: String? { didSet { invalidateLayout() } }
@@ -392,8 +392,8 @@ open class SKLabelNode: SKNode {
 
 /// Vector shapes — buttons, panels, meters and the focus rings.
 ///
-/// 16 uses directly, but `SurfaceTexture` (7 CGContext sites) draws most
-/// chunky surfaces, so the renderer needs a 2D path rasteriser either way.
+/// A game may also draw such surfaces through a `CGContext`, so the
+/// renderer needs a 2D path rasteriser either way.
 /// The shim records the path; filling and stroking it is the renderer's job.
 open class SKShapeNode: SKNode {
     open var path: CGPath?
@@ -409,7 +409,7 @@ open class SKShapeNode: SKNode {
     /// Carried, not drawn yet: the stroke draws in `strokeColor` alone.
     open var strokeTexture: SKTexture?
     open var fillShader: SKShader?
-    /// Carried, not drawn: the game sets none, and only `ShaderPrimer` reads it.
+    /// Carried, not drawn.
     open var strokeShader: SKShader?
 
     public override init() {

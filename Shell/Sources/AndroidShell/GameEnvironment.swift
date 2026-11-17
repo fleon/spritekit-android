@@ -6,39 +6,34 @@ import ShellCore
 /// What corelibs Foundation reads from the process's environment, set up the
 /// way the game expects it on Apple, before anything touches it.
 ///
-/// - **Saved data.** `UserDefaults.standard` is where the game keeps progress,
-///   settings and the screen to resume (`Progress`, `ResumeScreen`, the
-///   platform managers' own records). corelibs Foundation keeps it in memory
+/// - **Saved data.** `UserDefaults.standard` is where a game keeps progress,
+///   settings and whatever else it saves. corelibs Foundation keeps it in memory
 ///   only on Android (it finds no app domain to write: the process is
 ///   `app_process`, with no bundle identifier), so the shell writes the
 ///   app's values to `defaults.plist` in internal storage — which survives
 ///   updates and goes with an uninstall, as an iOS app's container does —
 ///   whenever the game might be ended (`save()`), and reads them back first
 ///   thing at launch. `HOME` points there too, for anything else that asks.
-/// - **The device's language.** `Localization.deviceLanguage` asks
+/// - **The device's language.** A game asks
 ///   `Locale.preferredLanguages`, which corelibs reads from `AppleLanguages`;
 ///   it is filled from Android's own list (`SDL_GetPreferredLocales`).
 /// - **Launch arguments.** On Apple, `-Key value` pairs reach
-///   `UserDefaults`' argument domain, which `LaunchArguments` reads (in debug
-///   builds). Here the intent's `args` or `args64` extra carries them
-///   (`ShellArguments`), and they are put in that domain the same way
-///   (`LaunchArgumentDomain`). An emulator's gain `-Playtest NO` unless
-///   they name it (`AndroidDevice`): `LaunchArguments` knows an iOS
-///   simulator only at compile time. A build that isn't a beta
-///   (`-Pswitchlings.beta=false`) gains `-DesignerLevels NO` too
-///   (`BetaBuild`).
+///   `UserDefaults`' argument domain, where a game reads them. Here the
+///   intent's `args` or `args64` extra carries them (`ShellArguments`), and
+///   they are put in that domain the same way (`LaunchArgumentDomain`), with
+///   the game's `LaunchDefaults` for an emulator or a build that isn't a beta
+///   added where the launch doesn't name them.
 enum GameEnvironment {
-    static func install() {
+    static func install(defaults: LaunchDefaults) {
         if let storage = SDL_GetAndroidInternalStoragePath().map({ String(cString: $0) }) {
             setenv("HOME", storage, 1)
             setenv("XDG_CONFIG_HOME", storage + "/.config", 1)
             setenv("XDG_DATA_HOME", storage + "/.local/share", 1)
             let cache = SDL_GetAndroidCachePath().map { String(cString: $0) } ?? storage
             setenv("TMPDIR", cache + "/tmp", 1)
-            // `FileManager`'s caches directory is the app's cache, where the
-            // game's debug captures land (`-SnapshotLevels`' `levels/`,
-            // `-SnapshotEvery`'s `snapshot.png`, `-FrameLog`'s `frames.json`)
-            // and `adb exec-out run-as <package> cat cache/…` reaches them.
+            // `FileManager`'s caches directory is the app's cache, where a
+            // game's debug captures land and
+            // `adb exec-out run-as <package> cat cache/…` reaches them.
             setenv("XDG_CACHE_HOME", cache, 1)
             try? FileManager.default.createDirectory(atPath: storage + "/.config", withIntermediateDirectories: true)
             if let tmp = ProcessInfo.processInfo.environment["TMPDIR"] {
@@ -50,11 +45,13 @@ enum GameEnvironment {
 
         loadSavedDefaults()
 
-        // An emulator records no solves for the beta's solve log unless told
-        // to (`-Playtest YES`), as an iOS simulator records none; a build
-        // that isn't a beta neither plays the feed nor posts unless told to.
+        // The game's defaults for an emulator or a build that isn't a beta,
+        // where the launch doesn't name them.
         Log.info(BetaBuild.current.description)
-        let arguments = BetaBuild.current.arguments(AndroidDevice.current.arguments(LaunchArgumentDomain.parse(ShellArguments.values)))
+        let arguments = defaults.apply(
+            to: LaunchArgumentDomain.parse(ShellArguments.values),
+            device: AndroidDevice.current, beta: BetaBuild.current
+        )
         // `-AppleLanguages "(ja)"` stands in for the device's, as on Apple;
         // set where `Locale.preferredLanguages` reads it whichever domain
         // that is, and never saved, since it's an argument.

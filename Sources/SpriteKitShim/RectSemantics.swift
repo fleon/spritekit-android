@@ -9,11 +9,10 @@ import Foundation
 /// CoreGraphics says no; and it gives back a spanned rect's own width where
 /// CoreGraphics gives `maxX − minX`, which can round a bit either way. Its
 /// `contains(_: CGRect)` is `union(r) == self`, which that same rounding
-/// breaks: (0.1, 0, 0.2, 1) doesn't contain itself. The game's layouts test
-/// grid spots against grown rects and the screen (`Arrangement.bestSpot`,
-/// the accents), where edges meet exactly; a spot one side lets through and
-/// the other doesn't takes a random draw the other doesn't, and every piece
-/// after it lands elsewhere (the world list's farm, the landscape lawns).
+/// breaks: (0.1, 0, 0.2, 1) doesn't contain itself. A layout that tests
+/// grid spots against grown rects and the screen meets edges exactly; a
+/// spot one side lets through and the other doesn't takes a random draw the
+/// other doesn't, and every piece placed after it lands elsewhere.
 ///
 /// Each rule was fitted against a Mac's CoreGraphics over every pair of a
 /// grid of rects (null, infinite, zero-sized, negative-sized) and 400,000

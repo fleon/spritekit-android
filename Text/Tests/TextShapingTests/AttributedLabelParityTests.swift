@@ -20,12 +20,11 @@ struct AttributedLabelParityTests {
 
     static let geneva = "/System/Library/Fonts/Geneva.ttf"
 
+    /// The run's one installed engine, with Geneva added: installing a
+    /// second one would swap the provider under every other suite.
     static let engine: TextEngine = {
-        let library = FontLibrary()
-        let engine = TextEngine(library: library, atlas: GlyphAtlas(library: library))
-        _ = try? library.register(path: geneva)
-        engine.install()
-        return engine
+        _ = try? Fonts.engine.library.register(path: geneva)
+        return Fonts.engine
     }()
 
     @Test("Kerned frames match SpriteKit's", arguments: [-0.5, 1.2, 3] as [CGFloat])

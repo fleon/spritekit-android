@@ -3,7 +3,7 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// What the game actually asks of the layer: a label that knows how big it
+/// What a game actually asks of the layer: a label that knows how big it
 /// is. Everything the rest of the UI positions — buttons sized to their
 /// labels, `centerCapitals`, `TextBlockNode` — is built on this.
 // Nodes are main-actor, as SpriteKit's are (#406), so building a draw list is too.
@@ -13,7 +13,7 @@ struct LabelTests {
     private func label(_ text: String, size: CGFloat = 32) -> SKLabelNode {
         _ = Fonts.engine
         let node = SKLabelNode()
-        node.fontName = "ChironGoRoundTC-Black"
+        node.fontName = "Montserrat-Black"
         node.fontSize = size
         node.text = text
         return node
@@ -21,8 +21,8 @@ struct LabelTests {
 
     @Test("A label's frame is its ink rounded out to whole points, a point to spare all round")
     func frameIsInkRoundedOut() {
-        let node = label("Switchlings")
-        let ink = Fonts.engine.measure("Switchlings", font: Fonts.chiron(32)).inkBounds
+        let node = label("Lightning")
+        let ink = Fonts.engine.measure("Lightning", font: Fonts.display(32)).inkBounds
 
         #expect(node.contentFrame.width == ink.maxX.rounded(.up) - ink.minX.rounded(.down) + 2)
         #expect(node.contentFrame.height == ink.maxY.rounded(.up) - ink.minY.rounded(.down) + 2)
@@ -47,7 +47,7 @@ struct LabelTests {
     func nothingToMeasure() {
         #expect(label("").contentFrame == .zero)
 
-        let unknown = label("Switchlings")
+        let unknown = label("Lightning")
         unknown.fontName = "NoSuchFont"
         #expect(unknown.contentFrame == .zero)
     }
@@ -81,7 +81,7 @@ struct LabelTests {
         #expect(abs(centre.contentFrame.height - baseline.contentFrame.height) < 0.001)
     }
 
-    @Test("A descender lifts a centred label's capitals, which is what the game corrects for")
+    @Test("A descender lifts a centred label's capitals, which is what a game corrects for")
     func inkCentring() {
         let caps = label("HELLO"); caps.verticalAlignmentMode = .center
         let hanging = label("HELLOg"); hanging.verticalAlignmentMode = .center
@@ -118,7 +118,7 @@ struct LabelTests {
         node.numberOfLines = 0
         node.verticalAlignmentMode = .baseline
         let layout = try #require(node.layout)
-        let lineHeight = try #require(Fonts.engine.fontMetrics(Fonts.chiron(20))).lineHeight
+        let lineHeight = try #require(Fonts.engine.fontMetrics(Fonts.display(20))).lineHeight
 
         #expect(layout.lines[0].origin.y == 0)
         #expect(abs(layout.lines[1].origin.y + lineHeight) < 0.001)
@@ -128,7 +128,7 @@ struct LabelTests {
 
     @Test("preferredMaxLayoutWidth wraps, and nothing comes out wider")
     func wrapping() throws {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a tile to send it one step, and bump another to trade places"
         let node = label(text, size: 18)
         node.numberOfLines = 0
         node.preferredMaxLayoutWidth = 180
@@ -145,7 +145,7 @@ struct LabelTests {
 
     @Test("numberOfLines caps how many lines a wrap produces")
     func lineLimit() throws {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a tile to send it one step, and bump another to trade places"
         let node = label(text, size: 18)
         node.numberOfLines = 2
         node.preferredMaxLayoutWidth = 180
@@ -154,7 +154,7 @@ struct LabelTests {
 
     @Test("Layout is stable across repeated calls and reflects every change")
     func caching() throws {
-        let node = label("Switchlings")
+        let node = label("Lightning")
         let first = try #require(node.layout)
         #expect(node.layout == first)
         #expect(node.contentFrame == first.bounds)
@@ -214,7 +214,7 @@ struct FontMetricsTests {
     /// sign convention UIKit uses.
     @Test("Forwarded metrics follow UIKit's conventions")
     func conventions() throws {
-        let metrics = try #require(Fonts.engine.fontMetrics(Fonts.chiron(30)))
+        let metrics = try #require(Fonts.engine.fontMetrics(Fonts.display(30)))
         #expect(metrics.lineHeight == metrics.ascent + metrics.descent + metrics.leading)
         #expect(metrics.ascent > 0)
         // UIFont.descender is the negative of this, which the shim flips.

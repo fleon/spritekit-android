@@ -3,9 +3,9 @@ import Foundation
 
 // Metal, as far as `SKRenderer` needs it: a device, a queue, command buffers
 // that are committed and waited on, a render pass with its attachments, and
-// textures. The game reaches this surface in one place, `SolutionFilm`, which
-// renders a share film off screen; its `import Metal` resolves to the module
-// of that name in `Compat`, which re-exports these.
+// textures. A game reaches this surface to render a scene off screen; its
+// `import Metal` resolves to the module of that name in `Modules`, which
+// re-exports these.
 //
 // Nothing here talks to a GPU. A command buffer records the passes
 // `SKRenderer` encodes into it — each one a `DrawList`, a value, flattened on

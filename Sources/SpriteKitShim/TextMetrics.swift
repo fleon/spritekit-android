@@ -7,7 +7,7 @@ import Foundation
 /// put two C libraries in the way of `swift build` for everyone working on the
 /// scene graph, the actions or the renderer, none of whom need them. Instead
 /// `SKLabelNode` and `UIFont` ask whatever provider has been registered, and
-/// the `TextShaping` module in `Android/Text` registers one backed by
+/// the `TextShaping` module in `Text/` registers one backed by
 /// HarfBuzz and FreeType.
 ///
 /// With no provider registered, labels report an empty frame exactly as they
@@ -57,8 +57,8 @@ public struct FontKey: Hashable, Sendable {
 
 /// A face's vertical metrics at one size, in points.
 ///
-/// `lineHeight` is `ascent + descent + leading`, as UIKit reports it, so the
-/// game's `DesignSystem` line-height ratios keep their meaning.
+/// `lineHeight` is `ascent + descent + leading`, as UIKit reports it, so a
+/// game's line-height ratios keep their meaning.
 public struct FontMetrics: Equatable, Sendable {
     public var ascent: CGFloat
     public var descent: CGFloat
