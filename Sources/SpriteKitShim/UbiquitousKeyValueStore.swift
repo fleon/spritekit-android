@@ -1,21 +1,12 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// Where `NSUbiquitousKeyValueStore` keeps its copy in the cloud: one
 /// dictionary per key, a nudge to fetch, and news that another device
-/// changed something. PlatformShim's `CloudKeyValueStore`s (Play Games Saved
-/// Games, the local-only one, the in-memory one for tests) all have this
-/// shape and adopt it there.
-public protocol UbiquitousCloud: AnyObject {
-    func dictionary(forKey key: String) -> [String: Any]?
-    func set(_ dictionary: [String: Any], forKey key: String)
-    @discardableResult func synchronize() -> Bool
-    /// Called when another device's changes arrive, on the main thread.
-    var externalChanges: (() -> Void)? { get set }
-    /// Every key the cloud holds, so values another device set under keys
-    /// this one never wrote still arrive.
-    var keys: [String] { get }
-}
+/// changed something. It is PlatformServices' `CloudKeyValueStore` (Play
+/// Games Saved Games, the local-only one, the in-memory one for tests).
+public typealias UbiquitousCloud = CloudKeyValueStore
 
 /// One key's value and when it was last set; a removal is a record too, so
 /// it reaches other devices and wins over an older value there.
