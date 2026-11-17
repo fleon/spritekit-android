@@ -9,13 +9,12 @@ import TextShaping
 ///
 /// On Android a file inside the APK is not a path on disk, so this goes
 /// through SDL, whose `SDL_LoadFile` falls back to the asset manager. The
-/// art is staged into the APK's `assets/art/` by the Gradle project, which
-/// points a source set at `Android/Assets` — the gitignored output of
-/// `npm run art -- --android`.
+/// art is staged into the APK's assets by the game's Gradle project, which
+/// points a source set at the game's packed art (`AssetIndex`).
 public enum AssetBundle {
-    /// Where the art sits inside the APK. The Gradle project points its
-    /// asset source set straight at `Android/Assets`, so the pages and the
-    /// index are at the root of `assets/`.
+    /// Where the art sits inside the APK. A Gradle project that points its
+    /// asset source set straight at the packed art puts the pages and the
+    /// index at the root of `assets/`.
     public static let root = ""
 
     private static func path(_ name: String) -> String {
@@ -31,7 +30,7 @@ public enum AssetBundle {
     @discardableResult
     public static func installIndex() -> AssetIndex? {
         guard let data = load(path(AssetIndex.fileName)) else {
-            Log.error("no \(AssetIndex.fileName) in the APK — run npm run art -- --android and rebuild")
+            Log.error("no \(AssetIndex.fileName) in the APK — pack the game's art and rebuild")
             return nil
         }
         do {
@@ -49,6 +48,12 @@ public enum AssetBundle {
     /// `stageFonts` task.
     public static let fontsRoot = "fonts"
 
+    /// The font files `installFonts` reads from `fontsRoot`, without their
+    /// `.ttf`, in the order to register them: the first is what a label with
+    /// no `fontName` falls back to. The game names them
+    /// (`Shell.start(fonts:)`); with none, no text draws.
+    nonisolated(unsafe) public static var fontFiles: [String] = []
+
     /// Registers the game's faces with the text stack and makes it the
     /// layer's text provider.
     ///
@@ -57,14 +62,15 @@ public enum AssetBundle {
     /// number — so nothing draws any text before it.
     ///
     /// The fonts are read out of the APK rather than extracted: an asset is
-    /// a member of a zip, not a path, and Chiron is 50 MB, so extracting
-    /// would put a second copy on disk for no gain. `ttf` is in the Gradle
+    /// a member of a zip, not a path, and a large variable font can be tens
+    /// of megabytes, so extracting would put a second copy on disk for no
+    /// gain. `ttf` is in the Gradle
     /// project's `noCompress` list, so this is a read out of the mapped APK
     /// rather than an inflate.
     @discardableResult
     public static func installFonts() -> Bool {
         var loaded: [(name: String, data: Data)] = []
-        for name in TextEngine.fontFileNames {
+        for name in fontFiles {
             guard let data = load(path("\(fontsRoot)/\(name).ttf")) else {
                 Log.error("no \(name).ttf in the APK — text will not draw")
                 continue

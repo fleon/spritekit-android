@@ -4,7 +4,7 @@ import SpriteKitShim
 /// Textures the asset index doesn't back, their pixels readied on the
 /// preloading thread (`SKTexture.imageWarmer`), for the frame thread to
 /// upload ahead of their first draw (`ResourceCache.adopt`): a scene's drawn
-/// surfaces and rig pages were otherwise decoded, turned over and uploaded
+/// surfaces and image pages were otherwise decoded, turned over and uploaded
 /// in its warm-up draw.
 public final class TextureWarmQueue: @unchecked Sendable {
     public typealias Item = (texture: SKTexture, width: Int, height: Int, pixels: Data)

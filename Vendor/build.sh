@@ -52,9 +52,9 @@ unpack() { # tarball dirname
     tar -xf "$SRC/$1" -C "$SRC"
 }
 
-# FreeType with every optional codec off: the game ships plain TrueType, and
+# FreeType with every optional codec off: games ship plain TrueType, and
 # each of these would be another thing to cross-compile. Variable-font
-# support (Chiron GoRound TC is variable) needs none of them.
+# support needs none of them.
 FT_FLAGS=(
     -DFT_DISABLE_ZLIB=ON
     -DFT_DISABLE_BZIP2=ON
@@ -88,10 +88,10 @@ write_pc() { # prefix
     # One .pc for the single system-library target, so SwiftPM never has to
     # resolve a Requires: chain. Only -I, -L and -l, which is all SwiftPM's
     # pkg-config allowlist accepts.
-    cat > "$prefix/lib/pkgconfig/switchlings-text.pc" <<EOF
+    cat > "$prefix/lib/pkgconfig/spritekit-text.pc" <<EOF
 prefix=$prefix
-Name: switchlings-text
-Description: FreeType $FREETYPE_VERSION and HarfBuzz $HARFBUZZ_VERSION, pinned by Android/Vendor
+Name: spritekit-text
+Description: FreeType $FREETYPE_VERSION and HarfBuzz $HARFBUZZ_VERSION, pinned by Vendor/versions.sh
 Version: ${FREETYPE_VERSION}+${HARFBUZZ_VERSION}
 Cflags: -I\${prefix}/include -I\${prefix}/include/freetype2 -I\${prefix}/include/harfbuzz
 Libs: -L\${prefix}/lib -lharfbuzz -lfreetype

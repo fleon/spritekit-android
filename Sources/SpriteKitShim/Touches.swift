@@ -17,7 +17,7 @@ import Foundation
 //     art hangs off it, so hit-testing the node's own quad would never find
 //     one.
 //   - A touch that begins on a node stays with that node until it ends or is
-//     cancelled, wherever it travels. `PressableNode` depends on this: it
+//     cancelled, wherever it travels. A button node depends on this: it
 //     tracks whether the finger is still inside itself.
 //   - `location(in:)` answers in any node's coordinates, not only the one
 //     handling the touch.
@@ -62,7 +62,7 @@ public final class UITouch: Hashable {
 
     /// Where the touch is in `view`'s points, or the window's for nil: the
     /// view fills the window on Android, so both are the scene's view
-    /// points. `TouchOriginWindow` notes each touch this way.
+    /// points. A window subclass noting each touch reads it this way.
     public func location(in view: UIView?) -> CGPoint {
         guard let scene else { return sceneLocation }
         return scene.convertPoint(toView: sceneLocation)
@@ -86,8 +86,8 @@ public final class UITouch: Hashable {
 }
 
 /// Stands in for UIKit's `UIEvent`: a touch event and its touches, which
-/// the window sees before the scene does (`TouchOriginWindow` notes where
-/// the player touched; the scenes' handlers never read it).
+/// the window sees before the scene does (a window subclass may note where
+/// the player touched).
 @MainActor
 public final class UIEvent {
     public enum EventType: Int, Sendable { case touches, motion, remoteControl, presses }

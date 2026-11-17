@@ -1,11 +1,11 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// CoreVideo, as `SolutionFilm` uses it: pixel buffers a frame is rendered
-// into and handed to the video writer (or read back for a picture), the
-// writer's pool of them, and the texture cache that puts a Metal texture
-// over a buffer. The game's `import CoreVideo` resolves to the module of
-// that name in `Compat`, which re-exports these.
+// CoreVideo, as filming a scene through `SKRenderer` uses it: pixel buffers
+// a frame is rendered into and handed to the video writer (or read back for
+// a picture), the writer's pool of them, and the texture cache that puts a
+// Metal texture over a buffer. A game's `import CoreVideo` resolves to the
+// module of that name in `Modules`, which re-exports these.
 //
 // A buffer is plain memory here, in the format it says it is in: the film
 // asks for 32-bit BGRA, so that is what the GLES renderer reads its frames

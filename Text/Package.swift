@@ -5,17 +5,17 @@ import PackageDescription
 // rasterising, a glyph atlas over both, and the `TextProvider` the shim asks
 // for its label layout and font metrics.
 //
-// A package of its own, like Compat, and for the same kind of reason: it is
-// the only part of the port with C dependencies, and putting them in
-// ../Package.swift would make `swift build` there need a cmake run first —
+// A package of its own, like Modules and Shell: it has C dependencies of its
+// own (FreeType and HarfBuzz), and putting them in ../Package.swift would
+// make `swift build` there need a cmake run first —
 // for everyone working on the scene graph, the actions or the renderer, none
 // of whom need text. The shim therefore never links FreeType; it calls
 // whatever provider has been registered with `TextMetrics`.
 //
 // Build the libraries first, once:
 //
-//   Android/Vendor/build.sh host        # what `swift test` here needs
-//   Android/Vendor/build.sh android     # both device ABIs
+//   Vendor/build.sh host        # what `swift test` here needs
+//   Vendor/build.sh android     # both device ABIs
 //
 // then
 //
@@ -28,7 +28,7 @@ let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 
 let package = Package(
-    name: "SwitchlingsText",
+    name: "SpriteKitText",
     products: [
         .library(name: "TextShaping", targets: ["TextShaping"]),
         // Linking is the thing a library build never checks. See its main.swift.
@@ -41,7 +41,7 @@ let package = Package(
         .systemLibrary(
             name: "CTextShaping",
             path: "Sources/CTextShaping",
-            pkgConfig: "switchlings-text"
+            pkgConfig: "spritekit-text"
         ),
         .target(
             name: "TextShaping",

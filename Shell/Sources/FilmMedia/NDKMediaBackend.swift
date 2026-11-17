@@ -15,16 +15,16 @@ public final class NDKMediaBackend: MediaBackend {
     }
 
     public func makeVideoEncoder(writingTo url: URL, width: Int, height: Int, framesPerSecond: Int, bitRate: Int) -> VideoEncoding? {
-        guard let encoder = sw_video_open(url.path, Int32(width), Int32(height), Int32(framesPerSecond), Int32(bitRate)) else { return nil }
+        guard let encoder = ska_video_open(url.path, Int32(width), Int32(height), Int32(framesPerSecond), Int32(bitRate)) else { return nil }
         return VideoEncoder(encoder, width: width, height: height)
     }
 
     public func makeAudioEncoder(writingTo url: URL, sampleRate: Int, channels: Int, bitRate: Int) -> AudioEncoding? {
-        sw_aac_open(url.path, Int32(sampleRate), Int32(channels), Int32(bitRate)).map(AudioEncoder.init)
+        ska_aac_open(url.path, Int32(sampleRate), Int32(channels), Int32(bitRate)).map(AudioEncoder.init)
     }
 
     public func openAudio(_ url: URL) -> AudioDecoding? {
-        sw_audio_open_path(url.path).map(AudioDecoder.init)
+        ska_audio_open_path(url.path).map(AudioDecoder.init)
     }
 
     public func durationUs(of url: URL, video: Bool) -> Int64? {
@@ -55,11 +55,11 @@ private final class VideoEncoder: VideoEncoding {
     init(_ encoder: OpaquePointer, width: Int, height: Int) {
         self.encoder = encoder
         layout = YUVLayout(
-            planes: sw_video_color_format(encoder) == 19 ? .planar : .semiPlanar,
+            planes: ska_video_color_format(encoder) == 19 ? .planar : .semiPlanar,
             width: width,
             height: height,
-            stride: Int(sw_video_stride(encoder)),
-            sliceHeight: Int(sw_video_slice_height(encoder))
+            stride: Int(ska_video_stride(encoder)),
+            sliceHeight: Int(ska_video_slice_height(encoder))
         )
     }
 
@@ -67,19 +67,19 @@ private final class VideoEncoder: VideoEncoding {
 
     func encode(_ frame: UnsafeRawBufferPointer, presentationUs: Int64) -> Bool {
         guard let encoder, let base = frame.baseAddress else { return false }
-        return sw_video_encode(encoder, base.assumingMemoryBound(to: UInt8.self), frame.count, presentationUs)
+        return ska_video_encode(encoder, base.assumingMemoryBound(to: UInt8.self), frame.count, presentationUs)
     }
 
     func finish() -> Bool {
         guard let encoder else { return false }
         self.encoder = nil
-        return sw_video_finish(encoder)
+        return ska_video_finish(encoder)
     }
 
     func cancel() {
         guard let encoder else { return }
         self.encoder = nil
-        sw_video_cancel(encoder)
+        ska_video_cancel(encoder)
     }
 }
 
@@ -94,13 +94,13 @@ private final class AudioEncoder: AudioEncoding {
 
     func encode(_ samples: UnsafePointer<Int16>, frames: Int) -> Bool {
         guard let encoder else { return false }
-        return sw_aac_encode(encoder, samples, Int64(frames))
+        return ska_aac_encode(encoder, samples, Int64(frames))
     }
 
     func finish() -> Bool {
         guard let encoder else { return false }
         self.encoder = nil
-        return sw_aac_finish(encoder)
+        return ska_aac_finish(encoder)
     }
 }
 
@@ -112,20 +112,20 @@ private final class AudioDecoder: AudioDecoding {
 
     init(_ decoder: OpaquePointer) {
         self.decoder = decoder
-        sampleRate = Int(sw_audio_sample_rate(decoder))
-        channels = Int(sw_audio_channels(decoder))
-        durationUs = sw_audio_duration_us(decoder)
+        sampleRate = Int(ska_audio_sample_rate(decoder))
+        channels = Int(ska_audio_channels(decoder))
+        durationUs = ska_audio_duration_us(decoder)
     }
 
-    deinit { sw_audio_close(decoder) }
+    deinit { ska_audio_close(decoder) }
 
     func read(into out: UnsafeMutablePointer<Int16>, frames: Int) -> (frames: Int, positionUs: Int64) {
         var position: Int64 = 0
-        let count = sw_audio_read(decoder, out, Int64(frames), &position)
+        let count = ska_audio_read(decoder, out, Int64(frames), &position)
         return (Int(count), position)
     }
 
     func seek(to positionUs: Int64) -> Bool {
-        sw_audio_seek(decoder, positionUs)
+        ska_audio_seek(decoder, positionUs)
     }
 }

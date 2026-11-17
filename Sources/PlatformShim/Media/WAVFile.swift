@@ -1,7 +1,7 @@
 import Foundation
 
-/// A WAV file's PCM, as the game's sound effects are (`Assets/SFX`, 16-bit
-/// from `npm run sfx`; 24-bit, 32-bit and float read too). Nil for anything
+/// A WAV file's PCM, as sound effects commonly ship (16-bit; 24-bit, 32-bit
+/// and float read too). Nil for anything
 /// that isn't a RIFF WAVE with a `fmt ` and a `data` chunk.
 public struct WAVFile: Sendable {
     public let sampleRate: Int
