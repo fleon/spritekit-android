@@ -818,6 +818,23 @@ Play Games can't run — no Google Play services on the device or out of date
 the scene runs it, before it's drawn. The game always shows the button, so
 the icon is the one place the port can decide without touching `Source/`.
 
+### Ratings — Play In-App Review
+
+`SKStoreReviewController.requestReview(in:)` (and `requestReview()`,
+`AppStore.requestReview(in:)`) in the `StoreKit` module go to
+`StoreReview.request()` (`Sources/PlatformShim/StoreReview.swift`):
+`PlayInAppReview` over the shell's channel, nothing in a host build. As on
+iOS the request is fire-and-forget and the store decides whether a card
+shows; a game's own rules about when to ask stay its own. One request is
+with Play at a time.
+
+The Java half is a class of its own in each game's App (Zyl's
+`PlayReview.java`, on `com.google.android.play:review`), under `review`:
+`request` runs `ReviewManager.requestReviewFlow()` then
+`launchReviewFlow(activity, info)` and posts `requested {ok}` when the flow
+is over. A build not installed from Play runs the flow and shows nothing, as
+TestFlight shows nothing on iOS.
+
 ### Saved data — Play Games Saved Games
 
 `ICloudSyncManager` keeps its shape exactly — `set` / `insert` /
