@@ -12,9 +12,7 @@ import ShellCore
 /// WAV gains nothing from being deflated anyway.
 public enum AudioAssets {
     public static let root = "audio"
-    /// The soundtrack's container: Switchlings ships AAC (`m4a`), another
-    /// game sets its own (MP3 decodes through the same MediaCodec path).
-    public nonisolated(unsafe) static var musicExtension = "m4a"
+    public static let musicExtension = "m4a"
     public static let soundExtension = "wav"
 
     public static func music(_ name: String) -> String {
