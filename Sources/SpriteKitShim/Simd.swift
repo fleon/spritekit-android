@@ -134,4 +134,13 @@ public typealias matrix_float4x4 = simd_float4x4
 public typealias matrix_float3x3 = simd_float3x3
 public typealias matrix_float2x2 = simd_float2x2
 
+// The vector types' C spellings, which Apple's simd module names Swift's
+// own SIMD types by (`vector_float2` is beside `SKWarpGeometryGrid`, its
+// first user).
+public typealias simd_float2 = SIMD2<Float>
+public typealias simd_float3 = SIMD3<Float>
+public typealias simd_float4 = SIMD4<Float>
+public typealias vector_float3 = SIMD3<Float>
+public typealias vector_float4 = SIMD4<Float>
+
 #endif

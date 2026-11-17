@@ -31,6 +31,22 @@ public final class CGPath: @unchecked Sendable {
     func append(_ element: Element) { elements.append(element) }
     func append(contentsOf others: [Element]) { elements.append(contentsOf: others) }
 
+    /// Replaces the recording with `pathElements` (portable segments, as
+    /// `PathGeometry` edits them).
+    func replace(with pathElements: [PathElement]) {
+        elements = pathElements.map {
+            switch $0 {
+            case let .move(p): return .move(p)
+            case let .line(p): return .line(p)
+            case let .quadCurve(p, c): return .quadCurve(to: p, control: c)
+            case let .curve(p, c1, c2): return .curve(to: p, control1: c1, control2: c2)
+            case let .arc(centre, radius, start, end, clockwise):
+                return .arc(center: centre, radius: radius, start: start, end: end, clockwise: clockwise)
+            case .close: return .close
+            }
+        }
+    }
+
     /// The path's control-point bounds. Curves are not flattened, so this is
     /// conservative — as CGPath's own `boundingBox` is.
     public var boundingBox: CGRect {
@@ -123,6 +139,42 @@ public final class UIBezierPath: @unchecked Sendable {
     public convenience init(cgPath: CGPath) {
         self.init()
         storage.append(contentsOf: cgPath.elements)
+    }
+
+    /// An arc on its own, as UIKit's initializer: its subpath starts at the
+    /// arc's first point.
+    public convenience init(
+        arcCenter center: CGPoint,
+        radius: CGFloat,
+        startAngle: CGFloat,
+        endAngle: CGFloat,
+        clockwise: Bool
+    ) {
+        self.init()
+        addArc(withCenter: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: clockwise)
+    }
+
+    /// Where the pen is: the last point drawn to, the subpath's start after
+    /// a close, `.zero` on an empty path.
+    public var currentPoint: CGPoint {
+        PathGeometry.currentPoint(after: storage.pathElements) ?? .zero
+    }
+
+    /// Moves every point of the path through `transform` (arcs become the
+    /// curves CoreGraphics would have recorded for them).
+    public func apply(_ transform: CGAffineTransform) {
+        storage.replace(with: PathGeometry.transformed(storage.pathElements, by: transform))
+    }
+
+    /// The same path drawn the other way: each subpath reversed, in order,
+    /// as UIKit does (`PathGeometry.reversed`, measured against AppKit's).
+    public func reversing() -> UIBezierPath {
+        let reversed = UIBezierPath()
+        reversed.storage.replace(with: PathGeometry.reversed(storage.pathElements))
+        reversed.lineWidth = lineWidth
+        reversed.lineCapStyle = lineCapStyle
+        reversed.lineJoinStyle = lineJoinStyle
+        return reversed
     }
 
     public func move(to point: CGPoint) { storage.append(.move(point)) }

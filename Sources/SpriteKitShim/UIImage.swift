@@ -255,6 +255,22 @@ public final class UIGraphicsImageRendererFormat: @unchecked Sendable {
     }
 }
 
+public extension SKColor {
+    /// UIKit's `setFill()`: this colour fills in the context being drawn
+    /// into now (a `UIGraphicsImageRenderer`'s, while its actions run). With
+    /// none, nothing, as UIKit logs and does nothing.
+    func setFill() { UIImage.contexts.last?.setFill(self) }
+
+    /// UIKit's `setStroke()`, the same for strokes.
+    func setStroke() { UIImage.contexts.last?.setStroke(self) }
+
+    /// UIKit's `set()`: both.
+    func set() {
+        setFill()
+        setStroke()
+    }
+}
+
 /// What the drawing closure is handed. `cgContext` is the whole of it as far
 /// as the game is concerned.
 public final class UIGraphicsImageRendererContext: @unchecked Sendable {

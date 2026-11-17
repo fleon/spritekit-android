@@ -85,8 +85,10 @@ extension SKScene {
     }
 
     /// `visibleRect` for this scene in its view, or the scene itself when it
-    /// is in none.
-    public var visibleFrame: CGRect {
+    /// is in none. Internal, and not `visibleFrame`: SpriteKit has no such
+    /// member, and a game may declare one of its own on its scenes, which a
+    /// public one here would collide with.
+    var viewVisibleFrame: CGRect {
         SKScene.visibleRect(
             sceneSize: size, anchorPoint: anchorPoint, scaleMode: scaleMode,
             viewSize: view?.bounds.size ?? size
@@ -100,7 +102,7 @@ extension SKScene {
     }
 
     /// Takes a point in the scene to where it is drawn, in the coordinates
-    /// `visibleFrame` is given in. Identity with no camera; with one, the
+    /// `viewVisibleFrame` is given in. Identity with no camera; with one, the
     /// camera's own transform undone and its position moved to the middle of
     /// the frame. A camera's children come out of this exactly where they
     /// stand under the camera, which is why a HUD on it holds still.
@@ -115,9 +117,9 @@ extension SKScene {
     }
 
     /// What the view shows, in scene coordinates: the box round
-    /// `visibleFrame` as the camera sees it.
+    /// `viewVisibleFrame` as the camera sees it.
     var viewedRect: CGRect {
-        visibleFrame.applying(cameraTransform.inverted())
+        viewVisibleFrame.applying(cameraTransform.inverted())
     }
 
     /// The box round everything `node` and what it holds draw, in this
@@ -143,7 +145,7 @@ extension SKScene {
     /// the scene.
     public func convertPoint(fromView point: CGPoint) -> CGPoint {
         let bounds = view?.bounds ?? CGRect(origin: .zero, size: size)
-        let frame = visibleFrame
+        let frame = viewVisibleFrame
         guard bounds.width > 0, bounds.height > 0 else { return point }
         let across = (point.x - bounds.minX) / bounds.width
         let down = (point.y - bounds.minY) / bounds.height
@@ -154,7 +156,7 @@ extension SKScene {
     /// A point in the scene to the view's points.
     public func convertPoint(toView point: CGPoint) -> CGPoint {
         let bounds = view?.bounds ?? CGRect(origin: .zero, size: size)
-        let frame = visibleFrame
+        let frame = viewVisibleFrame
         guard frame.width > 0, frame.height > 0 else { return point }
         let framed = point.applying(cameraTransform)
         let across = (framed.x - frame.minX) / frame.width

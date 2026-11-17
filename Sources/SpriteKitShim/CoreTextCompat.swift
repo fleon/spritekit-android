@@ -16,9 +16,14 @@ import Foundation
 // MARK: - Attributes
 
 extension NSAttributedString.Key {
-    /// UIKit's `NSFontAttributeName`. The game only ever sets this one, and
-    /// only to hand a `UIFont` to the typesetter.
+    /// UIKit's `NSFontAttributeName`: a `UIFont`, for the typesetter and for
+    /// `SKLabelNode.attributedText`.
     public static let font = NSAttributedString.Key("NSFont")
+    /// UIKit's `NSForegroundColorAttributeName`: the text's colour.
+    public static let foregroundColor = NSAttributedString.Key("NSColor")
+    /// UIKit's `NSKernAttributeName`: extra space after each character, in
+    /// points, as an `NSNumber`.
+    public static let kern = NSAttributedString.Key("NSKern")
 }
 
 private extension NSAttributedString {
@@ -36,6 +41,16 @@ extension NSMutableString {
     /// would override NSString's), so this one's defaulted argument stands in.
     public convenience init(initialCapacity: Int = 0) {
         self.init(capacity: initialCapacity)
+extension NSAttributedString {
+    /// UIKit's `size()`, for one run of attributes as the games build them:
+    /// the string in its first character's font, wide by its advance and
+    /// letter spacing (`StringDrawing`, pinned against AppKit), high by the
+    /// font's line height. Zero without a font.
+    public func size() -> CGSize {
+        guard length > 0, let font = attribute(.font, at: 0, effectiveRange: nil) as? UIFont else { return .zero }
+        let kern = (attribute(.kern, at: 0, effectiveRange: nil) as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+        let width = StringDrawing.width(of: string, font: FontKey(name: font.fontName, size: font.pointSize), kern: kern)
+        return CGSize(width: width, height: font.lineHeight)
     }
 }
 

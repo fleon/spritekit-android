@@ -21,11 +21,14 @@ final class CoverageGeometryTests: XCTestCase {
 
         func glyphs(for line: String, font: FontKey) -> [CoverageGeometry.Glyph] {
             asked.append(line)
+            var offset = 0
             return line.enumerated().map { index, character in
-                CoverageGeometry.Glyph(
+                defer { offset += character.utf8.count }
+                return CoverageGeometry.Glyph(
                     page: onPageOne.contains(character) ? 1 : 0,
                     rect: CGRect(x: 10, y: 20, width: 10, height: 10),
-                    frame: CGRect(x: CGFloat(index) * 12, y: 0, width: 10, height: 10)
+                    frame: CGRect(x: CGFloat(index) * 12, y: 0, width: 10, height: 10),
+                    cluster: offset
                 )
             }
         }
@@ -91,6 +94,17 @@ final class CoverageGeometryTests: XCTestCase {
         XCTAssertEqual(corner(run, quad: 0, 2), CGPoint(x: 110, y: 60))
         // Second: one 12-point advance on.
         XCTAssertEqual(corner(run, quad: 1, 0), CGPoint(x: 112, y: 50))
+    }
+
+    func testLetterSpacingMovesEachCharacterOnByTheSpacingBeforeIt() throws {
+        // "é" is two UTF-8 bytes: glyph clusters count bytes, spacing counts
+        // characters.
+        var spaced = label("aéb", lines: [("aéb", CGPoint(x: 100, y: 0))])
+        spaced.kern = 3
+        let run = try XCTUnwrap(CoverageGeometry.runs(for: spaced, source: Squares()).first)
+        XCTAssertEqual(corner(run, quad: 0, 0).x, 100)
+        XCTAssertEqual(corner(run, quad: 1, 0).x, 100 + 12 + 3)
+        XCTAssertEqual(corner(run, quad: 2, 0).x, 100 + 24 + 6)
     }
 
     func testTheLayoutIsWhatIsDrawn() throws {

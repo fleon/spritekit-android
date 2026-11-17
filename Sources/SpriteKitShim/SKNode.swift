@@ -121,6 +121,18 @@ open class SKNode {
     open var isHidden: Bool = false
     open var isUserInteractionEnabled: Bool = false
 
+    /// Whether `point`, in **this node's parent's** coordinates, falls inside
+    /// everything the node draws — SpriteKit's own meaning, which is why the
+    /// point is in the parent's space and not the node's. `open`, as in
+    /// SpriteKit: games narrow a button's hit area by overriding it. As
+    /// there, `nodes(at:)` and `atPoint(_:)` don't consult an override.
+    open func contains(_ point: CGPoint) -> Bool {
+        guard !isHidden else { return false }
+        return accumulatedContents(includingHidden: false)
+            .applying(localTransform)
+            .contains(point)
+    }
+
     /// Action playback rate, inherited multiplicatively as SpriteKit does.
     open var speed: CGFloat = 1
     open var isPaused: Bool = false
