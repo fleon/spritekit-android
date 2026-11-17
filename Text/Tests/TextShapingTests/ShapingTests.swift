@@ -101,7 +101,7 @@ struct ShapingTests {
             #expect(sum > 0)
             #expect(abs(measured.advance - sum) < 0.001, "\(text)")
             // One glyph per character, nothing dropped: Latin in Montserrat has
-            // no ligatures the game would hit.
+            // no ligatures a game would hit.
             #expect(glyphs.count == text.count)
         }
     }
@@ -113,7 +113,7 @@ struct ShapingTests {
         #expect(glyphs.map(\.cluster) == Array(0..<text.utf8.count))
     }
 
-    @Test("CJK shapes one glyph per ideograph, each with real width")
+    @Test("CJK shapes one glyph per ideograph, each with real width", .enabled(if: Fonts.hasCJK))
     func cjk() {
         for (text, font) in [("简体中文", Fonts.han()), ("日本語", Fonts.han()), ("한국어", Fonts.hangul())] {
             let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
@@ -134,7 +134,7 @@ struct ShapingTests {
         #expect((runs.last?.glyphs.first?.cluster ?? 0) == 8)
     }
 
-    @Test("Script detection covers every script the game ships")
+    @Test("Script detection covers every script a game ships")
     func scripts() {
         #expect(script("A") == .latin)
         #expect(script("ä") == .latin)

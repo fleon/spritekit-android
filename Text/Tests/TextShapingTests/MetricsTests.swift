@@ -63,7 +63,7 @@ struct MetricsTests {
         #expect(semibold.advance > light.advance)
     }
 
-    @Test("Every name the game asks for resolves")
+    @Test("Every name a game asks for resolves")
     func registeredNames() {
         let names = Fonts.engine.library.registeredNames
         for wanted in [

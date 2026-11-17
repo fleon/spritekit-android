@@ -111,7 +111,7 @@ bool ska_offer_paste(float x, float y);
 
 /// Sends what the process prints to standard output and standard error into
 /// logcat under `tag`, a line an entry: an Android app's stdout goes nowhere,
-/// and the game's `-Markers` lines (`print`) are how tools time captures.
+/// and a game's `print`ed lines are how tools can time captures.
 /// Line buffered, so `print` reaches logcat as each line ends.
 bool ska_redirect_stdio(const char *tag);
 

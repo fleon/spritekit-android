@@ -23,7 +23,7 @@ public enum Shell {
     public static var makeRenderer: ((RenderContext) -> FrameRenderer)?
 
     /// The audio backend, opened once SDL is up and installed here for the
-    /// game's `AudioManager` to stand on. Nil when Android gives no audio
+    /// game's audio to stand on. Nil when Android gives no audio
     /// device, which the game must survive: it runs silent, not broken.
     public private(set) static var audio: AudioBackend = NullAudioBackend()
 
@@ -75,7 +75,7 @@ public enum Shell {
         defer { audio = NullAudioBackend() }
         let probe = AudioProbe(audio: audio)
 
-        // GLES 3.0. Chosen over Vulkan because the game's 31 shaders are
+        // GLES 3.0. Chosen over Vulkan because `SKShader` sources are
         // GLSL ES 1.0, which maps almost 1:1 onto ES 3.0.
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3)
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0)
@@ -156,7 +156,7 @@ public enum Shell {
             // is as fresh as it can be.
             let vsync = foreground ? pacer?.nextFrame() : nil
             // What the game queued for the main thread since the last
-            // frame: a film's progress and its finish, a sync's catch-up.
+            // frame: a video's progress and its finish, a sync's catch-up.
             if ownsMainQueue { ska_drain_main_queue() }
             // Play's and the device's news: a purchase, a sign-in, a saved game.
             PlatformBridge.deliverPendingEvents()
@@ -173,7 +173,7 @@ public enum Shell {
                     // The soundtrack stops with the game, as it does on
                     // Apple: nothing plays over the launcher.
                     audio.suspend()
-                    // A share film waits meanwhile, as nothing draws for it.
+                    // A video being written waits meanwhile, as nothing draws for it.
                     UIApplication.shared.resignActive()
                     // Android may end a backgrounded app without a word:
                     // what the game saved goes to disk now.
@@ -190,8 +190,8 @@ public enum Shell {
                 case SDL_EVENT_KEY_DOWN.rawValue:
                     let key = event.key
                     if key.scancode == SDL_SCANCODE_AC_BACK {
-                        // Nothing took it on the title: Android's own back,
-                        // which leaves the game.
+                        // Nothing took it (on a game's first screen, say):
+                        // Android's own back, which leaves the game.
                         if !renderer.receive(.back) { SDL_SendAndroidBackButton() }
                     } else if !key.repeat {
                         _ = renderer.receive(.key(usage: Int(key.scancode.rawValue), modifiers: modifierFlags(key.mod)))
@@ -412,9 +412,9 @@ public enum Shell {
 
 /// The shell's clock: monotonic seconds since SDL started.
 ///
-/// This is what stands in for `CACurrentMediaTime()` on Android. The game
-/// reads that clock in `MediaClock`, in every shader's `u_time`, and in the
-/// board's action timings, so there needs to be exactly one of it.
+/// This is what stands in for `CACurrentMediaTime()` on Android. A game
+/// reads that clock for its own timing, every shader's `u_time` follows it,
+/// and so do the actions, so there needs to be exactly one of it.
 public enum ShellClock {
     public static var now: TimeInterval { TimeInterval(SDL_GetTicksNS()) / 1_000_000_000 }
 }

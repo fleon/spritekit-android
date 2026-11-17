@@ -8,20 +8,20 @@ struct LineBreakTests {
     @Test("Latin breaks at spaces")
     func latin() {
         let lines = Fonts.engine.breakLines(
-            "Unlock the full game and keep it forever",
+            "Unlock every level and keep them forever",
             font: Fonts.display(20),
             maxWidth: 140
         )
         #expect(lines.count > 2)
-        #expect(lines.joined(separator: " ") == "Unlock the full game and keep it forever")
+        #expect(lines.joined(separator: " ") == "Unlock every level and keep them forever")
         #expect(lines.allSatisfy { !$0.hasPrefix(" ") && !$0.hasSuffix(" ") })
     }
 
     @Test("A no-break space holds its words together")
     func noBreakSpace() {
-        // The collection's "First appears in: Sunny Garden · Level 1", the
+        // The collection's "First appears in: Quiet Harbour · Level 1", the
         // place joined with no-break spaces so it moves to a line of its own.
-        let text = "First appears in: Sunny\u{00A0}Garden\u{00A0}·\u{00A0}Level\u{00A0}1"
+        let text = "First appears in: Quiet\u{00A0}Harbour\u{00A0}·\u{00A0}Level\u{00A0}1"
         #expect(LineBreak.opportunities(in: text).map { $0.utf16Offset(in: text) } == [6, 14, 18])
     }
 
@@ -39,7 +39,7 @@ struct LineBreakTests {
         #expect(lines == ["Lightning"])
     }
 
-    @Test("Chinese breaks between characters, with no spaces to break at")
+    @Test("Chinese breaks between characters, with no spaces to break at", .enabled(if: Fonts.hasCJK))
     func chinese() {
         let text = "点击一个方块让它向前走一步"
         let lines = Fonts.engine.breakLines(text, font: Fonts.han(20), maxWidth: 100)

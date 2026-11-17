@@ -5,7 +5,7 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// The engine against Core Text, what the game measures with on Apple, on
+/// The engine against Core Text, what a game measures with on Apple, on
 /// the same font files: a line's advance must come out the same width, to a
 /// hair (the variable instances' advance deltas, which Core Text keeps
 /// fractional, are all that's left).
@@ -28,7 +28,7 @@ import Testing
 
     @Test("Advances match Core Text's", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func advancesMatch(font: String) {
-        for text in ["Español (México)", "W1 / L1", "Français", "Bahasa Indonesia", "Level Select", "Lightning"] {
+        for text in ["Español (México)", "A1 / B1", "Français", "Bahasa Indonesia", "Level Select", "Lightning"] {
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 15)).advance
             let theirs = Self.coreText(text, font: font, size: 15)
             // A tenth of a percent: the instances' fractional advance deltas.
@@ -37,7 +37,7 @@ import Testing
     }
     @Test("Glyph-path and image bounds match Core Text's", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])
     func boundsMatch(font: String) {
-        for text in ["Español (México)", "W1 / L1", "Collection", "gpqy", "Sunny Garden", "SOHO"] {
+        for text in ["Español (México)", "A1 / B1", "Collection", "gpqy", "Quiet Harbour", "SOHO"] {
             // Registered before the first lookup: Core Text keeps a name it
             // couldn't find as its fallback for the rest of the process.
             _ = Self.registered

@@ -3,8 +3,7 @@ import Testing
 @testable import PlatformShim
 
 // The backends with no store behind them: none at all, and the simulated
-// one. (What Switchlings keeps about what's owned is tested with it, in
-// SwitchlingsStoreTests.)
+// one. (What a game keeps about what's owned is its own, and tested with it.)
 
 private let fullGameID = "com.example.game.fullgame"
 
@@ -57,7 +56,7 @@ struct BillingBackendTests {
         defaults.removePersistentDomain(forName: name)
     }
 
-    @Test("Forgetting a simulated purchase puts the free game back")
+    @Test("Forgetting a simulated purchase leaves nothing owned")
     func forget() async {
         let name = UUID().uuidString
         let defaults = scratchDefaults(name)
@@ -86,8 +85,8 @@ struct AchievementTests {
         let service = LocalAchievements(defaults: defaults)
         #expect(await service.load().isEmpty)
 
-        _ = await service.report(["com.fleon.switchlings.achievement.levels.1": 100], showingBanners: true)
-        #expect(await service.load() == ["com.fleon.switchlings.achievement.levels.1": 100])
+        _ = await service.report(["com.example.game.achievement.levels.1": 100], showingBanners: true)
+        #expect(await service.load() == ["com.example.game.achievement.levels.1": 100])
 
         // A relaunch still holds it.
         #expect(await LocalAchievements(defaults: defaults).load().count == 1)

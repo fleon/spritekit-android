@@ -1,9 +1,8 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// Core Image, as much of it as the game uses: two soft fields drawn from a
-// mask (`LawnNode`'s clearing round the board, `BoardGroundingArt`'s glow and
-// shadow), each `clampedToExtent().applyingGaussianBlur(sigma:).cropped(to:)`
+// Core Image, as much of it as soft fields drawn from a mask need (a glow or
+// a soft shadow round a shape): `clampedToExtent().applyingGaussianBlur(sigma:).cropped(to:)`
 // and read back through a `CIContext`. Android has no Core Image, so the blur
 // runs here on the CPU, over the premultiplied pixels the software
 // `CGContext` drew.
@@ -15,9 +14,9 @@ import Foundation
 // Core Image works in linear light: it decodes an sRGB image's colour as it
 // reads it and encodes it again as it writes it out, on unpremultiplied
 // colour, leaving alpha as it is. So a blurred black-and-white mask comes out
-// lighter in its middle tones (a 50/50 mix writes about 187, not 128, as on a Mac), and
-// `LawnNode`'s clearing reaches that much further from the board; a white
-// mask on clear (`BoardGroundingArt`) keeps its alpha as blurred.
+// lighter in its middle tones (a 50/50 mix writes about 187, not 128, as on a
+// Mac), and a field drawn from it reaches that much further; a white mask on
+// clear keeps its alpha as blurred.
 
 public final class CIImage: @unchecked Sendable {
     /// Premultiplied RGBA, row 0 the top, as `RasterImage` keeps it.

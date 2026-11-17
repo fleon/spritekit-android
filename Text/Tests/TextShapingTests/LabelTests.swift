@@ -3,7 +3,7 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// What the game actually asks of the layer: a label that knows how big it
+/// What a game actually asks of the layer: a label that knows how big it
 /// is. Everything the rest of the UI positions — buttons sized to their
 /// labels, `centerCapitals`, `TextBlockNode` — is built on this.
 // Nodes are main-actor, as SpriteKit's are (#406), so building a draw list is too.
@@ -81,7 +81,7 @@ struct LabelTests {
         #expect(abs(centre.contentFrame.height - baseline.contentFrame.height) < 0.001)
     }
 
-    @Test("A descender lifts a centred label's capitals, which is what the game corrects for")
+    @Test("A descender lifts a centred label's capitals, which is what a game corrects for")
     func inkCentring() {
         let caps = label("HELLO"); caps.verticalAlignmentMode = .center
         let hanging = label("HELLOg"); hanging.verticalAlignmentMode = .center

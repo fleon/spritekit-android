@@ -2,9 +2,8 @@
 import Foundation
 
 /// Foundation's weak set, which corelibs Foundation leaves out.
-/// `ShaderPrimer` keeps the shaders it has drawn in one, so a shader that
-/// goes away is forgotten with it. Only the weak flavour, and only what the
-/// game calls.
+/// A weak set of shaders, say, forgets a shader that goes away. Only the
+/// weak flavour, and only the common calls.
 public final class NSHashTable<ObjectType: AnyObject>: @unchecked Sendable {
     private struct Weak { weak var object: ObjectType? }
     private var entries: [ObjectIdentifier: Weak] = [:]

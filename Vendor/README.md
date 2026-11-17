@@ -23,7 +23,7 @@ place to change to move either of them.
 
 Android needs `ANDROID_NDK_HOME`, or the NDK at
 `~/Library/Android/android-ndk-r30`. Each target lands in
-`out/<target>/{include,lib}` with a `lib/pkgconfig/switchlings-text.pc` that
+`out/<target>/{include,lib}` with a `lib/pkgconfig/spritekit-text.pc` that
 SwiftPM's `CTextShaping` system-library target resolves:
 
 ```
@@ -45,9 +45,9 @@ advances, so a line cannot be measured with numbers it is not drawn with.
 
 Everything optional is off:
 
-- FreeType: zlib, bzip2, PNG, Brotli. The game ships plain TrueType, and each
-  would be another library to cross-compile. Variable fonts — Chiron GoRound
-  TC is one — need none of them.
+- FreeType: zlib, bzip2, PNG, Brotli. Games ship plain TrueType, and each
+  would be another library to cross-compile. Variable fonts need none of
+  them.
 - FreeType: **HVF**. 2.15 picks up Apple's Hierarchical Variable Font library
   when it finds the SDK and then needs `-lhvf` to link. Android has no such
   thing, so it is off everywhere and the Mac builds the same FreeType the
