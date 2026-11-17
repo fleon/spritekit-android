@@ -33,7 +33,7 @@
 //                icons, data sets and the other kinds of set are reported and
 //                ignored.
 //
-// What it writes, as Switchlings' android-art.js does:
+// What it writes:
 //
 //   pages        Images whose longest side is over STANDALONE px get a page
 //                to themselves (`repeats`), so a tiling ground stays a whole

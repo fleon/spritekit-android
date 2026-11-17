@@ -398,9 +398,7 @@ existed, so the other 34 tests need no art.
 ## Packing art from an asset catalog
 
 A game with no exporter of its own packs its Apple asset catalogs straight
-into the art above with `Tools/Art/xcassets-art.js`, the generic form of
-Switchlings' `android-art.js` (zyl-android packs Zyl's one image set with
-it, Phantom Words its 304):
+into the art above with `Tools/Art/xcassets-art.js`:
 
 ```
 Tools/Art/ASTC/build-astcenc.sh     # once per checkout: astcenc into Tools/Art/ASTC/out (gitignored)
@@ -449,9 +447,9 @@ check holds the packer to it byte for byte, and `PackedArtTests` reads it
 through `AssetIndex`. After changing the packer on purpose,
 `node Tools/Art/check-xcassets-art.js --update` rewrites it.
 
-2026-11-17, Phantom Words' catalog (304 image sets, 122 MB): 5 atlas pages
+Measured 2026-11-17 on a catalog of 304 image sets (122 MB): 5 atlas pages
 and 37 whole, 78 MB of KTX (72 MB as PNGs, 356 MB as RGBA8) in 72 s, at a
-peak of 1 GB; six of its backdrop layers are wider than 4096 px.
+peak of 1 GB.
 
 ## Rigs
 
