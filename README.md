@@ -182,6 +182,16 @@ through `SKRenderer` and pinned in host tests:
   time, frames over a second counting none, time a frame runs past an
   action's end handed on to what follows (`ActionTimingTests`,
   `ActionClockTests`).
+- **Timing functions:** `timingFunction` runs on the timing mode's curve
+  and is clamped to 0...1, finishing an action once it reaches 1; custom
+  actions get curved time, sequences and groups run their children on their
+  curve (jumping to the end once their time is past), repeats ignore it.
+  `reversed()` keeps a move's, rotation's, scale's or custom action's mode,
+  function and speed; sequences, groups, repeats, waits and fades come back
+  linear at speed 1, and a reversed fade takes no time, as SpriteKit's
+  does (`ActionTimingFunctionTests`). `SKShader` is open, its designated
+  initialisers main-actor isolated so a main-actor-by-default game can
+  subclass it.
 - **Warps:** each cell subdivided bilinearly, levels past 3 drawn as 3, two
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
