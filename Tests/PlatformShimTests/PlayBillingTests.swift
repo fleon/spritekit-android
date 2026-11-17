@@ -262,3 +262,157 @@ struct PlayBillingRewardTests {
         #expect(java.calls.last?.arguments["token"] as? String == "reward")
     }
 }
+
+// MARK: Consumables
+
+private let smallPack = "com.example.game.pack_small"
+private let largePack = "com.example.game.pack_large"
+
+private func pack(_ product: String, _ state: String = "purchased", token: String, quantity: Int = 1) -> [String: Any] {
+    ["products": [product], "state": state, "token": token, "time": bought, "acknowledged": false, "quantity": quantity]
+}
+
+private func freshDefaults() -> UserDefaults {
+    let name = "PlayBillingTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: name)!
+    defaults.removePersistentDomain(forName: name)
+    return defaults
+}
+
+@Suite("Play Billing: consumables")
+@MainActor
+struct PlayBillingConsumableTests {
+    @Test("Each product's price, by product")
+    func prices() {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [smallPack, largePack], consumables: [smallPack, largePack], defaults: freshDefaults())
+        billing.start {}
+        java.send("billing", "product", ["productId": largePack, "price": "€9.99"])
+        java.send("billing", "product", ["productId": smallPack, "price": "€0.99"])
+        #expect(billing.price(of: smallPack) == "€0.99")
+        #expect(billing.price(of: largePack) == "€9.99")
+    }
+
+    @Test("A consumable bought is delivered once, consumed rather than acknowledged, and never owned")
+    func deliveredAndConsumed() async {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [smallPack], consumables: [smallPack], defaults: freshDefaults())
+        var delivered: [(String, Int)] = []
+        billing.deliver = { delivered.append(($0, $1)) }
+        billing.start {}
+        let result = Task { await billing.purchase(smallPack) }
+        await java.waitFor("billing.purchase")
+        java.send("billing", "updated", ["code": "ok", "purchases": [pack(smallPack, token: "c1", quantity: 2)]])
+        #expect(await result.value == .purchased)
+        #expect(delivered.count == 1 && delivered[0].0 == smallPack && delivered[0].1 == 2)
+        #expect(billing.ownedProducts.isEmpty)
+        #expect(java.count("billing.acknowledge") == 0)
+        #expect(java.count("billing.consume") == 1)
+        #expect(java.calls.last?.arguments["token"] as? String == "c1")
+
+        // Reported again before the consume lands: not delivered twice, nor consumed twice.
+        java.send("billing", "owned", ["code": "ok", "purchases": [pack(smallPack, token: "c1")]])
+        #expect(delivered.count == 1)
+        #expect(java.count("billing.consume") == 1)
+
+        java.send("billing", "consumed", ["code": "ok", "token": "c1"])
+        #expect(billing.purchases.isEmpty)
+
+        // Bought again: a new token, delivered again.
+        let again = Task { await billing.purchase(smallPack) }
+        await java.waitFor("billing.purchase", times: 2)
+        java.send("billing", "updated", ["code": "ok", "purchases": [pack(smallPack, token: "c2")]])
+        #expect(await again.value == .purchased)
+        #expect(delivered.count == 2)
+    }
+
+    @Test("A consume that fails is tried again, and a token delivered before a restart is not granted again")
+    func survivesFailureAndRestart() {
+        let defaults = freshDefaults()
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [smallPack], consumables: [smallPack], defaults: defaults)
+        var delivered = 0
+        billing.deliver = { _, _ in delivered += 1 }
+        billing.start {}
+        java.send("billing", "owned", ["code": "ok", "purchases": [pack(smallPack, token: "c1")]])
+        #expect(delivered == 1)
+        java.send("billing", "consumed", ["code": "error", "token": "c1"])
+        java.send("billing", "owned", ["code": "ok", "purchases": [pack(smallPack, token: "c1")]])
+        #expect(java.count("billing.consume") == 2)
+        #expect(delivered == 1)
+
+        // The game stopped before the consume landed: the next launch's
+        // query reports the token again.
+        let nextJava = FakeJava()
+        let next = PlayBilling(channel: nextJava.channel, products: [smallPack], consumables: [smallPack], defaults: defaults)
+        var nextDelivered = 0
+        next.deliver = { _, _ in nextDelivered += 1 }
+        next.start {}
+        nextJava.send("billing", "owned", ["code": "ok", "purchases": [pack(smallPack, token: "c1")]])
+        #expect(nextDelivered == 0)
+        #expect(nextJava.count("billing.consume") == 1)
+        nextJava.send("billing", "consumed", ["code": "ok", "token": "c1"])
+        #expect(defaults.stringArray(forKey: PlayBilling.deliveredKey) == [])
+    }
+
+    @Test("A pack Play reports before the game can take it is held, not consumed, until it can")
+    func heldUntilDeliverIsSet() {
+        let defaults = freshDefaults()
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [smallPack], consumables: [smallPack], defaults: defaults)
+        billing.start {}
+        java.send("billing", "owned", ["code": "ok", "purchases": [pack(smallPack, token: "c1", quantity: 2)]])
+        #expect(java.count("billing.consume") == 0)
+        #expect(defaults.stringArray(forKey: PlayBilling.deliveredKey) ?? [] == [])
+        var delivered: [(String, Int)] = []
+        billing.deliver = { delivered.append(($0, $1)) }
+        #expect(delivered.map(\.0) == [smallPack])
+        #expect(delivered.map(\.1) == [2])
+        #expect(java.count("billing.consume") == 1)
+    }
+
+    @Test("A query under way when a pack is consumed doesn't deliver it again")
+    func consumedThenStaleQuery() {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [smallPack], consumables: [smallPack], defaults: freshDefaults())
+        var delivered = 0
+        billing.deliver = { _, _ in delivered += 1 }
+        billing.start {}
+        java.send("billing", "updated", ["code": "ok", "purchases": [pack(smallPack, token: "c1")]])
+        #expect(delivered == 1)
+        java.send("billing", "consumed", ["code": "ok", "token": "c1"])
+        // A restore asked for before the consume answers with the token.
+        java.send("billing", "owned", ["code": "ok", "purchases": [pack(smallPack, token: "c1")]])
+        java.send("billing", "updated", ["code": "ok", "purchases": [pack(smallPack, token: "c1")]])
+        #expect(delivered == 1)
+        #expect(java.count("billing.consume") == 1)
+        #expect(billing.purchases.isEmpty)
+    }
+
+    @Test("A pending pack is delivered only once paid for")
+    func pending() {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [smallPack], consumables: [smallPack], defaults: freshDefaults())
+        var delivered = 0
+        billing.deliver = { _, _ in delivered += 1 }
+        billing.start {}
+        java.send("billing", "updated", ["code": "ok", "purchases": [pack(smallPack, "pending", token: "p1")]])
+        #expect(delivered == 0)
+        #expect(java.count("billing.consume") == 0)
+        java.send("billing", "updated", ["code": "ok", "purchases": [pack(smallPack, token: "p1")]])
+        #expect(delivered == 1)
+        #expect(java.count("billing.consume") == 1)
+    }
+
+    @Test("A non-consumable beside them is still owned and acknowledged")
+    func mixed() {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [fullGame, smallPack], consumables: [smallPack], defaults: freshDefaults())
+        billing.deliver = { _, _ in }
+        billing.start {}
+        java.send("billing", "owned", ["code": "ok", "purchases": [purchase("purchased"), pack(smallPack, token: "c1")]])
+        #expect(billing.ownedProducts == [fullGame])
+        #expect(java.count("billing.acknowledge") == 1)
+        #expect(java.count("billing.consume") == 1)
+    }
+}

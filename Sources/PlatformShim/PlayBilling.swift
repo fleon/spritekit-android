@@ -20,6 +20,15 @@ import Foundation
 ///     three days); one that fails is tried again after the next query.
 ///   - **When it was bought** is Play's `purchaseTime`, which stands in for
 ///     StoreKit's `originalPurchaseDate`.
+///   - **Consumables** (StoreKit's consumable products) are never owned. A
+///     purchased one is handed to `deliver` once, its token written down
+///     (`deliveredKey`) before it's consumed, so a game that stops between
+///     the two never grants it twice; then it's consumed, and Play lets the
+///     player buy it again. Until the game sets `deliver`, nothing is
+///     delivered or consumed, so a query answered before then loses
+///     nothing. A token Play has said is consumed is never delivered again
+///     this session, though a query already under way still lists it. A
+///     consume that fails is tried again after the next query.
 public final class PlayBilling: BillingBackend {
     public enum State: String, Sendable {
         case purchased
@@ -33,13 +42,16 @@ public final class PlayBilling: BillingBackend {
         public var token: String
         public var time: Date
         public var acknowledged: Bool
+        /// How many were bought at once (Play's multi-quantity purchases).
+        public var quantity: Int
 
-        public init(products: [String], state: State, token: String, time: Date, acknowledged: Bool) {
+        public init(products: [String], state: State, token: String, time: Date, acknowledged: Bool, quantity: Int = 1) {
             self.products = products
             self.state = state
             self.token = token
             self.time = time
             self.acknowledged = acknowledged
+            self.quantity = quantity
         }
     }
 
@@ -58,9 +70,27 @@ public final class PlayBilling: BillingBackend {
     /// The purchases Play last reported, by token.
     public private(set) var purchases: [Purchase] = []
 
-    public init(channel: PlatformChannel, products: [String]) {
+    /// Products bought to be used up rather than owned.
+    public let consumables: Set<String>
+    /// Hands the game a consumable bought: the product and how many. Called
+    /// once a purchase, before it is consumed (as StoreKit's game grants a
+    /// consumable before it finishes the transaction).
+    public var deliver: ((_ productID: String, _ quantity: Int) -> Void)? {
+        didSet { if deliver != nil { acknowledgeWhatNeedsIt() } }
+    }
+    private let defaults: UserDefaults
+    private var consuming: Set<String> = []
+    /// Tokens Play has said are consumed, this session.
+    private var consumed: Set<String> = []
+    /// The user defaults key of the consumables' tokens already delivered
+    /// and not yet known consumed.
+    public static let deliveredKey = "billing.deliveredTokens"
+
+    public init(channel: PlatformChannel, products: [String], consumables: Set<String> = [], defaults: UserDefaults = .standard) {
         self.channel = channel
         productIDs = products
+        self.consumables = consumables
+        self.defaults = defaults
         channel.on(Self.service) { [weak self] event, body in self?.handle(event, body) }
     }
 
@@ -68,8 +98,11 @@ public final class PlayBilling: BillingBackend {
 
     public var displayPrice: String? { productIDs.lazy.compactMap { self.prices[$0] }.first }
 
+    /// A product's localized price, once Play has said it.
+    public func price(of productID: String) -> String? { prices[productID] }
+
     public var ownedProducts: Set<String> {
-        Set(purchases.filter { $0.state == .purchased }.flatMap(\.products))
+        Set(purchases.filter { $0.state == .purchased }.flatMap(\.products)).subtracting(consumables)
     }
 
     /// Nothing is free here: a product priced free in one territory on the
@@ -144,6 +177,14 @@ public final class PlayBilling: BillingBackend {
                 // next query does.
                 acknowledging.remove(token)
             }
+        case "consumed":
+            guard let token = body["token"] as? String else { return }
+            consuming.remove(token)
+            if body["code"] as? String == "ok" {
+                consumed.insert(token)
+                purchases.removeAll { $0.token == token }
+                delivered.remove(token)
+            }
         case "unavailable":
             finishRestores(owning: !ownedProducts.isEmpty)
             finishPurchases(.failed)
@@ -160,7 +201,7 @@ public final class PlayBilling: BillingBackend {
             awaitingOwned = []
             return
         }
-        purchases = Self.parse(body)
+        purchases = Self.parse(body).filter { !consumed.contains($0.token) }
         acknowledgeWhatNeedsIt()
         let owned = ownedProducts
         for product in awaitingOwned {
@@ -177,7 +218,7 @@ public final class PlayBilling: BillingBackend {
         let product = body["productId"] as? String
         switch body["code"] as? String {
         case "ok":
-            let reported = Self.parse(body)
+            let reported = Self.parse(body).filter { !consumed.contains($0.token) }
             for purchase in reported {
                 if let index = purchases.firstIndex(where: { $0.token == purchase.token }) {
                     purchases[index] = purchase
@@ -209,8 +250,30 @@ public final class PlayBilling: BillingBackend {
         }
     }
 
+    /// Consumable tokens handed to the game and not yet known consumed:
+    /// kept across launches so none is granted twice.
+    private var delivered: Set<String> {
+        get { Set(defaults.stringArray(forKey: Self.deliveredKey) ?? []) }
+        set { defaults.set(newValue.sorted(), forKey: Self.deliveredKey) }
+    }
+
+    private func isConsumable(_ purchase: Purchase) -> Bool {
+        !purchase.products.isEmpty && purchase.products.allSatisfy(consumables.contains)
+    }
+
     private func acknowledgeWhatNeedsIt() {
-        for purchase in purchases where purchase.state == .purchased && !purchase.acknowledged {
+        for purchase in purchases where purchase.state == .purchased && isConsumable(purchase) {
+            guard !consumed.contains(purchase.token) else { continue }
+            if !delivered.contains(purchase.token) {
+                // Held, unconsumed, until the game can take it.
+                guard let deliver else { continue }
+                delivered.insert(purchase.token)
+                for product in purchase.products { deliver(product, max(1, purchase.quantity)) }
+            }
+            guard consuming.insert(purchase.token).inserted else { continue }
+            channel.call("billing.consume", ["token": purchase.token])
+        }
+        for purchase in purchases where purchase.state == .purchased && !purchase.acknowledged && !isConsumable(purchase) {
             guard acknowledging.insert(purchase.token).inserted else { continue }
             channel.call("billing.acknowledge", ["token": purchase.token])
         }
@@ -247,7 +310,8 @@ public final class PlayBilling: BillingBackend {
                 state: State(rawValue: item["state"] as? String ?? "") ?? .unspecified,
                 token: token,
                 time: Date(timeIntervalSince1970: (item.double("time") ?? 0) / 1000),
-                acknowledged: item.bool("acknowledged") ?? false
+                acknowledged: item.bool("acknowledged") ?? false,
+                quantity: (item["quantity"] as? Int) ?? item.double("quantity").map { Int($0) } ?? 1
             )
         }
     }
