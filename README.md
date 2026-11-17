@@ -329,6 +329,10 @@ and tested on a Mac against a fake Java:
 
 - **Purchases** (Play Billing): prices, purchases, pending purchases,
   acknowledgement, restore on launch and resume, refunds.
+- **Consumables** (Play Billing): a price per product; a purchased
+  consumable is never owned, handed to the game once (its token written
+  down first, so a stop before the consume never grants it twice) and then
+  consumed; a pending one when paid (`PlayBillingConsumableTests`).
 - **Achievements and the player** (Play Games Services v2): silent sign-in,
   achievements mapped from Game Center's IDs, incremental ones from Game
   Center's percentages.
@@ -346,6 +350,26 @@ and tested on a Mac against a fake Java:
   MediaCodec and MediaMuxer, for games that render video.
 - **The device:** haptics (primitives where the vibrator has them), audio
   focus, battery saver as Low Power Mode, sharing through Android's chooser.
+
+#### Consumables: what the app's Java answers
+
+A game with consumables passes them to `PlayBilling(consumables:)` and sets
+`deliver`, which is handed each product and quantity once. Nothing is
+delivered or consumed before `deliver` is set. On top of the one-time
+products' calls and events, the Java side answers:
+
+- `billing.consume` `{"token"}`: consume the purchase
+  (`consumeAsync`), then send `consumed` `{"code": "ok" | <error>,
+  "token"}`. A token answered `ok` is never delivered again this session,
+  though a query already under way may still list it; one that fails is
+  consumed again after the next query.
+- Each purchase in `owned` and `updated` carries `"quantity"`
+  (`Purchase.getQuantity()`, 1 unless the product allows more), which
+  `deliver` is given.
+
+A token is written to `PlayBilling.deliveredKey` in the game's user
+defaults before `deliver` and removed once consumed, so a game stopped
+between the two never grants it twice.
 
 ### iCloud's key-value store, as Apple names it
 
