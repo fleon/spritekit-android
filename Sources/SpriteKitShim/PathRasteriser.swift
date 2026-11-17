@@ -3,9 +3,9 @@ import Foundation
 /// Turns a recorded `CGPath` into 8-bit coverage.
 ///
 /// This is CoreGraphics' job on Apple, and on Android nothing else does it:
-/// `SKShapeNode` records a path and `SurfaceTexture`'s `CGContext` sites draw
-/// every chunky button, panel, meter and focus ring in the game. So the port
-/// needs one rasteriser and this is it.
+/// `SKShapeNode` records a path, and a game's `CGContext` drawing may make
+/// every button, panel, meter and focus ring it shows. So the runtime needs
+/// one rasteriser and this is it.
 ///
 /// **Swift rather than a vendored C library.** The two realistic
 /// alternatives were cross-compiling something like NanoSVG's rasteriser or

@@ -1,24 +1,25 @@
 import Foundation
 import SpriteKitShim
 
-/// The live edge blur (`EdgeShade.Blur`) without its full-screen pass.
+/// A band blur without its full-screen pass.
 ///
-/// SpriteKit draws the whole backdrop through an effect node: into a texture
-/// the size of the backdrop, overscan and all, then that texture onto the
-/// screen through the blur shader, which blurs only the bands behind the
-/// round buttons and passes every other pixel straight through. On a tiler
-/// that is a full-screen store and a full-screen read every frame for the
-/// sake of two strips.
+/// A band blur is an effect node whose shader blurs only bands along the
+/// screen's top and bottom edges (behind buttons standing there, say) and
+/// passes every other pixel straight through, recognised by its uniforms
+/// (`Uniforms.names`). SpriteKit draws the whole subtree into a texture the
+/// size of the effect node, overscan and all, then that texture onto the
+/// screen through the shader. On a tiler that is a full-screen store and a
+/// full-screen read every frame for the sake of two strips.
 ///
-/// This plans the same picture another way: the backdrop drawn straight
+/// This plans the same picture another way: the contents drawn straight
 /// into the target, scissored to the pixels outside the bands, and each band
 /// drawn into a texture of its own just big enough for the blur's taps,
 /// then onto its pixels through the same shader. The strips sit on the
 /// target's own pixel grid, so a pixel the shader passes through comes out
 /// exactly as drawing it in place would.
 ///
-/// Only the shader's uniforms are read, so the band follows the buttons
-/// wherever the game puts them. Anything this can't plan exactly comes back
+/// Only the shader's uniforms are read, so the bands follow wherever the
+/// game puts them. Anything this can't plan exactly comes back
 /// nil, and the renderer draws the effect node as before.
 public struct BandBlurPlan: Equatable {
     /// A rectangle of target pixels, counted from the bottom left as GL
@@ -82,11 +83,14 @@ public struct BandBlurPlan: Equatable {
             self.blur = blur
         }
 
-        /// The uniform names that make a shader the edge blur: its own,
-        /// which no other shader in the game declares together.
+        /// The uniform names that make a shader a band blur, a set no other
+        /// shader is expected to declare together. The shader finds a pixel's
+        /// scene point as `u_screen.xy + u_screen.z * (frag + 0.5)`, with
+        /// `frag` its `gl_FragCoord` (y down); `u_top` and `u_bottom` place
+        /// the two bands.
         public static let names: Set<String> = ["u_screen", "u_top", "u_bottom", "u_span", "u_crop", "u_fade", "u_blur", "u_ramp"]
 
-        /// `shader`'s values, if it is the edge blur.
+        /// `shader`'s values, if it is a band blur.
         public init?(_ shader: SKShader) {
             var screen: SIMD4<Float>?, top: SIMD4<Float>?, bottom: SIMD4<Float>?
             var span: SIMD2<Float>?, crop: SIMD4<Float>?, fade: Float?, blur: Float?
@@ -111,14 +115,14 @@ public struct BandBlurPlan: Equatable {
 
     /// One band: the pixels it covers, the strip of pixels drawn for it (the
     /// band and as far round it as the blur's taps reach), and `u_span` for
-    /// the strip's texture in place of the whole backdrop's.
+    /// the strip's texture in place of the whole effect node's.
     public struct Strip: Equatable {
         public var band: PixelRect
         public var strip: PixelRect
         public var span: SIMD2<Float>
     }
 
-    /// The pixels the backdrop draws straight into, outside every band.
+    /// The pixels the contents draw straight into, outside every band.
     public var direct: PixelRect
     public var strips: [Strip]
 
@@ -146,7 +150,7 @@ public struct BandBlurPlan: Equatable {
         let dx = Double(width) / Double(visible.width)
         let dy = Double(height) / Double(visible.height)
         // The scene point the shader finds at a pixel's centre, per axis:
-        // `a + b * (i + 0.5)` (`EdgeShade.Blur`'s `p`, through `u_sk_frag`).
+        // `a + b * (i + 0.5)` (the shader's scene point, through `u_sk_frag`).
         let z = Double(u.screen.z)
         let xAxis = Axis(
             a: Double(u.screen.x) + z * Double(fragSpace.offsetX),

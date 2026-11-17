@@ -1,11 +1,9 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-/// UIKit's edge insets, which the game reads from `ArtSlices` for every
-/// 9-sliced image and every board piece's footprint. The shim vends them
-/// because on Android no system UIKit does, and `ArtSlices.swift` — which the
-/// art exporter generates and which must not be edited for the port — names
-/// the type directly.
+/// UIKit's edge insets, which a game reads for every 9-sliced image. The
+/// shim vends them because on Android no system UIKit does, and game code
+/// (generated or not) names the type directly.
 public struct UIEdgeInsets: Equatable, Sendable {
     public var top: CGFloat
     public var left: CGFloat

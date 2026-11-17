@@ -2,9 +2,9 @@
 import Foundation
 
 public extension SKTexture {
-    /// SpriteKit's `cgImage()`: the texture's pixels, top row first. The
-    /// collection fits each mechanic's sample by what its snapshot draws
-    /// (`MechanicSampleNode.opaqueBounds`). Empty when the pixels cannot be
+    /// SpriteKit's `cgImage()`: the texture's pixels, top row first, as a
+    /// game fitting a node by what its snapshot draws reads them. Empty when
+    /// the pixels cannot be
     /// had (a named texture with no index, a file with no decoder).
     /// Reads back a texture that lives only on the GPU (a snapshot the
     /// renderer baked, `SKView.texture(from:)`); the renderer sets it.

@@ -63,7 +63,7 @@ public struct SpriteBatcher {
         /// composite it through `shader`. `rasterize` keeps the texture
         /// between frames, and `owner`/`generation`/`digest` are what decide
         /// whether the kept pixels are still good — the mechanism
-        /// `BandedLayerNode` is built on.
+        /// a layer cached in bands is built on.
         case effect(
             bounds: CGRect,
             transform: CGAffineTransform,
@@ -255,11 +255,10 @@ public struct SpriteBatcher {
     /// space, and the game's images are each a texture of their own there:
     /// 0…1 across the image, through its 9-slice when it's sliced, and a
     /// slice of it (`SKTexture(rect:in:)`) within that. Every shader that
-    /// works out where it is from `v_tex_coord` — `CrumbleNode`'s cracks, a
-    /// bank's groove, a pad's dish — depends on it. Given the page's
-    /// coordinates instead, the cracks were struck far off the brick (a
-    /// plain brick) and their colour was read from a row of the page
-    /// (streaks of whatever art sat there).
+    /// works out where it is from `v_tex_coord` depends on it. Given the
+    /// page's coordinates instead, a shader that drew cracks across its
+    /// sprite struck them far off it (a plain sprite) and read their colour
+    /// from a row of the page (streaks of whatever art sat there).
     static func ownImage(_ rect: CGRect, of texture: SKTexture?) -> CGRect {
         guard let image = texture?.root.textureRect, image.width > 0, image.height > 0 else { return rect }
         return CGRect(
@@ -274,8 +273,8 @@ public struct SpriteBatcher {
     /// one for both.
     ///
     /// That is the **packed page**, not the `SKTexture` object: every
-    /// `txtr("BrickSky1")` makes a fresh instance, so comparing identity
-    /// would put a board's thirty bricks in thirty draw calls although they
+    /// `SKTexture(imageNamed:)` makes a fresh instance, so comparing identity
+    /// would put thirty tiles of the same image in thirty draw calls although they
     /// all sit on one page — which is exactly what packing them was for.
     /// A texture the index does not back (raw data, a solid colour, a baked
     /// render target) has no page, and falls back to the object that owns

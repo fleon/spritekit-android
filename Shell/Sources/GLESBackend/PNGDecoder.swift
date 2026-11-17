@@ -3,11 +3,11 @@ import Foundation
 
 /// Decodes the packed art's PNGs to straight RGBA8.
 ///
-/// Deliberately narrow: it reads what `Tools/Art/android-art.js` writes —
+/// Deliberately narrow: it reads what an art packer writes for `AssetIndex` —
 /// 8-bit, non-interlaced, colour type 0, 2, 4 or 6 — and refuses anything
 /// else loudly rather than producing a plausible-looking wrong image. That
-/// is the same contract the exporter's own decoder holds on the Node side,
-/// and the reason the port needs no image library: Android gives us zlib,
+/// is the contract the packer is held to, and the reason the runtime needs
+/// no image library: Android gives us zlib,
 /// and PNG's remaining work is a row filter per scanline.
 public enum PNGDecoder {
 

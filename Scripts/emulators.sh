@@ -1,15 +1,15 @@
 #!/bin/bash
 # A pool of Android emulators that several sessions can share, one each.
 #
-#   eval "$(Android/Scripts/emulators.sh acquire <owner> [minutes])"
+#   eval "$(Scripts/emulators.sh acquire <owner> [minutes])"
 #       Takes a free slot for <owner> (or renews the one it already holds),
 #       boots its emulator on the host GPU if it isn't running, waits for it,
 #       and prints `export ANDROID_SERIAL=emulator-<port>`, which every adb,
 #       Gradle and ddms call after it then targets. Exits 2 when every slot
 #       is held.
-#   Android/Scripts/emulators.sh release <owner>
+#   Scripts/emulators.sh release <owner>
 #       Shuts that owner's emulator down and frees its slot.
-#   Android/Scripts/emulators.sh status
+#   Scripts/emulators.sh status
 #       Who holds which slot, until when, and whether it's up.
 #
 # A slot is lent for a lease (30 minutes unless asked otherwise) that every
@@ -18,17 +18,31 @@
 # slot whose lease has lapsed and frees it, so a session that stops without
 # releasing (or a crash) holds no emulator, and no memory, for long.
 #
-# Each slot is an AVD of its own (`switchlings_pool_<n>`, made here on first
-# use from the template below) on console port 5556, 5558, 5560 or 5562, so
+# Each slot is an AVD of its own (`<prefix><n>`, made here on first use from
+# the template below) on console port 5556, 5558, 5560 or 5562, so
 # slots never share data, installs or system properties. Emulators start on
 # the host GPU (`-gpu host`): left to choose, one fell back to SwiftShader at
 # about two frames a second. A released slot's emulator is shut down, so idle
 # slots hold no memory; a boot from cold takes about 15 seconds.
 #
-# State lives outside every checkout, in ~/.switchlings/emulators, so all
-# worktrees share one pool. Set SWITCHLINGS_EMULATOR_WINDOW=0 to boot
-# without a window.
+# State lives outside every checkout, so every worktree of every game on the
+# machine shares one pool. The machine can say where, and what the pool's
+# AVDs are called, in ~/.config/spritekit-android/pool.env (sourced if
+# present), so a pool made before this script had its defaults keeps its
+# AVDs and leases:
+#
+#   SKA_POOL_STATE        where leases live   (~/.spritekit-android/emulators)
+#   SKA_POOL_AVD_PREFIX   the slots' AVDs     (spritekit_pool_)
+#   SKA_POOL_PROPERTIES   system-property prefixes cleared for each new owner,
+#                         space-separated     (debug.spritekit.): every game's
+#                         `debug.<AppIdentity.key>.` belongs here
+#
+# Set SKA_EMULATOR_WINDOW=0 to boot without a window.
 set -euo pipefail
+
+POOL_CONFIG="$HOME/.config/spritekit-android/pool.env"
+# shellcheck disable=SC1090
+[ -f "$POOL_CONFIG" ] && . "$POOL_CONFIG"
 
 SLOTS=4
 FIRST_PORT=5556
@@ -37,7 +51,9 @@ SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 ADB="$SDK/platform-tools/adb"
 EMULATOR="$SDK/emulator/emulator"
 AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
-STATE="$HOME/.switchlings/emulators"
+STATE="${SKA_POOL_STATE:-$HOME/.spritekit-android/emulators}"
+AVD_PREFIX="${SKA_POOL_AVD_PREFIX:-spritekit_pool_}"
+PROPERTY_PREFIXES="${SKA_POOL_PROPERTIES:-debug.spritekit.}"
 LOCK="$STATE/.lock"
 
 mkdir -p "$STATE"
@@ -46,7 +62,7 @@ die() { echo "emulators: $*" >&2; exit 1; }
 now() { date +%s; }
 port_of() { echo $((FIRST_PORT + 2 * ($1 - 1))); }
 serial_of() { echo "emulator-$(port_of "$1")"; }
-avd_of() { echo "switchlings_pool_$1"; }
+avd_of() { echo "$AVD_PREFIX$1"; }
 
 # One caller at a time changes the pool. mkdir is atomic; a lock older than a
 # minute was left by a caller that died, and is broken.
@@ -75,8 +91,7 @@ lease() { # slot owner minutes
 }
 free() { rm -f "$STATE/slot-$1.owner" "$STATE/slot-$1.until"; }
 
-# The AVD, as the shared switchlings_shell was set up (a Pixel 6, Android 17,
-# arm64, Google APIs), but always on the host GPU.
+# The AVD: a Pixel 6, Android 17, arm64, Google APIs, always on the host GPU.
 ensure_avd() {
     local n=$1 avd dir
     avd=$(avd_of "$n")
@@ -94,7 +109,7 @@ EOF
     cat > "$dir/config.ini" <<EOF
 AvdId=$avd
 abi.type=arm64-v8a
-avd.ini.displayname=Switchlings Pool $n
+avd.ini.displayname=SpriteKit Pool $n
 avd.ini.encoding=UTF-8
 disk.dataPartition.size=6442450944
 hw.accelerometer=yes
@@ -172,14 +187,18 @@ stop_slot() {
 
 # A slot handed to a new owner starts as the AVD defines it. Screen overrides
 # (`wm size`, `wm density`) survive reboots in the AVD's data, and one session
-# left a 402-point screen for the next; `debug.switchlings.*` properties last
+# left a 402-point screen for the next; the games' `debug.<key>.*` properties last
 # until a reboot. Every new lease clears them.
 clean_slot() {
     local serial
     serial=$(serial_of "$1")
     "$ADB" -s "$serial" shell wm size reset >/dev/null 2>&1 || true
     "$ADB" -s "$serial" shell wm density reset >/dev/null 2>&1 || true
-    "$ADB" -s "$serial" shell 'for p in $(getprop | grep -o "^\[debug\.switchlings\.[^]]*" | tr -d "["); do setprop "$p" ""; done' >/dev/null 2>&1 || true
+    local prefix pattern
+    for prefix in $PROPERTY_PREFIXES; do
+        pattern="$(printf '%s' "$prefix" | sed 's/\./\\./g')"
+        "$ADB" -s "$serial" shell "for p in \$(getprop | grep -o '^\[$pattern[^]]*' | tr -d '['); do setprop \"\$p\" ''; done" >/dev/null 2>&1 || true
+    done
 }
 
 boot_slot() {
@@ -190,7 +209,7 @@ boot_slot() {
         # An emulator adb can't see but that is still running (hung) would
         # hold the AVD's locks: stop it before booting a new one.
         [ -n "$(qemu_of "$n")" ] && stop_slot "$n"
-        [ "${SWITCHLINGS_EMULATOR_WINDOW:-1}" = 0 ] && window=(-no-window)
+        [ "${SKA_EMULATOR_WINDOW:-1}" = 0 ] && window=(-no-window)
         nohup "$EMULATOR" -avd "$(avd_of "$n")" -port "$(port_of "$n")" -gpu host \
             -no-snapshot -no-boot-anim -no-audio ${window[@]+"${window[@]}"} \
             > "$STATE/slot-$n.log" 2>&1 &

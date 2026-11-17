@@ -1,10 +1,10 @@
 import Foundation
 import SpriteKitShim
 
-// CoreMedia's time, and AVFoundation's asset writer, as `SolutionFilm`
-// writes a share film's video: H.264 at the film's size and bit rate, each
-// frame a BGRA pixel buffer appended at its presentation time. The game's
-// `import AVFoundation` resolves to the module of that name in `Compat`,
+// CoreMedia's time, and AVFoundation's asset writer, as a game writes a
+// video of its own scenes: H.264 at the film's size and bit rate, each frame
+// a BGRA pixel buffer appended at its presentation time. A game's
+// `import AVFoundation` resolves to the module of that name in `Modules`,
 // which re-exports these.
 //
 // Appending encodes at once, on the caller's thread (the film's own): the

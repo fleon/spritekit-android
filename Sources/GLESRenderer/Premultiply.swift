@@ -4,10 +4,10 @@ import Foundation
 /// SpriteKit keeps every texture it loads from an image and as the renderer
 /// blends (`GL_ONE, GL_ONE_MINUS_SRC_ALPHA`) and its shaders assume.
 ///
-/// The packed pages and the rigs' own PNGs decode straight. Uploaded as
-/// they were, every soft edge drew at its colour's full strength over what
-/// lay behind it: a light halo round every Switchling, home and piece, and
-/// a sleeper that looked undimmed, its edges brightened past the dimming.
+/// The packed pages and loose PNGs decode straight. Uploaded as they were,
+/// every soft edge drew at its colour's full strength over what lay behind
+/// it: a light halo round every sprite, and a dimmed sprite whose edges were
+/// brightened past the dimming.
 public enum Premultiply {
     public static func rgba(_ pixels: Data) -> Data {
         var out = pixels
@@ -32,7 +32,7 @@ public enum Premultiply {
     /// bottom-first order GL takes them in, in the same pass: the page's
     /// upload then copies it as it is. Done where the page decodes, off the
     /// frame thread: turning a scene's pages over as they uploaded took
-    /// 150 ms of a Galaxy M31's loading-screen warm-up.
+    /// 150 ms of a loading screen's warm-up on a Mali-G72 phone.
     public static func rgbaFlipped(_ pixels: Data, width: Int, height: Int) -> Data {
         let stride = width * 4
         guard stride > 0, height > 0, pixels.count >= stride * height else { return rgba(pixels) }

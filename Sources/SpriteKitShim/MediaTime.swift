@@ -3,9 +3,9 @@ import Foundation
 
 /// `CACurrentMediaTime()` on Android.
 ///
-/// The game reads this clock in `MediaClock`, in every shader's `u_time` and
-/// in the board's action timings, so there must be exactly one of it —
-/// `Android/Shell`'s note on the renderer seam says the same thing about
+/// A game reads this clock for its own timing, every shader's `u_time`
+/// follows it and so do the actions, so there must be exactly one of it —
+/// `Shell`'s note on the renderer seam says the same thing about
 /// `ShellClock`. The two are the same clock: the shell installs its own as
 /// the source as it starts, so nothing has to choose between them.
 ///
@@ -17,14 +17,15 @@ public enum MediaTime {
     /// Where the time comes from. The shell sets this before anything draws.
     public nonisolated(unsafe) static var source: () -> TimeInterval = defaultSource
 
-    /// Set once, by whichever thread asks first (a share film's asks off
-    /// the main one): a `static let` is initialised exactly once.
+    /// Set once, by whichever thread asks first (an offscreen render's may
+    /// ask off the main one): a `static let` is initialised exactly once.
     private static let base = monotonic()
 
     /// `-FixedFrameStep`: while set, the clock stands still between frames
     /// and the shell moves it on by exactly this much for each frame it
-    /// draws (`stepped`), so the scene, every shader's `u_time` and
-    /// `MediaClock` see the same times however long the frames really took.
+    /// draws (`stepped`), so the scene, every shader's `u_time` and the
+    /// game's own clock see the same times however long the frames really
+    /// took.
     public nonisolated(unsafe) static var fixedStep: TimeInterval?
 
     /// The time the clock tells while `fixedStep` is set: 0 when it's set,
@@ -43,8 +44,8 @@ public enum MediaTime {
     }
 }
 
-/// The game's `import QuartzCore` resolves to the module of that name in
-/// `Compat`, which re-exports this.
+/// A game's `import QuartzCore` resolves to the module of that name in
+/// `Modules`, which re-exports this.
 public func CACurrentMediaTime() -> TimeInterval {
     MediaTime.fixedStep == nil ? MediaTime.source() : MediaTime.stepped
 }

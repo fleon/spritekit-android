@@ -10,7 +10,7 @@ import ShellCore
 /// and shaders belong to the renderer, which replaces this by setting
 /// `Shell.makeRenderer`.
 public final class ClearScreenRenderer: FrameRenderer {
-    /// Switchlings magenta — the swap pads' colour. Not black, not GL's
+    /// A deep magenta. Not black, not GL's
     /// transparent default, and not any framework's idea of a clear colour,
     /// so a screenshot of it means our code ran.
     public static let colour = (r: Float(0.85), g: Float(0.11), b: Float(0.55), a: Float(1))

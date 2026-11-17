@@ -5,7 +5,7 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// The engine against Core Text, what the game measures with on Apple, on
+/// The engine against Core Text, what a game measures with on Apple, on
 /// the same font files: a line's advance must come out the same width, to a
 /// hair (the variable instances' advance deltas, which Core Text keeps
 /// fractional, are all that's left).
@@ -28,7 +28,7 @@ import Testing
 
     @Test("Advances match Core Text's", arguments: ["ChironGoRoundTC-Black", "ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold"])
     func advancesMatch(font: String) {
-        for text in ["Español (México)", "W1 / L1", "Français", "Bahasa Indonesia", "Level Select", "Switchlings"] {
+        for text in ["Español (México)", "A1 / B1", "Français", "Bahasa Indonesia", "Level Select", "Salamanders"] {
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 15)).advance
             let theirs = Self.coreText(text, font: font, size: 15)
             #expect(abs(ours - theirs) < 0.0005 * theirs, "\(font) \(text): \(ours) against \(theirs)")
@@ -36,7 +36,7 @@ import Testing
     }
     @Test("Glyph-path and image bounds match Core Text's", arguments: ["ChironGoRoundTC-Black", "ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold"])
     func boundsMatch(font: String) {
-        for text in ["Español (México)", "W1 / L1", "Collection", "gpqy", "Sunny Garden", "SOHO"] {
+        for text in ["Español (México)", "A1 / B1", "Collection", "gpqy", "Quiet Harbour", "SOHO"] {
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 20))
             let ctFont = CTFontCreateWithName(font as CFString, 20, nil)
             _ = Self.registered
