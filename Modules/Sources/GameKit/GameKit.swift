@@ -1,8 +1,7 @@
-// Stands in for GameKit on Android: the local player (the one signed in to
-// Play Games) and leaderboard scores (`GKLeaderboard`), which go to Play
-// Games. A game's Game Center manager has an Android body of its own, on
-// Play Games, and sends scores either through `GKLeaderboard` or straight to
-// the backend.
+// Stands in for GameKit on Android: the signed-in player by their id and
+// alias, and leaderboard scores (`GKLeaderboard`) through PlatformShim's
+// `LeaderboardsBackend` (Play Games). Achievements and sign-in go through
+// PlatformShim's `AchievementsBackend` instead.
 import Foundation
 import PlatformShim
 
@@ -17,9 +16,10 @@ open class GKPlayer {
 }
 
 /// The local player: the one signed in to Play Games, by their Play Games ID
-/// and name (set by the game from `PlayGamesAchievements.identity`), as
-/// Game Center names its player on iOS. Signed out, not authenticated and
-/// unnamed.
+/// and name (set by the platform layer from
+/// `PlayGamesAchievements.identity`), so a game can name them as it names a
+/// Game Center player on iOS. Signed out, `isAuthenticated` is false, as on
+/// iOS.
 @MainActor
 public final class GKLocalPlayer: GKPlayer {
     public static let local = GKLocalPlayer()

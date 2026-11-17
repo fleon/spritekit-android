@@ -11,7 +11,7 @@ import TextShaping
 //
 // Second, it is the quickest way to see what the shaper did with a string:
 //
-//   swift run TextProbe ../../Assets/Fonts KoHo-Bold 32 สวัสดี
+//   swift run TextProbe <fonts-directory> SomeThaiFont-Bold 32 สวัสดี
 //
 // and, once there is a device, the same binary pushed over adb.
 

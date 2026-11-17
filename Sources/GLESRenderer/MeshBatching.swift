@@ -1,11 +1,11 @@
 import Foundation
 import SpriteKitShim
 
-/// A sprite carrying a triangle mesh (`SKTriangleMesh`, the port's rig
-/// meshes) draws its triangles rather than its quad: the same vertex layout,
-/// so it batches with plain sprites of the same texture, shader and blend
-/// mode, as a warp does. A Switchling's meshes and its shadow, all on its
-/// rig's texture, merge into one draw where nothing comes between them.
+/// A sprite carrying a triangle mesh (`SKTriangleMesh`, a skeletal rig's
+/// meshes, say) draws its triangles rather than its quad: the same vertex
+/// layout, so it batches with plain sprites of the same texture, shader and
+/// blend mode, as a warp does. A rig's meshes and its shadow, all on one
+/// texture, merge into one draw where nothing comes between them.
 extension SpriteBatcher {
     func addMesh(_ mesh: SKTriangleMesh, _ sprite: DrawList.Sprite, to batch: inout Batch) {
         // The texture's own 0…1 onto what the batch samples: the page's

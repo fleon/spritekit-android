@@ -1,8 +1,8 @@
 import Foundation
 
-/// The merge the game's saved data depends on, lifted out of
-/// `ICloudSyncManager` so it can be tested on the host and so the Android
-/// body of that manager is a wrapper rather than a rewrite.
+/// A merge for a game's synced saved data, as a game syncing through
+/// iCloud's key-value store does it, here so it can be tested on the host
+/// and so a game's Android sync code is a wrapper rather than a rewrite.
 ///
 /// User defaults stay the store on this device — they work signed out and
 /// offline, and they work on Android through corelibs Foundation. What a
@@ -119,7 +119,7 @@ public final class SyncEngine: @unchecked Sendable {
     }
 
     /// Pretends another device added `items` to a set and the cloud just
-    /// brought them here (`-SyncedClears`).
+    /// brought them here (for a debug argument that simulates it).
     public func simulateRemoteInsert(_ items: some Sequence<String>, intoSetForKey key: String) {
         var record = SetRecord(cloud.dictionary(forKey: key))
         let stamp = now()
@@ -131,7 +131,8 @@ public final class SyncEngine: @unchecked Sendable {
     }
 
     /// Pretends another device saved `value` for a key that keeps the latest
-    /// change and the cloud just brought it here (`-SyncedMoves`).
+    /// change and the cloud just brought it here (for a debug argument that
+    /// simulates it).
     public func simulateRemoteSet(_ value: Any?, forKey key: String) {
         cloud.set(Self.record(value, modifiedAt: now()), forKey: key)
         merge()

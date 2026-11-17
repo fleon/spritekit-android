@@ -4,14 +4,14 @@ import SpriteKitShim
 
 /// Where a line may be broken.
 ///
-/// This is not Unicode UAX #14, and not ICU: the game ships no ICU and the
-/// Swift SDK for Android carries no line-break tables. What it does cover is
-/// the three cases the game's 19 languages actually need.
+/// This is not Unicode UAX #14, and not ICU: an app need not ship ICU and
+/// the Swift SDK for Android carries no line-break tables. What it does
+/// cover is the three cases the scripts in `TextScript` need.
 ///
 /// - Space-separated scripts break after spaces, and after a hyphen. A
 ///   no-break space (U+00A0) holds its neighbours together, as UAX #14's
-///   glue does: the game joins "Sunny Garden · Level 1" with them so a
-///   collection row breaks before the place, never in it.
+///   glue does: a game can join "Quiet Harbour · Level 1" with them so a
+///   line breaks before the place, never in it.
 /// - Chinese and Japanese break between almost any two characters, held off
 ///   only by the small kinsoku set below — no closing bracket or full stop
 ///   starts a line, and no opening bracket ends one.

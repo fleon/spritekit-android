@@ -2,10 +2,10 @@
 import Foundation
 
 /// Triangles a sprite draws instead of its quad (`SKSpriteNode.triangleMesh`).
-/// The shim's own, not SpriteKit's: SpriteKit has no meshes, which is why the
-/// game's `RigMeshNode` tests every pixel of a quad against its triangles.
-/// The port's `RigMeshNode` (`GameCompat/Android`) hands its triangles over
-/// as they are, so the renderer draws them in the sprite's batch: a rig's
+/// The shim's own, not SpriteKit's: SpriteKit has no meshes, which is why a
+/// skeletal rig on Apple may test every pixel of a quad against its
+/// triangles in a shader. On Android a game can hand its triangles over as
+/// they are, so the renderer draws them in the sprite's batch: a rig's
 /// meshes and regions, all on one texture, merge into a draw or two.
 ///
 /// The sprite's texture, colour, alpha, blend mode and shader apply as they

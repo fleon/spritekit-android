@@ -4,37 +4,68 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// The game's real font files, found from this file's own path, so these
-/// tests measure what ships rather than a stand-in.
+/// The test fonts: open-licensed files kept with the tests
+/// (`Text/Tests/Fixtures/Fonts`, each with its licence), and for Chinese,
+/// Japanese and Korean the Mac's own faces, read where macOS keeps them
+/// (these tests run on the Mac).
+///
+/// - Montserrat: a variable Latin font whose named instances are its weights
+///   (`Montserrat-Black`, `-ExtraBold`, `-SemiBold`…), the kind of file a
+///   game asks for by instance name.
+/// - KoHo Bold: Thai, the script where FreeType alone is wrong (marks,
+///   SARA AM, descenders) and HarfBuzz has to be right.
+/// - Hiragino Sans GB: Han and kana; Apple SD Gothic Neo: Hangul.
 enum Fonts {
     static let directory: String = {
         var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<5 { url.deleteLastPathComponent() }
-        return url.appendingPathComponent("Assets/Fonts").path
+        url.deleteLastPathComponent()   // TextShapingTests
+        url.deleteLastPathComponent()   // Tests
+        return url.appendingPathComponent("Fixtures/Fonts").path
     }()
 
-    /// One engine for the whole run: registering Chiron GoRound TC reads a
-    /// 50 MB variable font, and every size shares those bytes.
+    static let hiragino = "/System/Library/Fonts/Hiragino Sans GB.ttc"
+    static let appleSDGothic = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+    /// Whether the Mac's Han and Hangul faces are there; the tests that
+    /// need them are skipped where they aren't.
+    static let hasCJK = FileManager.default.fileExists(atPath: hiragino)
+        && FileManager.default.fileExists(atPath: appleSDGothic)
+
+    /// One engine for the whole run, every size sharing each file's bytes.
     static let engine: TextEngine = {
         let library = FontLibrary()
         let engine = TextEngine(library: library, atlas: GlyphAtlas(library: library))
-        for file in ["ChironGoRoundTC-Variable", "KoHo-Bold", "Montserrat"] {
+        for file in ["Montserrat", "KoHo-Bold"] {
             _ = try? library.register(path: directory + "/" + file + ".ttf")
+        }
+        for path in [hiragino, appleSDGothic] {
+            _ = try? library.register(path: path)
         }
         engine.install()
         return engine
     }()
 
-    /// Chiron at the weight the game's buttons use.
-    static func chiron(_ size: CGFloat = 32) -> FontKey {
+    /// A named instance of a variable font, at its heaviest.
+    static func display(_ size: CGFloat = 32) -> FontKey {
         _ = engine
-        return FontKey(name: "ChironGoRoundTC-Black", size: size)
+        return FontKey(name: "Montserrat-Black", size: size)
     }
 
-    /// KoHo Bold, which is all the Thai the game ever draws.
+    /// KoHo Bold, for Thai.
     static func koHo(_ size: CGFloat = 32) -> FontKey {
         _ = engine
         return FontKey(name: "KoHo-Bold", size: size)
+    }
+
+    /// Han and kana (Hiragino Sans GB's first face).
+    static func han(_ size: CGFloat = 32) -> FontKey {
+        _ = engine
+        return FontKey(name: "HiraginoSansGB-W3", size: size)
+    }
+
+    /// Hangul (Apple SD Gothic Neo's first face).
+    static func hangul(_ size: CGFloat = 32) -> FontKey {
+        _ = engine
+        return FontKey(name: "AppleSDGothicNeo-Regular", size: size)
     }
 
     /// What FreeType alone would do: one glyph per codepoint, in codepoint

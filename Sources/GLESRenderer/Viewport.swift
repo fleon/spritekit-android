@@ -3,10 +3,9 @@ import SpriteKitShim
 
 /// Maps scene points to clip space.
 ///
-/// The game already decides its own scene size — `DesignSystem.sceneSize(for:)`
-/// gives the view's size on a wide canvas so aspect fill draws the design 1:1
-/// and a design point is a point, and that file cross-compiles for Android
-/// unchanged. So nothing here re-derives layout; this is only the projection
+/// The game already decides its own scene size (`GameHost.sceneSize(for:)`),
+/// from code that cross-compiles for Android unchanged. So nothing here
+/// re-derives layout; this is only the projection
 /// and the points-to-pixels scale the GL viewport needs.
 ///
 /// SpriteKit's scene coordinates are y-up with the origin at the scene's

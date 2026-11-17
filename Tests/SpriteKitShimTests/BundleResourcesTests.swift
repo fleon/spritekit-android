@@ -8,7 +8,7 @@ import Testing
 // swap it out from under each other.
 @Suite("Bundle resources", .serialized)
 struct BundleResourcesTests {
-    /// `RigData` asks `Bundle.main.url(forResource: "RigGardenA", withExtension: "json")`
+    /// A game asks `Bundle.main.url(forResource: "RigHero", withExtension: "json")`
     /// with two plain `String`s. Foundation's takes `String?`, so this one —
     /// which takes `String` — is the better match and wins. If Swift ever
     /// stopped preferring it, the game would quietly read nothing on Android.
@@ -21,9 +21,9 @@ struct BundleResourcesTests {
         }
         defer { BundleResources.provider = nil }
 
-        let url = Bundle.main.url(forResource: "RigGardenA", withExtension: "json")
-        #expect(asked == ["RigGardenA.json"])
-        #expect(url?.path == "/rigs/RigGardenA.json")
+        let url = Bundle.main.url(forResource: "RigHero", withExtension: "json")
+        #expect(asked == ["RigHero.json"])
+        #expect(url?.path == "/rigs/RigHero.json")
     }
 
     @Test("With no provider, it answers as Foundation would")
@@ -42,7 +42,7 @@ struct BundleResourcesTests {
         defer { BundleResources.provider = nil }
 
         #expect(Bundle.main.url(forResource: "RigFaces", withExtension: "png") != nil)
-        #expect(Bundle.main.url(forResource: "Sunny Garden", withExtension: "m4a") == nil)
+        #expect(Bundle.main.url(forResource: "Theme", withExtension: "m4a") == nil)
     }
 
     @Test("A PNG's size is read from its header without decoding it")

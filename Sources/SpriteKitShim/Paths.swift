@@ -6,9 +6,9 @@ public enum CGLineJoin: Int, Sendable { case miter, round, bevel }
 
 /// A recorded 2D path.
 ///
-/// The shim records; the renderer rasterises. Everything chunky in the game
-/// (`ChunkyStyle`, `SurfaceTexture`, meters, focus rings) comes through here
-/// or through CGContext, so this and a scanline filler are what replace
+/// The shim records; the renderer rasterises. Every vector shape a game
+/// draws (buttons, panels, meters, focus rings) comes through here or
+/// through CGContext, so this and a scanline filler are what replace
 /// CoreGraphics on Android.
 public final class CGPath: @unchecked Sendable {
     public enum Element {

@@ -8,15 +8,15 @@ import Foundation
 /// `SDLActivity.getArguments()` returned, which `MainActivity` fills from
 /// the intent's `args` extra:
 ///
-///     adb shell am start -n com.fleon.switchlings/.MainActivity \
+///     adb shell am start -n com.example.game/.MainActivity \
 ///         --esa args "-AudioProbe"
 ///
 /// (or `--es args64 <base64 of a JSON array>`, which survives any quoting:
-/// see `MainActivity.getArguments`, and `Android/Scripts/launch.sh`).
+/// see `MainActivity.getArguments`, and `Scripts/launch.js`).
 ///
-/// So this is where the port's answer to `LaunchArguments` begins: the whole
-/// Apple testing story (`-StartLevel`, `-AutoSolve`, `-Markers`, …) is
-/// launch arguments, and this is the only way they reach an Android build.
+/// So this is where a game's launch arguments begin on Android: a game
+/// tested on Apple through launch arguments (`-StartLevel`, say) is tested
+/// the same way here, and this is the only way they reach an Android build.
 public enum ShellArguments {
     public private(set) static var values: [String] = []
 
@@ -43,7 +43,7 @@ public enum ShellArguments {
         values.contains(name)
     }
 
-    /// The value after `name`, as `-StartLevel reef-12` gives it.
+    /// The value after `name`, as `-StartLevel level-1` gives it.
     public static func value(after name: String) -> String? {
         guard let index = values.firstIndex(of: name), index + 1 < values.count else { return nil }
         return values[index + 1]

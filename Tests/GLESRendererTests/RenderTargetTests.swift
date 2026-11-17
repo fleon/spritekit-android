@@ -105,7 +105,7 @@ func keptTargetHoldsUntilInvalidated() {
     #expect(second?.target == first?.target)
     #expect(device.createdTargets.count == 1)
 
-    // What BandedLayerNode does to ask for a redraw.
+    // What a layer cached in bands does to ask for a redraw.
     let third = pool.kept(for: key, width: 64, height: 64, generation: 1, contents: 7, stencil: false)
     #expect(third?.needsRedraw == true)
     #expect(third?.target == first?.target)
@@ -161,7 +161,7 @@ func digestFollowsTheContents() {
 
 @Test("A band keeps its cache while only its shader's uniforms change")
 func digestIgnoresUniformValues() {
-    // This is the whole point of BandedLayerNode: `u_time` moves every frame
+    // This is the whole point of caching in bands: `u_time` moves every frame
     // and the light moves with it, and a band that redrew for either would
     // cost exactly what not caching costs.
     let effect = SKEffectNode()
@@ -190,7 +190,7 @@ func rasterGenerationMovesOnEveryWrite() {
     effect.shouldRasterize = true
     #expect(effect.rasterGeneration != start)
 
-    // BandedLayerNode writes false then true; the false alone must already
+    // A game writes false then true; the false alone must already
     // count, since the renderer may see the list between the two.
     let afterOn = effect.rasterGeneration
     effect.shouldRasterize = false
@@ -209,10 +209,10 @@ private func wrap(_ node: SKNode) -> SKNode {
 
 @Test("Sprites on one packed page batch, whatever SKTexture objects they are")
 func spritesBatchByPage() throws {
-    // Every `txtr("BrickSky1")` makes a fresh SKTexture, so a board's bricks
-    // are thirty objects that all sit on one page. Comparing identity put
-    // them in thirty draw calls; the shim's whole reason for packing the art
-    // is that they should be one.
+    // Every `SKTexture(imageNamed: "Brick1")` makes a fresh SKTexture, so a
+    // tile map's bricks are thirty objects that all sit on one page.
+    // Comparing identity put them in thirty draw calls; the shim's whole
+    // reason for packing the art is that they should be one.
     let index = try AssetIndex(json: Data("""
     {"version": 2, "scale": 3,
      "pages": [{"file": "atlas-000.png", "width": 2048, "height": 2048},

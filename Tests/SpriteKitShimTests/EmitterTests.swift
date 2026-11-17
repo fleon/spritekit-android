@@ -2,8 +2,7 @@ import Foundation
 import Testing
 @testable import SpriteKitShim
 
-// SKEmitterNode: the reef's snow, motes and bubbles and every world's
-// ambient particles. A frame is a value, so a particle's whole life can be
+// SKEmitterNode: snow, motes, bubbles and ambient particles. A frame is a value, so a particle's whole life can be
 // checked on the host: how many are born, how long they live, where the
 // ranges put them, and whose space they live in.
 
