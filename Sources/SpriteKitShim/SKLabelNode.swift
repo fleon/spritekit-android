@@ -47,7 +47,13 @@ open class SKLabelNode: SKNode {
     }
     open var numberOfLines: Int = 1 { didSet { invalidateLayout() } }
     open var preferredMaxLayoutWidth: CGFloat = 0 { didSet { invalidateLayout() } }
+    #if canImport(Darwin)
     open var lineBreakMode: Int = 0
+    #else
+    /// Carried, as SpriteKit's starts it (measured); the layout wraps at
+    /// words whenever it wraps.
+    open var lineBreakMode: NSLineBreakMode = .byTruncatingTail
+    #endif
     open var blendMode: SKBlendMode = .alpha
 
     /// The text with its attributes, as SpriteKit takes it. What the games
@@ -408,7 +414,8 @@ open class SKShapeNode: SKNode {
     open var isAntialiased: Bool = true
     open var blendMode: SKBlendMode = .alpha
     open var fillTexture: SKTexture?
-    /// Carried, not drawn yet: the stroke draws in `strokeColor` alone.
+    /// Stretched over the path's bounds and tinted by `strokeColor`, as
+    /// `fillTexture` is for the fill.
     open var strokeTexture: SKTexture?
     open var fillShader: SKShader?
     /// Carried, not drawn.
