@@ -28,7 +28,7 @@ struct TypesettingTests {
 
     @Test("Breaking a line walks the whole string and stops")
     func walksToTheEnd() {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a salamander to send it one step, and bump another to trade arrows"
         let lines = wrapped(text, maxWidth: 160, font: Fonts.chiron(18))
 
         #expect(lines.count > 3)
@@ -40,7 +40,7 @@ struct TypesettingTests {
 
     @Test("A suggested break never returns zero, so the loop above terminates")
     func neverZero() {
-        let text = "Switchlings"
+        let text = "Salamanders"
         let font = Fonts.chiron(40)
         for width in [CGFloat(1), 5, 20, 1000] {
             #expect(Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: width) > 0)
@@ -60,7 +60,7 @@ struct TypesettingTests {
         #expect(count > 0)
         #expect(count <= text.utf16.count)
 
-        // The slice the game would take is valid text, not a cut codepoint.
+        // The slice a game would take is valid text, not a cut codepoint.
         let utf16 = Array(text.utf16)
         let piece = String(decoding: utf16[0..<count], as: UTF16.self)
         #expect(piece.unicodeScalars.allSatisfy { $0.value >= 0x0E00 && $0.value <= 0x0E7F })
@@ -68,7 +68,7 @@ struct TypesettingTests {
 
     @Test("Starting part-way through continues from there")
     func resumes() {
-        let text = "Unlock the full game and keep it forever"
+        let text = "Unlock every level and keep them forever"
         let font = Fonts.chiron(18)
         let first = Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: 100)
         let second = Typesetting.suggestLineBreak(text, font: font, startingAt: first, maxWidth: 100)
@@ -132,7 +132,7 @@ struct TypesettingTests {
 
     @Test("Break offsets are ascending and land inside the string")
     func breakOffsets() {
-        let text = "Tap a Switchling to send it one step"
+        let text = "Tap a salamander to send it one step"
         let offsets = Fonts.engine.breakOffsets(in: text)
         #expect(!offsets.isEmpty)
         #expect(offsets == offsets.sorted())

@@ -3,10 +3,10 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// What the game actually asks of the layer: a label that knows how big it
-/// is. Everything the rest of the UI positions — buttons sized to their
-/// labels, `centerCapitals`, `TextBlockNode` — is built on this.
-// Nodes are main-actor, as SpriteKit's are (#406), so building a draw list is too.
+/// What a game actually asks of the layer: a label that knows how big it
+/// is. Everything the rest of a UI positions — buttons sized to their
+/// labels, capitals centred, blocks of text — is built on this.
+// Nodes are main-actor, as SpriteKit's are, so building a draw list is too.
 @Suite("Label layout")
 @MainActor
 struct LabelTests {
@@ -21,8 +21,8 @@ struct LabelTests {
 
     @Test("A label's frame is its ink rounded out to whole points, a point to spare all round")
     func frameIsInkRoundedOut() {
-        let node = label("Switchlings")
-        let ink = Fonts.engine.measure("Switchlings", font: Fonts.chiron(32)).inkBounds
+        let node = label("Salamanders")
+        let ink = Fonts.engine.measure("Salamanders", font: Fonts.chiron(32)).inkBounds
 
         #expect(node.contentFrame.width == ink.maxX.rounded(.up) - ink.minX.rounded(.down) + 2)
         #expect(node.contentFrame.height == ink.maxY.rounded(.up) - ink.minY.rounded(.down) + 2)
@@ -47,7 +47,7 @@ struct LabelTests {
     func nothingToMeasure() {
         #expect(label("").contentFrame == .zero)
 
-        let unknown = label("Switchlings")
+        let unknown = label("Salamanders")
         unknown.fontName = "NoSuchFont"
         #expect(unknown.contentFrame == .zero)
     }
@@ -67,8 +67,8 @@ struct LabelTests {
 
     @Test("Vertical alignment works on the ink, as SpriteKit's does")
     func vertical() {
-        // The game leans on this: `.center` centres the glyphs drawn, which
-        // is why TextHelpers has to correct for it to line capitals up.
+        // Games lean on this: `.center` centres the glyphs drawn, which is
+        // why a game has to correct for it to line capitals up.
         let baseline = label("gpqy"); baseline.verticalAlignmentMode = .baseline
         let centre = label("gpqy"); centre.verticalAlignmentMode = .center
         let top = label("gpqy"); top.verticalAlignmentMode = .top
@@ -81,7 +81,7 @@ struct LabelTests {
         #expect(abs(centre.contentFrame.height - baseline.contentFrame.height) < 0.001)
     }
 
-    @Test("A descender lifts a centred label's capitals, which is what the game corrects for")
+    @Test("A descender lifts a centred label's capitals, which is what a game corrects for")
     func inkCentring() {
         let caps = label("HELLO"); caps.verticalAlignmentMode = .center
         let hanging = label("HELLOg"); hanging.verticalAlignmentMode = .center
@@ -128,7 +128,7 @@ struct LabelTests {
 
     @Test("preferredMaxLayoutWidth wraps, and nothing comes out wider")
     func wrapping() throws {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a salamander to send it one step, and bump another to trade arrows"
         let node = label(text, size: 18)
         node.numberOfLines = 0
         node.preferredMaxLayoutWidth = 180
@@ -145,7 +145,7 @@ struct LabelTests {
 
     @Test("numberOfLines caps how many lines a wrap produces")
     func lineLimit() throws {
-        let text = "Tap a Switchling to send it one step, and bump another to trade arrows"
+        let text = "Tap a salamander to send it one step, and bump another to trade arrows"
         let node = label(text, size: 18)
         node.numberOfLines = 2
         node.preferredMaxLayoutWidth = 180
@@ -154,7 +154,7 @@ struct LabelTests {
 
     @Test("Layout is stable across repeated calls and reflects every change")
     func caching() throws {
-        let node = label("Switchlings")
+        let node = label("Salamanders")
         let first = try #require(node.layout)
         #expect(node.layout == first)
         #expect(node.contentFrame == first.bounds)

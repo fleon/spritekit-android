@@ -8,20 +8,20 @@ struct LineBreakTests {
     @Test("Latin breaks at spaces")
     func latin() {
         let lines = Fonts.engine.breakLines(
-            "Unlock the full game and keep it forever",
+            "Unlock every level and keep them forever",
             font: Fonts.chiron(20),
             maxWidth: 140
         )
         #expect(lines.count > 2)
-        #expect(lines.joined(separator: " ") == "Unlock the full game and keep it forever")
+        #expect(lines.joined(separator: " ") == "Unlock every level and keep them forever")
         #expect(lines.allSatisfy { !$0.hasPrefix(" ") && !$0.hasSuffix(" ") })
     }
 
     @Test("A no-break space holds its words together")
     func noBreakSpace() {
-        // The collection's "First appears in: Sunny Garden · Level 1", the
-        // place joined with no-break spaces so it moves to a line of its own.
-        let text = "First appears in: Sunny\u{00A0}Garden\u{00A0}·\u{00A0}Level\u{00A0}1"
+        // "First appears in: Quiet Harbour · Level 1", the place joined with
+        // no-break spaces so it moves to a line of its own.
+        let text = "First appears in: Quiet\u{00A0}Harbour\u{00A0}·\u{00A0}Level\u{00A0}1"
         #expect(LineBreak.opportunities(in: text).map { $0.utf16Offset(in: text) } == [6, 14, 18])
     }
 
@@ -35,13 +35,13 @@ struct LineBreakTests {
 
     @Test("A word wider than the line is left over-wide rather than cut")
     func longWord() {
-        let lines = Fonts.engine.breakLines("Switchlings", font: Fonts.chiron(40), maxWidth: 20)
-        #expect(lines == ["Switchlings"])
+        let lines = Fonts.engine.breakLines("Salamanders", font: Fonts.chiron(40), maxWidth: 20)
+        #expect(lines == ["Salamanders"])
     }
 
     @Test("Chinese breaks between characters, with no spaces to break at")
     func chinese() {
-        let text = "点击一个斯威奇灵让它走一步"
+        let text = "点击一个方块让它向前走一步"
         let lines = Fonts.engine.breakLines(text, font: Fonts.chiron(20), maxWidth: 100)
         #expect(lines.count > 1)
         #expect(lines.joined() == text)
@@ -95,7 +95,7 @@ struct LineBreakTests {
 
     @Test("Breaking is stable: the same text and width give the same lines")
     func stability() {
-        let text = "Tap a Switchling to send it one step"
+        let text = "Tap a salamander to send it one step"
         let font = Fonts.chiron(18)
         let first = Fonts.engine.breakLines(text, font: font, maxWidth: 120)
         let second = Fonts.engine.breakLines(text, font: font, maxWidth: 120)

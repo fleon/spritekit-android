@@ -7,9 +7,9 @@ import Testing
 
 /// `wrappedLines` on both platforms: the shim's `Typesetting` against Core
 /// Text's typesetter, on the same font files, line by line across a sweep of
-/// widths, so a collection row or a tip breaks where it breaks on iOS.
+/// widths, so a line of a game's text breaks where it breaks on iOS.
 @Suite("Line breaks as Core Text makes them") struct CoreTextBreakParityTests {
-    /// The game's `wrappedLines`, with Core Text's typesetter or the shim's.
+    /// A game's line wrapping, with Core Text's typesetter or the shim's.
     static func wrapped(_ text: String, width: CGFloat, font: String, size: CGFloat, coreText: Bool) -> [String] {
         _ = CoreTextParityTests.registered
         _ = Fonts.engine
@@ -37,19 +37,19 @@ import Testing
     }
 
     static let nbsp = "\u{00A0}"
-    /// Lines the collection's rows wrap, "Sunny Garden · Level 1" held
-    /// together as `CollectionRowNode` holds it, and tips and help lines.
+    /// Lines a list's rows wrap, "Quiet Harbour · Level 1" held together
+    /// with no-break spaces, and hints and help lines.
     /// (French's space before a colon is left out: Core Text breaks before
     /// it at some widths and not at others, which this doesn't copy.)
     static let texts: [String] = [
-        "First appears in: " + "Sunny Garden · Level 1".replacingOccurrences(of: " ", with: nbsp),
-        "First appears in: " + "Cozy Kitchen · Level 12".replacingOccurrences(of: " ", with: nbsp),
-        "Zuerst in: " + "Sonniger Garten · Level 1".replacingOccurrences(of: " ", with: nbsp),
+        "First appears in: " + "Quiet Harbour · Level 1".replacingOccurrences(of: " ", with: nbsp),
+        "First appears in: " + "Old Lighthouse · Level 12".replacingOccurrences(of: " ", with: nbsp),
+        "Zuerst in: " + "Stiller Hafen · Level 1".replacingOccurrences(of: " ", with: nbsp),
         "Appears in: 37 levels",
-        "Tap a Switchling to send it one step, and bump another to trade arrows!",
+        "Tap a salamander to send it one step, and bump another to trade arrows!",
         "You’re not signed in to Game\u{00A0}Center. To sign in, go to Settings > Game\u{00A0}Center.",
-        "Ice keeps you sliding (until something stops you).",
-        "A well-placed bump sends both home.",
+        "Rain keeps falling (until something stops it).",
+        "A well-placed shot wins the round.",
     ]
 
     @Test("Lines break where Core Text breaks them", arguments: ["ChironGoRoundTC-ExtraBold", "ChironGoRoundTC-SemiBold", "ChironGoRoundTC-Black"])

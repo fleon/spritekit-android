@@ -61,8 +61,8 @@ struct ThaiShapingTests {
 
     @Test("Marks take no width, and are nudged off the pen rather than stacked on it")
     func markPlacement() {
-        // สวิตช์ลิง — the game's own word, Switchling, with three marks in it.
-        let text = "\u{0E2A}\u{0E27}\u{0E34}\u{0E15}\u{0E0A}\u{0E4C}\u{0E25}\u{0E34}\u{0E07}"
+        // สิทธิ์ — "right", a Thai word with three marks in it, two stacked.
+        let text = "\u{0E2A}\u{0E34}\u{0E17}\u{0E18}\u{0E34}\u{0E4C}"
         let font = Fonts.koHo()
         let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
         let marks = glyphs.filter { $0.xAdvance == 0 }
@@ -94,14 +94,14 @@ struct ShapingTests {
     @Test("A Latin line's advances sum to its measured width")
     func latinAdvances() {
         let font = Fonts.chiron()
-        for text in ["Switchlings", "Play", "Level 12", "Tap to bump and trade arrows"] {
+        for text in ["Salamanders", "Play", "Level 12", "Tap to bump and trade arrows"] {
             let glyphs = (Fonts.engine.shape(text, font: font) ?? []).flatMap(\.glyphs)
             let sum = glyphs.reduce(0) { $0 + $1.xAdvance }
             let measured = Fonts.engine.measure(text, font: font)
             #expect(sum > 0)
             #expect(abs(measured.advance - sum) < 0.001, "\(text)")
-            // One glyph per character, nothing dropped: Latin in Chiron has
-            // no ligatures the game would hit.
+            // One glyph per character, nothing dropped: Latin in the test
+            // font has no ligatures these strings would hit.
             #expect(glyphs.count == text.count)
         }
     }
@@ -135,7 +135,7 @@ struct ShapingTests {
         #expect((runs.last?.glyphs.first?.cluster ?? 0) == 8)
     }
 
-    @Test("Script detection covers every script the game ships")
+    @Test("Script detection covers the scripts games commonly ship")
     func scripts() {
         #expect(script("A") == .latin)
         #expect(script("ä") == .latin)
