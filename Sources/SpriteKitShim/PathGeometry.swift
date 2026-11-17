@@ -118,3 +118,146 @@ public enum PathGeometry {
         return dashes
     }
 }
+
+// MARK: - Arcs as curves, transforms and reversal
+
+public extension PathGeometry {
+    /// An arc as CoreGraphics adds one: cubic Béziers of at most a quarter
+    /// turn each, measured from the start angle, the last taking what is
+    /// left. `rising` is the shim's (UIKit's) `clockwise`: the angle rises
+    /// along the arc, as CoreGraphics' `clockwise: false`. No curves for a
+    /// sweep of nothing (start equal to end).
+    static func curves(
+        center: CGPoint, radius: CGFloat, start: CGFloat, end: CGFloat, rising: Bool
+    ) -> [PathElement] {
+        var sweep = end - start
+        if rising {
+            while sweep < 0 { sweep += .pi * 2 }
+        } else {
+            while sweep > 0 { sweep -= .pi * 2 }
+        }
+        guard sweep != 0 else { return [] }
+        var curves: [PathElement] = []
+        var angle = start
+        var left = sweep
+        while abs(left) > 1e-12 {
+            let step = left > 0 ? min(left, .pi / 2) : max(left, -.pi / 2)
+            let k = 4 / 3 * tan(step / 4) * radius
+            let (c0, s0) = (cos(angle), sin(angle))
+            let (c1, s1) = (cos(angle + step), sin(angle + step))
+            curves.append(.curve(
+                to: CGPoint(x: center.x + radius * c1, y: center.y + radius * s1),
+                control1: CGPoint(x: center.x + radius * c0 - k * s0, y: center.y + radius * s0 + k * c0),
+                control2: CGPoint(x: center.x + radius * c1 + k * s1, y: center.y + radius * s1 - k * c1)
+            ))
+            angle += step
+            left -= step
+        }
+        return curves
+    }
+
+    /// The same path with every arc made curves, as CoreGraphics records it:
+    /// an arc starts a subpath at its first point where there is no pen, and
+    /// is joined to the pen with a line where there is one.
+    static func curvesOnly(_ elements: [PathElement]) -> [PathElement] {
+        var out: [PathElement] = []
+        var hasPen = false
+        for element in elements {
+            switch element {
+            case let .arc(center, radius, start, end, rising):
+                let first = CGPoint(x: center.x + cos(start) * radius, y: center.y + sin(start) * radius)
+                out.append(hasPen ? .line(first) : .move(first))
+                out += curves(center: center, radius: radius, start: start, end: end, rising: rising)
+                hasPen = true
+            case .close:
+                out.append(element)
+                hasPen = false
+            default:
+                out.append(element)
+                hasPen = true
+            }
+        }
+        return out
+    }
+
+    /// `UIBezierPath.apply(_:)` and `CGPath.copy(using:)`: every point
+    /// through `transform`, arcs first made curves so any transform holds.
+    static func transformed(_ elements: [PathElement], by transform: CGAffineTransform) -> [PathElement] {
+        curvesOnly(elements).map { element in
+            switch element {
+            case let .move(p): return .move(p.applying(transform))
+            case let .line(p): return .line(p.applying(transform))
+            case let .quadCurve(p, c): return .quadCurve(to: p.applying(transform), control: c.applying(transform))
+            case let .curve(p, c1, c2):
+                return .curve(to: p.applying(transform), control1: c1.applying(transform), control2: c2.applying(transform))
+            case .arc, .close: return element
+            }
+        }
+    }
+
+    /// `UIBezierPath.reversing()`: each subpath drawn the other way, in the
+    /// same order. An open one starts from where it ended; a closed one
+    /// keeps its start and goes round the other way.
+    static func reversed(_ elements: [PathElement]) -> [PathElement] {
+        var out: [PathElement] = []
+        var segments: [PathElement] = []   // .line / .quadCurve / .curve
+        var start: CGPoint?
+        var pen: CGPoint?
+
+        func flush(closed: Bool) {
+            guard let first = start else { return }
+            var froms = [first]            // where each segment starts
+            for segment in segments.dropLast() {
+                switch segment {
+                case let .line(p), let .quadCurve(p, _), let .curve(p, _, _): froms.append(p)
+                default: break
+                }
+            }
+            let last = pen ?? first
+            if closed {
+                // The closing line, the other way round, comes first — of
+                // no length where the subpath ends where it began, as
+                // AppKit records it.
+                out.append(.move(first))
+                out.append(.line(last))
+            } else {
+                out.append(.move(last))
+            }
+            for (segment, from) in zip(segments, froms).reversed() {
+                switch segment {
+                case .line: out.append(.line(from))
+                case let .quadCurve(_, c): out.append(.quadCurve(to: from, control: c))
+                case let .curve(_, c1, c2): out.append(.curve(to: from, control1: c2, control2: c1))
+                default: break
+                }
+            }
+            if closed {
+                // A last line back to the start is the close's to draw.
+                if case .line(first)? = out.last, out.count > 1 { out.removeLast() }
+                out.append(.close)
+            }
+            segments = []
+            start = nil
+        }
+
+        for element in curvesOnly(elements) {
+            switch element {
+            case let .move(p):
+                flush(closed: false)
+                start = p
+                pen = p
+            case let .line(p), let .quadCurve(p, _), let .curve(p, _, _):
+                if start == nil { start = pen ?? .zero }
+                segments.append(element)
+                pen = p
+            case .close:
+                flush(closed: true)
+                pen = nil
+            case .arc:
+                break
+            }
+        }
+        flush(closed: false)
+        return out
+    }
+}
