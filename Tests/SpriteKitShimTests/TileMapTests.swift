@@ -149,4 +149,49 @@ struct TileMapTests {
         // Counter-clockwise: the texture's x axis now points up.
         #expect(abs(sprite.transform.b - 1) < 1e-9)
     }
+
+    @Test("Every initializer is designated, so a subclass can call any of them")
+    func subclassesCallTheInitializersTheyNeed() {
+        final class Map: SKTileMapNode {
+            init(group: SKTileGroup) {
+                super.init(tileSet: SKTileSet(tileGroups: [group]), columns: 2, rows: 1,
+                           tileSize: CGSize(width: 4, height: 4), fillWith: group)
+            }
+        }
+        nonisolated final class Group: SKTileGroup {
+            init(definition: SKTileDefinition) { super.init(tileDefinition: definition) }
+        }
+        nonisolated final class Definition: SKTileDefinition {
+            init(side: CGFloat) { super.init(texture: SKTexture(color: .red, size: CGSize(width: side, height: side)), size: CGSize(width: side, height: side)) }
+        }
+        let group = Group(definition: Definition(side: 4))
+        let map = Map(group: group)
+        #expect(map.tileGroup(atColumn: 1, row: 0) === group)
+        #expect(map.tileDefinition(atColumn: 0, row: 0)?.size == CGSize(width: 4, height: 4))
+    }
+
+    @Test("SKTileMapNode() is an empty map, as SpriteKit's is")
+    func anEmptyMap() {
+        let map = SKTileMapNode()
+        #expect(map.numberOfColumns == 0 && map.numberOfRows == 0)
+        #expect(map.tileSize == .zero)
+        #expect(map.tileSet.tileGroups.isEmpty)
+        #expect(map.tileGroup(atColumn: 0, row: 0) == nil)
+    }
+
+    @Test("Adjacency constants carry SpriteKit's values")
+    func adjacencyConstants() {
+        let measured: [(SKTileAdjacencyMask, UInt)] = [
+            (.adjacencyUpEdge, 124), (.adjacencyUpperRightEdge, 112), (.adjacencyRightEdge, 241),
+            (.adjacencyLowerRightEdge, 193), (.adjacencyDownEdge, 199), (.adjacencyLowerLeftEdge, 7),
+            (.adjacencyLeftEdge, 31), (.adjacencyUpperLeftEdge, 28),
+            (.adjacencyUpperRightCorner, 223), (.adjacencyLowerRightCorner, 127),
+            (.adjacencyLowerLeftCorner, 253), (.adjacencyUpperLeftCorner, 247),
+            (.hexFlatAdjacencyUp, 1), (.hexFlatAdjacencyUpperLeft, 32), (.hexFlatAdjacencyAll, 63),
+            (.hexPointyAdjacencyUpperLeft, 1), (.hexPointyAdjacencyLeft, 32), (.hexPointyAdjacencyAdd, 63),
+        ]
+        for (mask, value) in measured {
+            #expect(mask.rawValue == value)
+        }
+    }
 }

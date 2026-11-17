@@ -46,6 +46,37 @@ public struct SKTileAdjacencyMask: OptionSet, Sendable {
     public static let adjacencyLeft = SKTileAdjacencyMask(rawValue: 1 << 6)
     public static let adjacencyUpperLeft = SKTileAdjacencyMask(rawValue: 1 << 7)
     public static let adjacencyAll = SKTileAdjacencyMask(rawValue: 0xFF)
+
+    // The edge and corner pieces of a square set, by which neighbours they
+    // have; values from SpriteKit's header.
+    public static let adjacencyUpEdge: SKTileAdjacencyMask = [.adjacencyRight, .adjacencyLowerRight, .adjacencyDown, .adjacencyLowerLeft, .adjacencyLeft]
+    public static let adjacencyUpperRightEdge: SKTileAdjacencyMask = [.adjacencyDown, .adjacencyLowerLeft, .adjacencyLeft]
+    public static let adjacencyRightEdge: SKTileAdjacencyMask = [.adjacencyDown, .adjacencyLowerLeft, .adjacencyLeft, .adjacencyUpperLeft, .adjacencyUp]
+    public static let adjacencyLowerRightEdge: SKTileAdjacencyMask = [.adjacencyLeft, .adjacencyUpperLeft, .adjacencyUp]
+    public static let adjacencyDownEdge: SKTileAdjacencyMask = [.adjacencyUp, .adjacencyUpperRight, .adjacencyRight, .adjacencyLeft, .adjacencyUpperLeft]
+    public static let adjacencyLowerLeftEdge: SKTileAdjacencyMask = [.adjacencyUp, .adjacencyUpperRight, .adjacencyRight]
+    public static let adjacencyLeftEdge: SKTileAdjacencyMask = [.adjacencyUp, .adjacencyUpperRight, .adjacencyRight, .adjacencyLowerRight, .adjacencyDown]
+    public static let adjacencyUpperLeftEdge: SKTileAdjacencyMask = [.adjacencyRight, .adjacencyLowerRight, .adjacencyDown]
+    public static let adjacencyUpperRightCorner: SKTileAdjacencyMask = adjacencyAll.subtracting(.adjacencyLowerLeft)
+    public static let adjacencyLowerRightCorner: SKTileAdjacencyMask = adjacencyAll.subtracting(.adjacencyUpperLeft)
+    public static let adjacencyLowerLeftCorner: SKTileAdjacencyMask = adjacencyAll.subtracting(.adjacencyUpperRight)
+    public static let adjacencyUpperLeftCorner: SKTileAdjacencyMask = adjacencyAll.subtracting(.adjacencyLowerRight)
+    // Hexagonal sets number their six neighbours their own way.
+    public static let hexFlatAdjacencyUp = SKTileAdjacencyMask(rawValue: 1 << 0)
+    public static let hexFlatAdjacencyUpperRight = SKTileAdjacencyMask(rawValue: 1 << 1)
+    public static let hexFlatAdjacencyLowerRight = SKTileAdjacencyMask(rawValue: 1 << 2)
+    public static let hexFlatAdjacencyDown = SKTileAdjacencyMask(rawValue: 1 << 3)
+    public static let hexFlatAdjacencyLowerLeft = SKTileAdjacencyMask(rawValue: 1 << 4)
+    public static let hexFlatAdjacencyUpperLeft = SKTileAdjacencyMask(rawValue: 1 << 5)
+    public static let hexFlatAdjacencyAll = SKTileAdjacencyMask(rawValue: 0x3F)
+    public static let hexPointyAdjacencyUpperLeft = SKTileAdjacencyMask(rawValue: 1 << 0)
+    public static let hexPointyAdjacencyUpperRight = SKTileAdjacencyMask(rawValue: 1 << 1)
+    public static let hexPointyAdjacencyRight = SKTileAdjacencyMask(rawValue: 1 << 2)
+    public static let hexPointyAdjacencyLowerRight = SKTileAdjacencyMask(rawValue: 1 << 3)
+    public static let hexPointyAdjacencyLowerLeft = SKTileAdjacencyMask(rawValue: 1 << 4)
+    public static let hexPointyAdjacencyLeft = SKTileAdjacencyMask(rawValue: 1 << 5)
+    /// Apple's spelling.
+    public static let hexPointyAdjacencyAdd = SKTileAdjacencyMask(rawValue: 0x3F)
 }
 
 open class SKTileDefinition {
@@ -68,20 +99,20 @@ open class SKTileDefinition {
     }
 
     /// Sized as the texture is, as on Apple.
-    public convenience init(texture: SKTexture) {
-        self.init(textures: [texture], normalTextures: [], size: texture.size(), timePerFrame: 0)
+    public init(texture: SKTexture) {
+        (textures, normalTextures, size, timePerFrame) = ([texture], [], texture.size(), 0)
     }
 
-    public convenience init(texture: SKTexture, size: CGSize) {
-        self.init(textures: [texture], normalTextures: [], size: size, timePerFrame: 0)
+    public init(texture: SKTexture, size: CGSize) {
+        (textures, normalTextures, self.size, timePerFrame) = ([texture], [], size, 0)
     }
 
-    public convenience init(texture: SKTexture, normalTexture: SKTexture, size: CGSize) {
-        self.init(textures: [texture], normalTextures: [normalTexture], size: size, timePerFrame: 0)
+    public init(texture: SKTexture, normalTexture: SKTexture, size: CGSize) {
+        (textures, normalTextures, self.size, timePerFrame) = ([texture], [normalTexture], size, 0)
     }
 
-    public convenience init(textures: [SKTexture], size: CGSize, timePerFrame: CGFloat) {
-        self.init(textures: textures, normalTextures: [], size: size, timePerFrame: timePerFrame)
+    public init(textures: [SKTexture], size: CGSize, timePerFrame: CGFloat) {
+        (self.textures, normalTextures, self.size, self.timePerFrame) = (textures, [], size, timePerFrame)
     }
 
     public init(textures: [SKTexture], normalTextures: [SKTexture], size: CGSize, timePerFrame: CGFloat) {
@@ -108,16 +139,18 @@ open class SKTileGroup {
     open var name: String?
 
     /// One rule that applies wherever it's placed (`.adjacencyAll`), as on Apple.
-    public convenience init(tileDefinition: SKTileDefinition) {
-        self.init(rules: [SKTileGroupRule(adjacency: .adjacencyAll, tileDefinitions: [tileDefinition])])
+    public init(tileDefinition: SKTileDefinition) {
+        rules = [SKTileGroupRule(adjacency: .adjacencyAll, tileDefinitions: [tileDefinition])]
     }
 
-    public required init(rules: [SKTileGroupRule]) {
+    public init(rules: [SKTileGroupRule]) {
         self.rules = rules
     }
 
-    open class func empty() -> Self {
-        Self(rules: [])
+    /// Apple's returns `Self`; that would make `init(rules:)` required, and a
+    /// subclass with its own initializers would have to restate it.
+    open class func empty() -> SKTileGroup {
+        SKTileGroup(rules: [])
     }
 
     /// What a cell filled with this group draws (see the file's header):
@@ -157,8 +190,9 @@ open class SKTileSet {
 
     private var explicitTileSize: CGSize?
 
-    public convenience init(tileGroups: [SKTileGroup]) {
-        self.init(tileGroups: tileGroups, tileSetType: .grid)
+    public init(tileGroups: [SKTileGroup]) {
+        self.tileGroups = tileGroups
+        self.type = .grid
     }
 
     public init(tileGroups: [SKTileGroup], tileSetType: SKTileSetType) {
@@ -195,6 +229,17 @@ open class SKTileMapNode: SKNode {
     private var groups: [SKTileGroup?]
     private var definitions: [SKTileDefinition?]
 
+    /// An empty 0×0 map over an empty tile set, as `SKNode()` gives on Apple.
+    public override init() {
+        tileSet = SKTileSet(tileGroups: [])
+        numberOfColumns = 0
+        numberOfRows = 0
+        tileSize = .zero
+        groups = []
+        definitions = []
+        super.init()
+    }
+
     public init(tileSet: SKTileSet, columns: Int, rows: Int, tileSize: CGSize) {
         self.tileSet = tileSet
         self.numberOfColumns = max(0, columns)
@@ -206,16 +251,30 @@ open class SKTileMapNode: SKNode {
         super.init()
     }
 
-    public convenience init(tileSet: SKTileSet, columns: Int, rows: Int, tileSize: CGSize, fillWith tileGroup: SKTileGroup) {
-        self.init(tileSet: tileSet, columns: columns, rows: rows, tileSize: tileSize)
+    public init(tileSet: SKTileSet, columns: Int, rows: Int, tileSize: CGSize, fillWith tileGroup: SKTileGroup) {
+        self.tileSet = tileSet
+        self.numberOfColumns = max(0, columns)
+        self.numberOfRows = max(0, rows)
+        self.tileSize = tileSize
+        let count = max(0, columns) * max(0, rows)
+        groups = Array(repeating: nil, count: count)
+        definitions = Array(repeating: nil, count: count)
+        super.init()
         fill(with: tileGroup)
     }
 
-    public convenience init(
+    public init(
         tileSet: SKTileSet, columns: Int, rows: Int, tileSize: CGSize, tileGroupLayout: [SKTileGroup]
     ) {
-        self.init(tileSet: tileSet, columns: columns, rows: rows, tileSize: tileSize)
-        for (index, group) in tileGroupLayout.prefix(groups.count).enumerated() {
+        self.tileSet = tileSet
+        self.numberOfColumns = max(0, columns)
+        self.numberOfRows = max(0, rows)
+        self.tileSize = tileSize
+        let count = max(0, columns) * max(0, rows)
+        groups = Array(repeating: nil, count: count)
+        definitions = Array(repeating: nil, count: count)
+        super.init()
+        for (index, group) in tileGroupLayout.prefix(count).enumerated() {
             setTileGroup(group, forColumn: index % numberOfColumns, row: index / numberOfColumns)
         }
     }
