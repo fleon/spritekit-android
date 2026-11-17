@@ -182,6 +182,9 @@ through `SKRenderer` and pinned in host tests:
   time, frames over a second counting none, time a frame runs past an
   action's end handed on to what follows (`ActionTimingTests`,
   `ActionClockTests`).
+- **`run(_:) async`:** returns on the frame the action finishes (an instant
+  one included), awaited actions play in turn, and it never returns for an
+  action taken off or a node out of a scene (`AsyncRunTests`).
 - **Warps:** each cell subdivided bilinearly, levels past 3 drawn as 3, two
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent

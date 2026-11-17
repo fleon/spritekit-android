@@ -225,6 +225,21 @@ open class SKNode {
         runningActions.append(RunningAction(key: nil, state: action.makeState(), completion: completion))
     }
 
+    /// SpriteKit's `run(_:) async`, the Swift form of `run(_:completion:)`:
+    /// it returns once the action has finished. Without it, `await
+    /// node.run(action)` resolves to the synchronous `run(_:)` and returns at
+    /// once, so a game's awaited sequences all play over one another.
+    ///
+    /// As SpriteKit's (measured with `SKRenderer` on a Mac, macOS 27.2;
+    /// `AsyncRunTests`), it never returns if the action doesn't finish: taken
+    /// off with `removeAllActions`, or the node out of a scene, where actions
+    /// don't run.
+    open func run(_ action: SKAction) async {
+        await withUnsafeContinuation { (continuation: UnsafeContinuation<Void, Never>) in
+            run(action) { continuation.resume() }
+        }
+    }
+
     open func action(forKey key: String) -> SKAction? {
         runningActions.first { $0.key == key }?.state.action
     }
