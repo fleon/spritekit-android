@@ -1,9 +1,8 @@
 #if SPRITEKIT_SHIM && !canImport(Darwin)
 import Foundation
 
-// A text field, for the one the game types into: the Level Designer's
-// friend-code prompt (`CodePromptPopup`), which lays an invisible
-// `UITextField` over its boxes and reads every edit through the delegate.
+// A text field, as a game types into one: an invisible `UITextField` laid
+// over drawn boxes, say, reading every edit through the delegate.
 // On Android the keyboard is SDL's text input (`SDL_StartTextInput`), which
 // the shell starts and stops as a field becomes and resigns first responder
 // (`SystemServices.textInput`) and whose typing it hands back here
@@ -221,13 +220,20 @@ public final class UITextField: UIView {
 /// UIKit's coordinate spaces, as far as the code prompt names them: the
 /// keyboard's frame comes in the screen's, which on Android is the view's.
 @MainActor
-public protocol UICoordinateSpace: AnyObject {}
+public protocol UICoordinateSpace: AnyObject {
+    var bounds: CGRect { get }
+}
 
 extension UIView: UICoordinateSpace {}
 extension UIScreen: UICoordinateSpace {}
 
 public extension UIScreen {
     var coordinateSpace: UICoordinateSpace { self }
+}
+
+public extension UIWindowScene {
+    /// The scene's space: its screen's.
+    var coordinateSpace: any UICoordinateSpace { screen }
 }
 
 public extension UIView {
