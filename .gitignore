@@ -13,3 +13,7 @@ Vendor/*
 .swiftpm/
 */.build/
 */.swiftpm/
+
+# Arm's ASTC encoder, fetched and built by Tools/Art/ASTC/build-astcenc.sh.
+Tools/Art/ASTC/src/
+Tools/Art/ASTC/out/
