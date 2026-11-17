@@ -50,8 +50,49 @@ open class SKLabelNode: SKNode {
     open var lineBreakMode: Int = 0
     open var blendMode: SKBlendMode = .alpha
 
+    /// The text with its attributes, as SpriteKit takes it. What the games
+    /// set is one run over the whole string — a font, a colour and letter
+    /// spacing (`.font`, `.foregroundColor`, `.kern`) — and that is what
+    /// draws: the string, in the font and colour of its first character,
+    /// spaced by its kern. Nil clears it, leaving `text` and the font as
+    /// they were made.
+    open var attributedText: NSAttributedString? {
+        didSet { adoptAttributes() }
+    }
+
+    /// Extra space after each character, in points: the attributed text's
+    /// `.kern` (`NSKern`), 0 without one.
+    public private(set) var kern: CGFloat = 0 { didSet { invalidateLayout() } }
+
+    private func adoptAttributes() {
+        guard let attributedText else {
+            kern = 0
+            return
+        }
+        text = attributedText.string
+        guard attributedText.length > 0 else {
+            kern = 0
+            return
+        }
+        let attributes = attributedText.attributes(at: 0, effectiveRange: nil)
+        if let font = attributes[NSAttributedString.Key("NSFont")] as? LabelFont {
+            fontName = font.fontName
+            fontSize = font.pointSize
+        }
+        if let colour = attributes[NSAttributedString.Key("NSColor")] as? SKColor {
+            fontColor = colour
+        }
+        switch attributes[NSAttributedString.Key("NSKern")] {
+        case let number as NSNumber: kern = CGFloat(number.doubleValue)
+        case let value as CGFloat: kern = value
+        case let value as Double: kern = CGFloat(value)
+        default: kern = 0
+        }
+    }
+
     private struct LayoutInput: Equatable {
         var text: String?
+        var kern: CGFloat
         var fontName: String?
         var fontSize: CGFloat
         var horizontal: SKLabelHorizontalAlignmentMode
@@ -99,6 +140,7 @@ open class SKLabelNode: SKNode {
     private var layoutKey: LayoutInput {
         LayoutInput(
             text: text,
+            kern: kern,
             fontName: fontName,
             fontSize: fontSize,
             horizontal: horizontalAlignmentMode,
@@ -121,7 +163,18 @@ open class SKLabelNode: SKNode {
         var box: CGRect?
 
         for (index, text) in broken.enumerated() {
-            let line = provider.measure(text, font: font)
+            var line = provider.measure(text, font: font)
+            if kern != 0 {
+                // Each character's spacing comes after it, as CoreText puts
+                // it: the pen travels `kern` further a character, and the
+                // last character's ink sits that much further on for every
+                // one before it.
+                let count = CGFloat(text.count)
+                line.advance += kern * count
+                if !line.inkBounds.isEmpty {
+                    line.inkBounds.size.width += kern * max(count - 1, 0)
+                }
+            }
             let x: CGFloat
             switch horizontalAlignmentMode {
             case .left: x = 0
@@ -240,6 +293,9 @@ open class SKShapeNode: SKNode {
     open var isAntialiased: Bool = true
     open var blendMode: SKBlendMode = .alpha
     open var fillTexture: SKTexture?
+    /// Carried, not drawn yet: the stroke draws in `strokeColor` alone.
+    /// Zyl's tutorial highlights give their outlines a gradient through it.
+    open var strokeTexture: SKTexture?
     open var fillShader: SKShader?
     /// Carried, not drawn: the game sets none, and only `ShaderPrimer` reads it.
     open var strokeShader: SKShader?

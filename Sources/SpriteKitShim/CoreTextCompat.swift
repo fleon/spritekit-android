@@ -16,9 +16,14 @@ import Foundation
 // MARK: - Attributes
 
 extension NSAttributedString.Key {
-    /// UIKit's `NSFontAttributeName`. The game only ever sets this one, and
-    /// only to hand a `UIFont` to the typesetter.
+    /// UIKit's `NSFontAttributeName`: a `UIFont`, for the typesetter and for
+    /// `SKLabelNode.attributedText`.
     public static let font = NSAttributedString.Key("NSFont")
+    /// UIKit's `NSForegroundColorAttributeName`: the text's colour.
+    public static let foregroundColor = NSAttributedString.Key("NSColor")
+    /// UIKit's `NSKernAttributeName`: extra space after each character, in
+    /// points, as an `NSNumber`.
+    public static let kern = NSAttributedString.Key("NSKern")
 }
 
 private extension NSAttributedString {

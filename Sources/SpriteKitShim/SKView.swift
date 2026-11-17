@@ -264,7 +264,7 @@ open class SKView: UIView {
     // MARK: Composing
 
     /// A scene as the view shows it, in its own coordinates as they are
-    /// with no camera (`visibleFrame`'s): its background over the whole
+    /// with no camera (`viewVisibleFrame`'s): its background over the whole
     /// view, then its contents through its camera.
     /// With `culling`, what lies wholly outside the view is left out: a
     /// transition moves a scene's picture after this, so it's culled by the
@@ -272,17 +272,17 @@ open class SKView: UIView {
     static func picture(of scene: SKScene, culling: Bool = false) -> DrawList {
         var list = DrawList()
         if scene.backgroundColor.alpha > 0 {
-            list.commands.append(.sprite(fill(scene.visibleFrame, colour: scene.backgroundColor, alpha: 1)))
+            list.commands.append(.sprite(fill(scene.viewVisibleFrame, colour: scene.backgroundColor, alpha: 1)))
         }
-        list.commands += DrawList(scene: scene, transform: scene.cameraTransform, culling: culling ? scene.visibleFrame : nil).commands
+        list.commands += DrawList(scene: scene, transform: scene.cameraTransform, culling: culling ? scene.viewVisibleFrame : nil).commands
         return list
     }
 
     /// Both scenes, as `flight` draws them this far through, in the incoming
     /// scene's coordinates.
     private func compose(_ flight: Flight, incoming: SKScene) -> DrawList {
-        let frame = incoming.visibleFrame
-        let outgoingFrame = flight.outgoing.visibleFrame
+        let frame = incoming.viewVisibleFrame
+        let outgoingFrame = flight.outgoing.viewVisibleFrame
         // The outgoing scene's frame laid over the incoming one's: the same
         // view, whatever size and anchor each scene has.
         let across = CGAffineTransform(translationX: -outgoingFrame.minX, y: -outgoingFrame.minY)

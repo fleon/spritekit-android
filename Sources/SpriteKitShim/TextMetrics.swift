@@ -24,6 +24,14 @@ public enum TextMetrics {
     }
 }
 
+/// A font as an attributed string's `.font` carries it: what
+/// `SKLabelNode.attributedText` takes the face and size from. `UIFont` is
+/// one.
+public protocol LabelFont {
+    var fontName: String { get }
+    var pointSize: CGFloat { get }
+}
+
 /// A font as a label names it: the family or named-instance name the game
 /// passes to `SKLabelNode.fontName`, and a point size.
 public struct FontKey: Hashable, Sendable {
