@@ -223,7 +223,10 @@ final class FaceHandle {
         let isScalable = face.face_flags & FT_Long(FT_FACE_FLAG_SCALABLE) != 0 && scale > 0
         let ascent = isScalable ? CGFloat(face.ascender) * scale : CGFloat(scaled.ascender) / 64
         let descent = isScalable ? -CGFloat(face.descender) * scale : -CGFloat(scaled.descender) / 64 // FreeType's is negative
-        let lineHeight = isScalable ? CGFloat(face.height) * scale : CGFloat(scaled.height) / 64
+        // The line gap in font units, so a face with none has exactly none.
+        let leading = isScalable
+            ? CGFloat(max(0, Int(face.height) - Int(face.ascender) + Int(face.descender))) * scale
+            : max(0, CGFloat(scaled.height) / 64 - ascent - descent)
 
         var capHeight = ascent * 0.7
         var xHeight = ascent * 0.5
@@ -236,10 +239,7 @@ final class FaceHandle {
         return FontMetrics(
             ascent: ascent,
             descent: descent,
-            // UIKit's lineHeight is ascent + descent + leading, and
-            // FreeType's `height` is the whole line, so the leading is
-            // whatever that line leaves over.
-            leading: max(0, lineHeight - ascent - descent),
+            leading: leading,
             capHeight: capHeight,
             xHeight: xHeight
         )
