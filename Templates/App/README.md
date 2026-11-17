@@ -24,7 +24,7 @@ Templates/App/
 | `DeviceServices.java` | `device`: haptics, battery saver, audio focus, the status bar, the app's settings page (`openAppSettings`) |
 | `AudioFocusPolicy.java` (+ its test) | When to ask for audio focus, as an ambient iOS session behaves |
 | `PlayBilling.java` | `billing`: one-time products (prices, purchases, acknowledgement, restore) |
-| `PlayGamesServices.java` | `games`: sign-in, achievements, leaderboards, the player, Saved Games |
+| `PlayGamesServices.java` | `games`: sign-in, achievements, leaderboards (submitting, loading them and their scores, showing them at a time span and collection), the player, Saved Games |
 | `PlayReview.java` | `review`: Play In-App Review, behind `SKStoreReviewController` |
 | `res/` | The app's name, a black launch theme with no splash icon, a placeholder launcher icon, the `FileProvider`'s paths (`xml/shared_files.xml`: the cache) |
 
