@@ -59,6 +59,8 @@ public final class PlaySavedGamesCloud: CloudKeyValueStore {
 
     public func dictionary(forKey key: String) -> [String: Any]? { contents[key] }
 
+    public var keys: [String] { Array(contents.keys) }
+
     public func set(_ dictionary: [String: Any], forKey key: String) {
         contents[key] = dictionary
         dirty = true

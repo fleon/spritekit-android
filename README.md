@@ -32,15 +32,17 @@ Package.swift        SpriteKitShim, GLESRenderer, PlatformShim and their
 Sources/
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
-                     camera, SKRenderer, and the UIKit / CoreGraphics /
-                     CoreText / CoreImage surface. On Apple platforms it
+                     camera, SKRenderer, the UIKit / CoreGraphics /
+                     CoreText / CoreImage surface, and Foundation's
+                     NSUbiquitousKeyValueStore. On Apple platforms it
                      re-exports the real SpriteKit.
   GLESRenderer/      The GL-free half of the renderer: shader translation,
                      batching, render targets, compressed pages, the render
                      scale governor. Host-tested.
   PlatformShim/      The Android stand-ins for Apple's services, without the
-                     device: Play Billing, Play Games, Saved Games and the
-                     sync engine, MediaCodec-backed AVFoundation, haptics,
+                     device: Play Billing, Play Games, Saved Games (the
+                     key-value store's cloud) and the sync engine,
+                     MediaCodec-backed AVFoundation, haptics,
                      sharing, the launch-argument domain.
 Tests/               Host tests: no device or GL context.
 Modules/             Android-only. Targets that exist to own a module name
@@ -327,6 +329,40 @@ and tested on a Mac against a fake Java:
   MediaCodec and MediaMuxer, for games that render video.
 - **The device:** haptics (primitives where the vibrator has them), audio
   focus, battery saver as Low Power Mode, sharing through Android's chooser.
+
+### iCloud's key-value store, as Apple names it
+
+A game that talks to `NSUbiquitousKeyValueStore` itself (keeping its
+progress there as one `Data`, say) gets Apple's API
+(`Sources/SpriteKitShim/UbiquitousKeyValueStore.swift`). Values are kept on
+the device in user defaults, each with the time it was set, and synced
+through any `CloudKeyValueStore` the game installs as its `cloud` (Play
+Games Saved Games), one record per key under `ubiquitous.<key>`. When two
+devices write one key, the later write wins, as with iCloud; two writes at
+the same instant settle on the same value everywhere. The keys that change
+here are posted as `didChangeExternallyNotification`. The reason is the
+initial sync for the first merge that hears from the cloud (installed with
+data there, or the first fetch after Play signs in), and a server change
+after that. A removal is a record too, so it travels. With no cloud the
+store is the device's alone, as with iCloud off. It is safe from any
+thread; the cloud is spoken to on the main thread. A game uses this or
+`ICloudSyncManager`'s `SyncEngine` on one cloud, not both: each takes the
+cloud's `externalChanges`.
+
+Where it differs from Apple's:
+
+- No limits are enforced: not the 1 MB total, the 1,024 keys, the 1 MB per
+  value, or the 128-character keys.
+- `QuotaViolationChange` and `AccountChange` are never posted (the
+  constants exist). If the player switches Play account, the new account's
+  values merge with what the device holds.
+- `synchronize()` always returns `true`.
+- Writes are timestamped by the device's clock, so a device whose clock is
+  far off can win or lose a key it shouldn't. A fresh install that writes
+  before Play's snapshot arrives competes on time with the snapshot's
+  values.
+- The type is visible only through a module that re-exports
+  `SpriteKitShim` (`Foundation` itself can't gain it).
 
 ### The shell
 
