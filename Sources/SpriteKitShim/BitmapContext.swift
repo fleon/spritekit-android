@@ -292,7 +292,10 @@ public final class BitmapContext {
     /// Strokes from here on run in dashes, `phase` into the pattern; an
     /// empty pattern strokes solid again, as CoreGraphics has it.
     public func setLineDash(phase: CGFloat, lengths: [CGFloat]) {
-        state.dash = lengths.contains(where: { $0 > 0 }) ? (phase, lengths) : nil
+        // An odd pattern runs twice per period, on and off swapped the second
+        // time, as CoreGraphics repeats it.
+        let pattern = lengths.count % 2 == 1 ? lengths + lengths : lengths
+        state.dash = pattern.contains(where: { $0 > 0 }) ? (phase, pattern) : nil
     }
     public func setLineJoin(_ join: CGLineJoin) { state.lineJoin = join }
     public func setMiterLimit(_ limit: CGFloat) { state.miterLimit = limit }
@@ -379,24 +382,25 @@ public final class BitmapContext {
     /// An ellipse as four cubic arcs, the usual kappa — the same construction
     /// `UIBezierPath(ovalIn:)` uses, so a circle drawn either way matches.
     static func ellipse(in rect: CGRect) -> [PathElement] {
+        // CoreGraphics' own order: from (maxX, midY), counter-clockwise in
+        // its y-up space, four quarter curves (which a dash pattern follows).
         let k: CGFloat = 0.5522847498
-        let (x, y, w, h) = (rect.minX, rect.minY, rect.width, rect.height)
-        let (rx, ry) = (w / 2, h / 2)
-        let cx = x + rx, cy = y + ry
+        let (rx, ry) = (rect.width / 2, rect.height / 2)
+        let (cx, cy) = (rect.minX + rx, rect.minY + ry)
         return [
-            .move(CGPoint(x: cx, y: y + h)),
-            .curve(to: CGPoint(x: x + w, y: cy),
-                   control1: CGPoint(x: cx + rx * k, y: y + h),
-                   control2: CGPoint(x: x + w, y: cy + ry * k)),
-            .curve(to: CGPoint(x: cx, y: y),
-                   control1: CGPoint(x: x + w, y: cy - ry * k),
-                   control2: CGPoint(x: cx + rx * k, y: y)),
-            .curve(to: CGPoint(x: x, y: cy),
-                   control1: CGPoint(x: cx - rx * k, y: y),
-                   control2: CGPoint(x: x, y: cy - ry * k)),
-            .curve(to: CGPoint(x: cx, y: y + h),
-                   control1: CGPoint(x: x, y: cy + ry * k),
-                   control2: CGPoint(x: cx - rx * k, y: y + h)),
+            .move(CGPoint(x: rect.maxX, y: cy)),
+            .curve(to: CGPoint(x: cx, y: rect.maxY),
+                   control1: CGPoint(x: rect.maxX, y: cy + ry * k),
+                   control2: CGPoint(x: cx + rx * k, y: rect.maxY)),
+            .curve(to: CGPoint(x: rect.minX, y: cy),
+                   control1: CGPoint(x: cx - rx * k, y: rect.maxY),
+                   control2: CGPoint(x: rect.minX, y: cy + ry * k)),
+            .curve(to: CGPoint(x: cx, y: rect.minY),
+                   control1: CGPoint(x: rect.minX, y: cy - ry * k),
+                   control2: CGPoint(x: cx - rx * k, y: rect.minY)),
+            .curve(to: CGPoint(x: rect.maxX, y: cy),
+                   control1: CGPoint(x: cx + rx * k, y: rect.minY),
+                   control2: CGPoint(x: rect.maxX, y: cy - ry * k)),
             .close,
         ]
     }
