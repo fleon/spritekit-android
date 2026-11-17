@@ -182,10 +182,23 @@ through `SKRenderer` and pinned in host tests:
   time, frames over a second counting none, time a frame runs past an
   action's end handed on to what follows (`ActionTimingTests`,
   `ActionClockTests`).
+- **`run(_:) async`:** returns on the frame the action finishes (an instant
+  one included), awaited actions play in turn, and it never returns for an
+  action taken off or a node out of a scene (`AsyncRunTests`).
 - **Warps:** each cell subdivided bilinearly, levels past 3 drawn as 3, two
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
   descendants; a scaled 9-slice keeps its caps.
+- **Scenes:** a scene's `frame` is its size placed by its anchor point, and
+  its position and scale stay out of it and of its accumulated frame; a
+  scene is never among its own `nodes(at:)` (`SceneFrameTests`).
+- **Tile maps:** `SKTileMapNode` draws one sprite per filled cell, each
+  definition at its own size from its cell's bottom-left corner, turned
+  counter-clockwise within that rect by its rotation, and tinted by the
+  map's colour as a sprite is; cell centres and tile indices (clamped at 0,
+  not at the far edge) are SpriteKit's (`TileMapTests`). Animated
+  definitions show their first texture, and automapping keeps a group's
+  centre rule.
 - **Paths and contexts:** checked against CoreGraphics' own API, every blend
   mode included.
 - **Core Image:** `CILinearGradient` and `CIRadialGradient` mix
@@ -198,6 +211,8 @@ through `SKRenderer` and pinned in host tests:
   A bitmap cropped off whole pixels keeps every pixel it reaches, where
   Core Image keeps the fraction. `SKEffectNode.filter` is kept, not yet
   drawn.
+  mode included; `setLineDash(phase:lengths:)` strokes in dashes as
+  CoreGraphics does, the pattern scaled with the context (`LineDashTests`).
 
 A change to the shim's behaviour comes with a test of this kind.
 
@@ -225,6 +240,10 @@ A change to the shim's behaviour comes with a test of this kind.
   step moves the scene a whole number of refreshes.
 - **Programs** are kept as driver binaries between launches, keyed by source
   and driver, so an app update doesn't relink what didn't change.
+- **Shapes** are rasterised on the CPU into coverage masks at the density
+  they're drawn at, except that no mask is made larger than the GPU's
+  biggest texture: a very long shape is rasterised coarser instead, its
+  edges a little softer.
 
 ### Art
 
@@ -328,6 +347,35 @@ runs; `laidOutRuns` is set when the layout placed them, and the draw list
 then emits one label command per run. A wrapped label in several styles
 still draws in its first run's style.
 
+### UIKit around the scene
+
+A game's SpriteKit code also reads UIKit, so the shim carries the parts it
+reaches for, kept as values where Android has nothing to show:
+
+- **Views:** `UIView`'s `frame`, `subviews`, `isUserInteractionEnabled`,
+  `contentMode`, `autoresizingMask` and `clipsToBounds`, `UIImageView`,
+  `SKView(frame:)`. Only the game's `SKView` draws; other views are kept, not
+  composited, and `snapshotView(afterScreenUpdates:)` and `drawHierarchy`
+  answer nil and false, as UIKit does for a view it can't render.
+- **Reserved regions** (iOS 27.1): `reservedRegions(kind:options:)` answers
+  from `reservedRegionList`, which the shell may fill (a foldable's hinge);
+  none by default, as on a phone without one.
+- **Windows and scenes:** a window joins its scene through `windowScene`;
+  the scene's `windows`, `keyWindow` and `coordinateSpace` follow.
+- **SF Symbols:** Android has no symbol font, so
+  `UIImage(systemName:withConfiguration:)` looks a symbol up in the packed
+  art as `SystemSymbols/<name>`. `Tools/Art/system-symbols.sh` renders the
+  symbols a game names into an asset catalog for the packer, with UIKit as
+  a Mac Catalyst tool (AppKit rounds symbol sizes up to whole points); the
+  configuration a game passes is the one it rendered them with.
+- **Text types:** `NSParagraphStyle`/`NSMutableParagraphStyle`,
+  `NSTextAlignment`, `NSLineBreakMode` and the `.paragraphStyle` and
+  `.baselineOffset` keys, which corelibs Foundation leaves to the UI
+  frameworks; `NSMutableString(initialCapacity:)` (corelibs has only
+  `init(capacity:)`, and an extension can't add `init()`).
+- **Settings:** `UIApplication.openSettingsURLString` opens the app's own
+  page in Android's settings (`device.openAppSettings` on the channel).
+
 ### The platform layer
 
 Everything Apple-shaped that needs a device goes through one channel
@@ -339,6 +387,10 @@ and tested on a Mac against a fake Java:
 
 - **Purchases** (Play Billing): prices, purchases, pending purchases,
   acknowledgement, restore on launch and resume, refunds.
+- **Consumables** (Play Billing): a price per product; a purchased
+  consumable is never owned, handed to the game once (its token written
+  down first, so a stop before the consume never grants it twice) and then
+  consumed; a pending one when paid (`PlayBillingConsumableTests`).
 - **Achievements and the player** (Play Games Services v2): silent sign-in,
   achievements mapped from Game Center's IDs, incremental ones from Game
   Center's percentages.
@@ -352,10 +404,32 @@ and tested on a Mac against a fake Java:
   there too (`ResourceBundle.defaultFolder`).
   A track with no loop points of its own repeats whole with
   `MusicLoop.wholeTrack`, as `AVAudioPlayer`'s `numberOfLoops = -1` does.
+  `AudioBackend.duration(ofSound:)` is a prepared sound's length (from its
+  WAV), what a game reads from `AVAudioPlayer.duration`.
 - **Media:** `AVAssetWriter`, `AVAudioFile` and composition stand-ins over
   MediaCodec and MediaMuxer, for games that render video.
 - **The device:** haptics (primitives where the vibrator has them), audio
   focus, battery saver as Low Power Mode, sharing through Android's chooser.
+
+#### Consumables: what the app's Java answers
+
+A game with consumables passes them to `PlayBilling(consumables:)` and sets
+`deliver`, which is handed each product and quantity once. Nothing is
+delivered or consumed before `deliver` is set. On top of the one-time
+products' calls and events, the Java side answers:
+
+- `billing.consume` `{"token"}`: consume the purchase
+  (`consumeAsync`), then send `consumed` `{"code": "ok" | <error>,
+  "token"}`. A token answered `ok` is never delivered again this session,
+  though a query already under way may still list it; one that fails is
+  consumed again after the next query.
+- Each purchase in `owned` and `updated` carries `"quantity"`
+  (`Purchase.getQuantity()`, 1 unless the product allows more), which
+  `deliver` is given.
+
+A token is written to `PlayBilling.deliveredKey` in the game's user
+defaults before `deliver` and removed once consumed, so a game stopped
+between the two never grants it twice.
 
 ### iCloud's key-value store, as Apple names it
 
@@ -409,6 +483,34 @@ The Java half is a class of its own in the game's app (`PlayReview`, on
 is over. A build not installed from Play runs the flow and shows nothing, as
 TestFlight shows nothing on iOS.
 
+### A game's own fonts, and the system font
+
+The shell registers every `.ttf`/`.otf` the game stages in the APK's
+`fonts/` at launch (`AssetBundle.installFonts`), as an iOS app's
+`UIAppFonts` are. The files the game names in `Shell.start(fonts:)` come
+first, in its order, so its default face is the one it chose. A game that
+registers its fonts itself goes through
+CoreText's font manager, which `CoreTextCompat.swift` answers over
+`TextMetrics.catalog` (the `TextEngine`): `CTFontManagerCreateFontDescriptorsFromURL`
+lists a file's faces as CoreText does (one for a plain file, one per named
+instance for a variable font: pinned against CoreText on the Mac's own
+Geneva, New York and SF, all 369 of SF's), `CTFontCreateWithFontDescriptor`,
+`CTFontCopyPostScriptName` and `CTFontDescriptorCopyAttribute(_, kCTFontNameAttribute)`
+name them, and `CTFontManagerRegisterFontURLs` registers, reporting a second
+registration of a file as an error, as Apple does, with CoreText's error
+codes (101 missing file, 103 not a font, 105 already registered). A font
+collection (`.ttc`) registers its first face only. A file is known by its
+name without extension, so two files of one name in different folders count
+as one.
+
+`UIFont(name:size:)` is nil for a name no registered face answers to, as on
+Apple, so "this face, else the system font" falls back as it does there.
+`UIFont.systemFont(ofSize:weight:)` draws in the device's Roboto:
+`/system/fonts/Roboto-Regular.ttf`, whose named instances are its weights on
+Android 12 and later (a file a weight before that), at the instance of SF's
+weight class for each UIKit weight (`.semibold` is Roboto SemiBold), chosen
+by `SystemFontFaces`.
+
 ### The shell
 
 - **The main thread** is SDL's thread: `MainThread.claim()` makes it so for
@@ -420,12 +522,25 @@ TestFlight shows nothing on iOS.
 - **Resources:** the process is `app_process`, so `Bundle.main` has no files;
   resources (data files, fonts, `.lproj` folders) are copied out of the APK on
   first use. The version comes from the APK.
+- **Localized strings:** `NSLocalizedString` reads the APK's
+  `lproj/<language>.lproj/<table>.strings`, choosing the language as
+  `Bundle.main` does: the first preferred language a folder serves, else the
+  app's development region (`AppIdentity.developmentRegion`, its own folder
+  or `Base`). A key the chosen table lacks is the value or the key
+  (`LocalizedStringsTests`, measured on a Mac). Only `NSLocalizedString`:
+  `Bundle.localizedString(forKey:value:table:)`, `String(localized:)` and
+  `.stringsdict` still answer with keys, and `bundle:` isn't read. A file
+  that imports only Foundation needs the shim re-exported in its module.
 - **Layout:** a point is a dp. The safe area includes the system bars, the
   cutout and the gesture handle; Back (and Android 16's predictive back)
   arrives as Escape.
 - **Input:** one touch at a time, hardware keys by HID usage, gamepads
   through SDL.
 - **Threads:** libdispatch workers start below the frame thread's priority.
+- **Associated objects:** `objc_getAssociatedObject`, `objc_setAssociatedObject`
+  and `objc_removeAssociatedObjects` work without an Objective-C runtime,
+  answering as Apple's do (`AssociatedObjectsParityTests`); a value goes a
+  little after its object rather than with it.
 - **Launch arguments** (debuggable builds only) come from the intent, as
   `-Key value` pairs in the argument domain, as on Apple.
 - **Debug properties:** `adb shell setprop debug.<key>.<name> <value>`, read

@@ -13,6 +13,8 @@ public final class FontLibrary: @unchecked Sendable {
 
     private let lock = NSLock()
     private var files: [String: FontFile] = [:]                 // path -> file
+    /// Each registered file's faces, as CoreText's descriptors list them.
+    private var fileFaces: [String: [String]] = [:]             // path -> faces
     private var names: [String: (file: FontFile, instance: String?)] = [:]
     private var faces: [Key: FaceHandle] = [:]
     private var missing: Set<Key> = []
@@ -40,19 +42,44 @@ public final class FontLibrary: @unchecked Sendable {
             files[path] = made
             return made
         }
-        return try register(file: file)
+        return try register(file: file, key: path)
     }
 
     @discardableResult
     public func register(data: Data, name: String) throws -> [String] {
         let file = FontFile(data: data, name: name)
         lock.withLock { files[name] = file }
-        return try register(file: file)
+        return try register(file: file, key: name)
     }
 
-    private func register(file: FontFile) throws -> [String] {
+    /// The faces of a registered file (by its path, or the name its bytes
+    /// were registered under), as CoreText's descriptors list them: a
+    /// variable font's named instances, else its one PostScript name. Nil for
+    /// a file never registered.
+    public func faces(ofFile key: String) -> [String]? {
+        lock.withLock { fileFaces[key] }
+    }
+
+    /// The faces of the font file at `path`, read without registering it.
+    public static func faces(ofFontAt path: String) throws -> [String] {
+        try faces(of: FaceHandle(file: FontFile(path: path), size: 16, instance: nil))
+    }
+
+    /// Whether `name` (a PostScript, instance or family name) is registered.
+    public func hasName(_ name: String) -> Bool {
+        lock.withLock { names[name] != nil }
+    }
+
+    private static func faces(of probe: FaceHandle) -> [String] {
+        let instances = probe.instanceNames.filter { !$0.isEmpty }
+        if !instances.isEmpty { return instances }
+        return probe.postScriptName.map { [$0] } ?? []
+    }
+
+    private func register(file: FontFile, key: String) throws -> [String] {
         // One throwaway face at a nominal size, only to read the name table.
         let probe = try FaceHandle(file: file, size: 16, instance: nil)
+        lock.withLock { fileFaces[key] = Self.faces(of: probe) }
         var registered: [String] = []
 
         if let ftFace = probe.ftFace,
