@@ -48,9 +48,16 @@ open class SKScene: SKNode {
     open func update(_ currentTime: TimeInterval) {}
     open func didChangeSize(_ oldSize: CGSize) {}
 
+    /// The scene's size, placed by its anchor point: a scene anchored at its
+    /// middle spans `-size / 2` to `size / 2` in its own space.
     open override var contentFrame: CGRect {
-        CGRect(origin: .zero, size: size)
+        CGRect(x: -anchorPoint.x * size.width, y: -anchorPoint.y * size.height,
+               width: size.width, height: size.height)
     }
+
+    /// SpriteKit ignores a scene's position and scale, in its frame too
+    /// (measured: `SceneFrameTests`).
+    open override var frame: CGRect { contentFrame }
 }
 
 #endif
