@@ -2,16 +2,16 @@ import Foundation
 import PlatformShim
 import Testing
 
-/// The device the beta's solve log names, as `MainActivity` hands it over,
-/// and the emulator's `-Playtest NO`.
+/// The device as `MainActivity` hands it over, and the emulator's
+/// `-Playtest NO`.
 @Suite struct AndroidDeviceTests {
     @Test func readsWhatMainActivityExports() {
         let device = AndroidDevice(environment: [
-            "SKA_DEVICE_MODEL": "Google Pixel 6",
+            "SKA_DEVICE_MODEL": "Google Pixel 9",
             "SKA_OS_VERSION": "17",
             "SKA_EMULATOR": "0",
         ])
-        #expect(device.model == "Google Pixel 6")
+        #expect(device.model == "Google Pixel 9")
         #expect(device.osVersion == "17")
         #expect(!device.isEmulator)
     }
@@ -20,7 +20,7 @@ import Testing
         let emulator = AndroidDevice(environment: ["SKA_EMULATOR": "1"])
         #expect(emulator.arguments([:])["Playtest"] as? Bool == false)
         #expect(emulator.arguments(["Playtest": "YES"])["Playtest"] as? String == "YES")
-        #expect(emulator.arguments(["StartLevel": "reef-12"])["StartLevel"] as? String == "reef-12")
+        #expect(emulator.arguments(["StartLevel": "level-12"])["StartLevel"] as? String == "level-12")
     }
 
     @Test func aPhoneKeepsItsArguments() {
@@ -35,8 +35,8 @@ import Testing
     }
 }
 
-/// The beta switch (`-Pswitchlings.beta`), as `MainActivity` hands it over
-/// from `SwitchlingsBuild.json`.
+/// The beta switch, one of the app's build properties, as `MainActivity`
+/// hands it over.
 @Suite struct BetaBuildTests {
     @Test func onlyAOneIsOn() {
         #expect(BetaBuild(environment: ["SKA_BETA": "1"]).isOn)
@@ -48,7 +48,7 @@ import Testing
         #expect(BetaBuild(isOn: true).arguments([:]).isEmpty)
     }
 
-    @Test func offTurnsTheFeedAndTheSolveLogOffUnlessTheLaunchSaysOtherwise() {
+    @Test func offTurnsRemoteLevelsAndPlaytestsOffUnlessTheLaunchSaysOtherwise() {
         let off = BetaBuild(isOn: false)
         let plain = off.arguments([:])
         #expect(plain["DesignerLevels"] as? Bool == false)

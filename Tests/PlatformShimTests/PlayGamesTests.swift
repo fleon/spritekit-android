@@ -3,11 +3,11 @@ import Testing
 @testable import PlatformShim
 
 // Play Games behind the Game Center-shaped backend: the ID mapping, the
-// percent-to-steps conversion, and the sign-in that the launch splash waits on.
+// percent-to-steps conversion, and the sign-in a game's launch may wait on.
 
 private let mapping = PlayGamesMapping(applicationID: "123456789012", achievements: [
     "gc.levels.1": .init(id: "play-first"),
-    "gc.world.garden": .init(id: "play-garden", steps: 30),
+    "gc.world.first": .init(id: "play-world", steps: 30),
     "gc.levels.all": .init(id: "play-all", steps: 100),
 ])
 
@@ -25,16 +25,16 @@ struct PlayGamesTests {
 
     @Test("Whole percentages turn back into the count that made them")
     func percentToSteps() {
-        let garden = mapping.achievements["gc.world.garden"]!
+        let world = mapping.achievements["gc.world.first"]!
         for cleared in 0...30 {
             let percent = (Double(cleared) / 30 * 100).rounded(.down)
-            let report = mapping.report(percent, for: garden)
+            let report = mapping.report(percent, for: world)
             #expect(report?.steps ?? 0 == cleared)
         }
         let first = mapping.achievements["gc.levels.1"]!
         #expect(mapping.report(50, for: first) == nil)
         #expect(mapping.report(100, for: first)?.unlock == true)
-        #expect(mapping.percent(unlocked: false, currentSteps: 7, of: garden) == 23)
+        #expect(mapping.percent(unlocked: false, currentSteps: 7, of: world) == 23)
         #expect(mapping.percent(unlocked: true, currentSteps: 0, of: first) == 100)
     }
 
@@ -64,12 +64,12 @@ struct PlayGamesTests {
         let games = PlayGamesAchievements(channel: java.channel, mapping: mapping)
         games.start {}
         java.send("games", "signIn", ["signedIn": true])
-        let result = Task { await games.report(["gc.levels.1": 100, "gc.world.garden": 23, "gc.unknown": 100], showingBanners: true) }
+        let result = Task { await games.report(["gc.levels.1": 100, "gc.world.first": 23, "gc.unknown": 100], showingBanners: true) }
         await java.waitFor("games.report")
         let items = java.calls.last?.arguments["items"] as? [[String: Any]] ?? []
         #expect(items.count == 2)
         #expect(items.first { $0["id"] as? String == "play-first" }?["unlock"] as? Bool == true)
-        #expect(items.first { $0["id"] as? String == "play-garden" }?["steps"] as? Int == 7)
+        #expect(items.first { $0["id"] as? String == "play-world" }?["steps"] as? Int == 7)
         let request = java.calls.last?.arguments["request"] as? Int ?? -1
         java.send("games", "reported", ["request": request, "ok": true])
         #expect(await result.value)
@@ -97,13 +97,13 @@ struct PlayGamesTests {
         await java.waitFor("games.loadAchievements")
         java.send("games", "achievements", ["ok": true, "items": [
             ["id": "play-first", "unlocked": true],
-            ["id": "play-garden", "unlocked": false, "currentSteps": 15, "totalSteps": 30],
+            ["id": "play-world", "unlocked": false, "currentSteps": 15, "totalSteps": 30],
             ["id": "someone-else", "unlocked": true],
         ]])
-        #expect(await held.value == ["gc.levels.1": 100, "gc.world.garden": 50])
+        #expect(await held.value == ["gc.levels.1": 100, "gc.world.first": 50])
     }
 
-    @Test("The player's ID and name follow sign-in, for the solve log")
+    @Test("The player's ID and name follow sign-in")
     func identity() {
         let java = FakeJava()
         let games = PlayGamesAchievements(channel: java.channel, mapping: mapping)
@@ -144,7 +144,7 @@ struct PlayGamesTests {
         #expect(games.hasDashboard)
         games.start {}
         java.send("games", "signIn", ["signedIn": false, "configured": true])
-        // Signed out, the title still opens it: Java signs the player in first.
+        // Signed out, the game still opens it: Java signs the player in first.
         #expect(!games.isSignedIn)
         #expect(games.opensDashboard)
         games.showDashboard()
