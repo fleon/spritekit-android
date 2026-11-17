@@ -10,11 +10,10 @@ import Foundation
 // declared on the Mac, where CoreGraphics already owns every one of them.
 //
 // `CGColor` is a plain alias for `UIColor` rather than a type of its own.
-// Nothing in `Source/` builds a `CGColor` or reads its components; every
+// Game code rarely builds a `CGColor` or reads its components; the usual
 // use is a `.cgColor` handed straight to the context. One type means no
 // overload pairs, and in particular it means
-// `setShadow(offset:blur:color: nil)` — which `SheetNode` writes — still has
-// exactly one meaning.
+// `setShadow(offset:blur:color: nil)` still has exactly one meaning.
 
 public typealias CGContext = BitmapContext
 public typealias CGImage = RasterImage
@@ -115,7 +114,7 @@ public extension BitmapContext {
         bitmapInfo: UInt32
     ) {
         guard bitsPerComponent == 8, width > 0, height > 0 else { return nil }
-        // Alpha only, a byte a pixel (`MechanicSampleNode.opaqueBounds`):
+        // Alpha only, a byte a pixel (to find what's opaque, say):
         // drawn as RGBA, its coverage handed back by `data`.
         if data == nil, bitmapInfo & 0x1F == CGImageAlphaInfo.alphaOnly.rawValue {
             self.init(width: width, height: height)
@@ -201,8 +200,7 @@ public extension CGPath {
     }
 
     // `CGMutablePath`, `move(to:)`, `addLine(to:)`, `addLines(between:)` and
-    // `closeSubpath()` are in CGMutablePath.swift, which the rig runtime
-    // brought. These are the transformed forms, with `transform` required
+    // `closeSubpath()` are in CGMutablePath.swift. These are the transformed forms, with `transform` required
     // rather than defaulted so a plain `move(to: p)` has one meaning.
 
     func move(to point: CGPoint, transform: CGAffineTransform) {

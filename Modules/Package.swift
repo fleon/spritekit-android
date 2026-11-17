@@ -63,13 +63,13 @@ let package = Package(
         .target(name: "CryptoKit",
                 dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
-        // The beta's solve log's two (`PlaytestLog`).
+        // Two a game may import to describe the player and the network.
         .target(name: "GameKit",
                 path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
         .target(name: "Network",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/Network", swiftSettings: [v5, shimDefine]),
-        // The share film's three (`SolutionFilm`, `FilmSoundtrack`).
+        // The three a game writing video and audio files imports.
         .target(name: "Metal",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/Metal", swiftSettings: [v5, shimDefine]),

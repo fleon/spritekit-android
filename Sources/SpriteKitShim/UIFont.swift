@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Deliberately not a font engine. Its metrics come from whatever
 /// `TextProvider` is registered with `TextMetrics`, which on Android is
-/// HarfBuzz and FreeType in `Android/Text`. That keeps those two C libraries
+/// HarfBuzz and FreeType in `Text/`. That keeps those two C libraries
 /// out of this package, which everyone working on the scene graph, the
 /// actions and the renderer has to build.
 ///

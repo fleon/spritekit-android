@@ -1,7 +1,7 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Android-only, like Compat/. Do not build this package on a Mac: it reaches
+// Android-only. Do not build this package on a Mac: it reaches
 // SDL3 and GLES headers that only exist in the Android sysroot and in the
 // cross-compiled SDL prefix.
 //
@@ -21,7 +21,7 @@ import PackageDescription
 //     -Xlinker -L<sdl prefix>/lib
 //
 // The libraries themselves are AndroidShell's `linkerSettings`, not flags:
-// a `-Xlinker -lSDL3` would reach the Macros plugin's own host link too.
+// a `-Xlinker -lSDL3` would reach a macro plugin's own host link too.
 //
 // The targets, and why there are four:
 //
@@ -33,7 +33,7 @@ import PackageDescription
 //   ShellCore      the seam: FrameRenderer, Frame, RenderContext, Log.
 //                  Its own target so the shell and the renderer can both
 //                  use it without depending on each other.
-//   GLESBackend    every GL call in the port, plus the asset loading and
+//   GLESBackend    every GL call in the runtime, plus the asset loading and
 //                  PNG decoding that feed it, and the scene it draws. It
 //                  links TextShaping, so a shell build needs
 //                  PKG_CONFIG_PATH pointing at the Vendor prefix for the
@@ -74,7 +74,7 @@ let package = Package(
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
         .target(name: "CAndroidAudio", path: "Sources/CAndroidAudio"),
         .target(name: "CAndroidMedia", path: "Sources/CAndroidMedia"),
-        // A share film's encoding, over MediaCodec and MediaMuxer: the
+        // Video encoding, over MediaCodec and MediaMuxer: the
         // device half of PlatformShim's AVFoundation stand-ins.
         .target(
             name: "FilmMedia",

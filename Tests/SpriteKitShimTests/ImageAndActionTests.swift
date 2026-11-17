@@ -5,10 +5,10 @@ import XCTest
 import CoreGraphics
 #endif
 
-/// What the backdrop ring added to the shim: actions the backdrops run
-/// (`reversed`, `follow`, the shortest-arc turn), CoreGraphics' image
-/// orientation and tiled draws, and Core Image's blur.
-final class BackdropRingTests: XCTestCase {
+/// Actions animated scenery runs (`reversed`, `follow`, the shortest-arc
+/// turn), CoreGraphics' image orientation and tiled draws, and Core Image's
+/// blur.
+final class ImageAndActionTests: XCTestCase {
     private func tick(_ node: SKNode, _ seconds: TimeInterval) {
         let steps = max(1, Int(seconds * 8))
         for _ in 0..<steps { node.tickActions(seconds / TimeInterval(steps)) }
@@ -105,7 +105,7 @@ final class BackdropRingTests: XCTestCase {
     }
 
     func testFlippedYUpTheImageIsTheRightWayUp() throws {
-        // What `BoardGroundingArt` and `CircuitBoardNode` do before drawing.
+        // What game code drawing an image into a renderer's context does first.
         let context = BitmapContext(width: 1, height: 2)
         context.interpolationQuality = .none
         context.translateBy(x: 0, y: 2)

@@ -3,7 +3,7 @@ import Testing
 @testable import PlatformShim
 import SpriteKitShim
 
-// The AVFoundation stand-ins a share film is written through, against a
+// The AVFoundation stand-ins a film is written through, against a
 // backend that records what it is handed. The device half — MediaCodec,
 // MediaMuxer, MediaExtractor — is the shell's; everything above it is here.
 
@@ -96,7 +96,7 @@ private func temporary(_ name: String) -> URL {
     FileManager.default.temporaryDirectory.appendingPathComponent("media-tests-\(UUID().uuidString)-\(name)")
 }
 
-@Suite("Share film media", .serialized)
+@Suite("Film media", .serialized)
 struct MediaTests {
     @Test("BT.709 video range: white, black and the primaries")
     func colours() {
@@ -313,11 +313,11 @@ struct MediaTests {
 struct ShareRequestTests {
     @Test("The game's items sort into the file and the words, the link after the line")
     func sorts() {
-        let film = URL(fileURLWithPath: "/data/user/0/app/cache/Sunny Garden 1.mp4")
-        let link = URL(string: "https://apps.apple.com/us/app/switchlings/id6818995219")!
-        let request = ShareRequest(items: ["I cleared W1 / L1!", link, film])
+        let film = URL(fileURLWithPath: "/data/user/0/app/cache/Level 1.mp4")
+        let link = URL(string: "https://apps.apple.com/us/app/example/id1234567890")!
+        let request = ShareRequest(items: ["I cleared level 1!", link, film])
         #expect(request.files == [film])
-        #expect(request.text == "I cleared W1 / L1! https://apps.apple.com/us/app/switchlings/id6818995219")
+        #expect(request.text == "I cleared level 1! https://apps.apple.com/us/app/example/id1234567890")
         #expect(ShareRequest.mimeType(of: film) == "video/mp4")
         #expect(ShareRequest.mimeType(of: URL(fileURLWithPath: "/x/a.png")) == "image/png")
         #expect(ShareRequest(items: [film]).text == nil)
@@ -326,14 +326,14 @@ struct ShareRequestTests {
     @Test("An App Store link becomes the Google Play page; other links stay")
     func linksPlay() {
         AppIdentity.current = .example
-        let film = URL(fileURLWithPath: "/data/user/0/app/cache/Sunny Garden 1.png")
-        let appStore = URL(string: "https://apps.apple.com/us/app/switchlings/id6818995219")!
+        let film = URL(fileURLWithPath: "/data/user/0/app/cache/Level 1.png")
+        let appStore = URL(string: "https://apps.apple.com/us/app/example/id1234567890")!
         let play = PlayStorePage.url(language: "ja")
         #expect(play.absoluteString == "https://play.google.com/store/apps/details?id=com.example.game&hl=ja")
-        let request = ShareRequest(items: ["I got everyone home.", appStore, film], storePage: play)
-        #expect(request.text == "I got everyone home. \(play.absoluteString)")
+        let request = ShareRequest(items: ["I won.", appStore, film], storePage: play)
+        #expect(request.text == "I won. \(play.absoluteString)")
         #expect(request.files == [film])
-        let code = URL(string: "https://switchlings.fleon.com/l/K7Q2MX")!
+        let code = URL(string: "https://example.com/l/K7Q2MX")!
         #expect(ShareRequest(items: ["Its code is K7Q-2MX.", code], storePage: play).text == "Its code is K7Q-2MX. \(code.absoluteString)")
     }
 
@@ -346,7 +346,7 @@ struct ShareRequestTests {
         #expect(PlayStorePage.url(language: "es-MX").query == "id=com.example.game&hl=es-419")
         #expect(PlayStorePage.url(language: "pt-BR").query == "id=com.example.game&hl=pt-BR")
         #expect(PlayStorePage.isAppStorePage(URL(string: "https://itunes.apple.com/app/id1")!))
-        #expect(!PlayStorePage.isAppStorePage(URL(string: "https://switchlings.fleon.com/l/ABC123")!))
+        #expect(!PlayStorePage.isAppStorePage(URL(string: "https://example.com/l/ABC123")!))
     }
 }
 

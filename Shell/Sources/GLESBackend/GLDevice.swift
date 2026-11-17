@@ -6,7 +6,7 @@ import ShellCore
 
 /// `RenderDevice` over GLES 3.
 ///
-/// Every GL call in the port lives in this module. `GLESRenderer` next door
+/// Every GL call in the runtime lives in this module. `GLESRenderer` next door
 /// stays free of them, which is why its batching, shader translation and
 /// projection can be tested on a Mac with no context at all.
 public nonisolated final class GLDevice: RenderDevice {
@@ -39,7 +39,7 @@ public nonisolated final class GLDevice: RenderDevice {
         // The art is premultiplied RGBA8 at 3x. Clamp, because an atlas page
         // holds many images and repeat would bleed one into the next; the
         // packer leaves a gutter for the same reason. Pages that must tile —
-        // the backdrop grounds — are packed whole and get repeat below.
+        // a ground texture, say — are packed whole and get repeat below.
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
@@ -53,7 +53,7 @@ public nonisolated final class GLDevice: RenderDevice {
         // GL_RGBA8 rather than GL_RGBA. ES 3.0 treats the unsized form as a
         // hint and the driver may pick its own channel order for it — on the
         // emulator's ANGLE/SwiftShader it hands back BGRA, which turns the
-        // cream bricks cyan. The sized format is unambiguous.
+        // cream to cyan. The sized format is unambiguous.
         if let pixels, !pixels.isEmpty {
             // PNG stores the top row first; GL takes the first row as v = 0,
             // which is the *bottom* of the texture. The asset index already
@@ -203,7 +203,8 @@ public nonisolated final class GLDevice: RenderDevice {
         // most screens and at a lower render scale smaller still, and a page
         // sampled at one level only aliases and reads more memory than it
         // shows. Atlas pages ship three levels and gutters a level-2 texel
-        // wide (android-art.js), so no level pulls in a neighbour.
+        // wide (as the packer must make them), so no level pulls in a
+        // neighbour.
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), levels > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR)
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
@@ -252,7 +253,7 @@ public nonisolated final class GLDevice: RenderDevice {
     // MARK: Render targets
 
     /// Read once: GLES 3.0 guarantees 2048, and an effect node covering a
-    /// tablet's whole backdrop wants more than that.
+    /// tablet's whole screen wants more than that.
     public lazy var maximumTextureSide: Int = {
         var value: GLint = 0
         glGetIntegerv(GLenum(GL_MAX_TEXTURE_SIZE), &value)

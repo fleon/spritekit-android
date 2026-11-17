@@ -8,7 +8,7 @@ import SpriteKitShim
 /// `install()` is the one call the app makes at start-up, after the font
 /// files are where it can read them. Everything above — `SKLabelNode`'s
 /// layout, `UIFont`'s metrics — goes through the `TextProvider` this
-/// registers, so nothing else in the game or the layer links FreeType.
+/// registers, so nothing else in a game or the layer links FreeType.
 public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     public static let shared = TextEngine()
 
@@ -29,12 +29,19 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         self.atlas = atlas
     }
 
-    /// Registers the game's three font files and takes over text for the
-    /// layer. `directory` is wherever `Assets/Fonts` ended up on the device.
+    /// Registers the font files in `directory` and takes over text for the
+    /// layer. `files` names them without their `.ttf`, in the order to
+    /// register them; nil registers every `.ttf` there, sorted by name. The
+    /// first registered is also what a label with no `fontName` falls back
+    /// to.
     @discardableResult
-    public static func install(fontsAt directory: String) throws -> TextEngine {
+    public static func install(fontsAt directory: String, files: [String]? = nil) throws -> TextEngine {
         let engine = TextEngine.shared
-        for name in fontFileNames {
+        let names = files ?? ((try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? [])
+            .filter { $0.hasSuffix(".ttf") }
+            .map { String($0.dropLast(4)) }
+            .sorted()
+        for name in names {
             let path = directory + "/" + name + ".ttf"
             if FileManager.default.fileExists(atPath: path) {
                 try engine.library.register(path: path)
@@ -44,19 +51,14 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         return engine
     }
 
-    /// The three faces `install` looks for, in the order it registers them.
-    /// The first registered is also what a label with no `fontName` falls
-    /// back to.
-    public static let fontFileNames = ["ChironGoRoundTC-Variable", "KoHo-Bold", "Montserrat"]
-
     /// Registers fonts handed over as bytes, for a platform where they are
     /// not files.
     ///
     /// On Android they are assets inside the APK, which is a zip rather than
     /// a directory — there is no path to open. Extracting them first would
-    /// mean a second 50 MB copy of Chiron on disk and the same bytes in
-    /// memory afterwards, so the shell reads them through the asset manager
-    /// and hands them here.
+    /// mean a second copy of every font on disk (a large variable font can
+    /// be tens of megabytes) and the same bytes in memory afterwards, so the
+    /// shell reads them through the asset manager and hands them here.
     @discardableResult
     public static func install(fonts: [(name: String, data: Data)]) throws -> TextEngine {
         let engine = TextEngine.shared
