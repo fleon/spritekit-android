@@ -34,6 +34,15 @@ private extension NSAttributedString {
     }
 }
 
+extension NSMutableString {
+    /// Lets `NSMutableString()` compile: corelibs declares only
+    /// `init(capacity:)`, and an extension can't add `init()` itself (it
+    /// would override NSString's), so this one's defaulted argument stands in.
+    public convenience init(initialCapacity: Int = 0) {
+        self.init(capacity: initialCapacity)
+    }
+}
+
 extension NSAttributedString {
     /// UIKit's `size()`, for one run of attributes as the games build them:
     /// the string in its first character's font, wide by its advance and
@@ -141,24 +150,131 @@ public func CTLineGetBoundsWithOptions(_ line: CTLine, _ options: CTLineBoundsOp
 
 
 // MARK: Registering fonts
-
-/// A game registers its bundled faces through this. On Android the shell
-/// has registered the same files out of the APK before the first
-/// scene (`AssetBundle.installFonts`), so there is nothing left to do; the
-/// call answers whether the face is one the text stack holds.
+//
+// The shell registers every file in the APK's `fonts/` before the first
+// scene (`AssetBundle.installFonts`, as an iOS app's `UIAppFonts` are); a
+// game that registers a file itself goes through the font manager below, as
+// on Apple.
 public typealias CFURL = URL
+public typealias CFString = String
 
-public final class CFError: Error {}
+public final class CFError: Error {
+    /// What went wrong, as CoreText's font manager names it.
+    public let registration: FontRegistration
+    /// CoreText's code for it (`CTFontManagerError`): 101 for a file that
+    /// isn't there, 103 for one that isn't a font, 105 for one registered
+    /// before.
+    public let code: Int
+
+    init(_ registration: FontRegistration, url: URL) {
+        self.registration = registration
+        switch registration {
+        case .alreadyRegistered: code = 105
+        case .unreadable: code = FileManager.default.fileExists(atPath: url.path) ? 103 : 101
+        case .registered: code = 0
+        }
+    }
+}
+
+/// CoreText's `CFErrorGetCode`, for a font manager error.
+public func CFErrorGetCode(_ error: CFError) -> Int { error.code }
 
 public enum CTFontManagerScope: UInt32, Sendable {
     case none = 0, process, persistent, session, user
 }
 
+/// Registers the font file at `fontURL` with the text stack. False, with the
+/// error, for a file registered before or one that isn't a font, as on Apple.
+/// A file the shell registered at launch registers once for the game without
+/// being read again. With no text stack installed, yes.
 @discardableResult
 public func CTFontManagerRegisterFontsForURL(
     _ fontURL: CFURL, _ scope: CTFontManagerScope, _ error: UnsafeMutablePointer<Unmanaged<CFError>?>?
 ) -> Bool {
-    true
+    let result = TextMetrics.catalog?.registerFont(at: fontURL.path) ?? .registered
+    guard result == .registered else {
+        error?.pointee = Unmanaged.passRetained(CFError(result, url: fontURL))
+        return false
+    }
+    return true
+}
+
+/// Registers each font file in `fontURLs` (`URL`s) with the text stack, then
+/// calls `registrationHandler` once, with an error for each file that didn't
+/// register and `true` for done, as CoreText does when it is through. A file
+/// registered before is an error, as on Apple; one the shell registered at
+/// launch is not, the first time the game registers it, since on Apple the
+/// game's call is what registers it. The scope and `enabled` are Apple's
+/// alone: here a registration lasts the process.
+public func CTFontManagerRegisterFontURLs(
+    _ fontURLs: CFArray,
+    _ scope: CTFontManagerScope,
+    _ enabled: Bool,
+    _ registrationHandler: ((CFArray, Bool) -> Bool)?
+) {
+    var errors: [CFError] = []
+    for case let url as URL in fontURLs {
+        let result = TextMetrics.catalog?.registerFont(at: url.path) ?? .registered
+        if result != .registered { errors.append(CFError(result, url: url)) }
+    }
+    _ = registrationHandler?(errors, true)
+}
+
+// MARK: Font descriptors
+
+/// One face of a font file, as CoreText describes it before making a font
+/// of it: here, its PostScript name.
+public final class CTFontDescriptor {
+    let postScriptName: String
+
+    init(postScriptName: String) {
+        self.postScriptName = postScriptName
+    }
+}
+
+/// The descriptor attribute naming a face: its PostScript name.
+public let kCTFontNameAttribute: CFString = "NSFontNameAttribute"
+
+/// A descriptor's attribute; only the name is kept, so others are nil.
+public func CTFontDescriptorCopyAttribute(_ descriptor: CTFontDescriptor, _ attribute: CFString) -> Any? {
+    attribute == kCTFontNameAttribute ? descriptor.postScriptName : nil
+}
+
+/// A face at a size, enough of a `CTFont` to name it.
+public final class CTFont {
+    let postScriptName: String
+    let size: CGFloat
+
+    init(postScriptName: String, size: CGFloat) {
+        self.postScriptName = postScriptName
+        self.size = size
+    }
+}
+
+/// A descriptor for each face in the font file at `fileURL`, without
+/// registering it: one for a plain file, one per named instance for a
+/// variable font, as CoreText lists them. Nil for a file that isn't a font.
+public func CTFontManagerCreateFontDescriptorsFromURL(_ fileURL: CFURL) -> CFArray? {
+    guard let names = TextMetrics.catalog?.faceNames(inFontAt: fileURL.path) else { return nil }
+    return names.map(CTFontDescriptor.init(postScriptName:))
+}
+
+/// The descriptor's face at `size`; 0 is CoreText's default, 12 points. The
+/// matrix is not kept: the games pass none.
+public func CTFontCreateWithFontDescriptor(
+    _ descriptor: CTFontDescriptor,
+    _ size: CGFloat,
+    _ matrix: UnsafePointer<CGAffineTransform>?
+) -> CTFont {
+    CTFont(postScriptName: descriptor.postScriptName, size: size == 0 ? 12 : size)
+}
+
+public func CTFontCopyPostScriptName(_ font: CTFont) -> CFString {
+    font.postScriptName
+}
+
+public func CTFontGetSize(_ font: CTFont) -> CGFloat {
+    font.size
 }
 
 #endif

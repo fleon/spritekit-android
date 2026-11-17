@@ -157,6 +157,11 @@ final class FaceHandle {
         if let ftFace { FT_Done_Face(ftFace) }
     }
 
+    /// The face's own PostScript name (a variable font's default instance).
+    var postScriptName: String? {
+        ftFace.flatMap(FaceHandle.postScriptName)
+    }
+
     private static func postScriptName(_ face: FT_Face) -> String? {
         FT_Get_Postscript_Name(face).map { String(cString: $0) }
     }
