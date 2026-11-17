@@ -29,6 +29,15 @@ private extension NSAttributedString {
     }
 }
 
+extension NSMutableString {
+    /// Lets `NSMutableString()` compile: corelibs declares only
+    /// `init(capacity:)`, and an extension can't add `init()` itself (it
+    /// would override NSString's), so this one's defaulted argument stands in.
+    public convenience init(initialCapacity: Int = 0) {
+        self.init(capacity: initialCapacity)
+    }
+}
+
 extension NSString {
     /// UIKit's `NSString.size(withAttributes:)`, which finds the widest line
     /// of a block of text. The height is the font's line height, as

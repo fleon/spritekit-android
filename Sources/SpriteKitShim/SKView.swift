@@ -128,6 +128,12 @@ open class SKView: UIView {
         self.bounds = bounds
     }
 
+    /// UIKit's spelling: a view as big as `frame`, its own space at the origin.
+    public override convenience init(frame: CGRect) {
+        self.init(bounds: CGRect(origin: .zero, size: frame.size))
+        self.frame = frame
+    }
+
     /// Whether a transition is playing.
     public var isTransitioning: Bool { flight != nil }
 
