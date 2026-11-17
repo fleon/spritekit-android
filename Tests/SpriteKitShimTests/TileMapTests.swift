@@ -3,8 +3,7 @@ import Testing
 @testable import SpriteKitShim
 
 // SKTileMapNode, as SpriteKit draws and answers it on a Mac (macOS 27,
-// SKView.texture(from:) read back): Phantom Words' level-select path and its
-// background are tile maps, one column of one group each.
+// SKView.texture(from:) read back).
 
 @Suite("Tile map")
 struct TileMapTests {

@@ -3,22 +3,24 @@ import Testing
 @testable import SpriteKitShim
 
 // How a font descriptor's family and weight pick a face, as CoreText picks
-// them on a Mac for the games' own variable fonts (Nunito-Variable.ttf,
-// Dosis-Variable.ttf, registered with CTFontManagerRegisterFontsForURL):
+// them on a Mac for two variable fonts with named instances from Thin (100)
+// to Black (900), and from ExtraLight (200) to ExtraBold (800), registered
+// with CTFontManagerRegisterFontsForURL (Google Fonts' Nunito and Dosis,
+// called Sans and Rounded here):
 //
 //   family + weight trait          → PostScript name
-//   Nunito regular/medium/semibold → Nunito-Regular/-Medium/-SemiBold
-//   Nunito bold/heavy/black        → Nunito-Bold/-ExtraBold/-ExtraBold
+//   Sans regular/medium/semibold → Sans-Regular/-Medium/-SemiBold
+//   Sans bold/heavy/black        → Sans-Bold/-ExtraBold/-ExtraBold
 //   family + wght variation        → that instance, whatever the trait
-//   Nunito 900, Dosis 600          → Nunito-Black, Dosis-SemiBold
+//   Sans 900, Rounded 600          → Sans-Black, Rounded-SemiBold
 
 @Suite("Font descriptors")
 struct FontDescriptorTests {
     private let registered: Set<String> = [
-        "Nunito", "Nunito-ExtraLight", "Nunito-Light", "Nunito-Regular", "Nunito-Medium", "Nunito-SemiBold",
-        "Nunito-Bold", "Nunito-ExtraBold", "Nunito-Black",
-        "Dosis", "Dosis-ExtraLight", "Dosis-Light", "Dosis-Regular", "Dosis-Medium", "Dosis-SemiBold",
-        "Dosis-Bold", "Dosis-ExtraBold",
+        "Sans", "Sans-ExtraLight", "Sans-Light", "Sans-Regular", "Sans-Medium", "Sans-SemiBold",
+        "Sans-Bold", "Sans-ExtraBold", "Sans-Black",
+        "Rounded", "Rounded-ExtraLight", "Rounded-Light", "Rounded-Regular", "Rounded-Medium", "Rounded-SemiBold",
+        "Rounded-Bold", "Rounded-ExtraBold",
     ]
 
     private func name(_ family: String, trait: CGFloat) -> String {
@@ -29,26 +31,26 @@ struct FontDescriptorTests {
 
     @Test("A weight trait picks the instance CoreText does")
     func traits() {
-        #expect(name("Nunito", trait: 0) == "Nunito-Regular")
-        #expect(name("Nunito", trait: 0.23) == "Nunito-Medium")
-        #expect(name("Nunito", trait: 0.3) == "Nunito-SemiBold")
-        #expect(name("Nunito", trait: 0.4) == "Nunito-Bold")
-        #expect(name("Nunito", trait: 0.56) == "Nunito-ExtraBold")
-        #expect(name("Nunito", trait: 0.62) == "Nunito-ExtraBold")
-        #expect(name("Dosis", trait: 0.4) == "Dosis-Bold")
-        #expect(name("Dosis", trait: 0.62) == "Dosis-ExtraBold")
+        #expect(name("Sans", trait: 0) == "Sans-Regular")
+        #expect(name("Sans", trait: 0.23) == "Sans-Medium")
+        #expect(name("Sans", trait: 0.3) == "Sans-SemiBold")
+        #expect(name("Sans", trait: 0.4) == "Sans-Bold")
+        #expect(name("Sans", trait: 0.56) == "Sans-ExtraBold")
+        #expect(name("Sans", trait: 0.62) == "Sans-ExtraBold")
+        #expect(name("Rounded", trait: 0.4) == "Rounded-Bold")
+        #expect(name("Rounded", trait: 0.62) == "Rounded-ExtraBold")
     }
 
     @Test("A wght variation picks its own instance")
     func variations() {
-        #expect(FontDescriptorResolution.name(family: "Nunito", weight: 900) { registered.contains($0) } == "Nunito-Black")
-        #expect(FontDescriptorResolution.name(family: "Dosis", weight: 600) { registered.contains($0) } == "Dosis-SemiBold")
+        #expect(FontDescriptorResolution.name(family: "Sans", weight: 900) { registered.contains($0) } == "Sans-Black")
+        #expect(FontDescriptorResolution.name(family: "Rounded", weight: 600) { registered.contains($0) } == "Rounded-SemiBold")
     }
 
     @Test("An instance the text stack lacks falls to the nearest, then the family")
     func fallbacks() {
-        // Dosis stops at 800.
-        #expect(FontDescriptorResolution.name(family: "Dosis", weight: 900) { registered.contains($0) } == "Dosis-ExtraBold")
-        #expect(FontDescriptorResolution.name(family: "Montserrat", weight: 400) { $0 == "Montserrat" } == "Montserrat")
+        // Rounded stops at 800.
+        #expect(FontDescriptorResolution.name(family: "Rounded", weight: 900) { registered.contains($0) } == "Rounded-ExtraBold")
+        #expect(FontDescriptorResolution.name(family: "Plain", weight: 400) { $0 == "Plain" } == "Plain")
     }
 }

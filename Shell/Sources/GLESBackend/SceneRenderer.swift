@@ -1693,7 +1693,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// The density a shape's mask is rasterised at: the one it's drawn at,
     /// unless that makes the mask longer than a texture can be (a scrolling
-    /// strip as tall as a year of daily challenges is tens of thousands of
+    /// strip tall enough to scroll through a long list is tens of thousands of
     /// pixels). Then less, so the mask fits and the shape still draws,
     /// stretched; its edges soften where a texel spans more than a pixel.
     private func maskScale(for shape: DrawList.Shape, path: CGPath) -> CGFloat {

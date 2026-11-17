@@ -13,11 +13,6 @@ public struct MusicLoop: Equatable, Sendable {
     public var start: Int64
     public var end: Int64
 
-    /// The whole track, over and over, as `AVAudioPlayer`'s
-    /// `numberOfLoops = -1` plays it: a loop end no track reaches, so the
-    /// mixer goes back to the start each time the track runs out.
-    public static let wholeTrack = MusicLoop(start: 0, end: Int64(Int32.max))
-
     public init(start: Int64, end: Int64) {
         self.start = start
         self.end = end

@@ -12,11 +12,11 @@ public let kCTFontVariationAttribute = "NSCTFontVariationAttribute"
 /// variable fonts (`FontDescriptorTests` pins it):
 ///   - `.name` wins outright;
 ///   - else `.family` with a variation's `wght` value takes the named
-///     instance at that weight ("Nunito" + 900 is "Nunito-Black"), whatever
+///     instance at that weight ("Family" + 900 is "Family-Black"), whatever
 ///     the weight trait says;
 ///   - else `.family` with the weight trait takes the instance CoreText
 ///     matches it to: regular 400, medium 500, semibold 600, bold 700, and
-///     heavy and black both 800 ("Nunito-ExtraBold");
+///     heavy and black both 800 ("Family-ExtraBold");
 ///   - the instance is named `<family>-<style>` (Thin … Black), as variable
 ///     fonts name theirs; where the text stack doesn't know that name, the
 ///     nearest registered weight, then the family itself.

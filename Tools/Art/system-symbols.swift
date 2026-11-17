@@ -8,7 +8,7 @@
 // swiftly toolchain cannot load AppKit):
 //
 //   xcrun swift Tools/Art/system-symbols.swift <out.xcassets> <name>:<pointSize>:<weight> ...
-//   xcrun swift Tools/Art/system-symbols.swift Android/Art/Symbols.xcassets lock.fill:24:black
+//   xcrun swift Tools/Art/system-symbols.swift Symbols.xcassets lock.fill:24:black
 //
 // Each symbol is drawn black on clear at 3x, at the size AppKit gives the
 // symbol image for that configuration (the size UIKit's has too), so a game
