@@ -26,7 +26,7 @@ static const int64_t kScratchFrames = 8192;
 /// with nothing to show.
 static const int kMaxIdleRounds = 64;
 
-struct SwAudioDecoder {
+struct SkaAudioDecoder {
     AMediaExtractor *extractor;
     AMediaCodec *codec;
     int fd;                 // >= 0 when we own one (an asset or a file)
@@ -45,7 +45,7 @@ struct SwAudioDecoder {
 
 static AAssetManager *gAssets = NULL;
 
-bool sw_audio_use_asset_manager(void *jni_env, void *activity) {
+bool ska_audio_use_asset_manager(void *jni_env, void *activity) {
     if (jni_env == NULL || activity == NULL) return false;
     JNIEnv *env = (JNIEnv *)jni_env;
     jobject self = (jobject)activity;
@@ -66,7 +66,7 @@ bool sw_audio_use_asset_manager(void *jni_env, void *activity) {
 }
 
 /// Finds the first audio track, selects it, and builds a decoder for it.
-static bool start(SwAudioDecoder *d) {
+static bool start(SkaAudioDecoder *d) {
     size_t tracks = AMediaExtractor_getTrackCount(d->extractor);
     for (size_t i = 0; i < tracks; i++) {
         AMediaFormat *format = AMediaExtractor_getTrackFormat(d->extractor, i);
@@ -96,8 +96,8 @@ static bool start(SwAudioDecoder *d) {
     return false;
 }
 
-static SwAudioDecoder *make(void) {
-    SwAudioDecoder *d = calloc(1, sizeof(SwAudioDecoder));
+static SkaAudioDecoder *make(void) {
+    SkaAudioDecoder *d = calloc(1, sizeof(SkaAudioDecoder));
     if (d == NULL) return NULL;
     d->fd = -1;
     d->extractor = AMediaExtractor_new();
@@ -108,33 +108,33 @@ static SwAudioDecoder *make(void) {
     return d;
 }
 
-static SwAudioDecoder *finish(SwAudioDecoder *d) {
+static SkaAudioDecoder *finish(SkaAudioDecoder *d) {
     if (!start(d)) {
-        sw_audio_close(d);
+        ska_audio_close(d);
         return NULL;
     }
     d->scratch = malloc((size_t)(kScratchFrames * d->channels) * sizeof(int16_t));
     if (d->scratch == NULL) {
-        sw_audio_close(d);
+        ska_audio_close(d);
         return NULL;
     }
     return d;
 }
 
-SwAudioDecoder *sw_audio_open_path(const char *path) {
-    SwAudioDecoder *d = make();
+SkaAudioDecoder *ska_audio_open_path(const char *path) {
+    SkaAudioDecoder *d = make();
     if (d == NULL) return NULL;
     if (AMediaExtractor_setDataSource(d->extractor, path) != AMEDIA_OK) {
         LOGE("cannot read %s", path);
-        sw_audio_close(d);
+        ska_audio_close(d);
         return NULL;
     }
     return finish(d);
 }
 
-SwAudioDecoder *sw_audio_open_asset(const char *path) {
+SkaAudioDecoder *ska_audio_open_asset(const char *path) {
     if (gAssets == NULL) {
-        LOGE("no asset manager: call sw_audio_use_asset_manager first");
+        LOGE("no asset manager: call ska_audio_use_asset_manager first");
         return NULL;
     }
     AAsset *asset = AAssetManager_open(gAssets, path, AASSET_MODE_RANDOM);
@@ -150,7 +150,7 @@ SwAudioDecoder *sw_audio_open_asset(const char *path) {
         LOGE("%s is compressed in the APK — add its extension to noCompress", path);
         return NULL;
     }
-    SwAudioDecoder *d = make();
+    SkaAudioDecoder *d = make();
     if (d == NULL) {
         close(fd);
         return NULL;
@@ -158,18 +158,18 @@ SwAudioDecoder *sw_audio_open_asset(const char *path) {
     d->fd = fd;
     if (AMediaExtractor_setDataSourceFd(d->extractor, fd, (off64_t)start, (off64_t)length) != AMEDIA_OK) {
         LOGE("cannot read asset %s", path);
-        sw_audio_close(d);
+        ska_audio_close(d);
         return NULL;
     }
     return finish(d);
 }
 
-int32_t sw_audio_sample_rate(const SwAudioDecoder *d) { return d == NULL ? 0 : d->sampleRate; }
-int32_t sw_audio_channels(const SwAudioDecoder *d) { return d == NULL ? 0 : d->channels; }
-int64_t sw_audio_duration_us(const SwAudioDecoder *d) { return d == NULL ? 0 : d->durationUs; }
+int32_t ska_audio_sample_rate(const SkaAudioDecoder *d) { return d == NULL ? 0 : d->sampleRate; }
+int32_t ska_audio_channels(const SkaAudioDecoder *d) { return d == NULL ? 0 : d->channels; }
+int64_t ska_audio_duration_us(const SkaAudioDecoder *d) { return d == NULL ? 0 : d->durationUs; }
 
 /// Hands the codec one compressed sample, if it has room for one.
-static void feed(SwAudioDecoder *d) {
+static void feed(SkaAudioDecoder *d) {
     if (d->inputDone) return;
     ssize_t index = AMediaCodec_dequeueInputBuffer(d->codec, 0);
     if (index < 0) return;
@@ -189,7 +189,7 @@ static void feed(SwAudioDecoder *d) {
 
 /// Fills the scratch buffer with the next decoded run. Returns false at the
 /// end of the stream or on an error the decoder cannot come back from.
-static bool decodeMore(SwAudioDecoder *d) {
+static bool decodeMore(SkaAudioDecoder *d) {
     d->scratchFrames = 0;
     d->scratchRead = 0;
     if (d->outputDone) return false;
@@ -246,7 +246,7 @@ static bool decodeMore(SwAudioDecoder *d) {
     return false;
 }
 
-int64_t sw_audio_read(SwAudioDecoder *d, int16_t *out, int64_t frames, int64_t *position_us) {
+int64_t ska_audio_read(SkaAudioDecoder *d, int16_t *out, int64_t frames, int64_t *position_us) {
     if (d == NULL || out == NULL || frames <= 0) return 0;
     int64_t written = 0;
     bool placed = false;
@@ -272,7 +272,7 @@ int64_t sw_audio_read(SwAudioDecoder *d, int16_t *out, int64_t frames, int64_t *
     return written;
 }
 
-bool sw_audio_seek(SwAudioDecoder *d, int64_t position_us) {
+bool ska_audio_seek(SkaAudioDecoder *d, int64_t position_us) {
     if (d == NULL) return false;
     if (AMediaExtractor_seekTo(d->extractor, position_us, AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC) != AMEDIA_OK) {
         return false;
@@ -300,7 +300,7 @@ bool sw_audio_seek(SwAudioDecoder *d, int64_t position_us) {
     return false;
 }
 
-void sw_audio_close(SwAudioDecoder *d) {
+void ska_audio_close(SkaAudioDecoder *d) {
     if (d == NULL) return;
     if (d->codec != NULL) {
         AMediaCodec_stop(d->codec);

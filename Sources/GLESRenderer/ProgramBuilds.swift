@@ -4,13 +4,13 @@ import Foundation
 /// frame thread's objects (`GLBuilderThread`), by the shader source and inputs
 /// they were translated from (`ResourceCache.programKey`).
 ///
-/// A phone's driver takes up to a fifth of a second to link one of the game's
-/// bigger shaders the first time it meets it (a Galaxy M31's Mali-G72, before
-/// its shader cache has it), and a scene holds dozens: built as each first
-/// drew, they froze the loading screen's warm-up draw for seconds, and built
-/// a few a frame they still dropped its frames. A scene's build hands its
-/// shaders over as it finishes (`SKShader.programWarmer`), they're linked
-/// here while the loading screen plays on, and the frame thread takes each
+/// A phone's driver takes up to a fifth of a second to link a big shader the
+/// first time it meets it (a Mali-G72's, before its shader cache has it), and
+/// a scene may hold dozens: built as each first drew, they froze a loading
+/// screen's warm-up draw for seconds, and built a few a frame they still
+/// dropped its frames. A scene's build hands its shaders over as it finishes
+/// (`SKShader.programWarmer`), they're linked here while a loading screen
+/// plays on, and the frame thread takes each
 /// finished program as the shader first draws (`take`), waiting only for one
 /// still being linked.
 public final class ProgramBuilds: @unchecked Sendable {

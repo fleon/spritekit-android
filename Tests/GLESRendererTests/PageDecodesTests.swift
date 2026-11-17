@@ -92,7 +92,9 @@ struct PageDecodesTests {
     @Test("Pages decoded and never drawn are dropped, oldest first, past the capacity")
     func capacity() {
         let loader = Loader(side: 4)
-        let decodes = PageDecodes(capacity: 3 * 64, load: loader.load)
+        // One lane, so pages finish in the order asked for: "oldest" is the
+        // first decoded, which several lanes would make a matter of timing.
+        let decodes = PageDecodes(capacity: 3 * 64, width: 1, load: loader.load)
         decodes.decode([0, 1, 2, 3])
         #expect(!decodes.isWaiting(0))
         #expect(decodes.isWaiting(1) && decodes.isWaiting(2) && decodes.isWaiting(3))

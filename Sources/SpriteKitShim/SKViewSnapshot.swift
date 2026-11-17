@@ -6,23 +6,21 @@ import Foundation
 /// The game asks for this in 15 places and for two different reasons, and the
 /// shim keeps them apart because only one of them needs real pixels:
 ///
-/// - **Baking.** A live backdrop draws its scenery once into a texture and
-///   then shows that (`LiveBackdrop.bake`, the lawns, the seabed, the tea
-///   table, the edge shade). These need a render target, which is the
-///   renderer's to provide — it installs `SKView.snapshot`.
-/// - **Priming.** `ShaderPrimer` and `AttributeShaders` draw off screen for
-///   the side effect alone and throw the texture away (`_ = view.texture(…)`).
-///   Both work around SpriteKit's own buffer management: SpriteKit compiles a
-///   shader to Metal on its first draw, on the main thread, and it grows an
-///   attribute buffer while the GPU may still be reading it, which overruns
-///   (see `AttributeShaders`' own note). **Neither failure mode exists here.**
+/// - **Baking.** A scene draws a static layer once into a texture and then
+///   shows that. These need a render target, which is the renderer's to
+///   provide — it installs `SKView.snapshot`.
+/// - **Priming.** A game may draw off screen for the side effect alone and
+///   throw the texture away (`_ = view.texture(…)`), working round
+///   SpriteKit's own buffer management: SpriteKit compiles a shader to Metal
+///   on its first draw, on the main thread, and it grows an attribute buffer
+///   while the GPU may still be reading it, which overruns. **Neither
+///   failure mode exists here.**
 ///   The GLES backend owns its programs and its attribute buffers, so with no
 ///   `snapshot` installed these calls cost one nil and change nothing — which
 ///   is the correct behaviour, not a gap.
 ///
-/// So a renderer that never installs `snapshot` still runs the rigs
-/// correctly; what it loses is baked backdrops, which is the backdrop ring's
-/// own business.
+/// So a renderer that never installs `snapshot` still runs a scene
+/// correctly; what it loses is baked layers.
 extension SKView {
     /// Installed by the renderer: draws `node`'s tree, optionally cropped to
     /// `crop` in the node's own coordinates, and returns it as a texture.

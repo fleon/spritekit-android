@@ -1,20 +1,19 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// Apple's `simd` matrix types, as the game uses them.
+// Apple's `simd` matrix types, as games use them.
 //
 // `SIMD2`/`SIMD3`/`SIMD4` are the Swift standard library's and come for free;
 // the matrices are Apple's. They live here rather than in
-// `Compat/Sources/simd` because `SKUniform(name:matrixFloat4x4:)` takes one,
+// `Modules/Sources/simd` because `SKUniform(name:matrixFloat4x4:)` takes one,
 // and the shim cannot depend on that package. That module re-exports these,
 // and holds the free `simd_…` functions itself — keeping the functions in one
 // place only, since a copy here as well would make every call ambiguous.
 //
-// `NightSkyNode` is why these are load-bearing: Metal gives a shader 31
-// buffers and a uniform takes one each, so the sky packs its nebula tints,
-// its fold tints and the planets' places, poses and rings into four 4×4
-// matrices. The names and the column-major layout are Apple's, so `Source/`
-// compiles against this unchanged.
+// These are load-bearing: Metal gives a shader 31 buffers and a uniform
+// takes one each, so a game may pack sets of tints and several objects'
+// places and poses into 4×4 matrices. The names and the column-major layout
+// are Apple's, so game code compiles against this unchanged.
 
 /// A 4×4 matrix of floats, column-major as both simd and GL keep them.
 public struct simd_float4x4: Equatable, Sendable {

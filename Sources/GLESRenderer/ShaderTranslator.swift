@@ -8,11 +8,10 @@ import Foundation
 /// injected from the node's `SKUniform` list. GLSL ES 3.0 requires all of
 /// that to be written out, and renames two built-ins.
 ///
-/// Doing it here, at upload, rather than in the 31 source files matters for
-/// a second reason: the game assembles shaders at run time. `CrumbleNode`
-/// does `light.function + shader.replacingOccurrences(of:with:)`, and
-/// `SceneLighting.decode` splices GLSL into the middle of a string. There is
-/// often no literal to edit.
+/// Doing it here, at upload, rather than in a game's source files matters
+/// for a second reason: a game may assemble shaders at run time, prepending
+/// a function to a source, replacing parts of it, or splicing GLSL into the
+/// middle of a string. There is often no literal to edit.
 public enum ShaderTranslator {
 
     /// What the fragment shader needs declared for it.
@@ -43,17 +42,16 @@ public enum ShaderTranslator {
     public static let fragCoordUniform = "u_sk_frag"
 
     /// The two divergences between SpriteKit's fragment coordinate and
-    /// GLES's, both fixed here rather than in the 31 files that read it.
+    /// GLES's, both fixed here rather than in every file that reads it.
     ///
     ///  - SpriteKit runs on Metal, where the coordinate counts **down from
-    ///    the top left**; GLES counts up from the bottom left. The game
-    ///    depends on Metal's: `SceneLighting` hands shaders
-    ///    `(visible.minX, visible.maxY, pixelsPerPoint, 0)` and every lit
-    ///    shader recovers a scene point as `u_fragment.xy + gl_FragCoord.xy *
-    ///    u_fragment.zw`, which only lands on the board if y runs down.
-    ///    `EdgeShade.Blur` writes `vec2(gl_FragCoord.x, -gl_FragCoord.y)` for
-    ///    the same reason. Left alone, every lit world and the blur band
-    ///    would be mirrored top to bottom.
+    ///    the top left**; GLES counts up from the bottom left. A game may
+    ///    depend on Metal's: a shader handed `(visible.minX, visible.maxY,
+    ///    pixelsPerPoint, 0)` that recovers a scene point as `u_fragment.xy +
+    ///    gl_FragCoord.xy * u_fragment.zw` only lands on it if y runs down,
+    ///    and one writing `vec2(gl_FragCoord.x, -gl_FragCoord.y)` does so for
+    ///    the same reason. Left alone, every such shader would be mirrored
+    ///    top to bottom.
     ///  - It counts the pixels of the target being drawn into: an
     ///    `SKEffectNode`'s texture for what the node holds, the screen (or
     ///    an enclosing effect's texture) for the effect's own shader as it
@@ -125,8 +123,8 @@ public enum ShaderTranslator {
         body = replacingIdentifier("varying", with: "in", in: body)
 
         // Words ES 3.0 reserved that ES 1.0 let you use as identifiers. The
-        // game's shaders really do use `sample` — CrumbleNode writes
-        // `vec4 sample = texture2D(u_normal, at)` — and the driver rejects it
+        // shaders really do use `sample` — `vec4 sample =
+        // texture2D(u_normal, at)`, say — and the driver rejects it
         // with a bare "syntax error" that says nothing about why.
         for word in reservedInES3 where usesIdentifier(word, in: body) {
             body = replacingIdentifier(word, with: "\(word)_", in: body)
@@ -135,8 +133,8 @@ public enum ShaderTranslator {
         var lines: [String] = [
             "#version 300 es",
             "",
-            // The game's shaders do maths on world positions and time; medium
-            // precision visibly steps the currents and the lights.
+            // Shaders do maths on scene positions and time; medium precision
+            // visibly steps anything that scrolls or animates with them.
             "precision highp float;",
             "precision highp sampler2D;",
             "",
@@ -148,10 +146,9 @@ public enum ShaderTranslator {
         // A node's own attributes are constant across its sprite (SpriteKit
         // sets them per node, and the batcher never merges a sprite that
         // carries them), so they are uniforms of the fragment stage rather
-        // than vertex attributes passed through as varyings. A rig mesh's
-        // twelve vec4s as varyings drop whole triangles on a Mali-G72 (the
-        // Galaxy M31), and interpolating twelve constants per pixel was
-        // never free.
+        // than vertex attributes passed through as varyings. A mesh sprite's
+        // twelve vec4s as varyings drop whole triangles on a Mali-G72, and
+        // interpolating twelve constants per pixel was never free.
         for (name, type) in inputs.attributes where !declares(name, in: body) {
             lines.append("uniform \(type) \(name);")
         }
@@ -456,7 +453,7 @@ public enum ShaderTranslator {
     private static let declarationPrefixes = ["uniform ", "in ", "attribute ", "varying "].map { Array($0.utf8) }
 
     /// Whether the source already declares `name` itself, so the preamble
-    /// does not declare it twice. A composed shader (a world's light function
+    /// does not declare it twice. A composed shader (a light function
     /// spliced in) may bring its own.
     static func declares(_ name: String, in source: String) -> Bool {
         guard !name.isEmpty else { return false }

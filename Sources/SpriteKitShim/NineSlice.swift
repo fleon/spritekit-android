@@ -1,12 +1,10 @@
 #if SPRITEKIT_SHIM
 import Foundation
 
-// 9-slicing, which the board needs before anything else it draws looks
-// right: a kerb runs the length of a straight stretch of outline and a
-// brick's front face stretches down to the ground below a raised tile, and
-// both are `sliced(_:size:)` sprites whose corners must keep their size.
-// Stretching the whole painting instead is the one thing AGENTS.md says
-// never to do to painted art.
+// 9-slicing, which painted art drawn at any length needs before it looks
+// right: a wall running the length of a stretch, or a panel stretched to
+// its contents, is a sliced sprite whose corners must keep their size.
+// Stretching the whole painting instead distorts it.
 //
 // It is done here, where a sprite flattens, rather than in the renderer:
 // one sliced sprite becomes nine ordinary `DrawList.Sprite` commands, each
@@ -19,7 +17,7 @@ extension SKSpriteNode {
     /// with the origin at the bottom left — SpriteKit's own meaning. The
     /// default covers the whole texture, which is no slicing at all.
     ///
-    /// `SpriteHelpers.slice(_:)` sets this from `ArtSlices.capInsets`.
+    /// A game sets this from its art's cap insets.
     public var centerRect: CGRect {
         get { sliceCenterRect }
         set { sliceCenterRect = newValue }
@@ -51,7 +49,7 @@ enum NineSlice {
     ///
     /// When the frame is narrower (or shorter) than its two fixed borders,
     /// the borders are scaled down together to fit rather than overlapping,
-    /// which is what SpriteKit does and keeps a shrunk kerb from inverting.
+    /// which is what SpriteKit does and keeps a shrunk slice from inverting.
     ///
     /// `base` is the sprite's own size before its scale: the borders are
     /// first fitted to it, then kept as they are while the scale stretches

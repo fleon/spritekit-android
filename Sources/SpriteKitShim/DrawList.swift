@@ -108,14 +108,14 @@ public struct DrawList {
         public var alpha: CGFloat
         public var blendMode: SKBlendMode
         /// The node keeps its rendered pixels until something invalidates
-        /// them. `BandedLayerNode` is built on it: twelve bands, one redrawn
-        /// a frame, so a frame pays for a twelfth of the shader.
+        /// them. A layer cached in bands is built on it: twelve bands, one
+        /// redrawn a frame, so a frame pays for a twelfth of the shader.
         public var shouldRasterize: Bool
         /// Which node this is, so the renderer can hold a kept target
         /// against it across frames. Identity, never a strong reference.
         public var owner: ObjectIdentifier
         /// Bumped whenever `shouldRasterize` is written — which is exactly
-        /// how `BandedLayerNode` asks for a redraw (`false` then `true`).
+        /// how a game asks for a redraw (`false` then `true`).
         public var rasterGeneration: UInt64
         /// A digest of what the subtree draws this frame: transforms, sizes,
         /// colours, alphas, texture and shader identity. A rasterized node
@@ -141,11 +141,10 @@ public struct DrawList {
     ///
     /// That orders **every** node in the scene by its accumulated zPosition,
     /// globally — a grandchild can draw between two of a cousin's
-    /// descendants. The board depends on it: kerbs live in `BoardFrameNode`
-    /// and tiles in the grid layer, both at z 0, and only their own
-    /// row-based z (`BoardMetrics.z(row:_:)`) puts a front kerb over the tiles
-    /// behind it. Sorting each subtree as a block would draw every kerb under
-    /// every tile.
+    /// descendants. A tile map may depend on it: walls in one layer and
+    /// tiles in another, both at z 0, and only their own row-based z puts a
+    /// wall in front over the tiles behind it. Sorting each subtree as a
+    /// block would draw every wall under every tile.
     ///
     /// Ties are nondeterministic in SpriteKit, which is why the game sets
     /// explicit z for overlapping siblings. This sorts stably, so ties fall
@@ -301,8 +300,8 @@ public struct DrawList {
             // with its own frame and sub-rect, so corners keep their size
             // while the edges and middle stretch (see NineSlice.swift).
             // SpriteKit slices for the node's scale too: a 9-sliced fill
-            // scaled down to a sliver keeps its round caps (`MeterNode`'s
-            // small fractions). So the node's own scale goes into the
+            // scaled down to a sliver keeps its round caps (a meter showing
+            // a small fraction). So the node's own scale goes into the
             // patches' sizes rather than the transform (unrotated nodes; a
             // rotated one keeps its scale in the transform).
             let foldsScale = sprite.isSliced && sprite.zRotation == 0 && (sprite.xScale != 1 || sprite.yScale != 1)
@@ -436,9 +435,8 @@ public struct DrawList {
     /// `SKEffectNode` may keep last frame's pixels. So it covers what the
     /// renderer would put in a vertex buffer — transforms, sizes, anchors,
     /// colours, alphas, blend modes, which texture and which shader — and
-    /// deliberately **not** shader uniform values. A band of
-    /// `BandedLayerNode` must survive `u_time` running on and the light
-    /// moving, or the cache would never hold for a single frame and the
+    /// deliberately **not** shader uniform values. A cached band must
+    /// survive `u_time` running on and a light moving, or the cache would never hold for a single frame and the
     /// whole mechanism would be a loss rather than a saving. The game asks
     /// for those redraws explicitly, by toggling `shouldRasterize`.
     public var digest: UInt64 {

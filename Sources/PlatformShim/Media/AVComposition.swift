@@ -1,7 +1,7 @@
 import Foundation
 
-// AVFoundation's assets and compositions, as far as `FilmSoundtrack` joins a
-// silent film to its soundtrack: each file's first track of a kind and how
+// AVFoundation's assets and compositions, as far as joining a silent film to
+// its soundtrack goes: each file's first track of a kind and how
 // long it runs, a composition holding the two from their starts, and a
 // passthrough export that copies their samples as they are into one MP4.
 // On Android the copy is MediaExtractor into MediaMuxer (`remux`).

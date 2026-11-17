@@ -1,7 +1,7 @@
 import Foundation
 
-// The device half of the AVFoundation stand-ins, which `SolutionFilm` and
-// `FilmSoundtrack` write a share film through: an H.264 encoder writing an
+// The device half of the AVFoundation stand-ins, which a game writes a
+// film through: an H.264 encoder writing an
 // MP4, an AAC encoder writing an M4A, a compressed-audio decoder, and a
 // remux that copies tracks from files into one. On Android these are the
 // NDK's MediaCodec, MediaMuxer and MediaExtractor (`Shell/Sources/
