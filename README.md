@@ -820,8 +820,8 @@ the icon is the one place the port can decide without touching `Source/`.
 
 ### iCloud's key-value store, as Apple names it
 
-A game that talks to `NSUbiquitousKeyValueStore` itself (Zyl's
-`LevelManager` keeps its whole progress in one `Data` there) gets it with
+A game that talks to `NSUbiquitousKeyValueStore` itself (keeping its
+progress there as one `Data`, say) gets it with
 Apple's API (`Sources/SpriteKitShim/UbiquitousKeyValueStore.swift`): values
 kept on the device in user defaults, each with when it was set, and synced
 through any `CloudKeyValueStore` the game installs as its `cloud` (Play
