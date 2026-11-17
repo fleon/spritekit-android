@@ -7,7 +7,7 @@ import Foundation
 /// Neither store tells the game what the player did, or whether anything
 /// showed — Play quotas the card per player and says nothing about it — so
 /// a request is fire-and-forget here too, and a game's own rules about when
-/// to ask (Zyl asks at level milestones) stay its own. Java hears
+/// to ask (at milestones, say) stay its own. Java hears
 /// `review.request` and answers `requested {ok}` once Play's flow is over,
 /// which only says the request ran; while one is running, another is
 /// dropped, as Play would drop it.

@@ -828,8 +828,8 @@ iOS the request is fire-and-forget and the store decides whether a card
 shows; a game's own rules about when to ask stay its own. One request is
 with Play at a time.
 
-The Java half is a class of its own in each game's App (Zyl's
-`PlayReview.java`, on `com.google.android.play:review`), under `review`:
+The Java half is a class of its own in the game's app (`PlayReview`, on
+`com.google.android.play:review`), under `review`:
 `request` runs `ReviewManager.requestReviewFlow()` then
 `launchReviewFlow(activity, info)` and posts `requested {ok}` when the flow
 is over. A build not installed from Play runs the flow and shows nothing, as
