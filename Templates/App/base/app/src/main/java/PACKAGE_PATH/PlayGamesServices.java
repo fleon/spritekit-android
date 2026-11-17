@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntFunction;
 
 /**
  * Play Games Services v2: signing in (silently, at launch: v2 signs a
@@ -279,7 +280,7 @@ final class PlayGamesServices {
      */
     private void submitScores(JSONArray items, int request) {
         if (!signedIn) {
-            services.post(SERVICE, "scoresSubmitted", PlatformServices.object("request", request, "ok", false));
+            services.post(SERVICE, "scoresSubmitted", refusal(request));
             return;
         }
         LeaderboardsClient leaderboards = PlayGames.getLeaderboardsClient(activity);
@@ -295,8 +296,12 @@ final class PlayGamesServices {
                 : leaderboards.submitScoreImmediate(id, score, tag));
         }
         Tasks.whenAll(tasks).addOnCompleteListener(done -> {
-            if (!done.isSuccessful()) Log.w(PlatformServices.TAG, "scores did not all arrive", done.getException());
-            services.post(SERVICE, "scoresSubmitted", PlatformServices.object("request", request, "ok", done.isSuccessful()));
+            if (!done.isSuccessful()) {
+                Log.w(PlatformServices.TAG, "scores did not all arrive", done.getException());
+                services.post(SERVICE, "scoresSubmitted", refusal(request));
+                return;
+            }
+            services.post(SERVICE, "scoresSubmitted", PlatformServices.object("request", request, "ok", true));
         });
     }
 
@@ -390,11 +395,11 @@ final class PlayGamesServices {
             return;
         }
         LeaderboardsClient leaderboards = PlayGames.getLeaderboardsClient(activity);
-        JSONArray items = new JSONArray();
+        List<JSONObject> items = new ArrayList<>();
         Runnable finish = () -> leaderboards.loadCurrentPlayerLeaderboardScore(id, span, collection)
             .addOnCompleteListener(mine -> {
                 JSONObject body = PlatformServices.object("request", request, "ok", true);
-                put(body, "items", items);
+                put(body, "items", new JSONArray(items));
                 if (mine.isSuccessful() && mine.getResult() != null && mine.getResult().get() != null) {
                     put(body, "local", score(mine.getResult().get()));
                 }
@@ -416,34 +421,46 @@ final class PlayGamesServices {
     /** Adds a page's scores, asks for the next until there are {@code count}, then finishes. */
     private void collectScores(LeaderboardsClient leaderboards,
                                Task<AnnotatedData<LeaderboardsClient.LeaderboardScores>> page,
-                               JSONArray items, int count, Runnable finish, int request) {
+                               List<JSONObject> items, int count, Runnable finish, int request) {
         if (!page.isSuccessful() || page.getResult() == null || page.getResult().get() == null) {
             Log.w(PlatformServices.TAG, "could not load scores", page.getException());
             services.post(SERVICE, "scores", refusal(request));
             return;
         }
         LeaderboardScoreBuffer buffer = page.getResult().get().getScores();
-        int before = items.length();
+        int added;
         try {
-            for (LeaderboardScore score : buffer) {
-                if (items.length() >= count) break;
-                items.put(score(score));
-            }
+            added = addNewScores(buffer.getCount(), i -> score(buffer.get(i)), items, count);
         } catch (RuntimeException e) {
             buffer.release();
             throw e;
         }
-        boolean more = items.length() < count && items.length() > before;
-        if (!more) {
+        if (added == 0 || items.size() >= count) {
             buffer.release();
             finish.run();
             return;
         }
-        leaderboards.loadMoreScores(buffer, Math.min(count - items.length(), SCORES_PAGE), com.google.android.gms.games.PageDirection.NEXT)
+        leaderboards.loadMoreScores(buffer, Math.min(count - items.size(), SCORES_PAGE), com.google.android.gms.games.PageDirection.NEXT)
             .addOnCompleteListener(next -> {
                 buffer.release();
                 collectScores(leaderboards, next, items, count, finish, request);
             });
+    }
+
+    /**
+     * Adds the scores of a page past the ones already in {@code into}, up to
+     * {@code count} in all, and says how many it added. Play's
+     * {@code loadMoreScores} answers with the expanded buffer, every score
+     * loaded so far with the new page after them, so a page's new scores
+     * start at the number already collected.
+     */
+    static <T> int addNewScores(int available, IntFunction<T> scoreAt, List<T> into, int count) {
+        int added = 0;
+        for (int i = into.size(); i < available && into.size() < count; i++) {
+            into.add(scoreAt.apply(i));
+            added++;
+        }
+        return added;
     }
 
     /** One score as the game reads it. */
