@@ -352,6 +352,24 @@ public struct DrawList {
                 fillTexture: shape.fillTexture,
                 strokeTexture: shape.strokeTexture
             ))))
+        } else if let label = node as? SKLabelNode, let runs = label.runs, let layout = label.layout,
+                  layout.lines.count == runs.count {
+            // An attributed label in several styles: each run a label of its
+            // own, placed where the line's layout put it.
+            for (run, placed) in zip(runs, layout.lines) {
+                entries.append((z, .label(Label(
+                    transform: transform,
+                    text: run.text,
+                    fontName: run.fontName,
+                    fontSize: run.fontSize,
+                    color: run.color ?? .white,
+                    horizontal: .left,
+                    vertical: .baseline,
+                    alpha: alpha,
+                    layout: TextLayout(lines: [placed], bounds: layout.bounds),
+                    kern: run.kern
+                ))))
+            }
         } else if let label = node as? SKLabelNode, let text = label.text, !text.isEmpty {
             entries.append((z, .label(Label(
                 transform: transform,
