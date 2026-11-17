@@ -305,6 +305,19 @@ HarfBuzz shapes and FreeType measures and rasterises (`Text/`), behind
 at the screen's density into an atlas uploaded as `R8` pages. Complex scripts
 (Thai is the acceptance test) shape correctly, which FreeType alone cannot.
 
+#### Attributed labels in several styles
+
+An `SKLabelNode`'s `attributedText` whose runs differ in font, colour,
+`.kern` or `.baselineOffset` draws each run in its own style when the label
+is one line (`numberOfLines` 1), as SpriteKit does: the runs end to end on
+one baseline, each raised by its `.baselineOffset`, and the whole line
+placed by its combined ink as a one-style line is, so `frame` and every
+alignment mode agree with SpriteKit's (`AttributedLabelRunTests`, against
+Apple's `SKLabelNode` on the same font file). `SKLabelNode.runs` holds the
+runs; `laidOutRuns` is set when the layout placed them, and the draw list
+then emits one label command per run. A wrapped label in several styles
+still draws in its first run's style.
+
 ### UIKit around the scene
 
 A game's SpriteKit code also reads UIKit, so the shim carries the parts it
@@ -322,13 +335,15 @@ reaches for, kept as values where Android has nothing to show:
   the scene's `windows`, `keyWindow` and `coordinateSpace` follow.
 - **SF Symbols:** Android has no symbol font, so
   `UIImage(systemName:withConfiguration:)` looks a symbol up in the packed
-  art as `SystemSymbols/<name>`. `Tools/Art/system-symbols.swift` renders
-  the symbols a game names on a Mac into an asset catalog for the packer;
-  the configuration a game passes is the one it rendered them with.
+  art as `SystemSymbols/<name>`. `Tools/Art/system-symbols.sh` renders the
+  symbols a game names into an asset catalog for the packer, with UIKit as
+  a Mac Catalyst tool (AppKit rounds symbol sizes up to whole points); the
+  configuration a game passes is the one it rendered them with.
 - **Text types:** `NSParagraphStyle`/`NSMutableParagraphStyle`,
   `NSTextAlignment`, `NSLineBreakMode` and the `.paragraphStyle` and
   `.baselineOffset` keys, which corelibs Foundation leaves to the UI
-  frameworks; `NSMutableString()` (corelibs has only `init(capacity:)`).
+  frameworks; `NSMutableString(initialCapacity:)` (corelibs has only
+  `init(capacity:)`, and an extension can't add `init()`).
 - **Settings:** `UIApplication.openSettingsURLString` opens the app's own
   page in Android's settings (`device.openAppSettings` on the channel).
 
