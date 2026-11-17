@@ -580,6 +580,30 @@ phone is not a 24-pixel bitmap magnified.
 What text still needs is the localisation ring: `FontRegistry` and
 `Localization.scriptFontName` are the last stubs in `GameCompat`.
 
+### A game's own fonts, and the system font
+
+The shell registers every `.ttf`/`.otf` the game stages in the APK's
+`fonts/` at launch (`AssetBundle.installFonts`), as an iOS app's
+`UIAppFonts` are, with the text stack's original three first so the default
+face is unchanged. A game that registers its fonts itself goes through
+CoreText's font manager, which `CoreTextCompat.swift` answers over
+`TextMetrics.catalog` (the `TextEngine`): `CTFontManagerCreateFontDescriptorsFromURL`
+lists a file's faces as CoreText does (one for a plain file, one per named
+instance for a variable font: pinned against CoreText on the Mac's own
+Geneva, New York and SF, all 369 of SF's), `CTFontCreateWithFontDescriptor`
+and `CTFontCopyPostScriptName` name them, and `CTFontManagerRegisterFontURLs`
+registers, reporting a second registration of a file as an error, as Apple
+does. A font collection (`.ttc`) registers its first face only; no game
+ships one.
+
+`UIFont(name:size:)` is nil for a name no registered face answers to, as on
+Apple, so "this face, else the system font" falls back as it does there.
+`UIFont.systemFont(ofSize:weight:)` draws in the device's Roboto:
+`/system/fonts/Roboto-Regular.ttf`, whose named instances are its weights on
+Android 12 and later (a file a weight before that), at the instance of SF's
+weight class for each UIKit weight (`.semibold` is Roboto SemiBold), chosen
+by `SystemFontFaces`.
+
 ## Rasterising
 
 `PathRasteriser` in `Sources/GLESRenderer` fills and strokes a `CGPath`
