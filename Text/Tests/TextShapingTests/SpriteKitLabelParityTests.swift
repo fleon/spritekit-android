@@ -179,6 +179,74 @@ struct SpriteKitLabelParityTests {
         return bands
     }
 
+    private static func compare(_ font: String, _ size: CGFloat, _ text: String, lines: Int, width: CGFloat = 0,
+                                checked: inout Int, matched: inout Int) {
+        for (h, v) in [(0, 0), (1, 1), (2, 2), (1, 3), (0, 2), (2, 1)] {
+            let apple = SpriteKit.SKLabelNode(fontNamed: font)
+            apple.fontSize = size
+            apple.numberOfLines = lines
+            apple.preferredMaxLayoutWidth = width
+            apple.text = text
+            apple.horizontalAlignmentMode = SpriteKit.SKLabelHorizontalAlignmentMode(rawValue: h)!
+            apple.verticalAlignmentMode = SpriteKit.SKLabelVerticalAlignmentMode(rawValue: v)!
+            let ours = SpriteKitShim.SKLabelNode(fontNamed: font)
+            ours.fontSize = size
+            ours.numberOfLines = lines
+            ours.preferredMaxLayoutWidth = width
+            ours.text = text
+            ours.horizontalAlignmentMode = SpriteKitShim.SKLabelHorizontalAlignmentMode(rawValue: h)!
+            ours.verticalAlignmentMode = SpriteKitShim.SKLabelVerticalAlignmentMode(rawValue: v)!
+            checked += 1
+            if apple.frame == ours.contentFrame { matched += 1 } else {
+                print("\(font) \(size) '\(text.debugDescription)' n\(lines) w\(width) h\(h) v\(v): SpriteKit \(apple.frame) shim \(ours.contentFrame)")
+            }
+        }
+    }
+
+    @Test("Empty and blank labels frame as SpriteKit's do", arguments: ["Montserrat-SemiBold", "KoHo-Bold"])
+    func emptyLabels(font: String) {
+        _ = Self.registered
+        _ = Fonts.engine
+        var checked = 0, matched = 0
+        for text in ["", " ", "\n", "\n\n"] {
+            for lines in [0, 1, 2] {
+                Self.compare(font, 20, text, lines: lines, checked: &checked, matched: &matched)
+            }
+        }
+        #expect(matched == checked, "\(matched) of \(checked) frames match")
+    }
+
+    // Montserrat's lighter instances leave out: their advances come out a
+    // hair off Core Text's (HarfBuzz rounds the instance deltas), and a
+    // wrapped line within a thousandth of a whole point rounds the frame the
+    // other way.
+    @Test("numberOfLines never cuts the text's own lines, and keeps one more of wrapped text", arguments: ["Montserrat-Black", "KoHo-Bold"])
+    func lineLimits(font: String) {
+        _ = Self.registered
+        _ = Fonts.engine
+        var checked = 0, matched = 0
+        let long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen"
+        for size in [13, 20, 26] as [CGFloat] {
+            for lines in [2, 3, 4] {
+                Self.compare(font, size, "A\nB\nC\nD\nE", lines: lines, checked: &checked, matched: &matched)
+                Self.compare(font, size, long, lines: lines, width: size * 5, checked: &checked, matched: &matched)
+            }
+        }
+        #expect(matched == checked, "\(matched) of \(checked) frames match")
+    }
+
+    @Test("A whole ascent and descent rounds the height up as SpriteKit's does", arguments: [10, 20, 30, 40] as [CGFloat])
+    func wholeMetrics(size: CGFloat) {
+        _ = Self.registered
+        _ = Fonts.engine
+        var checked = 0, matched = 0
+        for text in ["Hx", "Hx\nHx"] {
+            Self.compare("Montserrat-SemiBold", size, text, lines: 0, checked: &checked, matched: &matched)
+            Self.compare("KoHo-Bold", size, text, lines: 0, checked: &checked, matched: &matched)
+        }
+        #expect(matched == checked, "\(matched) of \(checked) frames match")
+    }
+
     @Test("Lines are as far apart as SpriteKit's", arguments: ["Montserrat-SemiBold", "Montserrat-Black", "KoHo-Bold"])
     func lineSpacingMatches(font: String) {
         _ = Self.registered

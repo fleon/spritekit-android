@@ -230,34 +230,151 @@ open class SKLabelNode: SKNode {
     }
 
     private func makeLayout() -> TextLayout? {
-        guard let text, !text.isEmpty, let provider = TextMetrics.provider else { return nil }
-        if let runs, numberOfLines == 1 {
-            let laidOut = runLayout(runs, provider: provider)
-            laidOutRuns = laidOut == nil ? nil : runs
-            return laidOut
+        guard let text, let provider = TextMetrics.provider else { return nil }
+        // An empty label frames 2 × 2, its padding alone, as SpriteKit's does.
+        guard !text.isEmpty else { return Self.emptyFrame(horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode) }
+        if let runs {
+            if numberOfLines == 1 {
+                let laidOut = runLayout(runs, provider: provider)
+                laidOutRuns = laidOut == nil ? nil : runs
+                return laidOut
+            }
+        }
+        // Lines the text breaks itself, each in its runs' styles; wrapped
+        // text in several styles draws as the label's own.
+        if let runs, preferredMaxLayoutWidth == 0 {
+            guard let (lines, pieces) = paragraphLines(runs, provider: provider) else { return nil }
+            laidOutRuns = pieces
+            return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
         }
         let font = FontKey(name: fontName ?? "", size: fontSize)
         guard let metrics = provider.fontMetrics(font) else { return nil }
 
         let broken = brokenLines(text, font: font, provider: provider)
         guard !broken.isEmpty else { return nil }
-        let lines = broken.map { measure($0, font: font, provider: provider) }
 
-        if numberOfLines == 1, let line = lines.first {
+        if numberOfLines == 1 {
+            let line = measure(broken[0], font: font, provider: provider)
             guard !line.inkBounds.isEmpty else {
-                // Only spaces: nothing to frame, the pen where the alignment puts it.
-                let x: CGFloat = horizontalAlignmentMode == .left ? 0 : horizontalAlignmentMode == .right ? -line.advance : -line.advance / 2
-                return TextLayout(lines: [TextLayout.Placed(line: line, origin: CGPoint(x: x, y: 0))], bounds: line.inkBounds.offsetBy(dx: x, dy: 0))
+                // Only spaces: no ink to frame, so the padding alone.
+                return Self.emptyFrame(horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
             }
             return Self.spriteKitLine(line, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
         }
-        // A line's width leaves out the whitespace it ends on.
-        let widths = broken.map { text -> CGFloat in
-            var trimmed = Substring(text)
-            while let last = trimmed.last, last.isWhitespace { trimmed = trimmed.dropLast() }
-            return measure(String(trimmed), font: font, provider: provider).advance
+        let lines = broken.map { text in
+            ParagraphLine(
+                pieces: [(measure(text, font: font, provider: provider), 0, 0)],
+                width: measure(Self.trimmingTrailingWhitespace(text), font: font, provider: provider).advance,
+                metrics: metrics
+            )
         }
-        return Self.spriteKitParagraph(lines, widths: widths, metrics: metrics, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+        return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+    }
+
+    /// A frame with nothing in it: SpriteKit's 2 × 2 of padding, placed by
+    /// the alignment.
+    static func emptyFrame(horizontal: SKLabelHorizontalAlignmentMode, vertical: SKLabelVerticalAlignmentMode) -> TextLayout {
+        let x: CGFloat = horizontal == .left ? 0 : horizontal == .right ? -2 : -1
+        let y: CGFloat
+        switch vertical {
+        case .baseline, .bottom: y = 0
+        case .center: y = -1
+        case .top: y = -2
+        }
+        return TextLayout(lines: [], bounds: CGRect(x: x, y: y, width: 2, height: 2))
+    }
+
+    static func trimmingTrailingWhitespace(_ text: String) -> String {
+        var trimmed = Substring(text)
+        while let last = trimmed.last, last.isWhitespace { trimmed = trimmed.dropLast() }
+        return String(trimmed)
+    }
+
+    /// One line of a paragraph: its pieces, each measured with the pen's
+    /// offset along the line and its rise above the baseline; its width
+    /// without the whitespace it ends on; and its metrics, the largest of
+    /// its styles'.
+    struct ParagraphLine {
+        var pieces: [(line: TextLine, x: CGFloat, rise: CGFloat)]
+        var width: CGFloat
+        var metrics: FontMetrics
+    }
+
+    /// Styled runs as paragraph lines, broken at their newlines (wrapping is
+    /// for one style), and the run each placed piece is drawn in.
+    private func paragraphLines(_ runs: [Run], provider: TextProvider) -> ([ParagraphLine], [Run])? {
+        var lines: [ParagraphLine] = []
+        var placedRuns: [Run] = []
+        var current = ParagraphLine(pieces: [], width: 0, metrics: FontMetrics(ascent: 0, descent: 0, leading: 0, capHeight: 0, xHeight: 0))
+        var currentText: [(run: Run, text: String)] = []
+        var pen: CGFloat = 0
+        var hasMetrics = false
+
+        func measured(_ run: Run, _ text: String) -> TextLine {
+            var line = provider.measure(text, font: FontKey(name: run.fontName ?? "", size: run.fontSize))
+            if run.kern != 0 {
+                let count = CGFloat(text.count)
+                line.advance += run.kern * count
+                if !line.inkBounds.isEmpty { line.inkBounds.size.width += run.kern * max(count - 1, 0) }
+            }
+            return line
+        }
+        func adopt(_ run: Run) -> Bool {
+            guard let metrics = provider.fontMetrics(FontKey(name: run.fontName ?? "", size: run.fontSize)) else { return false }
+            if hasMetrics {
+                current.metrics.ascent = max(current.metrics.ascent, metrics.ascent)
+                current.metrics.descent = max(current.metrics.descent, metrics.descent)
+                current.metrics.leading = max(current.metrics.leading, metrics.leading)
+            } else {
+                current.metrics = metrics
+                hasMetrics = true
+            }
+            return true
+        }
+        func finishLine() {
+            // The width is the line's run of text without its trailing
+            // whitespace: pieces after the last ink-bearing one count for
+            // nothing, and that one is measured trimmed.
+            var width: CGFloat = 0
+            var x: CGFloat = 0
+            var lastInked = -1
+            for (index, piece) in currentText.enumerated() where !Self.trimmingTrailingWhitespace(piece.text).isEmpty { lastInked = index }
+            for (index, piece) in currentText.enumerated() where index <= lastInked {
+                let text = index == lastInked ? Self.trimmingTrailingWhitespace(piece.text) : piece.text
+                let advance = measured(piece.run, text).advance
+                width = x + advance
+                x += measured(piece.run, piece.text).advance
+            }
+            current.width = width
+            lines.append(current)
+            current = ParagraphLine(pieces: [], width: 0, metrics: current.metrics)
+            currentText = []
+            pen = 0
+            hasMetrics = false
+        }
+
+        for run in runs {
+            let parts = run.text.components(separatedBy: "\n")
+            for (index, part) in parts.enumerated() {
+                if index > 0 { finishLine() }
+                // A run counts toward a line it puts text on, or ends with
+                // its newline; not the line its newline only starts.
+                if !part.isEmpty || index < parts.count - 1 {
+                    guard adopt(run) else { return nil }
+                }
+                guard !part.isEmpty else { continue }
+                let line = measured(run, part)
+                current.pieces.append((line, pen, run.baselineOffset))
+                currentText.append((run, part))
+                var piece = run
+                piece.text = part
+                placedRuns.append(piece)
+                pen += line.advance
+            }
+        }
+        // A newline the text ends on starts no line.
+        if !(runs.last?.text.hasSuffix("\n") ?? false) || lines.isEmpty { finishLine() }
+        return (lines, placedRuns)
     }
 
     /// One line measured, with the label's letter spacing.
@@ -283,23 +400,33 @@ open class SKLabelNode: SKNode {
     /// advance (`widths`, without the whitespace it ends on) rounded up and
     /// padded by 1 a side, and from 1 above the first
     /// line's ascent to the last line's descent, rounded out, and 1 below.
-    /// Each line advances by the font's ascent, descent and leading rounded
-    /// to whole points, and starts at the block's left
+    /// Each line advances by its descent and leading and the next line's
+    /// ascent, each rounded to whole points (a line's metrics the largest of
+    /// its styles', for an attributed label), and starts at the block's left
     /// edge whatever the alignment, which places the block alone. In
     /// `.baseline`, as in `.bottom`, the whole block stands above the origin.
     static func spriteKitParagraph(
-        _ lines: [TextLine],
-        widths: [CGFloat],
-        metrics: FontMetrics,
+        _ lines: [ParagraphLine],
         horizontal: SKLabelHorizontalAlignmentMode,
         vertical: SKLabelVerticalAlignmentMode
     ) -> TextLayout {
-        let ascent = metrics.ascent.rounded()
-        let advance = ascent + metrics.descent.rounded() + metrics.leading.rounded()
-        let width = (widths.max() ?? 0).rounded(.up) + 2
+        // Each baseline below the block's top: the first line's ascent, then
+        // a line's descent and leading and the next one's ascent, each
+        // rounded, a line's metrics being the largest of its styles'.
+        var baselines: [CGFloat] = []
+        for (index, line) in lines.enumerated() {
+            let ascent = line.metrics.ascent.rounded()
+            if index == 0 {
+                baselines.append(ascent)
+            } else {
+                let above = lines[index - 1].metrics
+                baselines.append(baselines[index - 1] + above.descent.rounded() + above.leading.rounded() + ascent)
+            }
+        }
+        let width = (lines.map(\.width).max() ?? 0).rounded(.up) + 2
         // 1 above the first ascent, the last line down to its descent, then
         // rounded out and 1 more below.
-        let height = (1 + ascent + CGFloat(lines.count - 1) * advance + metrics.descent).rounded(.up) + 1
+        let height = (1 + (baselines.last ?? 0) + (lines.last?.metrics.descent ?? 0)).rounded(.up) + 1
         let x: CGFloat
         switch horizontal {
         case .left: x = 0
@@ -312,9 +439,12 @@ open class SKLabelNode: SKNode {
         case .center: y = -(height / 2).rounded(.down)
         case .top: y = -height
         }
-        let firstBaseline = y + height - 1 - ascent
-        let placed = lines.enumerated().map { index, line in
-            TextLayout.Placed(line: line, origin: CGPoint(x: x + 1, y: firstBaseline - CGFloat(index) * advance))
+        let top = y + height - 1
+        var placed: [TextLayout.Placed] = []
+        for (index, line) in lines.enumerated() {
+            for piece in line.pieces {
+                placed.append(TextLayout.Placed(line: piece.line, origin: CGPoint(x: x + 1 + piece.x, y: top - baselines[index] + piece.rise)))
+            }
         }
         return TextLayout(lines: placed, bounds: CGRect(x: x, y: y, width: width, height: height))
     }
@@ -387,7 +517,10 @@ open class SKLabelNode: SKNode {
 
     /// `numberOfLines` of 1 means one line whatever the text holds, 0 means
     /// as many as it takes; `preferredMaxLayoutWidth` of 0 means no wrapping.
-    /// Both follow SpriteKit.
+    /// A larger `numberOfLines` never cuts lines the text breaks itself, and
+    /// keeps one line more than it says of wrapped text, as SpriteKit does
+    /// for faces without a line gap and most with one (measured: 165 of 198
+    /// face, size and limit cases; the rest keep exactly the number).
     private func brokenLines(
         _ text: String,
         font: FontKey,
@@ -413,8 +546,8 @@ open class SKLabelNode: SKNode {
             }
         }
 
-        if numberOfLines > 1, lines.count > numberOfLines {
-            lines = Array(lines.prefix(numberOfLines))
+        if numberOfLines > 1, paragraphs.count == 1, lines.count > numberOfLines + 1 {
+            lines = Array(lines.prefix(numberOfLines + 1))
         }
         return lines
     }
