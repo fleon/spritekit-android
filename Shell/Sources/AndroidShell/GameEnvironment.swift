@@ -20,13 +20,11 @@ import ShellCore
 /// - **Launch arguments.** On Apple, `-Key value` pairs reach
 ///   `UserDefaults`' argument domain, where a game reads them. Here the
 ///   intent's `args` or `args64` extra carries them (`ShellArguments`), and
-///   they are put in that domain the same way (`LaunchArgumentDomain`). An
-///   emulator's gain `-Playtest NO` unless they name it (`AndroidDevice`),
-///   since a game knows an iOS simulator only at compile time. A build that
-///   isn't a beta (as the app's build properties say) gains
-///   `-DesignerLevels NO` too (`BetaBuild`).
+///   they are put in that domain the same way (`LaunchArgumentDomain`), with
+///   the game's `LaunchDefaults` for an emulator or a build that isn't a beta
+///   added where the launch doesn't name them.
 enum GameEnvironment {
-    static func install() {
+    static func install(defaults: LaunchDefaults) {
         if let storage = SDL_GetAndroidInternalStoragePath().map({ String(cString: $0) }) {
             setenv("HOME", storage, 1)
             setenv("XDG_CONFIG_HOME", storage + "/.config", 1)
@@ -47,11 +45,13 @@ enum GameEnvironment {
 
         loadSavedDefaults()
 
-        // An emulator gains `-Playtest NO` unless told otherwise, as an iOS
-        // simulator is known to be one; a build that isn't a beta gains
-        // `-DesignerLevels NO` and `-Playtest NO` unless told otherwise.
+        // The game's defaults for an emulator or a build that isn't a beta,
+        // where the launch doesn't name them.
         Log.info(BetaBuild.current.description)
-        let arguments = BetaBuild.current.arguments(AndroidDevice.current.arguments(LaunchArgumentDomain.parse(ShellArguments.values)))
+        let arguments = defaults.apply(
+            to: LaunchArgumentDomain.parse(ShellArguments.values),
+            device: AndroidDevice.current, beta: BetaBuild.current
+        )
         // `-AppleLanguages "(ja)"` stands in for the device's, as on Apple;
         // set where `Locale.preferredLanguages` reads it whichever domain
         // that is, and never saved, since it's an argument.

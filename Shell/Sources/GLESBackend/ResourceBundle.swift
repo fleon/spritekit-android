@@ -15,10 +15,20 @@ import SpriteKitShim
 /// Copied afresh each run rather than once per install, since the cache
 /// outlives an update and a file or a string may have changed in it.
 ///
-/// Where each kind is staged in the APK, by the game's Gradle project: JSON
-/// named `Rig…` and PNGs in `rigs/`, other JSON in `levels/`, the fonts in
-/// `fonts/` and the strings in `lproj/<language>.lproj/`.
+/// Where each file is staged in the APK is the game's Gradle project's to
+/// say (`Shell.start(resourceFolder:)`): by default fonts in `fonts/` and
+/// everything else in `resources/`. The strings are always in
+/// `lproj/<language>.lproj/`.
 public enum ResourceBundle {
+    /// The APK folder a resource named `name` with extension `ext` is staged
+    /// in.
+    public typealias FolderRule = @Sendable (_ name: String, _ ext: String) -> String
+
+    /// Fonts in `fonts/`, everything else in `resources/`.
+    public static let defaultFolder: FolderRule = { _, ext in ext == "ttf" || ext == "otf" ? "fonts" : "resources" }
+
+    nonisolated(unsafe) static var folder: FolderRule = defaultFolder
+
     private static let lock = NSLock()
     nonisolated(unsafe) private static var unpacked: Set<String> = []
     nonisolated(unsafe) private static var cache: URL?
@@ -27,30 +37,21 @@ public enum ResourceBundle {
     static let stringTables = ["Localizable.strings", "Content.strings"]
 
     /// Installs the providers. Call once, before the first scene builds.
-    public static func install() {
+    public static func install(folder rule: @escaping FolderRule = defaultFolder) {
+        folder = rule
         guard let path = SDL_GetAndroidCachePath().map({ String(cString: $0) }) else {
             Log.error("no Android cache path — nothing can be read from Bundle.main")
             return
         }
         cache = URL(fileURLWithPath: path).appendingPathComponent("bundle")
         BundleResources.provider = { name, ext in
-            unpack(folder(for: name, ext: ext), "\(name).\(ext)")
+            unpack(folder(name, ext), "\(name).\(ext)")
         }
         BundleResources.folderProvider = { name, ext in
             guard ext == "lproj" else { return nil }
             let folder = "lproj/\(name).lproj"
             let unpackedAny = stringTables.compactMap { unpack(folder, $0) }
             return unpackedAny.isEmpty ? nil : cache?.appendingPathComponent(folder).path
-        }
-    }
-
-    /// Where a resource of this kind sits in the APK.
-    private static func folder(for name: String, ext: String) -> String {
-        switch ext {
-        case "json" where name.hasPrefix("Rig"), "png": return "rigs"
-        case "json": return "levels"
-        case "ttf": return "fonts"
-        default: return ext
         }
     }
 

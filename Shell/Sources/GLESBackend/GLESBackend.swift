@@ -21,6 +21,10 @@ public enum GLESBackend {
     /// properties, say), run once the art and the clock are in place.
     @MainActor public static var configureGame: (@MainActor () -> Void)?
 
+    /// Where the game's Gradle project stages each resource
+    /// (`Shell.start(resourceFolder:)`).
+    @MainActor public static var resourceFolder: ResourceBundle.FolderRule = ResourceBundle.defaultFolder
+
     /// The game's controller, once the view exists.
     @MainActor static var controller: (any GameHost)?
 
@@ -41,7 +45,7 @@ public enum GLESBackend {
     public static func prepare() {
         AssetBundle.installIndex()
         AssetBundle.installFonts()
-        ResourceBundle.install()
+        ResourceBundle.install(folder: resourceFolder)
 
         // One monotonic clock for the whole runtime: the shell's, which is
         // `SDL_GetTicksNS`. A game reads `CACurrentMediaTime()` for its own
