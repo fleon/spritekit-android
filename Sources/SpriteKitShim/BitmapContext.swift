@@ -135,6 +135,8 @@ public final class BitmapContext {
         var lineCap = CGLineCap.butt
         var lineJoin = CGLineJoin.miter
         var miterLimit: CGFloat = 10
+        /// `setLineDash`: the pattern in user space, nil for a solid line.
+        var dash: (phase: CGFloat, lengths: [CGFloat])?
         var clip: Clip?
         var shadow: Shadow?
         var interpolation = InterpolationQuality.default
@@ -286,6 +288,12 @@ public final class BitmapContext {
     public func setBlendMode(_ mode: BlendMode) { state.blend = mode }
     public func setLineWidth(_ width: CGFloat) { state.lineWidth = width }
     public func setLineCap(_ cap: CGLineCap) { state.lineCap = cap }
+
+    /// Strokes from here on run in dashes, `phase` into the pattern; an
+    /// empty pattern strokes solid again, as CoreGraphics has it.
+    public func setLineDash(phase: CGFloat, lengths: [CGFloat]) {
+        state.dash = lengths.contains(where: { $0 > 0 }) ? (phase, lengths) : nil
+    }
     public func setLineJoin(_ join: CGLineJoin) { state.lineJoin = join }
     public func setMiterLimit(_ limit: CGFloat) { state.miterLimit = limit }
     public func setFill(_ colour: SKColor) { state.fill = colour }
@@ -893,8 +901,14 @@ public final class BitmapContext {
     private func strokeCoverage() -> Coverage? {
         let width = state.lineWidth * transformScale
         guard width > 0 else { return nil }
+        // Dashed in device pixels, so the pattern scales with the CTM.
+        let stroked = state.dash.map { dash in
+            PathGeometry.dash(subpaths, phase: dash.phase * transformScale,
+                              lengths: dash.lengths.map { $0 * transformScale })
+                .map { PathRasteriser.Subpath(points: $0, isClosed: false) }
+        } ?? subpaths
         let outlines = PathRasteriser.strokeOutlines(
-            subpaths,
+            stroked,
             width: width,
             cap: state.lineCap,
             join: state.lineJoin,

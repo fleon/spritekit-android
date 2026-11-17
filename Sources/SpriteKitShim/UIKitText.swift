@@ -110,10 +110,6 @@ public final class UITextField: UIView {
     public var tintColor: UIColor?
     public var borderStyle = UITextBorderStyle.none
     public var selectedTextRange: UITextRange?
-    public var frame: CGRect = .zero {
-        didSet { bounds = CGRect(origin: .zero, size: frame.size) }
-    }
-    public private(set) weak var superview: UIView?
 
     /// The field taking typing now, if any.
     public private(set) static weak var firstResponder: UITextField?
@@ -150,8 +146,6 @@ public final class UITextField: UIView {
     }
 
     public var isFirstResponder: Bool { Self.firstResponder === self }
-
-    func moved(to view: UIView?) { superview = view }
 
     // MARK: - Touches
 
@@ -194,10 +188,6 @@ public final class UITextField: UIView {
         }
     }
 
-    public func removeFromSuperview() {
-        superview = nil
-    }
-
     /// What the keyboard typed, as the shell reads it from SDL.
     public enum Typing: Equatable, Sendable {
         case insert(String)
@@ -225,12 +215,6 @@ public final class UITextField: UIView {
         case .return:
             _ = field.delegate?.textFieldShouldReturn(field)
         }
-    }
-}
-
-public extension UIView {
-    func addSubview(_ view: UIView) {
-        (view as? UITextField)?.moved(to: self)
     }
 }
 

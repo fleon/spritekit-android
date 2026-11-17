@@ -76,6 +76,27 @@ public final class UIImage: @unchecked Sendable {
         }
     }
 
+    /// An empty image: no pixels, no size, as UIKit's `UIImage()`.
+    public init() {
+        data = Data()
+        drawn = nil
+        asset = nil
+        size = .zero
+        scale = 1
+    }
+
+    /// An SF Symbol, as the packed art carries it: Android has no symbol
+    /// font, so a game's symbols are rendered ahead on a Mac
+    /// (`Tools/Art/system-symbols.swift`) at the configuration it asks for,
+    /// into `SystemSymbols/<name>` image sets the art packer packs. The
+    /// configuration here is only what the symbol was rendered with, and is
+    /// not checked; a symbol nobody rendered is nil, as an unknown name is.
+    public convenience init?(systemName name: String, withConfiguration configuration: SymbolConfiguration? = nil) {
+        self.init(named: UIImage.systemSymbolPrefix + name)
+    }
+
+    public static let systemSymbolPrefix = "SystemSymbols/"
+
     private init(asset entry: AssetIndex.Entry, scale: CGFloat) {
         data = Data()
         drawn = nil
@@ -312,5 +333,53 @@ public final class UITraitCollection: @unchecked Sendable {
     }
 
     nonisolated(unsafe) public static var current = UITraitCollection()
+}
+
+extension UIImage {
+    /// UIKit's symbol configuration: carried, not applied (see
+    /// `init(systemName:withConfiguration:)`).
+    public final class SymbolConfiguration: @unchecked Sendable {
+        public let pointSize: CGFloat?
+        public let weight: SymbolWeight?
+        public let scale: SymbolScale?
+
+        public init(pointSize: CGFloat) {
+            self.pointSize = pointSize
+            weight = nil
+            scale = nil
+        }
+
+        public init(pointSize: CGFloat, weight: SymbolWeight) {
+            self.pointSize = pointSize
+            self.weight = weight
+            scale = nil
+        }
+
+        public init(pointSize: CGFloat, weight: SymbolWeight, scale: SymbolScale) {
+            self.pointSize = pointSize
+            self.weight = weight
+            self.scale = scale
+        }
+
+        public init(weight: SymbolWeight) {
+            pointSize = nil
+            self.weight = weight
+            scale = nil
+        }
+
+        public init(scale: SymbolScale) {
+            pointSize = nil
+            weight = nil
+            self.scale = scale
+        }
+    }
+
+    public enum SymbolWeight: Int, Sendable {
+        case unspecified = 0, ultraLight, thin, light, regular, medium, semibold, bold, heavy, black
+    }
+
+    public enum SymbolScale: Int, Sendable {
+        case `default` = -1, unspecified = 0, small, medium, large
+    }
 }
 #endif

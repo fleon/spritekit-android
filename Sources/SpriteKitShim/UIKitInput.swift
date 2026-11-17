@@ -92,6 +92,17 @@ public extension UIApplication {
         completionHandler?(opened)
     }
 
+    /// The async spelling, which the game awaits.
+    @discardableResult
+    func open(_ url: URL, options: [String: Any] = [:]) async -> Bool {
+        SystemServices.openURL(url)
+    }
+
+    /// The app's own page in the system settings (its notifications among
+    /// them): `SystemServices.openURL` hands this to the app, which opens
+    /// Android's app details there.
+    static let openSettingsURLString = "app-settings:"
+
     func canOpenURL(_ url: URL) -> Bool { true }
 
     var isIdleTimerDisabled: Bool {

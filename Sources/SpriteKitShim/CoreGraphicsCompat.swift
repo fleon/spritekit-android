@@ -308,6 +308,13 @@ public extension CGPath {
         }
     }
 
+    /// The path moved by `transform`, as CoreGraphics' `copy(using:)`.
+    func copy(using transform: UnsafePointer<CGAffineTransform>?) -> CGPath? {
+        let copy = CGPath()
+        copy.addPath(self, transform: transform?.pointee ?? .identity)
+        return copy
+    }
+
     /// The path cut into dashes, each an open subpath of its own.
     func copy(dashingWithPhase phase: CGFloat, lengths: [CGFloat], transform: CGAffineTransform = .identity) -> CGPath {
         let path = CGPath()
