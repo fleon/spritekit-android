@@ -46,10 +46,22 @@ notify, scheduling, listing and removing pending requests, its delegate's
    It follows the activity's lifecycle itself (an
    `ActivityLifecycleCallbacks`), so `onResume` and the rest need nothing.
 
-The launcher activity must be `singleTask` or `singleInstance` and call
-`setIntent(intent)` in `onNewIntent`, as SDL's `MainActivity` does: a tap
-opens the launcher activity with the notification on its intent, which is
-read as the activity resumes.
+A tap opens the launcher activity with the notification on its intent,
+which is read as the activity resumes. The launcher activity must be
+`singleTask` or `singleInstance`, and must keep the newest intent: neither
+`SDLActivity` nor the base template does, so add this to the game's
+`MainActivity`, or a tap while the game runs is lost:
+
+```java
+@Override
+protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    setIntent(intent);
+}
+```
+
+(A `MainActivity` that already overrides `onNewIntent`, for links say,
+adds the `setIntent(intent)` line to its own.)
 
 ## The protocol
 
