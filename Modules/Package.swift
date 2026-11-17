@@ -35,6 +35,7 @@ let package = Package(
         .library(name: "AVFoundation", targets: ["AVFoundation"]),
         .library(name: "os", targets: ["os"]),
         .library(name: "simd", targets: ["simd"]),
+        .library(name: "UserNotifications", targets: ["UserNotifications"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -95,5 +96,10 @@ let package = Package(
         .target(name: "simd",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/simd", swiftSettings: [v5, shimDefine]),
+        // Local notifications (`UNUserNotificationCenter`), from the
+        // platform layer.
+        .target(name: "UserNotifications",
+                dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
+                path: "Sources/UserNotifications", swiftSettings: [v5, shimDefine]),
     ]
 )
