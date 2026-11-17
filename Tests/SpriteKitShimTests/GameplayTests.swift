@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import SpriteKitShim
 
-// The two things the gameplay ring added to the shim: 9-slicing, which the
-// board's kerbs and raised bricks need before anything it draws looks right,
-// and touch delivery, which is how a tap reaches a Switchling.
+// Two things a game's play needs of the shim: 9-slicing, which walls and
+// raised tiles need before anything drawn with them looks right, and touch
+// delivery, which is how a tap reaches a node.
 //
 // Both are host-testable for the same reason the rest of the layer is: a
 // frame is a value and a touch is a walk over the tree. No device, no
@@ -12,7 +12,7 @@ import Testing
 
 @Suite("Nine-slice")
 struct NineSliceTests {
-    /// A kerb-shaped case: 40 points of art, 12 fixed either side, drawn
+    /// A wall-shaped case: 40 points of art, 12 fixed either side, drawn
     /// 200 long.
     private let art = CGSize(width: 40, height: 40)
     private let center = CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4)
@@ -260,21 +260,22 @@ struct TouchTests {
         let hits = scene.nodes(at: CGPoint(x: 100, y: 100))
         #expect(hits.first === over)
         #expect(hits.contains { $0 === under })
-        // The scene itself draws its own rect, so a point inside it with
-        // nothing on it finds the scene and nothing else — SpriteKit's own
-        // answer, which is why `atPoint` returns the receiver.
-        #expect(scene.nodes(at: CGPoint(x: 5, y: 5)).map { ObjectIdentifier($0) } == [ObjectIdentifier(scene)])
+        // A point with nothing on it finds nothing: SpriteKit never lists
+        // the scene among its own nodes (measured on macOS 27.2, either
+        // anchor point); `atPoint` then returns the receiver.
+        #expect(scene.nodes(at: CGPoint(x: 5, y: 5)).isEmpty)
+        #expect(scene.atPoint(CGPoint(x: 5, y: 5)) === scene)
     }
 }
 
 @Suite("Actions that change their own node's actions")
 struct ReentrantActionTests {
-    // The game does this constantly and SpriteKit allows it: a looping
-    // glance schedules the next one from inside itself, a board cue starts
-    // the move it announces, a completion starts the next step. Advancing
+    // Games do this constantly and SpriteKit allows it: a loop schedules
+    // its next round from inside itself, a cue starts the move it
+    // announces, a completion starts the next step. Advancing
     // the list in place made the second access abort the process with
     // "Fatal access conflict detected" — a real crash on a device, three
-    // seconds into the first level.
+    // seconds into play.
 
     @Test("An action may start another on the same node from inside itself")
     func startsAnother() {
