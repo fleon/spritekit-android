@@ -3,13 +3,13 @@ import SpriteKitShim
 import Testing
 @testable import TextShaping
 
-/// What stands behind a game's CoreText line wrapping and capital centring
-/// on Android, which compile there unchanged: these are the numbers they
-/// will actually get.
+/// What stands behind `Source/Utils/TextHelpers.swift` on Android. That file
+/// now compiles there unchanged, so these are the numbers its `wrappedLines`
+/// and `capitalsOffset` will actually get.
 @Suite("Typesetting")
 struct TypesettingTests {
-    /// A wrapping loop as a game writes one: a few lines of `CTTypesetter`
-    /// over this, which is not compiled on the host.
+    /// `wrappedLines` itself, since the real one is three lines of
+    /// `CTTypesetter` over this and is not compiled on the host.
     private func wrapped(_ text: String, maxWidth: CGFloat, font: FontKey) -> [String] {
         _ = Fonts.engine
         var lines: [String] = []
@@ -28,20 +28,20 @@ struct TypesettingTests {
 
     @Test("Breaking a line walks the whole string and stops")
     func walksToTheEnd() {
-        let text = "Tap a salamander to send it one step, and bump another to trade arrows"
-        let lines = wrapped(text, maxWidth: 160, font: Fonts.chiron(18))
+        let text = "Tap a tile to send it one step, and bump another to trade places"
+        let lines = wrapped(text, maxWidth: 160, font: Fonts.display(18))
 
         #expect(lines.count > 3)
         #expect(lines.joined(separator: " ") == text)
         for line in lines {
-            #expect(Fonts.engine.measure(line, font: Fonts.chiron(18)).advance <= 160.001, "\(line)")
+            #expect(Fonts.engine.measure(line, font: Fonts.display(18)).advance <= 160.001, "\(line)")
         }
     }
 
     @Test("A suggested break never returns zero, so the loop above terminates")
     func neverZero() {
-        let text = "Salamanders"
-        let font = Fonts.chiron(40)
+        let text = "Lightning"
+        let font = Fonts.display(40)
         for width in [CGFloat(1), 5, 20, 1000] {
             #expect(Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: width) > 0)
         }
@@ -69,7 +69,7 @@ struct TypesettingTests {
     @Test("Starting part-way through continues from there")
     func resumes() {
         let text = "Unlock every level and keep them forever"
-        let font = Fonts.chiron(18)
+        let font = Fonts.display(18)
         let first = Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: 100)
         let second = Typesetting.suggestLineBreak(text, font: font, startingAt: first, maxWidth: 100)
 
@@ -81,7 +81,7 @@ struct TypesettingTests {
     @Test("A hard line break ends the line there whatever the width")
     func hardBreak() {
         let text = "Bump\nand trade"
-        let font = Fonts.chiron(18)
+        let font = Fonts.display(18)
         let count = Typesetting.suggestLineBreak(text, font: font, startingAt: 0, maxWidth: 10_000)
         #expect(count == 5)                       // "Bump\n"
         #expect(wrapped(text, maxWidth: 10_000, font: font) == ["Bump", "and trade"])
@@ -89,7 +89,7 @@ struct TypesettingTests {
 
     @Test("Running off the end gives nothing back")
     func pastTheEnd() {
-        let font = Fonts.chiron(18)
+        let font = Fonts.display(18)
         #expect(Typesetting.suggestLineBreak("Play", font: font, startingAt: 4, maxWidth: 100) == 0)
         #expect(Typesetting.suggestLineBreak("", font: font, startingAt: 0, maxWidth: 100) == 0)
     }
@@ -104,7 +104,7 @@ struct TypesettingTests {
 
     @Test("Glyph-path bounds are the ink, and the plain bounds are the line")
     func lineBounds() throws {
-        let font = Fonts.chiron(40)
+        let font = Fonts.display(40)
         let ink = Typesetting.lineBounds("HELLO", font: font, glyphPath: true)
         let typographic = Typesetting.lineBounds("HELLO", font: font, glyphPath: false)
         let metrics = try #require(Fonts.engine.fontMetrics(font))
@@ -115,12 +115,12 @@ struct TypesettingTests {
         #expect(abs(typographic.minY + metrics.descent) < 0.001)
     }
 
-    @Test("A capitals offset comes out of this, and is what buttons lean on")
+    @Test("capitalsOffset comes out of this, and is what buttons lean on")
     func capitalsOffset() throws {
-        // A game's is `CTLineGetBoundsWithOptions(.useGlyphPathBounds).midY
+        // The real one is `CTLineGetBoundsWithOptions(.useGlyphPathBounds).midY
         // - capHeight / 2`. A line of capitals needs almost no correction; one
         // with a descender needs a real one, downwards.
-        let font = Fonts.chiron(32)
+        let font = Fonts.display(32)
         let metrics = try #require(Fonts.engine.fontMetrics(font))
         func offset(_ text: String) -> CGFloat {
             Typesetting.lineBounds(text, font: font, glyphPath: true).midY - metrics.capHeight / 2
@@ -132,7 +132,7 @@ struct TypesettingTests {
 
     @Test("Break offsets are ascending and land inside the string")
     func breakOffsets() {
-        let text = "Tap a salamander to send it one step"
+        let text = "Tap a tile to send it one step"
         let offsets = Fonts.engine.breakOffsets(in: text)
         #expect(!offsets.isEmpty)
         #expect(offsets == offsets.sorted())
@@ -143,7 +143,7 @@ struct TypesettingTests {
     @Test("An unknown face gives one unbroken line, not a loop")
     func unknownFace() {
         // Measured as nothing, so everything fits and the whole string comes
-        // back in one go. That matters more than it looks: a wrapping loop
+        // back in one go. That matters more than it looks: `wrappedLines`
         // walks forward by whatever this returns, so anything that could
         // return 0 for a string it has not reached the end of would spin.
         // The engine must be registered, or the shim reports no provider
