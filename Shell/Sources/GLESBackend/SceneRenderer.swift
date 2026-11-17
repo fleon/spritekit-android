@@ -1779,7 +1779,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         for part in staged.parts {
             let name = part.mask != 0 ? part.mask : glyphPages.name(of: part.run.page)
             guard name != 0 else { continue }
-            drawCoverage(part.run, texture: name, projection: projection, program: program, streamFirstIndex: part.streamFirstIndex)
+            let fill = mask || texturedCoverageProgram == 0 ? nil : part.texture.map { ($0, part.textureMap) }
+            drawCoverage(part.run, texture: name, projection: projection, program: program, streamFirstIndex: part.streamFirstIndex, fill: fill)
         }
     }
 
@@ -1895,14 +1896,18 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
            let mask = shapeMasks.fill(path, rule: .nonZero, scale: scale) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.fillColor, alpha: shape.alpha),
-                mask: mask.name
+                mask: mask.name,
+                texture: shape.fillTexture,
+                textureMap: CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)
             ))
         }
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
            let mask = shapeMasks.stroke(path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),
-                mask: mask.name
+                mask: mask.name,
+                texture: shape.strokeTexture,
+                textureMap: CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)
             ))
         }
         return parts

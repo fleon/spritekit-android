@@ -36,10 +36,16 @@ public enum CoverageGeometry {
             public var mask: UInt32
             /// Where its indices start in the frame's stream; -1 until written.
             public var streamFirstIndex: Int = -1
+            /// A shape's fill or stroke texture, and where it is sampled
+            /// from the mask's coordinates (`fillMap`).
+            public var texture: SKTexture?
+            public var textureMap: SIMD4<Float>
 
-            public init(run: Run, mask: UInt32) {
+            public init(run: Run, mask: UInt32, texture: SKTexture? = nil, textureMap: SIMD4<Float> = .zero) {
                 self.run = run
                 self.mask = mask
+                self.texture = texture
+                self.textureMap = textureMap
             }
         }
 
