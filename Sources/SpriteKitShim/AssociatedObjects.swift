@@ -2,8 +2,8 @@
 import Foundation
 
 /// The Objective-C runtime's associated objects, which Android has no
-/// runtime for: values hung on an object by a key, as Hue Rings'
-/// `EventEmitter` keeps its handlers on whatever class adopts it.
+/// runtime for: values hung on an object by a key, as a protocol extension
+/// keeps state on whatever class adopts it.
 ///
 /// Keyed by the object's identity and the key's address. Objective-C lets a
 /// value go when its object is deallocated; Swift has no hook for that here,
@@ -72,8 +72,8 @@ public enum AssociatedObjects {
 
 #if !canImport(ObjectiveC)
 /// `objc_AssociationPolicy`. Every policy retains here: Swift values are
-/// copied on assignment anyway, and nothing in the games hangs a value
-/// unretained.
+/// copied on assignment anyway, and a value hung unretained is kept
+/// alive here rather than dangling.
 public struct objc_AssociationPolicy: RawRepresentable, Hashable, Sendable {
     public let rawValue: UInt
     public init(rawValue: UInt) { self.rawValue = rawValue }

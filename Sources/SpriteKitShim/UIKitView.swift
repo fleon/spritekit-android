@@ -57,8 +57,8 @@ public final class UIScreen {
     /// The screen the game shows on: Android has one, the last made. The
     /// beta's solve log reads its size (`PlaytestLog.screen`), where iOS
     /// finds it through its window scenes. Implicitly unwrapped, as UIKit's
-    /// is not optional: `UIScreen.main.scale` (Hue Rings' wildcard texture)
-    /// compiles as it is, and `UIScreen.main?.bounds` still does too. Nil
+    /// is not optional: `UIScreen.main.scale` compiles as
+    /// written, and `UIScreen.main?.bounds` still does too. Nil
     /// only before the shell has made the window.
     public private(set) static weak var main: UIScreen!
 
