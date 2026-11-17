@@ -260,10 +260,11 @@ struct TouchTests {
         let hits = scene.nodes(at: CGPoint(x: 100, y: 100))
         #expect(hits.first === over)
         #expect(hits.contains { $0 === under })
-        // The scene itself draws its own rect, so a point inside it with
-        // nothing on it finds the scene and nothing else — SpriteKit's own
-        // answer, which is why `atPoint` returns the receiver.
-        #expect(scene.nodes(at: CGPoint(x: 5, y: 5)).map { ObjectIdentifier($0) } == [ObjectIdentifier(scene)])
+        // A point with nothing on it finds nothing: SpriteKit never lists
+        // the scene among its own nodes (measured on macOS 27.2, either
+        // anchor point); `atPoint` then returns the receiver.
+        #expect(scene.nodes(at: CGPoint(x: 5, y: 5)).isEmpty)
+        #expect(scene.atPoint(CGPoint(x: 5, y: 5)) === scene)
     }
 }
 
