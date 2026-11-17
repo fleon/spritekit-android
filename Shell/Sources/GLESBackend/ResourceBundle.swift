@@ -57,11 +57,27 @@ public enum ResourceBundle {
         BundleResources.provider = { name, ext in
             unpack(folder(name, ext), "\(name).\(ext)")
         }
+        // `NSLocalizedString`'s languages: the APK's `lproj/` folders.
+        let languages = localizations()
+        LocalizedStrings.localizations = { languages }
+        Log.info("strings: \(languages.sorted().joined(separator: ", "))")
         BundleResources.folderProvider = { name, ext in
             guard ext == "lproj" else { return nil }
             let folder = "lproj/\(name).lproj"
             let unpackedAny = stringTables.compactMap { unpack(folder, $0) }
             return unpackedAny.isEmpty ? nil : cache?.appendingPathComponent(folder).path
+        }
+    }
+
+    /// The languages the APK has strings for: `lproj/<language>.lproj`.
+    private static func localizations() -> [String] {
+        var count: Int32 = 0
+        guard let list = SDL_GlobDirectory("lproj", nil, 0, &count) else { return [] }
+        defer { SDL_free(list) }
+        return (0..<Int(count)).compactMap { index in
+            guard let entry = list[index] else { return nil }
+            let name = String(cString: entry)
+            return name.hasSuffix(".lproj") && !name.contains("/") ? String(name.dropLast(".lproj".count)) : nil
         }
     }
 

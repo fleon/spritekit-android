@@ -388,6 +388,9 @@ public struct DrawList {
                 if cull != nil, case let .sprite(particle) = entry.1, isCulled(particle, by: cull) { continue }
                 entries.append(entry)
             }
+        } else if let tileMap = node as? SKTileMapNode {
+            // Its filled cells, one sprite each, at its own depth.
+            entries.append(contentsOf: tileMap.tileCommands(transform: transform, alpha: alpha, z: z, cull: cull))
         }
 
         // Each descendant keeps its own accumulated z. Re-keying a whole
