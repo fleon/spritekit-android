@@ -69,6 +69,8 @@ struct PathEditingTests {
         #expect(same(made, apple.pathElements))
     }
 
+    /// `PathGeometry.transformed` is `UIBezierPath.apply(_:)` and, on Android,
+    /// `CGPath.copy(using:)` itself.
     @Test("apply(_:) moves every point as CGPath.copy(using:) does, arcs included")
     func transform() throws {
         let apple = CGMutablePath()
