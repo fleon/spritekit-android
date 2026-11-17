@@ -66,7 +66,7 @@ extension FaceHandle {
     }
 
     /// The ink box of a line, measured from the pen's origin on the
-    /// baseline, in points: positive up, as the game's coordinates run.
+    /// baseline, in points: positive up, as SpriteKit's coordinates run.
     func inkBounds(of runs: [ShapedRun]) -> CGRect {
         run { unsafeInkBounds(of: runs) }
     }
@@ -182,7 +182,7 @@ extension FaceHandle {
             }
             let bitmap = slot.pointee.bitmap
             // Only 8-bit grey is handled; anything else (a colour or mono
-            // strike) would need its own path and the game has none.
+            // strike) would need its own path, which isn't here yet.
             if bitmap.width > 0, bitmap.rows > 0,
                bitmap.pixel_mode != UInt8(FT_PIXEL_MODE_GRAY.rawValue) {
                 return nil

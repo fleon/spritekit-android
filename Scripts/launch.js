@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 // Starts the game on an Android device with the game's launch arguments,
-// as `xcrun simctl launch <udid> <bundle> -StartLevel reef-12 …` does on a
+// as `xcrun simctl launch <udid> <bundle> -StartLevel level-1 …` does on a
 // simulator, whatever the arguments hold (spaces, commas, quotes, plist
 // syntax): they go as `args64`, base64 of a JSON array, which no shell on
 // the way splits (MainActivity.getArguments).
 //
 //   node Scripts/launch.js [--package com.example.game.debug] -- \
-//       -StartLevel reef-12 -Stills "move 3@0.05;celebrate@0.7" -settings.musicEnabled "<false/>"
+//       -StartLevel level-1 -Note "a;b@0.05" -settings.musicEnabled "<false/>"
 //
 // Stops the app first, so it starts afresh. Targets $ANDROID_SERIAL
-// (Android/Scripts/emulators.sh acquire sets it). Debuggable builds only:
+// (Scripts/emulators.sh acquire sets it). Debuggable builds only:
 // a release build ignores the extra.
 const { execFileSync } = require('child_process');
 

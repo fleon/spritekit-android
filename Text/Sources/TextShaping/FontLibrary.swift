@@ -3,12 +3,11 @@ import CTextShaping
 import Foundation
 import SpriteKitShim
 
-/// What the game's font names resolve to.
+/// What a game's font names resolve to.
 ///
-/// The game asks for faces by the names in `GeometryHelpers.swift` —
-/// "ChironGoRoundTC-Black", "-ExtraBold", "-SemiBold" and "KoHo-Bold" — and
-/// the first three are named instances of one variable file, not separate
-/// files. Registering a file makes all of its instances available at once.
+/// A game asks for faces by PostScript name — "SomeFont-Black", "-Bold",
+/// "OtherFont-Regular" — and a variable font's named instances are faces of
+/// one file, not separate files. Registering a file makes all of its instances available at once.
 public final class FontLibrary: @unchecked Sendable {
     public static let shared = FontLibrary()
 
