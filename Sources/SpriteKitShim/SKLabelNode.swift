@@ -32,8 +32,9 @@ public enum SKLabelVerticalAlignmentMode: Int, Sendable {
 /// axes work on the **ink**, not the advance: a descender moves a centred
 /// label, which a game undoes for buttons (from a `CTLine`'s glyph-path
 /// bounds), and every frame is a little wider and taller than the ink,
-/// which a game's pills and buttons are sized by. Several lines keep the
-/// simpler layout below.
+/// which a game's pills and buttons are sized by. A label of more than one
+/// line (`numberOfLines` other than 1) is framed by its typographic block
+/// instead (`spriteKitParagraph`).
 open class SKLabelNode: SKNode {
     open var text: String? { didSet { invalidateLayout() } }
     open var fontName: String? { didSet { invalidateLayout() } }
@@ -240,64 +241,82 @@ open class SKLabelNode: SKNode {
 
         let broken = brokenLines(text, font: font, provider: provider)
         guard !broken.isEmpty else { return nil }
+        let lines = broken.map { measure($0, font: font, provider: provider) }
 
-        // SpriteKit advances a line by the font's ascent, descent and
-        // leading each rounded to whole points (measured on macOS and iOS).
-        let lineHeight = metrics.ascent.rounded() + metrics.descent.rounded() + metrics.leading.rounded()
-        var placed: [TextLayout.Placed] = []
-        var box: CGRect?
-
-        for (index, text) in broken.enumerated() {
-            var line = provider.measure(text, font: font)
-            if kern != 0 {
-                // Each character's spacing comes after it, as CoreText puts
-                // it: the pen travels `kern` further a character, and the
-                // last character's ink sits that much further on for every
-                // one before it.
-                let count = CGFloat(text.count)
-                line.advance += kern * count
-                if !line.inkBounds.isEmpty {
-                    line.inkBounds.size.width += kern * max(count - 1, 0)
-                }
+        if numberOfLines == 1, let line = lines.first {
+            guard !line.inkBounds.isEmpty else {
+                // Only spaces: nothing to frame, the pen where the alignment puts it.
+                let x: CGFloat = horizontalAlignmentMode == .left ? 0 : horizontalAlignmentMode == .right ? -line.advance : -line.advance / 2
+                return TextLayout(lines: [TextLayout.Placed(line: line, origin: CGPoint(x: x, y: 0))], bounds: line.inkBounds.offsetBy(dx: x, dy: 0))
             }
-            let x: CGFloat
-            switch horizontalAlignmentMode {
-            case .left: x = 0
-            case .right: x = -line.advance
-            case .center: x = -line.advance / 2
-            }
-            // The first line's baseline sits on the node's origin; the rest
-            // hang below it, as SpriteKit stacks them.
-            let origin = CGPoint(x: x, y: -CGFloat(index) * lineHeight)
-            placed.append(TextLayout.Placed(line: line, origin: origin))
-            let ink = line.inkBounds.offsetBy(dx: origin.x, dy: origin.y)
-            box = box.map { $0.union(ink) } ?? ink
+            return Self.spriteKitLine(line, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
         }
-
-        guard var bounds = box else { return nil }
-        if numberOfLines == 1, placed.count == 1, !bounds.isEmpty {
-            return Self.spriteKitLine(placed[0].line, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+        // A line's width leaves out the whitespace it ends on.
+        let widths = broken.map { text -> CGFloat in
+            var trimmed = Substring(text)
+            while let last = trimmed.last, last.isWhitespace { trimmed = trimmed.dropLast() }
+            return measure(String(trimmed), font: font, provider: provider).advance
         }
+        return Self.spriteKitParagraph(lines, widths: widths, metrics: metrics, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+    }
 
-        let shift: CGFloat
-        switch verticalAlignmentMode {
-        case .baseline: shift = 0
-        case .center: shift = -bounds.midY
-        case .top: shift = -bounds.maxY
-        case .bottom: shift = -bounds.minY
-        }
-
-        if shift != 0 {
-            bounds = bounds.offsetBy(dx: 0, dy: shift)
-            placed = placed.map {
-                TextLayout.Placed(
-                    line: $0.line,
-                    origin: CGPoint(x: $0.origin.x, y: $0.origin.y + shift)
-                )
+    /// One line measured, with the label's letter spacing.
+    private func measure(_ text: String, font: FontKey, provider: TextProvider) -> TextLine {
+        var line = provider.measure(text, font: font)
+        if kern != 0 {
+            // Each character's spacing comes after it, as CoreText puts
+            // it: the pen travels `kern` further a character, and the
+            // last character's ink sits that much further on for every
+            // one before it.
+            let count = CGFloat(text.count)
+            line.advance += kern * count
+            if !line.inkBounds.isEmpty {
+                line.inkBounds.size.width += kern * max(count - 1, 0)
             }
         }
+        return line
+    }
 
-        return TextLayout(lines: placed, bounds: bounds)
+    /// Lines as SpriteKit lays out a label of more than one line (any
+    /// `numberOfLines` but 1, measured against `SpriteKit.SKLabelNode`):
+    /// the frame is the typographic block, not the ink, the widest line's
+    /// advance (`widths`, without the whitespace it ends on) rounded up and
+    /// padded by 1 a side, and from 1 above the first
+    /// line's ascent to the last line's descent, rounded out, and 1 below.
+    /// Each line advances by the font's ascent, descent and leading rounded
+    /// to whole points, and starts at the block's left
+    /// edge whatever the alignment, which places the block alone. In
+    /// `.baseline`, as in `.bottom`, the whole block stands above the origin.
+    static func spriteKitParagraph(
+        _ lines: [TextLine],
+        widths: [CGFloat],
+        metrics: FontMetrics,
+        horizontal: SKLabelHorizontalAlignmentMode,
+        vertical: SKLabelVerticalAlignmentMode
+    ) -> TextLayout {
+        let ascent = metrics.ascent.rounded()
+        let advance = ascent + metrics.descent.rounded() + metrics.leading.rounded()
+        let width = (widths.max() ?? 0).rounded(.up) + 2
+        // 1 above the first ascent, the last line down to its descent, then
+        // rounded out and 1 more below.
+        let height = (1 + ascent + CGFloat(lines.count - 1) * advance + metrics.descent).rounded(.up) + 1
+        let x: CGFloat
+        switch horizontal {
+        case .left: x = 0
+        case .center: x = -(width / 2).rounded(.down)
+        case .right: x = -width
+        }
+        let y: CGFloat
+        switch vertical {
+        case .baseline, .bottom: y = 0
+        case .center: y = -(height / 2).rounded(.down)
+        case .top: y = -height
+        }
+        let firstBaseline = y + height - 1 - ascent
+        let placed = lines.enumerated().map { index, line in
+            TextLayout.Placed(line: line, origin: CGPoint(x: x + 1, y: firstBaseline - CGFloat(index) * advance))
+        }
+        return TextLayout(lines: placed, bounds: CGRect(x: x, y: y, width: width, height: height))
     }
 
     /// Styled runs on one line, as SpriteKit lays an attributed label out
@@ -378,8 +397,11 @@ open class SKLabelNode: SKNode {
             return [text.replacingOccurrences(of: "\n", with: " ")]
         }
 
+        var paragraphs = text.components(separatedBy: "\n")
+        // A newline the text ends on ends its last line; it starts no other.
+        if paragraphs.count > 1, paragraphs.last == "" { paragraphs.removeLast() }
         var lines: [String] = []
-        for paragraph in text.components(separatedBy: "\n") {
+        for paragraph in paragraphs {
             if preferredMaxLayoutWidth > 0 {
                 lines.append(contentsOf: provider.breakLines(
                     paragraph,

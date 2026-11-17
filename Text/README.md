@@ -181,7 +181,12 @@ every frame is a point or two wider and taller than the ink, which a game's
 pills and buttons are sized by. Every Black frame matches SpriteKit's to the
 point; in the lighter instances 2% come out a point narrower, where a long
 line's fractional advance deltas (above) tip its ink over a whole point.
-Several lines (`numberOfLines` other than 1) keep a simpler layout.
+A label of more than one line (`numberOfLines` other than 1) is framed by
+its typographic block, as SpriteKit frames it: the widest line without its
+trailing whitespace, rounded up and padded by a point a side, from a point
+above the first ascent to the last descent, rounded out, and a point below,
+the lines advancing by the rounded ascent, descent and leading and all
+starting at the block's left edge.
 
 ## CoreText
 

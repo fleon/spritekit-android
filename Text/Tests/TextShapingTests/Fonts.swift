@@ -37,7 +37,8 @@ enum Fonts {
         for file in ["Montserrat", "KoHo-Bold"] {
             _ = try? library.register(path: directory + "/" + file + ".ttf")
         }
-        for path in [hiragino, appleSDGothic] {
+        // Geneva too, a face with a line gap, which the fixtures lack.
+        for path in [hiragino, appleSDGothic, "/System/Library/Fonts/Geneva.ttf"] {
             _ = try? library.register(path: path)
         }
         engine.install()
