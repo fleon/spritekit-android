@@ -13,8 +13,7 @@ import ShellCore
 public enum AudioAssets {
     public static let root = "audio"
     /// The containers a soundtrack may come in, the first one found winning:
-    /// Switchlings ships AAC in `.m4a`, Zyl an `.mp3`; MediaCodec decodes all
-    /// of them through the same C.
+    /// AAC in `.m4a`, MP3 or Ogg, which MediaCodec decodes through the same C.
     public static let musicExtensions = ["m4a", "mp3", "ogg"]
     public static let soundExtension = "wav"
 

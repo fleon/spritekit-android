@@ -51,8 +51,8 @@ public enum ResourceBundle {
         case "json" where name.hasPrefix("Rig"), "png": return "rigs"
         case "json": return "levels"
         case "ttf": return "fonts"
-        // The audio, where `AudioAssets` reads it (a game that opens its
-        // sound files itself, as Zyl's does for their lengths).
+        // The audio, where `AudioAssets` reads it, for a game that opens
+        // its sound files itself (to read a sound's length, say).
         case "wav": return "audio/SFX"
         case "m4a", "mp3", "ogg": return "audio/Music"
         default: return ext

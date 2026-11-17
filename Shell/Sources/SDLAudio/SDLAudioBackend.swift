@@ -28,8 +28,7 @@ import ShellCore
 /// And the choice is cheap to undo: `AMediaExtractor` reads the container
 /// and `AMediaCodec_createDecoderByType` takes the MIME type out of it, so
 /// .ogg or .mp3 decode through the same C without a line changing, and
-/// `AudioAssets.musicExtensions` looks for each (Zyl's soundtrack is an
-/// .mp3).
+/// `AudioAssets.musicExtensions` looks for each.
 ///
 /// ## Loop points
 ///
