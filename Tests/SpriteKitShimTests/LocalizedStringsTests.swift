@@ -8,7 +8,7 @@ import Testing
 
 private let fixture = #"""
 /* A block comment, with "quotes" and = signs; */
-"title" = "Hue Rings";
+"title" = "Example Game";
 // A line comment
 "button.play" = "Play »";
 "escapes" = "Tab\there, \"quoted\", back\\slash, line\nbreak";

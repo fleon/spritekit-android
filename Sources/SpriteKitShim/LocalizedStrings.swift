@@ -2,14 +2,14 @@
 import Foundation
 
 /// `NSLocalizedString` on Android, where corelibs' `Bundle.main` is the
-/// system's `app_process` and holds no `.lproj`: Hue Rings, Zyl and Phantom
-/// Words look every string up this way, and came out as their keys.
+/// system's `app_process` and holds no `.lproj`, so every string came out as
+/// its key.
 ///
 /// The tables are the game's own `.strings` files, staged in the APK as
 /// `lproj/<language>.lproj/<table>.strings` and copied out as asked
 /// (`BundleResources.folderProvider`). As Apple's `Bundle.main` does
-/// (measured on macOS 27.2 with a development region of `en`, as the games'
-/// Info.plists have; `LocalizedStringsTests`):
+/// (measured on macOS 27.2 with a development region of `en`, as an app's
+/// Info.plist usually has; `LocalizedStringsTests`):
 ///
 /// - The language is the first of the device's preferred languages any
 ///   `.lproj` serves, matched as `Bundle.preferredLocalizations` matches
