@@ -104,11 +104,17 @@ public final class UIEvent {
 // MARK: - Hit testing
 
 public extension SKNode {
-    /// Every node drawing at `point` (in this node's coordinates), this one
-    /// included if it draws there, topmost first.
+    /// Every descendant whose accumulated frame holds `point` (in this
+    /// node's coordinates), topmost first; never this node itself. As
+    /// SpriteKit measures it on a Mac: the frame counts hidden descendants
+    /// and its edges are closed (a zero-size node is found at its own
+    /// position), while a hidden or transparent node and everything under
+    /// it is skipped.
     func nodes(at point: CGPoint) -> [SKNode] {
         var found: [(node: SKNode, z: CGFloat, order: Int)] = []
-        collectHits(at: point, z: 0, into: &found)
+        if !isHidden, alpha > 0 {
+            collectHits(at: point, z: zPosition, into: &found)
+        }
         return found
             .sorted { $0.z == $1.z ? $0.order > $1.order : $0.z > $1.z }
             .map(\.node)
@@ -128,13 +134,12 @@ public extension SKNode {
         z: CGFloat,
         into found: inout [(node: SKNode, z: CGFloat, order: Int)]
     ) {
-        guard !isHidden, alpha > 0 else { return }
-        let depth = z + zPosition
-        // A scene is never among its own nodes, wherever the point falls.
-        if !(self is SKScene), contentFrame != .zero, contentFrame.contains(point) {
-            found.append((self, depth, found.count))
-        }
-        for child in children {
+        for child in children where !child.isHidden && child.alpha > 0 {
+            let depth = z + child.zPosition
+            let frame = child.calculateAccumulatedFrame()
+            if frame.minX <= point.x, point.x <= frame.maxX, frame.minY <= point.y, point.y <= frame.maxY {
+                found.append((child, depth, found.count))
+            }
             child.collectHits(at: child.convert(point, from: self), z: depth, into: &found)
         }
     }
