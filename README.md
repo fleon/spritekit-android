@@ -364,6 +364,24 @@ Where it differs from Apple's:
 - The type is visible only through a module that re-exports
   `SpriteKitShim` (`Foundation` itself can't gain it).
 
+### Ratings: Play In-App Review
+
+`SKStoreReviewController.requestReview(in:)` (and `requestReview()`,
+`AppStore.requestReview(in:)`) in the `StoreKit` module go to
+`StoreReview.request()` (`Sources/PlatformShim/StoreReview.swift`):
+`PlayInAppReview` over the shell's channel, nothing in a host build. As on
+iOS, the request is fire-and-forget and the store decides whether a card
+shows; a game's own rules about when to ask stay its own. One request is
+with Play at a time; one that gets no answer within a minute stops holding
+the next one back.
+
+The Java half is a class of its own in the game's app (`PlayReview`, on
+`com.google.android.play:review`), under `review`:
+`request` runs `ReviewManager.requestReviewFlow()` then
+`launchReviewFlow(activity, info)` and posts `requested {ok}` when the flow
+is over. A build not installed from Play runs the flow and shows nothing, as
+TestFlight shows nothing on iOS.
+
 ### The shell
 
 - **The main thread** is SDL's thread: `MainThread.claim()` makes it so for
