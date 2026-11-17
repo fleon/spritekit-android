@@ -142,9 +142,15 @@ public struct UNNotificationSoundName: Hashable, RawRepresentable, Sendable {
 open class UNNotificationSound: NSObject, NSCopying {
     /// nil for the default sound.
     let name: String?
+    /// What tells a critical sound from the plain one; Apple's equality
+    /// compares both, the volume only when one was given.
+    let isCritical: Bool
+    let criticalVolume: Float?
 
-    init(soundName: String?) {
+    init(soundName: String?, critical: Bool = false, volume: Float? = nil) {
         name = soundName
+        isCritical = critical
+        criticalVolume = volume
     }
 
     public convenience init(named name: UNNotificationSoundName) {
@@ -156,27 +162,34 @@ open class UNNotificationSound: NSObject, NSCopying {
 
     /// Critical alerts need an entitlement Android has no counterpart for:
     /// they play as the default sound does.
-    open class var defaultCritical: UNNotificationSound { UNNotificationSound(soundName: nil) }
+    open class var defaultCritical: UNNotificationSound { UNNotificationSound(soundName: nil, critical: true) }
 
     open class func defaultCriticalSound(withAudioVolume volume: Float) -> UNNotificationSound {
-        UNNotificationSound(soundName: nil)
+        UNNotificationSound(soundName: nil, critical: true, volume: volume)
     }
 
     open class func criticalSoundNamed(_ name: UNNotificationSoundName) -> UNNotificationSound {
-        UNNotificationSound(soundName: name.rawValue)
+        UNNotificationSound(soundName: name.rawValue, critical: true)
     }
 
     open class func criticalSoundNamed(_ name: UNNotificationSoundName, withAudioVolume volume: Float) -> UNNotificationSound {
-        UNNotificationSound(soundName: name.rawValue)
+        UNNotificationSound(soundName: name.rawValue, critical: true, volume: volume)
     }
 
     open func copy(with zone: NSZone? = nil) -> Any { self }
 
     open override func isEqual(_ object: Any?) -> Bool {
-        (object as? UNNotificationSound)?.name == name
+        guard let other = object as? UNNotificationSound else { return false }
+        return other.name == name && other.isCritical == isCritical && other.criticalVolume == criticalVolume
     }
 
-    open override var hash: Int { name?.hashValue ?? 0 }
+    open override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(name)
+        hasher.combine(isCritical)
+        hasher.combine(criticalVolume)
+        return hasher.finalize()
+    }
 }
 
 /// How insistently a notification asks for attention (Apple's raw values).
@@ -511,70 +524,203 @@ open class UNNotificationSettings: NSObject {
 
 // MARK: - Categories
 
-/// A button a notification of a category offers. Kept for the game to read
-/// back: Android's notifications here offer no buttons.
-open class UNNotificationAction: NSObject, NSCopying {
-    public struct Options: OptionSet, Sendable {
-        public let rawValue: UInt
-        public init(rawValue: UInt) { self.rawValue = rawValue }
-        public static let authenticationRequired = Options(rawValue: 1 << 0)
-        public static let destructive = Options(rawValue: 1 << 1)
-        public static let foreground = Options(rawValue: 1 << 2)
-    }
-
-    open var identifier: String { storedIdentifier }
-    open var title: String { storedTitle }
-    open var options: Options { storedOptions }
-
-    private let storedIdentifier: String
-    private let storedTitle: String
-    private let storedOptions: Options
-
-    public init(identifier: String, title: String, options: Options = []) {
-        storedIdentifier = identifier
-        storedTitle = title
-        storedOptions = options
-    }
-
-    open func copy(with zone: NSZone? = nil) -> Any { self }
+public struct UNNotificationActionOptions: OptionSet, Sendable {
+    public let rawValue: UInt
+    public init(rawValue: UInt) { self.rawValue = rawValue }
+    public static let authenticationRequired = UNNotificationActionOptions(rawValue: 1 << 0)
+    public static let destructive = UNNotificationActionOptions(rawValue: 1 << 1)
+    public static let foreground = UNNotificationActionOptions(rawValue: 1 << 2)
 }
 
-/// A kind of notification and its actions, kept by the center.
-open class UNNotificationCategory: NSObject, NSCopying {
-    public struct Options: OptionSet, Sendable {
-        public let rawValue: UInt
-        public init(rawValue: UInt) { self.rawValue = rawValue }
-        public static let customDismissAction = Options(rawValue: 1 << 0)
-        public static let allowInCarPlay = Options(rawValue: 1 << 1)
-        public static let hiddenPreviewsShowTitle = Options(rawValue: 1 << 2)
-        public static let hiddenPreviewsShowSubtitle = Options(rawValue: 1 << 3)
-        public static let allowAnnouncement = Options(rawValue: 1 << 4)
+public struct UNNotificationCategoryOptions: OptionSet, Sendable {
+    public let rawValue: UInt
+    public init(rawValue: UInt) { self.rawValue = rawValue }
+    public static let customDismissAction = UNNotificationCategoryOptions(rawValue: 1 << 0)
+    public static let allowInCarPlay = UNNotificationCategoryOptions(rawValue: 1 << 1)
+    public static let hiddenPreviewsShowTitle = UNNotificationCategoryOptions(rawValue: 1 << 2)
+    public static let hiddenPreviewsShowSubtitle = UNNotificationCategoryOptions(rawValue: 1 << 3)
+    public static let allowAnnouncement = UNNotificationCategoryOptions(rawValue: 1 << 4)
+}
+
+/// An action button's image: an SF Symbol or a template image, by name.
+open class UNNotificationActionIcon: NSObject, NSCopying {
+    private let imageName: String
+    private let isTemplate: Bool
+
+    public init(templateImageName: String) {
+        imageName = templateImageName
+        isTemplate = true
     }
 
-    open var identifier: String { storedIdentifier }
-    open var actions: [UNNotificationAction] { storedActions }
-    open var intentIdentifiers: [String] { storedIntents }
-    open var options: Options { storedOptions }
-
-    private let storedIdentifier: String
-    private let storedActions: [UNNotificationAction]
-    private let storedIntents: [String]
-    private let storedOptions: Options
-
-    public init(identifier: String, actions: [UNNotificationAction], intentIdentifiers: [String], options: Options = []) {
-        storedIdentifier = identifier
-        storedActions = actions
-        storedIntents = intentIdentifiers
-        storedOptions = options
+    public init(systemImageName: String) {
+        imageName = systemImageName
+        isTemplate = false
     }
 
     open func copy(with zone: NSZone? = nil) -> Any { self }
 
     open override func isEqual(_ object: Any?) -> Bool {
-        (object as? UNNotificationCategory)?.identifier == identifier
+        guard let other = object as? UNNotificationActionIcon else { return false }
+        return other.imageName == imageName && other.isTemplate == isTemplate
     }
 
-    open override var hash: Int { identifier.hashValue }
+    open override var hash: Int { imageName.hashValue }
+}
+
+/// A button a notification of a category offers. Kept for the game to read
+/// back: Android's notifications here offer no buttons.
+///
+/// Equal, as Apple's, when identifier, title and options are; the icon
+/// isn't compared.
+open class UNNotificationAction: NSObject, NSCopying {
+    open var identifier: String { storedIdentifier }
+    open var title: String { storedTitle }
+    open var options: UNNotificationActionOptions { storedOptions }
+    open var icon: UNNotificationActionIcon? { storedIcon }
+
+    private let storedIdentifier: String
+    private let storedTitle: String
+    private let storedOptions: UNNotificationActionOptions
+    private let storedIcon: UNNotificationActionIcon?
+
+    public init(identifier: String, title: String, options: UNNotificationActionOptions = []) {
+        storedIdentifier = identifier
+        storedTitle = title
+        storedOptions = options
+        storedIcon = nil
+    }
+
+    public init(identifier: String, title: String, options: UNNotificationActionOptions = [], icon: UNNotificationActionIcon?) {
+        storedIdentifier = identifier
+        storedTitle = title
+        storedOptions = options
+        storedIcon = icon
+    }
+
+    open func copy(with zone: NSZone? = nil) -> Any { self }
+
+    open override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? UNNotificationAction else { return false }
+        return other.identifier == identifier && other.title == title && other.options == options
+    }
+
+    open override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(identifier)
+        hasher.combine(title)
+        hasher.combine(options.rawValue)
+        return hasher.finalize()
+    }
+}
+
+/// An action that asks for a line of text. As on Apple, it equals a plain
+/// action with the same identifier, title and options; between two of
+/// these, the button title and placeholder count too.
+open class UNTextInputNotificationAction: UNNotificationAction {
+    open var textInputButtonTitle: String { storedButtonTitle }
+    open var textInputPlaceholder: String { storedPlaceholder }
+
+    private let storedButtonTitle: String
+    private let storedPlaceholder: String
+
+    public init(
+        identifier: String, title: String, options: UNNotificationActionOptions = [],
+        textInputButtonTitle: String, textInputPlaceholder: String
+    ) {
+        storedButtonTitle = textInputButtonTitle
+        storedPlaceholder = textInputPlaceholder
+        super.init(identifier: identifier, title: title, options: options)
+    }
+
+    public init(
+        identifier: String, title: String, options: UNNotificationActionOptions = [], icon: UNNotificationActionIcon?,
+        textInputButtonTitle: String, textInputPlaceholder: String
+    ) {
+        storedButtonTitle = textInputButtonTitle
+        storedPlaceholder = textInputPlaceholder
+        super.init(identifier: identifier, title: title, options: options, icon: icon)
+    }
+
+    open override func isEqual(_ object: Any?) -> Bool {
+        guard super.isEqual(object) else { return false }
+        guard let other = object as? UNTextInputNotificationAction else { return true }
+        return other.textInputButtonTitle == textInputButtonTitle && other.textInputPlaceholder == textInputPlaceholder
+    }
+}
+
+/// A kind of notification and its actions, kept by the center. Equal, as
+/// Apple's, when every field is.
+open class UNNotificationCategory: NSObject, NSCopying {
+    open var identifier: String { storedIdentifier }
+    open var actions: [UNNotificationAction] { storedActions }
+    open var intentIdentifiers: [String] { storedIntents }
+    open var options: UNNotificationCategoryOptions { storedOptions }
+    /// Empty unless given, as on Apple.
+    open var hiddenPreviewsBodyPlaceholder: String { storedPlaceholder }
+    open var categorySummaryFormat: String { storedSummaryFormat }
+
+    private let storedIdentifier: String
+    private let storedActions: [UNNotificationAction]
+    private let storedIntents: [String]
+    private let storedOptions: UNNotificationCategoryOptions
+    private let storedPlaceholder: String
+    private let storedSummaryFormat: String
+
+    public init(
+        identifier: String, actions: [UNNotificationAction], intentIdentifiers: [String],
+        options: UNNotificationCategoryOptions = []
+    ) {
+        storedIdentifier = identifier
+        storedActions = actions
+        storedIntents = intentIdentifiers
+        storedOptions = options
+        storedPlaceholder = ""
+        storedSummaryFormat = ""
+    }
+
+    public init(
+        identifier: String, actions: [UNNotificationAction], intentIdentifiers: [String],
+        hiddenPreviewsBodyPlaceholder: String, options: UNNotificationCategoryOptions = []
+    ) {
+        storedIdentifier = identifier
+        storedActions = actions
+        storedIntents = intentIdentifiers
+        storedOptions = options
+        storedPlaceholder = hiddenPreviewsBodyPlaceholder
+        storedSummaryFormat = ""
+    }
+
+    public init(
+        identifier: String, actions: [UNNotificationAction], intentIdentifiers: [String],
+        hiddenPreviewsBodyPlaceholder: String?, categorySummaryFormat: String?,
+        options: UNNotificationCategoryOptions = []
+    ) {
+        storedIdentifier = identifier
+        storedActions = actions
+        storedIntents = intentIdentifiers
+        storedOptions = options
+        storedPlaceholder = hiddenPreviewsBodyPlaceholder ?? ""
+        storedSummaryFormat = categorySummaryFormat ?? ""
+    }
+
+    open func copy(with zone: NSZone? = nil) -> Any { self }
+
+    open override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? UNNotificationCategory else { return false }
+        return other.identifier == identifier && other.actions == actions
+            && other.intentIdentifiers == intentIdentifiers && other.options == options
+            && other.hiddenPreviewsBodyPlaceholder == hiddenPreviewsBodyPlaceholder
+            && other.categorySummaryFormat == categorySummaryFormat
+    }
+
+    open override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(identifier)
+        hasher.combine(actions)
+        hasher.combine(intentIdentifiers)
+        hasher.combine(options.rawValue)
+        return hasher.finalize()
+    }
 }
 
 // MARK: - Delegate

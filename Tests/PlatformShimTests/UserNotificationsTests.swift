@@ -460,8 +460,8 @@ struct UserNotificationsSurfaceTests {
     @Test("Interruption levels, action and category options have Apple's raw values")
     func rawValues() {
         #expect([UNNotificationInterruptionLevel.passive, .active, .timeSensitive, .critical].map(\.rawValue) == [0, 1, 2, 3])
-        #expect([UNNotificationAction.Options.authenticationRequired, .destructive, .foreground].map(\.rawValue) == [1, 2, 4])
-        #expect([UNNotificationCategory.Options.customDismissAction, .allowInCarPlay, .hiddenPreviewsShowTitle,
+        #expect([UNNotificationActionOptions.authenticationRequired, .destructive, .foreground].map(\.rawValue) == [1, 2, 4])
+        #expect([UNNotificationCategoryOptions.customDismissAction, .allowInCarPlay, .hiddenPreviewsShowTitle,
                  .hiddenPreviewsShowSubtitle, .allowAnnouncement].map(\.rawValue) == [1, 2, 4, 8, 16])
         #expect(UNError.notificationsNotAllowed.rawValue == 1)
         #expect(UNError.badgeInputInvalid.rawValue == 1600)
@@ -513,5 +513,69 @@ struct UserNotificationsSurfaceTests {
         #expect(throws: UNError.self) {
             _ = try UNNotificationAttachment(identifier: "a", url: URL(fileURLWithPath: "/no/such/file.png"))
         }
+    }
+}
+
+// Equality as UserNotifications answers it on a Mac (macOS 27.2).
+@Suite("UserNotifications: equality")
+struct UserNotificationsEqualityTests {
+    @Test("Actions are equal by identifier, title and options, not icon")
+    func actions() {
+        let plain = UNNotificationAction(identifier: "a", title: "A", options: [])
+        #expect(plain == UNNotificationAction(identifier: "a", title: "A", options: []))
+        #expect(plain != UNNotificationAction(identifier: "a", title: "B", options: []))
+        #expect(plain != UNNotificationAction(identifier: "a", title: "A", options: [.foreground]))
+        #expect(plain == UNNotificationAction(identifier: "a", title: "A", options: [], icon: UNNotificationActionIcon(systemImageName: "star")))
+        #expect(plain.hash == UNNotificationAction(identifier: "a", title: "A").hash)
+        #expect(Set([plain, UNNotificationAction(identifier: "a", title: "A"), UNNotificationAction(identifier: "a", title: "B")]).count == 2)
+        #expect(plain.icon == nil)
+    }
+
+    @Test("A text-input action equals a plain one; between two, its texts count")
+    func textInputActions() {
+        let plain = UNNotificationAction(identifier: "a", title: "A", options: [])
+        let send = UNTextInputNotificationAction(identifier: "a", title: "A", options: [], textInputButtonTitle: "Send", textInputPlaceholder: "…")
+        #expect(plain == send && send == plain)
+        #expect(send == UNTextInputNotificationAction(identifier: "a", title: "A", options: [], textInputButtonTitle: "Send", textInputPlaceholder: "…"))
+        #expect(send != UNTextInputNotificationAction(identifier: "a", title: "A", options: [], textInputButtonTitle: "Go", textInputPlaceholder: "…"))
+    }
+
+    @Test("Categories are equal when every field is")
+    func categories() {
+        let a = UNNotificationAction(identifier: "a", title: "A")
+        let category = UNNotificationCategory(identifier: "c", actions: [a], intentIdentifiers: [], options: [])
+        #expect(category == UNNotificationCategory(identifier: "c", actions: [UNNotificationAction(identifier: "a", title: "A")], intentIdentifiers: [], options: []))
+        let other = UNNotificationCategory(identifier: "c", actions: [UNNotificationAction(identifier: "a", title: "B")], intentIdentifiers: [], options: [])
+        #expect(category != other)
+        #expect(Set([category, other]).count == 2)
+        #expect(category != UNNotificationCategory(identifier: "c", actions: [a], intentIdentifiers: ["x"], options: []))
+        #expect(category != UNNotificationCategory(identifier: "c", actions: [a], intentIdentifiers: [], options: [.customDismissAction]))
+        let placeholder = UNNotificationCategory(identifier: "c", actions: [a], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "p", options: [])
+        #expect(category != placeholder)
+        let summary = UNNotificationCategory(identifier: "c", actions: [a], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: "p", categorySummaryFormat: "%u", options: [])
+        #expect(placeholder != summary)
+        #expect(category.hiddenPreviewsBodyPlaceholder == "" && category.categorySummaryFormat == "")
+        #expect(summary.hiddenPreviewsBodyPlaceholder == "p" && summary.categorySummaryFormat == "%u")
+    }
+
+    @Test("Critical sounds differ from plain ones, and by volume")
+    func sounds() {
+        #expect(UNNotificationSound.default == .default)
+        #expect(UNNotificationSound.defaultCritical != .default)
+        #expect(UNNotificationSound.defaultCritical == .defaultCritical)
+        #expect(UNNotificationSound.defaultCriticalSound(withAudioVolume: 0.5) != .defaultCritical)
+        #expect(UNNotificationSound.defaultCriticalSound(withAudioVolume: 0.5) == .defaultCriticalSound(withAudioVolume: 0.5))
+        #expect(UNNotificationSound.defaultCriticalSound(withAudioVolume: 0.5) != .defaultCriticalSound(withAudioVolume: 0.6))
+        let name = UNNotificationSoundName("x")
+        #expect(UNNotificationSound(named: name) == UNNotificationSound(named: name))
+        #expect(UNNotificationSound.criticalSoundNamed(name) != UNNotificationSound(named: name))
+        #expect(UNNotificationSound.criticalSoundNamed(name) == .criticalSoundNamed(name))
+        #expect(UNNotificationSound.criticalSoundNamed(name, withAudioVolume: 1) != .criticalSoundNamed(name))
+    }
+
+    @Test("Icons are equal by kind and name")
+    func icons() {
+        #expect(UNNotificationActionIcon(systemImageName: "star") == UNNotificationActionIcon(systemImageName: "star"))
+        #expect(UNNotificationActionIcon(systemImageName: "star") != UNNotificationActionIcon(templateImageName: "star"))
     }
 }
