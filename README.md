@@ -305,6 +305,19 @@ HarfBuzz shapes and FreeType measures and rasterises (`Text/`), behind
 at the screen's density into an atlas uploaded as `R8` pages. Complex scripts
 (Thai is the acceptance test) shape correctly, which FreeType alone cannot.
 
+#### Font descriptors
+
+`UIFontDescriptor` and `UIFont(descriptor:size:)` resolve a family with a
+weight trait, or with a `wght` variation (`kCTFontVariationAttribute`), to
+one of the font catalog's faces, as CoreText picks them for a variable
+font's named instances (`FontDescriptorTests`, measured on a Mac): regular,
+medium, semibold and bold go to Regular, Medium, SemiBold and Bold, heavy
+and black both to ExtraBold, and a variation's weight to the instance at it.
+A name the catalog lacks falls to the nearest weight it has, then the
+family. The lightest traits are where CoreText's choice depends on the
+font's own default instance; there the shim takes the nearest by weight.
+`withDesign(_:)` answers for the system font only, as UIKit's does.
+
 ### The platform layer
 
 Everything Apple-shaped that needs a device goes through one channel
