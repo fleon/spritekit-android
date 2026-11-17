@@ -17,7 +17,7 @@ import Foundation
 //     art hangs off it, so hit-testing the node's own quad would never find
 //     one.
 //   - A touch that begins on a node stays with that node until it ends or is
-//     cancelled, wherever it travels. `PressableNode` depends on this: it
+//     cancelled, wherever it travels. A button node depends on this: it
 //     tracks whether the finger is still inside itself.
 //   - `location(in:)` answers in any node's coordinates, not only the one
 //     handling the touch.
@@ -62,7 +62,7 @@ public final class UITouch: Hashable {
 
     /// Where the touch is in `view`'s points, or the window's for nil: the
     /// view fills the window on Android, so both are the scene's view
-    /// points. `TouchOriginWindow` notes each touch this way.
+    /// points. A window subclass noting each touch reads it this way.
     public func location(in view: UIView?) -> CGPoint {
         guard let scene else { return sceneLocation }
         return scene.convertPoint(toView: sceneLocation)
@@ -86,8 +86,8 @@ public final class UITouch: Hashable {
 }
 
 /// Stands in for UIKit's `UIEvent`: a touch event and its touches, which
-/// the window sees before the scene does (`TouchOriginWindow` notes where
-/// the player touched; the scenes' handlers never read it).
+/// the window sees before the scene does (a window subclass may note where
+/// the player touched).
 @MainActor
 public final class UIEvent {
     public enum EventType: Int, Sendable { case touches, motion, remoteControl, presses }
@@ -104,11 +104,17 @@ public final class UIEvent {
 // MARK: - Hit testing
 
 public extension SKNode {
-    /// Every node drawing at `point` (in this node's coordinates), this one
-    /// included if it draws there, topmost first.
+    /// Every descendant whose accumulated frame holds `point` (in this
+    /// node's coordinates), topmost first; never this node itself. As
+    /// SpriteKit measures it on a Mac: the frame counts hidden descendants
+    /// and its edges are closed (a zero-size node is found at its own
+    /// position), while a hidden or transparent node and everything under
+    /// it is skipped.
     func nodes(at point: CGPoint) -> [SKNode] {
         var found: [(node: SKNode, z: CGFloat, order: Int)] = []
-        collectHits(at: point, z: 0, into: &found)
+        if !isHidden, alpha > 0 {
+            collectHits(at: point, z: zPosition, into: &found)
+        }
         return found
             .sorted { $0.z == $1.z ? $0.order > $1.order : $0.z > $1.z }
             .map(\.node)
@@ -128,12 +134,12 @@ public extension SKNode {
         z: CGFloat,
         into found: inout [(node: SKNode, z: CGFloat, order: Int)]
     ) {
-        guard !isHidden, alpha > 0 else { return }
-        let depth = z + zPosition
-        if contentFrame != .zero, contentFrame.contains(point) {
-            found.append((self, depth, found.count))
-        }
-        for child in children {
+        for child in children where !child.isHidden && child.alpha > 0 {
+            let depth = z + child.zPosition
+            let frame = child.calculateAccumulatedFrame()
+            if frame.minX <= point.x, point.x <= frame.maxX, frame.minY <= point.y, point.y <= frame.maxY {
+                found.append((child, depth, found.count))
+            }
             child.collectHits(at: child.convert(point, from: self), z: depth, into: &found)
         }
     }

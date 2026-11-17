@@ -62,8 +62,23 @@ open class SKScene: SKNode {
                width: size.width, height: size.height)
     }
 
-    /// SpriteKit ignores a scene's position and scale, in its frame too
-    /// (measured: `SceneFrameTests`).
+    /// SpriteKit ignores a scene's position and scale: setting them has no
+    /// effect (measured: `SceneFrameTests`).
+    open override var position: CGPoint {
+        get { .zero }
+        set {}
+    }
+
+    open override var xScale: CGFloat {
+        get { 1 }
+        set {}
+    }
+
+    open override var yScale: CGFloat {
+        get { 1 }
+        set {}
+    }
+
     open override var frame: CGRect { contentFrame }
 }
 
