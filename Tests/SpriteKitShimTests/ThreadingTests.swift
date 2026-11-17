@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import SpriteKitShim
 
-/// What the shim promises the game's work off the main thread: scenes,
-/// world pages, backdrop floors and share films are all built on threads of
-/// their own while the main one draws, as they are on Apple.
+/// What the shim promises a game's work off the main thread: scenes, their
+/// pages, baked layers and films may all be built on threads of their own
+/// while the main one draws, as they are on Apple.
 @Suite("Threads", .serialized, .timeLimit(.minutes(1)))
 struct ThreadingTests {
     nonisolated private static func solid(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> UIImage {
@@ -113,7 +113,7 @@ struct ThreadingTests {
             order.append("returned")
             return order
         }.value
-        // As `WorldTextures.preloadNow` needs: decoded before it returns.
+        // As a game preloading before it returns needs: decoded by then.
         #expect(order == ["done", "returned"])
         let calls = decodes.snapshot
         #expect(calls.count == 1)

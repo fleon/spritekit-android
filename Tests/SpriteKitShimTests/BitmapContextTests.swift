@@ -325,9 +325,9 @@ final class BitmapContextTests: XCTestCase {
     // MARK: Blend modes
 
     func testClearErasesThePathAndLeavesEverythingRoundIt() throws {
-        // `SheetNode` punches its hole this way. Coverage masks the result
-        // rather than the source's alpha; the other reading would empty the
-        // whole clip.
+        // A panel punching a hole in itself does it this way. Coverage masks
+        // the result rather than the source's alpha; the other reading would
+        // empty the whole clip.
         let context = BitmapContext(width: 20, height: 20)
         context.setFill(.white)
         context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
@@ -340,8 +340,8 @@ final class BitmapContextTests: XCTestCase {
     }
 
     func testSourceInInsideATransparencyLayerTintsWhatTheLayerDrew() throws {
-        // `BoardGroundingArt` draws a soft shape into a layer, then fills the
-        // whole canvas with `.sourceIn` to colour it. The fill must take the
+        // A soft shape drawn into a layer, then the whole canvas filled
+        // with `.sourceIn` to colour it. The fill must take the
         // layer's alpha, not wipe the canvas.
         let context = BitmapContext(width: 20, height: 20)
         context.beginTransparencyLayer()

@@ -6,15 +6,15 @@ import Testing
 import CoreGraphics
 #endif
 
-// What the game's real scenes needed from the shim (the scenes ring): the
-// language match `Localization` makes, the path calls CoreGraphics works out
+// What real scenes need from the shim: the language match a game's
+// localization makes, the path calls CoreGraphics works out
 // itself (fillets and dashes), quaternions, and actions SpriteKit has that
 // the scenes call. Each is checked against Apple's own on the Mac where
 // Apple's exists.
 
 @Suite("Scenes: picking a language")
 struct LanguageMatchTests {
-    /// The languages the game ships, as `AppLanguage` names them.
+    /// The languages a game might ship, as BCP 47 codes.
     static let shipped = ["en", "de", "es", "es-MX", "fr", "id", "it", "ja", "ko", "nl", "pt-BR", "pt-PT", "ru", "th", "tr", "uk", "vi", "zh-Hans", "zh-Hant"]
 
     @Test("Each device language picks the localisation Apple's picks", arguments: [
@@ -240,7 +240,7 @@ struct SceneActionTests {
 struct PointScaleTests {
     @Test("A point is the display's density-independent pixel, not the art's scale")
     func pointIsADp() {
-        // A Pixel 6: 1080 × 2400 px at 420 dpi, so 2.625 px a dp.
+        // A phone of 1080 × 2400 px at 420 dpi, so 2.625 px a dp.
         let view = SKView(bounds: .zero)
         view.resize(drawable: CGSize(width: 1080, height: 2400), displayScale: 2.625)
         #expect(view.contentScaleFactor == 2.625)
@@ -306,7 +306,7 @@ struct ScaledSliceTests {
 
     @Test("A page dot stretched across is a pill: its caps fitted to the dot, not the texture")
     func pageDotPill() {
-        // `PageDotsNode`: an 8-point dot from a 16-point texture, sliced at
+        // A page dot: an 8-point dot from a 16-point texture, sliced at
         // 0.45…0.55 across, stretched to 24 points by its scale.
         let scene = SKScene(size: CGSize(width: 100, height: 100))
         let dot = SKSpriteNode(texture: SKTexture(color: .white, size: CGSize(width: 16, height: 16)), size: CGSize(width: 8, height: 8))

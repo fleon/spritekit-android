@@ -1,17 +1,16 @@
 import Foundation
 
-/// What `SceneDelegate.scene(_:willConnectTo:options:)` decides on Apple
-/// about the links a launch carries, as values: the link the game opened
-/// with (a real one, from the intent that started it), the debug launch
-/// arguments `-OpenLink`, `-OpenLinkAfter` and `-OpenCode`. The game's own
-/// `WorldLink` and `LevelShare` then read the strings
-/// (`AndroidGameController.launch`).
+/// What a scene delegate's `scene(_:willConnectTo:options:)` decides on
+/// Apple about the links a launch carries, as values: the link the game
+/// opened with (a real one, from the intent that started it), the debug
+/// launch arguments `-OpenLink`, `-OpenLinkAfter` and `-OpenCode`. The
+/// game's own code then reads the strings.
 public struct LaunchLinks: Equatable, Sendable {
     /// The link to open as the game starts: the real one, else `-OpenLink`
     /// unless `-OpenLinkAfter` holds it back.
     public var atLaunch: String?
-    /// `-OpenCode`'s text (a code, a link or a message holding one), used
-    /// only when the link at launch is neither a world's nor a level's.
+    /// `-OpenCode`'s text (a code, a link or a message holding one), which
+    /// the game uses only when the link at launch isn't one it opens.
     public var code: String?
     /// `-OpenLink`, opened `delay` seconds in with the game running, when
     /// `-OpenLinkAfter` gives the delay.

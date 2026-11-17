@@ -1,12 +1,11 @@
 #if SPRITEKIT_SHIM && !canImport(Darwin)
 import Foundation
 
-// The rest of UIKit the game's scenes name: keyboard keys (the Android back
+// The rest of UIKit a game's scenes name: keyboard keys (the Android back
 // button and a hardware keyboard reach scenes as these), the device, the
-// pasteboard, haptics and the application's extras. Each is the game's
+// pasteboard, haptics and the application's extras. Each is UIKit's
 // spelling over whatever Android offers through the shell, or, where Android
-// has nothing to say, the answer a device without the feature gives. Every
-// stand-in is listed in Android/README.md.
+// has nothing to say, the answer a device without the feature gives.
 
 /// USB HID usage codes, as UIKit names them. The raw values are the HID
 /// table's, so a keyboard event from SDL (whose scancodes are the same
@@ -43,7 +42,7 @@ public final class UIDevice {
     public var userInterfaceIdiom: UIUserInterfaceIdiom = .phone {
         didSet { UITraitCollection.idiom = userInterfaceIdiom }
     }
-    /// The beta's solve log and `-FrameLog` read it; Android's comes
+    /// A game's diagnostics may read it; Android's comes
     /// through BatteryManager (`SystemServices.batteryLevel`). With no
     /// platform services (a host test) it reports unknown, as a simulator does.
     public var isBatteryMonitoringEnabled = false
@@ -81,8 +80,8 @@ public enum SystemServices {
     /// The battery's charge from 0 to 1, or -1 where it can't be read.
     nonisolated(unsafe) public static var batteryLevel: () -> Float = { -1 }
     /// How the device reaches the internet (`wifi`, `cellular`, `wired`,
-    /// `other` or `none`), or nil where it can't be told: the beta's solve
-    /// log's `NWPathMonitor`.
+    /// `other` or `none`), or nil where it can't be told: what
+    /// `NWPathMonitor` reports.
     nonisolated(unsafe) public static var connection: () -> String? = { nil }
 }
 

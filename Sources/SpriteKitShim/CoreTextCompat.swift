@@ -1,13 +1,12 @@
 #if SPRITEKIT_SHIM && !canImport(Darwin)
 import Foundation
 
-// The slice of CoreText and UIKit that `Source/Utils/TextHelpers.swift`
-// uses, so that file compiles on Android **unchanged** — imports and all.
+// The slice of CoreText and UIKit that wrapping and measuring text takes, so
+// a game's text helpers compile on Android **unchanged** — imports and all.
 //
-// It is a small slice, and deliberately not more: `wrappedLines` runs a
-// typesetter, `capitalsOffset` reads a line's glyph-path bounds, and
-// `TextBlockNode` measures a string. Nothing else in the game reaches for
-// CoreText, so nothing else is here.
+// It is a small slice, and deliberately not more: a typesetter to wrap lines
+// with, a line's glyph-path bounds, and a string's size. Nothing more is
+// here.
 //
 // None of it does any text work itself. It is a rename over `Typesetting`,
 // which is in the shim proper and host-testable; these names exist on Apple
@@ -40,8 +39,8 @@ extension NSMutableString {
 }
 
 extension NSString {
-    /// UIKit's `NSString.size(withAttributes:)`, which `TextBlockNode` uses
-    /// to find its widest line. The height is the font's line height, as
+    /// UIKit's `NSString.size(withAttributes:)`, which finds the widest line
+    /// of a block of text. The height is the font's line height, as
     /// UIKit reports it for a single line.
     public func size(withAttributes attributes: [NSAttributedString.Key: Any]?) -> CGSize {
         guard let font = attributes?[.font] as? UIFont else { return .zero }
@@ -51,7 +50,7 @@ extension NSString {
 
 // MARK: - Typesetter
 
-/// Enough of a `CTTypesetter` for `wrappedLines`: the string and the font it
+/// Enough of a `CTTypesetter` for wrapping lines: the string and the font it
 /// was given, so each suggested break can be measured.
 public final class CTTypesetter {
     let text: String
@@ -70,7 +69,7 @@ public func CTTypesetterCreateWithAttributedString(_ string: NSAttributedString)
 /// How many UTF-16 units from `start` fit in `width`.
 ///
 /// Returns 0 when the font is unknown, as it does when it runs off the end
-/// of the string — `wrappedLines` guards with `max(1, …)`, so a label in a
+/// of the string — a wrapping loop guards with `max(1, …)`, so a label in a
 /// face that was never registered comes out as one unbroken line rather
 /// than looping.
 public func CTTypesetterSuggestLineBreak(
@@ -89,7 +88,7 @@ public func CTTypesetterSuggestLineBreak(
 
 // MARK: - Lines
 
-/// Enough of a `CTLine` for `capitalsOffset`.
+/// Enough of a `CTLine` for a line's glyph-path bounds.
 public final class CTLine {
     let text: String
     let font: FontKey?
@@ -109,8 +108,8 @@ public struct CTLineBoundsOptions: OptionSet, Sendable {
     public init(rawValue: UInt) { self.rawValue = rawValue }
 
     /// The box the glyphs' outlines cover, rather than the typographic one.
-    /// This is the only one the game asks for, and the one that makes
-    /// `capitalsOffset` mean anything.
+    /// This is the one that centres capitals by what they draw, and the only
+    /// one here.
     public static let useGlyphPathBounds = CTLineBoundsOptions(rawValue: 1 << 5)
 
     // Named so the file reads against Apple's, and so reaching for one that
@@ -134,8 +133,8 @@ public func CTLineGetBoundsWithOptions(_ line: CTLine, _ options: CTLineBoundsOp
 
 // MARK: Registering fonts
 
-/// `FontRegistry` registers the bundled faces through this. On Android the
-/// shell has registered the same three files out of the APK before the first
+/// A game registers its bundled faces through this. On Android the shell
+/// has registered the same files out of the APK before the first
 /// scene (`AssetBundle.installFonts`), so there is nothing left to do; the
 /// call answers whether the face is one the text stack holds.
 public typealias CFURL = URL

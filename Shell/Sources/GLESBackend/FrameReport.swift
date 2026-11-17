@@ -6,15 +6,14 @@ import SpriteKitShim
 
 /// What a frame cost, reported to logcat every few seconds.
 ///
-/// The question this whole stage exists to answer is whether eight
-/// procedural backdrops with live lighting hold 60 fps on a mid-range
+/// The question this exists to answer is whether a game's scenes —
+/// full-screen shaders with live lighting, say — hold 60 fps on a mid-range
 /// Android GPU. **The emulator cannot answer it** — it renders through the
 /// host Mac's GPU, so its numbers flatter a phone by a wide and unknowable
 /// margin. What the emulator *can* give honestly is the shape of the cost:
 /// how many draw calls a frame takes, how many times the render target is
 /// switched (the expensive thing on a tiler, which the emulator does not
-/// model at all), how much of the sky's shader the band cache is actually
-/// saving, and whether the CPU side — flattening, batching, the digest —
+/// model at all), how much a cached effect node is actually saving, and whether the CPU side — flattening, batching, the digest —
 /// shows up at all.
 ///
 /// So this reports both: the wall-clock frame time, flagged as emulator
@@ -23,7 +22,7 @@ struct FrameReport {
     /// Frames between reports. At 60 fps this is every five seconds.
     static let interval = 300
     /// Frames skipped at the start, while the art uploads, the shaders
-    /// compile and the backdrop bakes — all one-off costs that would
+    /// compile and the first textures bake — all one-off costs that would
     /// otherwise land in the first report's tail.
     static let warmUp = 60
 
@@ -34,7 +33,7 @@ struct FrameReport {
     private var frames = 0
     private var label = ""
 
-    /// GPU work is queued, so the time `drawFrame` takes is the port's own
+    /// GPU work is queued, so the time `drawFrame` takes is the runtime's own
     /// work plus whatever the driver blocks on — and on an emulator the
     /// second part is mostly the pipe to the host's GL, which tells you
     /// nothing about a phone. `scene` separates out the part that does

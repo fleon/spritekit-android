@@ -15,9 +15,9 @@ ABIS=("arm64-v8a" "x86_64")
 
 # The Android API level the native code is *compiled against*. The NDK links
 # it against this level's stubs, so the .so uses no symbol newer than it.
-# Kept at 23 because that is the level the merged shim work (PR #384) proved.
-# The app's own minSdk is higher (see Android/App/gradle.properties); that is
-# allowed and deliberate — a binary may require less than the app declares.
+# Kept at 23 because that is the level the runtime has been proved on. An
+# app's own minSdk may be higher (its Gradle project's); that is allowed and
+# deliberate — a binary may require less than the app declares.
 ANDROID_API=23
 
 # The runtime's own checkout: its vendored builds (SDL, FreeType, HarfBuzz)

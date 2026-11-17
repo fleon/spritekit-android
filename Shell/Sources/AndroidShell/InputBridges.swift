@@ -60,7 +60,7 @@ final class GamepadBridge {
         }
     }
 
-    /// As the console puzzle games map them (`GamepadInput`): SDL names
+    /// As GameController names them: SDL names
     /// buttons by where they sit, GameController by Xbox's letters.
     private static func button(_ button: SDL_GamepadButton) -> GamepadEvent.Button? {
         switch button {

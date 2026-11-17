@@ -51,8 +51,8 @@ struct ASTCDecoderTests {
     }
 }
 
-/// How long a staged atlas page takes to decode whole, if one is staged
-/// (`npm run art -- --android`): the cost a GPU without ASTC pays a page.
+/// How long a staged atlas page takes to decode whole, if a game's packed art
+/// is staged beside the runtime: the cost a GPU without ASTC pays a page.
 struct ASTCDecoderTimingTests {
     static let page = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../../Assets/atlas-000.ktx").standardizedFileURL

@@ -3,13 +3,13 @@ import Foundation
 
 /// Hears from the view before each frame it would draw.
 ///
-/// The game has two: `FrameLog` (`-FrameLog`), which notes when every frame
-/// renders, and `FilmDrawTurns`, which takes the view's turn at SpriteKit
-/// while a share film renders on a thread of its own, and passes each frame
-/// on to whichever delegate the view had before it.
+/// A game may have one that notes when every frame renders, or one that
+/// takes the view's turn at SpriteKit while a scene renders off screen on a
+/// thread of its own, passing each frame on to whichever delegate the view
+/// had before it.
 ///
-/// On Apple the method is an Objective-C optional requirement, and
-/// `FilmDrawTurns` asks it the way one asks those:
+/// On Apple the method is an Objective-C optional requirement, and a
+/// forwarding delegate asks it the way one asks those:
 ///
 ///     forwarded?.view?(view, shouldRenderAtTime: time)
 ///
@@ -19,8 +19,9 @@ import Foundation
 /// value that can be called with the method's own labels
 /// (`callAsFunction`). A delegate that implements the method is asked it; one
 /// that does not answers true, which is also what `?? true` makes of
-/// SpriteKit's nil. A conforming class's own `view` property, as
-/// `FilmDrawTurns` has, takes precedence over this one inside that class.
+/// SpriteKit's nil. A conforming class's own `view` property, as a
+/// forwarding delegate may have, takes precedence over this one inside that
+/// class.
 public protocol SKViewDelegate: NSObjectProtocol {
     /// Whether the view draws the frame at `time`. Returning false skips the
     /// whole frame: no update, no actions, nothing drawn.
@@ -48,9 +49,8 @@ public struct SKViewDelegateQuery {
 /// a transition, two) into one frame's `DrawList`.
 ///
 /// `bounds` is in points, as UIKit's are, and `contentScaleFactor` is the
-/// pixels in each. The game sizes every scene from `bounds`
-/// (`DesignSystem.sceneSize(for:)`), so pixels there would make every scene
-/// three times too big.
+/// pixels in each. A game sizes its scenes from `bounds`, so pixels there
+/// would make every scene three times too big.
 open class SKView: UIView {
     open private(set) var scene: SKScene?
 
@@ -72,7 +72,7 @@ open class SKView: UIView {
     open weak var delegate: (any SKViewDelegate)?
 
     /// Carried: the GLES renderer always draws on the frame thread, so a
-    /// share film turning it off (`SolutionShare`) changes nothing.
+    /// game turning it off changes nothing.
     public var isAsynchronous = true
 
     /// Always so here: the draw list is ordered by depth alone (README,
@@ -82,7 +82,7 @@ open class SKView: UIView {
     /// (`DrawList(scene:transform:culling:)`), as SpriteKit culls them.
     public var shouldCullNonVisibleNodes = true
 
-    /// How fast transitions play: the port's own, for filming a 0.1-second
+    /// How fast transitions play: the runtime's own, for filming a 0.1-second
     /// fade on an emulator that draws a few frames a second
     /// (`debug.<app>.transitionslowdown`). Not SpriteKit API.
     public var transitionSpeed: Double = 1
@@ -253,9 +253,9 @@ open class SKView: UIView {
     /// on a Mac's `SKView`): a scene's first frame after it's presented
     /// counts no time, however long it took, and nor does any frame longer
     /// than `longestCountedFrame`, which isn't clamped but dropped. So a
-    /// level that took a while to present doesn't spend its first frame
-    /// running out a wait its rigs haven't had a frame of yet (the tip's
-    /// sample snapped its board before its Switchlings drew).
+    /// scene that took a while to present doesn't spend its first frame
+    /// running out a wait its nodes haven't had a frame of yet (a snapshot
+    /// taken after a short wait came out before they drew).
     private func advance(_ scene: SKScene, currentTime: TimeInterval, delta: TimeInterval) {
         scene.update(currentTime)
         let counted = scene.actionClockStarted && delta <= Self.longestCountedFrame ? delta : 0

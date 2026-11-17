@@ -45,17 +45,17 @@ struct MetricsTests {
 
     @Test("A fractional size is honoured, not rounded to whole points")
     func fractionalSize() {
-        let narrow = Fonts.engine.measure("Switchlings", font: Fonts.chiron(20))
-        let wide = Fonts.engine.measure("Switchlings", font: Fonts.chiron(20.5))
+        let narrow = Fonts.engine.measure("Salamanders", font: Fonts.chiron(20))
+        let wide = Fonts.engine.measure("Salamanders", font: Fonts.chiron(20.5))
         #expect(wide.advance > narrow.advance)
     }
 
     @Test("The named instances of the variable font really differ")
     func namedInstances() {
-        // The game asks Chiron for three weights by name, and they are
+        // A game may ask a variable font for weights by name, and they are
         // instances of one variable file rather than three faces. If the
         // axis were never set they would all measure the same.
-        let text = "Switchlings"
+        let text = "Salamanders"
         let black = Fonts.engine.measure(text, font: FontKey(name: "ChironGoRoundTC-Black", size: 32))
         let semibold = Fonts.engine.measure(text, font: FontKey(name: "ChironGoRoundTC-SemiBold", size: 32))
         let light = Fonts.engine.measure(text, font: FontKey(name: "ChironGoRoundTC-Light", size: 32))
@@ -64,14 +64,14 @@ struct MetricsTests {
         #expect(semibold.advance > light.advance)
     }
 
-    @Test("Every name the game asks for resolves")
+    @Test("Every name the fixtures ask for resolves")
     func registeredNames() {
         let names = Fonts.engine.library.registeredNames
         for wanted in [
-            "ChironGoRoundTC-Black",       // GeometryHelpers, .black
-            "ChironGoRoundTC-ExtraBold",   // GeometryHelpers, .heavy
-            "ChironGoRoundTC-SemiBold",    // GeometryHelpers, everything else
-            "KoHo-Bold",                   // Localization, Thai
+            "ChironGoRoundTC-Black",       // .black
+            "ChironGoRoundTC-ExtraBold",   // .heavy
+            "ChironGoRoundTC-SemiBold",    // everything else
+            "KoHo-Bold",                   // Thai
         ] {
             #expect(names.contains(wanted), "\(wanted) is not registered")
         }

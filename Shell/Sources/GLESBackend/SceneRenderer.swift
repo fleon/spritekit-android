@@ -21,7 +21,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public let view: SKView
     private var drawableSize: CGSize
 
-    /// A share film's committed frames, and the target they draw into.
+    /// An `SKRenderer`'s committed frames, and the target they draw into.
     private let films = FilmPasses()
     private var filmTarget: RenderTargetHandle?
     /// A film frame read back from GL, rows bottom first, before it's turned
@@ -62,7 +62,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private let pageDecodes: PageDecodes
     /// Shaders a build made, for their programs ahead of their first draw.
     private let warmQueue = ShaderWarmQueue()
-    /// Drawn surfaces and rig pages readied off the frame thread, for their upload.
+    /// Drawn surfaces and image pages readied off the frame thread, for their upload.
     private let textureQueue = TextureWarmQueue()
     /// The pages a launch's first seconds draw, for the next to decode early.
     private var launchPages: LaunchPages?
@@ -72,7 +72,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var builder: GLBuilderThread?
     /// How much of a frame building programs and uploading pages ahead of
     /// their first draw may take (`warmAhead`): a scene's GPU work spread
-    /// over the frames the loading screen shows while it builds, rather
+    /// over the frames a loading screen shows while it builds, rather
     /// than seconds of it in one warm-up draw.
     static let warmBudget: TimeInterval = 0.004
 
@@ -136,7 +136,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// The scissor GL holds now (nil: off).
     private var appliedScissor: BandBlurPlan.PixelRect?
     /// Whether the edge blur blurs only its bands (`drawBandBlur`), rather
-    /// than passing the whole backdrop through a texture of its own.
+    /// than passing the whole effect node through a texture of its own.
     public var blursBandsOnly = true
     /// Set while the frame on screen draws: films and bakes keep the
     /// effect node as it is.
@@ -183,8 +183,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public private(set) var streamMaps = 0
 
     /// Where each per-node attribute sits in each program, looked up once.
-    /// A rig mesh sprite carries twelve of them and there are dozens of
-    /// sprites in a Switchling, so this is a few thousand `glGetAttribLocation`
+    /// A triangle-mesh sprite carries twelve of them and a skeletal rig is
+    /// dozens of sprites, so this is a few thousand `glGetAttribLocation`
     /// calls a frame if it is not kept.
     private var attributeLocations: [GLuint: [String: GLint]] = [:]
 
@@ -217,8 +217,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// stretches them onto the screen (`surfaceScale`); until it has, and
     /// where Android won't, the scene draws into `sceneTarget` and is
     /// stretched onto the screen as the frame ends. Either way a phone's GPU
-    /// that can't fill every pixel of a 1080 × 2340 screen a frame (a Galaxy
-    /// M31's Mali-G72 MP3) fills fewer.
+    /// that can't fill every pixel of a 1080 × 2340 screen a frame (a
+    /// Mali-G72 MP3's) fills fewer.
     /// Shaders still count the screen's own pixels (`FragCoordSpace`), so
     /// the lights and the edge blur land where they do at full size.
     public var renderScale: CGFloat = 1
@@ -227,8 +227,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Told the scale Auto chose for the device, at its rate: kept, so it
     /// never chooses again there.
     public var onChosen: ((Int, Double) -> Void)?
-    /// Whether a scene's frames measure how the game draws (not the
-    /// loading screen's).
+    /// Whether a scene's frames measure how the game draws (a game may leave
+    /// out its loading screen's).
     public var measuresScene: (SKScene?) -> Bool = { $0 != nil }
     /// Set once something chose `renderScale` (`debug.<app>.renderscale`):
     /// the governor leaves it alone.
@@ -240,7 +240,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var governs = false
     /// The rate the view draws at now. The scale the governor chooses waits
     /// for the next scene (`sceneShown`), as Apple's does, so nothing
-    /// changes under a level.
+    /// changes under a scene being played.
     private var appliedRate = RenderScaleGovernor.fastestAutoRate
     /// The scene drawn last, to catch a new one.
     private weak var lastScene: SKScene?
@@ -299,7 +299,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     /// Hands `start` the view, which presents what it likes in it — through
-    /// the game's own `TransitionManager`, say.
+    /// the game's own transitions, say.
     public init(
         drawableSize: CGSize,
         pointScale: CGFloat,
@@ -342,25 +342,24 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             launchPages.note(page, at: MediaTime.source() - launched)
             return FrameCosts.time(.pageWaits) { decodes.take(page) }
         }
-        // What the last launch's splash and first loading screen drew starts
+        // What the last launch's splash and first scene drew starts
         // decoding now, while the splash shows.
         for page in launchPages.remembered { decodes.prefetch(page) }
         // Textures the asset index does not back: the noise lattices the
-        // shaders sample (`Starlight.noise` is an `SKTexture(data:size:)`
-        // the sky's nebula, its clouds and its mottled blue all read through
-        // `starNoise`), and solid-colour stand-ins. Without this they upload
-        // as one white pixel, and a shader reading constant noise draws
-        // something plausible rather than nothing — a flat sky with no
-        // nebula, which is how this was found.
+        // shaders sample (an `SKTexture(data:size:)` a game fills with
+        // noise for its shaders to read), and solid-colour stand-ins. Without
+        // this they upload as one white pixel, and a shader reading constant
+        // noise draws something plausible rather than nothing — a flat sky
+        // with no clouds, which is how this was found.
         cache.pixelSource = Self.pixels(of:)
         self.start = start
     }
 
     /// What presents the first scene, run once the GL state and the bake
     /// hook (`SKView.snapshot`) exist, at the end of `rendererDidStart`: a
-    /// scene that bakes as it joins the view (`BackdropNode` bakes its live
-    /// backdrop's floor and its edge shades in `didMove`) would otherwise
-    /// bake into nothing and keep that.
+    /// scene that bakes as it joins the view (one calling
+    /// `SKView.texture(from:)` in `didMove`) would otherwise bake into
+    /// nothing and keep that.
     private var start: ((SKView) -> Void)?
 
     private static func points(_ pixels: CGSize, scale: CGFloat) -> CGSize {
@@ -372,7 +371,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public func rendererDidStart(_ context: RenderContext) {
         Log.info("GLSL \(context.shadingLanguageVersion)")
 
-        // A rig mesh sprite carries four triangles as twelve vec4 uniforms
+        // A triangle-mesh sprite carries four triangles as twelve vec4 uniforms
         // of its fragment stage (`bind(_:program:shader:)`), on top of the
         // lights its lit shaders declare.
         var maxFragmentVectors: GLint = 0
@@ -446,8 +445,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         glDisable(GLenum(GL_DEPTH_TEST))
         glClearColor(0, 0, 0, 1)
 
-        // `bake` and the baked floors every live backdrop keeps go through
-        // this: the game asks its view for a texture of a subtree, and only
+        // `SKView.texture(from:)` goes through this: the game asks its view for a texture of a subtree, and only
         // the renderer can answer, since only it has a framebuffer. The hook
         // is `SKViewSnapshot.swift`'s, which also explains why the priming
         // calls that throw the texture away need no pixels here.
@@ -490,7 +488,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             SKShader.programWarmer = { [warmQueue] in warmQueue.add($0) }
         }
 
-        // `SKRenderer`'s command buffers (a share film) draw here, on this
+        // `SKRenderer`'s command buffers (an offscreen render) draw here, on this
         // context, at the top of each frame.
         MetalExecution.executor = self
 
@@ -568,12 +566,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// The view's frame rate, pause and delegate decide.
     public func shouldDraw(_ frame: Frame) -> Bool {
-        // A share film's frames first: asking the view takes its turn from
-        // the film (`FilmDrawTurns`, the view's delegate while it works).
+        // An `SKRenderer`'s frames first: asking the view takes its turn
+        // from a game filming through the view's delegate.
         drawFilmPasses()
         let draws = view.shouldRender(atTime: frame.time)
         // Asked again after a frame was swapped: so once the view pauses (a
-        // `-Stills` hold), the frame it paused in is on screen, and a tool
+        // game holding a still), the frame it paused in is on screen, and a tool
         // timing a capture by the still can take the screen now.
         if view.isPaused != heldLogged {
             heldLogged = view.isPaused
@@ -585,8 +583,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Whether the view's pause has been logged (`shouldDraw`).
     private var heldLogged = false
 
-    /// Whether the game waits on work off the main thread (`MediaClock.hold`,
-    /// with `-FixedFrameStep`); the backend sets it.
+    /// Whether the game waits on work off the main thread
+    /// (`GameHost.holdsFrameClock`, with `-FixedFrameStep`); the backend sets
+    /// it.
     public var clockHold: () -> Bool = { false }
     public var holdsClock: Bool { clockHold() }
 
@@ -602,7 +601,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let ticked = MediaTime.source()
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
-        // the port's own cost, with no GL in it. Worth separating, because
+        // the runtime's own cost, with no GL in it. Worth separating, because
         // the rest of the frame on an emulator is mostly the host GL pipe
         // and says little about a phone, while this number carries across.
         let flattened = MediaTime.source()
@@ -785,16 +784,16 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// `SKEffectNode`: the subtree into an offscreen texture, then that
     /// texture through the node's shader.
     ///
-    /// The four behaviours AGENTS.md says the game depends on, and where each
-    /// one is honoured:
+    /// The four behaviours games depend on (`SKEffectNode`'s own note), and
+    /// where each one is honoured:
     ///
     ///  - **The texture spans children that are off screen.** `bounds` is the
     ///    shim's `calculateAccumulatedFrame()`, which walks every child
     ///    whether the viewport shows it or not, and nothing here clips it to
-    ///    the visible rect. That is what lets the live edge blur find its
-    ///    buttons wherever they sit.
+    ///    the visible rect. That is what lets a band blur find its bands
+    ///    wherever they sit.
     ///  - **It renders at the scene's density, not the node's.** The density
-    ///    comes from the bound target, so `BandedLayerNode` magnifying a band
+    ///    comes from the bound target, so an effect node magnifying a band
     ///    inside a cache it scales back down costs no resampling.
     ///  - **`gl_FragCoord` is the texture's.** The contents draw with the
     ///    texture's own space; the composite draws with a map back into it
@@ -821,8 +820,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     ) {
         // An effect node that neither shades nor caches nor fades composites
         // to exactly what drawing its children in place does, so it costs
-        // nothing. This is the common case: `BackdropNode` wraps its scenery
-        // in one and only turns the shader on behind the round buttons.
+        // nothing. This is the common case: a game may wrap a whole layer in
+        // one and only turn its shader on now and then.
         guard shader != nil || rasterize || alpha < 0.999 else {
             // The contents are in the effect node's own space (`DrawList`),
             // so they are carried by its transform, as the composite would.
@@ -915,8 +914,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         }
 
         // The composite: the effect's shader counts the pixels of the target
-        // it lands in, as SpriteKit's does (`EdgeShade.Blur` finds its band
-        // on the screen from `gl_FragCoord`).
+        // it lands in, as SpriteKit's does (a blur that finds its band on the
+        // screen from `gl_FragCoord` depends on it).
         let space = target.fragSpace
 
         let quad = stagedComposites[owner] ?? compositeQuad(
@@ -1050,7 +1049,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         films.push(commandBuffer)
     }
 
-    /// Draws what a share film has committed since the last frame, each
+    /// Draws what an `SKRenderer` has committed since the last frame, each
     /// pass into a target of its texture's size, and reads it back into the
     /// film's pixel buffer.
     private func drawFilmPasses() {
@@ -1138,7 +1137,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     // MARK: Baking
 
     /// `SKView.texture(from:)`: a subtree rendered to a texture the game then
-    /// samples. Every live backdrop bakes its floor this way once per layout.
+    /// samples, as a game may bake a static layer once per layout.
     /// Whether the caller is on the frame thread, whose GL context the
     /// renderer draws with; says so once for each `what` that isn't.
     nonisolated private static func onGLThread(_ what: String) -> Bool {
@@ -1159,9 +1158,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     private func bakeNow(_ node: SKNode, crop: CGRect?) -> SKTexture? {
         // The subtree draws with the node's own transform (a crop is given
-        // in that space too: the lawn bakes a root scaled by its floor's
-        // scale, cropped to the scaled rect), so its frame is measured there,
-        // as SpriteKit's is: the edge shade bakes a canvas scaled down
+        // in that space too: a root scaled by some factor, cropped to the
+        // scaled rect), so its frame is measured there, as SpriteKit's is: a
+        // canvas scaled down
         // by `edgeShadeMapScale`, which a frame in the node's own space
         // would leave as a small patch in a texture too big for it.
         let bounds = crop ?? node.calculateAccumulatedFrame()
@@ -1219,8 +1218,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let baked = SKTexture(color: .clear, size: bounds.size)
         baked.glName = handle.texture
 
-        // A backdrop re-bakes its floor whenever it lays out, and lets go of
-        // the one it had: those the game has dropped are deleted now.
+        // A game may bake again whenever it lays out, and let go of the
+        // texture it had: those the game has dropped are deleted now.
         for name in bakedTextures.sweep() { device.deleteTexture(name) }
         state.forgetTextures()
         bakedTextures.add(baked, name: handle.texture, width: handle.width, height: handle.height)
@@ -1228,8 +1227,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     /// Hands `done` the next frame drawn, read back before it's swapped:
-    /// `drawHierarchy`'s part, for the game's debug captures
-    /// (`-SnapshotEvery`, `-SnapshotLevels`).
+    /// `drawHierarchy`'s part, for a game's debug captures of its screen.
     public func captureNextFrame(_ done: @escaping (RasterImage?) -> Void) {
         pendingCaptures.append(done)
     }
@@ -1286,8 +1284,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     /// A baked texture's pixels, premultiplied, row 0 the top: what the
-    /// game's `cgImage()` asks of a snapshot (`MechanicSampleNode` fits a
-    /// sample by what it draws).
+    /// game's `cgImage()` asks of a snapshot (to fit a node by what it
+    /// draws, say).
     private func readBack(_ texture: SKTexture) -> RasterImage? {
         guard let size = bakedTextures.size(of: texture.glName), size.width > 0, size.height > 0 else { return nil }
         var framebuffer: GLuint = 0
@@ -1382,9 +1380,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         appliedScissor = target.scissor
     }
 
-    /// The edge blur (`EdgeShade.Blur`) drawn without a texture of the
-    /// whole backdrop (`BandBlurPlan`): each band's strip into a small
-    /// texture of its own first, then the backdrop straight into the target
+    /// A band blur (an effect node blurring bands of the screen) drawn
+    /// without a texture of the whole effect node (`BandBlurPlan`): each band's strip into a small
+    /// texture of its own first, then the contents straight into the target
     /// outside the bands, then each strip onto its band through the blur.
     /// The contents report the `gl_FragCoord` they would have in the
     /// effect's texture, so lit shaders inside see what they always did.
@@ -1392,7 +1390,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Returns false, having drawn nothing that shows, where it can't draw
     /// the same picture: an effect node that fades, blends otherwise, is
     /// scaled, turned or cropped, holds crops or shaded effect nodes of its
-    /// own, or whose bands cover most of the target (`-BlurBackdrop`).
+    /// own, or whose bands cover most of the target (a blur over the whole screen).
     private func drawBandBlur(
         bounds: CGRect,
         transform: CGAffineTransform,
@@ -1441,7 +1439,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         // The strips first, all in one texture drawn in one pass (each its
         // own viewport), so the target is left once, before it draws any of
-        // the backdrop: side by side when they're tall (landscape), stacked
+        // the contents: side by side when they're tall (landscape), stacked
         // when they're wide.
         let wide = plan.strips.allSatisfy { $0.strip.width >= $0.strip.height }
         var places: [(x: Int, y: Int)] = []
@@ -1589,7 +1587,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     /// Every action and transition runs this many times slower
-    /// (`debug.<app>.slowdown`, as the game's `-AnimationSlowdown`), so
+    /// (`debug.<app>.slowdown`, as a game's own slowdown might), so
     /// a 0.1-second fade can be filmed on an emulator.
     public var slowdown: Double = 1
 
@@ -1771,7 +1769,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Bytes a vertex takes: the batcher's x y u v r g b a blend.
     static let vertexStride = SpriteBatcher.floatsPerVertex * MemoryLayout<Float>.size
 
-    /// Where a frame's buffers start: enough for a busy world's frame, so
+    /// Where a frame's buffers start: enough for a busy frame, so
     /// most never grow.
     private static let streamVertexBytes = 2 << 20
     private static let streamIndexBytes = 1 << 20
@@ -1788,8 +1786,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         stagedComposites.removeAll(keepingCapacity: true)
         // Text and shapes too: written draw by draw into a buffer earlier
         // draws still read, as they were, Adreno drew them from whatever
-        // the next writes had left there (a level coin's number from
-        // another frame, half a label, stripes of the glyph atlas).
+        // the next writes had left there (a number from another frame, half
+        // a label, stripes of the glyph atlas).
         shapeMasks.beginFrame()
         let passes = resolveCoverage(passes)
         // Every glyph the frame shaped is on its page before any is drawn.
@@ -2028,7 +2026,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             bind(shader, program: program, held: held, time: time)
             bind(batch.attributeValues, program: program, shader: shader)
             if let span {
-                // A band's strip in place of the whole backdrop's texture
+                // A band's strip in place of the whole effect node's texture
                 // (`drawBandBlur`): the program no longer holds the shader's
                 // own values.
                 let location = uniformLocation(program, "u_span")
@@ -2047,9 +2045,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         }
         bindSprite(name, program: program, held: held)
 
-        // SpriteKit's blend modes over premultiplied colour. Toy Box's room
-        // light is a `.multiplyX2` pass over the rug (`TownRugNode`), so a
-        // grey of 0.5 leaves it as painted.
+        // SpriteKit's blend modes over premultiplied colour. A light drawn as
+        // a `.multiplyX2` pass leaves what's under a grey of 0.5 as painted.
         setBlend(batch.blendMode)
 
         if batch.streamFirstIndex >= 0 {
@@ -2263,7 +2260,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     ///
     /// A program keeps its uniforms, so when it already holds this shader's
     /// (the last drawn with it was this shader, and none of its uniforms has
-    /// been written since: a rig's dozens of sprites in a row) only its
+    /// been written since: a skeletal rig's dozens of sprites in a row) only its
     /// textures are bound again, as units are shared by every program.
     private func bind(_ shader: SKShader, program: GLuint, held: GLStateCache.ProgramUniforms, time: Float) {
         if held.time != time {
@@ -2309,9 +2306,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 glUniformMatrix3fv(location, 1, GLboolean(GL_FALSE), &v)
             case var .matrix4(v):
                 // Not exotic: Metal gives a shader 31 buffers and a uniform
-                // takes one each, so the game packs sets of values into a
-                // matrix a column apiece — `NightSkyNode`'s nebula and fold
-                // tints, and the planets' places, poses and rings.
+                // takes one each, so a game may pack sets of values into a
+                // matrix a column apiece — colour tints, or several objects'
+                // places and poses.
                 glUniformMatrix4fv(location, 1, GLboolean(GL_FALSE), &v)
             case let .texture(t):
                 guard let t else { continue }
@@ -2333,7 +2330,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// sprite's batch. So each is a uniform of the fragment stage
     /// (`ShaderTranslator`), set before the sprite's draw: one call per value
     /// and no buffer traffic, as constant vertex attributes were, without
-    /// the varyings that carried those, which dropped rig triangles on Mali.
+    /// the varyings that carried those, which dropped mesh triangles on Mali.
     ///
     /// Only what the node set is pushed. SpriteKit requires every attribute a
     /// shader declares to be set on every node drawn with it, so a missing one
@@ -2379,12 +2376,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     ///    takes them: RGBA8, rows bottom first. `GLDevice.createTexture`
     ///    reverses the rows because its usual input is a decoded PNG, which
     ///    stores the top row first, so these are reversed here and the two
-    ///    flips cancel. `Starlight.noise` is one — the lattice the sky's
-    ///    nebula, clouds and mottled blue all sample. Left unanswered it
-    ///    uploads as one white pixel and the sky draws flat with no nebula.
+    ///    flips cancel. A noise lattice a game's shaders sample is one. Left
+    ///    unanswered it uploads as one white pixel and the shader draws flat.
     ///  - **An encoded image** (`.encoded`): a file's bytes, which is what
-    ///    `SKTexture(image:)` carries — a rig's page, which lives outside
-    ///    the packed art. Decoded here.
+    ///    `SKTexture(image:)` carries — an image page that lives outside the
+    ///    packed art. Decoded here.
     ///  - **A flat colour** (`.color`), premultiplied like the art, since the
     ///    whole pipeline blends that way.
     ///  - **A drawn image** (`.image`): what the game painted through a
