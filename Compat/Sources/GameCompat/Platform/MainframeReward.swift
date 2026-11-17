@@ -1,5 +1,6 @@
 import Foundation
 import PlatformShim
+import SwitchlingsStore
 import SpriteKit
 
 /// Tells the player, once, that Play's pre-registration reward came in: The

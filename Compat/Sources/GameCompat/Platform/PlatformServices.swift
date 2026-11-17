@@ -1,6 +1,7 @@
 import Foundation
 import GameKit
 import PlatformShim
+import SwitchlingsStore
 import UIKit
 
 /// Puts the game's platform managers on Google Play and the device, once,
@@ -15,7 +16,7 @@ enum AndroidPlatformServices {
         if LaunchArguments.simulatesPurchases {
             StoreManager.billing = SimulatedBilling()
         } else if let channel {
-            StoreManager.billing = PlayBilling(channel: channel)
+            StoreManager.billing = PlayBilling(channel: channel, products: [Entitlements.fullGameID])
         }
         guard let channel else { return }
         installDevice(channel)

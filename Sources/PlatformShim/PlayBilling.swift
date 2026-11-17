@@ -58,7 +58,7 @@ public final class PlayBilling: BillingBackend {
     /// The purchases Play last reported, by token.
     public private(set) var purchases: [Purchase] = []
 
-    public init(channel: PlatformChannel, products: [String] = [Entitlements.fullGameID]) {
+    public init(channel: PlatformChannel, products: [String]) {
         self.channel = channel
         productIDs = products
         channel.on(Self.service) { [weak self] event, body in self?.handle(event, body) }

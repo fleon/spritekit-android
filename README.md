@@ -36,6 +36,30 @@ And the game's own `SKAction` helpers (`animate`, `animateSteadily`,
 `pingPong`, `zoom` in `EasingFunctions.swift`) are built from just four
 primitives: `customAction`, `run`, `sequence` and `repeatForever`.
 
+## The runtime and the game
+
+What's here is a SpriteKit runtime for Android with Switchlings as its first
+game, on its way to a repository of its own so Hue Rings, Zyl and Phantom
+Words can use it as it is. The runtime is `SpriteKitShim`, `GLESRenderer`,
+`PlatformShim`, `Text`, `Shell`, the module-name targets in `Compat`, the
+Gradle project's template and the tools. What's Switchlings' own is
+`GameCompat` (its sources, `AndroidGameController` and the managers'
+bodies), `SwitchlingsEntry` and `SwitchlingsStore`.
+
+The seam is `GameHost` (`Shell/Sources/GLESBackend/GameHost.swift`): what
+the shell asks of a game's controller (launch, layout, input, audio, the
+frame rate and render scale). The game's entry target exports `SDL_main`,
+calls `Shell.start(argc:argv:game:configure:)` with its controller's type,
+and its package builds the `AndroidShell` library the APK loads. The shell
+imports no game, and the runtime names no product: `PlayBilling` is told
+which products to query.
+
+Still Switchlings-named in the runtime, to go with the move: the C
+functions' `switchlings_` prefix, the log tag, `debug.switchlings.*`
+properties, the `SWITCHLINGS_*` environment variables `MainActivity` sets,
+`CSwitchlingsAudio`/`CSwitchlingsMedia`, the Java package, and
+`RenderScaleGovernor.swift`, which `GLESRenderer` symlinks from `Source/`.
+
 ## Layout
 
 ```
@@ -45,6 +69,10 @@ Android/
   Sources/PlatformShim/  The Android stand-ins for AVFoundation, iCloud's
                          key-value store, StoreKit and GameKit — the parts
                          with no device in them. 30 tests.
+  Sources/SwitchlingsStore/  Switchlings' own, not the runtime's: what it
+                         keeps about what's owned (`Entitlements`: its
+                         product, launch event and reward). Here so it tests
+                         on the host.
   Tests/                 Host tests, no device or GL context needed.
                          RigRuntimeTests symlinks the game's RigData and
                          RigPose in and runs them against Assets/Rigs.
@@ -55,9 +83,13 @@ Android/
     Sources/CoreText/
     Sources/CoreGraphics/
     Sources/GameCompat/  Symlinks into Source/ — real files, not copies.
+    Sources/SwitchlingsEntry/  `SDL_main`: hands the shell the game.
+                         The package's `AndroidShell` product is the
+                         library the APK loads.
   Shell/                 Android-only. The app shell: SDL3, the GLES 3
                          context, the frame loop, and the audio backend
                          (SDL3 output, MediaCodec for the soundtrack).
+                         Depends on no game (`GameHost`, below).
   App/                   The Gradle project — the installable APK.
   Scripts/               Cross-compiling SDL and the shell.
   Text/                  Shaping, metrics, rasterising, the glyph atlas.

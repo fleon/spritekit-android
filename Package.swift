@@ -26,6 +26,11 @@ let package = Package(
         .library(name: "SpriteKitShim", targets: ["SpriteKitShim"]),
         .library(name: "GLESRenderer", targets: ["GLESRenderer"]),
         .library(name: "PlatformShim", targets: ["PlatformShim"]),
+        // Switchlings' own, not the runtime's: what it keeps about what's
+        // owned (its product, its launch event, its reward). Here so it tests
+        // on the host; it leaves with the game when the runtime moves to a
+        // repository of its own.
+        .library(name: "SwitchlingsStore", targets: ["SwitchlingsStore"]),
     ],
     targets: [
         .target(
@@ -57,6 +62,17 @@ let package = Package(
             dependencies: ["SpriteKitShim"],
             path: "Sources/PlatformShim",
             swiftSettings: [v5, shimDefine]
+        ),
+        .target(
+            name: "SwitchlingsStore",
+            path: "Sources/SwitchlingsStore",
+            swiftSettings: [v5, shimDefine]
+        ),
+        .testTarget(
+            name: "SwitchlingsStoreTests",
+            dependencies: ["SwitchlingsStore"],
+            path: "Tests/SwitchlingsStoreTests",
+            swiftSettings: [v5, shimDefine, testIsolation]
         ),
         .testTarget(
             name: "PlatformShimTests",

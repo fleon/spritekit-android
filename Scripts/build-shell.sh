@@ -66,7 +66,8 @@ for abi in "${targets[@]}"; do
     # One array so the build and the --show-bin-path query cannot drift: a
     # mismatched flag there gives a path for a build that never happened.
     swiftpm=(
-        --package-path "$ANDROID_DIR/Shell"
+        --package-path "$ANDROID_DIR/Compat"
+        --product AndroidShell
         --swift-sdk "$SWIFT_SDK"
         --triple "$triple"
         -c "$CONFIG"

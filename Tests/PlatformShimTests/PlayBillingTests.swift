@@ -37,7 +37,8 @@ final class FakeJava {
     }
 }
 
-private let fullGame = Entitlements.fullGameID
+private let fullGame = "com.example.game.fullgame"
+private let rewardID = "com.example.game.reward"
 private let bought = 1_790_000_000_000.0 // ms since 1970: 21 September 2026
 
 private func purchase(_ state: String, token: String = "t1", acknowledged: Bool = false, time: Double = bought) -> [String: Any] {
@@ -50,7 +51,7 @@ struct PlayBillingTests {
     @Test("Starting asks for the full game, and its price comes back localized")
     func price() {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         var changes = 0
         billing.start { changes += 1 }
         #expect(java.names == ["billing.start"])
@@ -64,7 +65,7 @@ struct PlayBillingTests {
     @Test("A purchase that goes through is owned, dated by Play and acknowledged")
     func purchased() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         let result = Task { await billing.purchase(fullGame) }
         await java.waitFor("billing.purchase")
@@ -79,7 +80,7 @@ struct PlayBillingTests {
     @Test("A pending purchase unlocks nothing until it completes")
     func pending() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         var changes = 0
         billing.start { changes += 1 }
         let result = Task { await billing.purchase(fullGame) }
@@ -101,7 +102,7 @@ struct PlayBillingTests {
     @Test("A pending purchase completed while away is found by the next query")
     func pendingCompletedAway() {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         java.send("billing", "owned", ["code": "ok", "purchases": [purchase("pending")]])
         #expect(billing.ownedProducts.isEmpty)
@@ -112,7 +113,7 @@ struct PlayBillingTests {
     @Test("Cancelling buys nothing")
     func cancelled() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         let result = Task { await billing.purchase(fullGame) }
         await java.waitFor("billing.purchase")
@@ -124,7 +125,7 @@ struct PlayBillingTests {
     @Test("A flow that can't start fails rather than hanging")
     func failed() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         let result = Task { await billing.purchase(fullGame) }
         await java.waitFor("billing.purchase")
@@ -135,7 +136,7 @@ struct PlayBillingTests {
     @Test("Billing unavailable fails a waiting purchase and restore")
     func unavailable() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         let bought = Task { await billing.purchase(fullGame) }
         await java.waitFor("billing.purchase")
@@ -149,7 +150,7 @@ struct PlayBillingTests {
     @Test("Already owned is settled by the query that follows")
     func alreadyOwned() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         let result = Task { await billing.purchase(fullGame) }
         await java.waitFor("billing.purchase")
@@ -164,7 +165,7 @@ struct PlayBillingTests {
     @Test("Restoring after a reinstall finds the purchase")
     func restore() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         let result = Task { await billing.restore() }
         await java.waitFor("billing.restore")
@@ -176,7 +177,7 @@ struct PlayBillingTests {
     @Test("Restoring with nothing bought says so")
     func restoreNothing() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         let result = Task { await billing.restore() }
         await java.waitFor("billing.restore")
@@ -187,7 +188,7 @@ struct PlayBillingTests {
     @Test("Offline keeps the purchase; a refund takes it away")
     func offlineAndRefund() {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         java.send("billing", "owned", ["code": "ok", "purchases": [purchase("purchased", acknowledged: true)]])
         java.send("billing", "owned", ["code": "unavailable", "responseCode": 12])
@@ -199,7 +200,7 @@ struct PlayBillingTests {
     @Test("A failed acknowledgement is tried again after the next query, and only then")
     func acknowledgeRetry() {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         java.send("billing", "owned", ["code": "ok", "purchases": [purchase("purchased")]])
         java.send("billing", "owned", ["code": "ok", "purchases": [purchase("purchased")]])
@@ -214,7 +215,7 @@ struct PlayBillingTests {
     @Test("Buying what is owned asks Play nothing")
     func ownedAlready() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         java.send("billing", "owned", ["code": "ok", "purchases": [purchase("purchased", acknowledged: true)]])
         #expect(await billing.purchase(fullGame) == .purchased)
@@ -224,7 +225,7 @@ struct PlayBillingTests {
     @Test("The earliest of two purchase times dates the product")
     func earliestDate() {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         java.send("billing", "owned", ["code": "ok", "purchases": [
             purchase("purchased", token: "late", acknowledged: true, time: bought + 86_400_000),
@@ -233,20 +234,14 @@ struct PlayBillingTests {
         #expect(billing.purchaseDates[fullGame] == Date(timeIntervalSince1970: bought / 1000))
     }
 
-    @Test("Play's purchase time decides the launch event, not the day it reached this device")
-    func launchEventByPurchaseTime() {
+    @Test("A restore reports when the product was first bought, not when it reached this device")
+    func purchaseTimeOnRestore() {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
-        let suite = UUID().uuidString
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        let entitlements = Entitlements(defaults: defaults)
-        let beforeEnd = Entitlements.launchEventEnd.addingTimeInterval(-3600).timeIntervalSince1970 * 1000
-        java.send("billing", "owned", ["code": "ok", "purchases": [purchase("purchased", acknowledged: true, time: beforeEnd)]])
-        // Restored long after the event, on a new phone.
-        if let date = billing.purchaseDates[fullGame] { entitlements.noteBought(at: date) }
-        #expect(entitlements.keepsSecretWorlds(owns: true))
+        let longAgo = bought - 1000 * 60 * 60 * 24 * 365
+        java.send("billing", "owned", ["code": "ok", "purchases": [purchase("purchased", acknowledged: true, time: longAgo)]])
+        #expect(billing.purchaseDates[fullGame] == Date(timeIntervalSince1970: longAgo / 1000))
     }
 }
 
@@ -256,13 +251,13 @@ struct PlayBillingRewardTests {
     @Test("Play's reward, found by the launch query with no order ID, is owned and acknowledged")
     func reward() async {
         let java = FakeJava()
-        let billing = PlayBilling(channel: java.channel)
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
         billing.start {}
         // A reward carries no order ID or developer payload; only these fields are read.
         java.send("billing", "owned", ["code": "ok", "purchases": [
-            ["products": [Entitlements.mainframeRewardID], "state": "purchased", "token": "reward", "time": bought, "acknowledged": false],
+            ["products": [rewardID], "state": "purchased", "token": "reward", "time": bought, "acknowledged": false],
         ]])
-        #expect(billing.ownedProducts == [Entitlements.mainframeRewardID])
+        #expect(billing.ownedProducts == [rewardID])
         await java.waitFor("billing.acknowledge")
         #expect(java.calls.last?.arguments["token"] as? String == "reward")
     }

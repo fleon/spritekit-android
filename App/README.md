@@ -27,8 +27,10 @@ controllers through `GameController` on Apple platforms.
 **No JNI of our own, and no `swift-java`.** SDL ships the Java and the JNI for
 all of the above, and its `SDLActivity.nativeRunMain` dlopens the last library
 named by `MainActivity.getLibraries()` and calls the `SDL_main` it finds
-there. `Entry.swift` exports that symbol with `@_cdecl`, which is the entire
-bridge. `swift-java` would have added a dependency, a Gradle plugin and a
+there. The game's entry target (`Compat/Sources/SwitchlingsEntry`) exports
+that symbol with `@_cdecl` and calls the shell's `Shell.start`, which is the
+entire bridge; the library is the game package's `AndroidShell` product,
+which `Scripts/build-shell.sh` builds. `swift-java` would have added a dependency, a Gradle plugin and a
 generation step to produce a seam SDL already provides; if a later ring needs
 to call Java that SDL does not wrap, that is the moment to reach for it.
 

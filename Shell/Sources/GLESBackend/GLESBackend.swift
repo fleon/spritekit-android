@@ -1,6 +1,5 @@
 import CAndroidShell
 import Foundation
-import GameCompat
 import GLESRenderer
 import PlatformShim
 import ShellCore
@@ -14,8 +13,22 @@ import SpriteKitShim
 /// about sprites, textures or shaders.
 public enum GLESBackend {
 
+    /// The game the shell runs: its controller's type, handed over by the
+    /// game's own entry (`Shell.start(argc:argv:game:)`) before `prepare`.
+    @MainActor public static var game: (any GameHost.Type)?
+
+    /// What the game sets up before it launches (its own debug
+    /// properties, say), run once the art and the clock are in place.
+    @MainActor public static var configureGame: (@MainActor () -> Void)?
+
     /// The game's controller, once the view exists.
-    @MainActor static var controller: AndroidGameController?
+    @MainActor static var controller: (any GameHost)?
+
+    /// The game's controller type. The shell can't run without one.
+    @MainActor static var host: any GameHost.Type {
+        guard let game else { fatalError("GLESBackend.game is not set: the game's entry hands it over before prepare()") }
+        return game
+    }
 
     /// Reads the packed art and the fonts out of the APK, makes the game's
     /// resources reachable through `Bundle.main`, starts what the game
@@ -36,28 +49,18 @@ public enum GLESBackend {
         MediaTime.source = { TimeInterval(SDL_GetTicksNS()) / 1_000_000_000 }
         // `-FixedFrameStep`: the shell moves that clock on a step a frame
         // instead, from 0, before the game reads it.
-        MediaTime.fixedStep = AndroidGameController.fixedFrameStep
+        MediaTime.fixedStep = host.fixedFrameStep
 
-        // Banded layers (`BandedLayerNode`): `debug.switchlings.bands`
-        // `whole` draws them unbanded, a number in that many bands, for
-        // measuring.
-        if let bands = DebugProperty.string("debug.switchlings.bands") {
-            if bands == "whole" {
-                AndroidGameController.drawsBandedLayersWhole = true
-            } else if let count = Int(bands), count > 0 {
-                AndroidGameController.bandedLayerBands = count
-            }
-            Log.info("banded layers: \(bands)")
-        }
+        configureGame?()
 
         PNGFiles.install()
-        AndroidGameController.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:)))
+        host.launch(link: ShellArguments.value(after: LaunchLinks.launchLinkArgument).flatMap(URL.init(string:)))
     }
 
     /// Hands the game the shell's audio once its device is open.
     @MainActor
     public static func useAudio(_ audio: AudioBackend) {
-        AndroidGameController.useAudio(audio)
+        host.useAudio(audio)
     }
 
     /// The renderer the shell draws with.
@@ -83,8 +86,9 @@ public enum GLESBackend {
             // the safe area is known (`windowMetricsDidChange`).
         }
         renderer.reportLabel = "game"
-        controller = AndroidGameController(view: renderer.view)
-        renderer.clockHold = { AndroidGameController.holdsFrameClock }
+        let host = host
+        controller = host.init(view: renderer.view)
+        renderer.clockHold = { host.holdsFrameClock }
         if let controller {
             controller.captureFrame = { done in renderer.captureNextFrame(done) }
             renderer.onInput = { input in handle(input, controller: controller) }
@@ -111,7 +115,7 @@ public enum GLESBackend {
             Log.info("transitions \(slowdown)x slower")
         }
         // `-RenderScale`, or a capture running: every pixel, or the pin's.
-        if let pinned = AndroidGameController.pinnedRenderScale {
+        if let pinned = host.pinnedRenderScale {
             renderer.renderScale = CGFloat(pinned)
             renderer.pinsRenderScale = true
             Log.info("render scale held at \(pinned)")
@@ -124,13 +128,13 @@ public enum GLESBackend {
         // The frame rate and render scale: what the player picked, else
         // Auto's rate and the scale the renderer's governor chooses once for
         // this device (kept); a pick applies at once.
-        renderer.measuresScene = { AndroidGameController.isMeasured($0) }
-        renderer.onRunning = { AndroidGameController.setRunning(rate: $0, scale: $1) }
-        renderer.onChosen = { AndroidGameController.noteAutoChosen(rate: $0, scale: $1) }
-        let choices = AndroidGameController.displayChoices
+        renderer.measuresScene = { host.isMeasured($0) }
+        renderer.onRunning = { host.setRunning(rate: $0, scale: $1) }
+        renderer.onChosen = { host.noteAutoChosen(rate: $0, scale: $1) }
+        let choices = host.displayChoices
         renderer.configure(rate: choices.rate, scales: choices.scales, governs: choices.governs, decided: choices.decided)
-        AndroidGameController.observeDisplayChoices { [weak renderer] in
-            let choices = AndroidGameController.displayChoices
+        host.observeDisplayChoices { [weak renderer] in
+            let choices = host.displayChoices
             renderer?.configure(rate: choices.rate, scales: choices.scales, governs: choices.governs, decided: choices.decided, fromCurrent: true)
         }
         if let slowdown = DebugProperty.string("debug.switchlings.slowdown").flatMap(Double.init), slowdown > 1 {
@@ -147,7 +151,7 @@ public enum GLESBackend {
     /// What the player did besides touching, handed to the game as the
     /// Apple controller hands it on.
     @MainActor
-    private static func handle(_ input: InputEvent, controller: AndroidGameController) -> Bool {
+    private static func handle(_ input: InputEvent, controller: any GameHost) -> Bool {
         switch input {
         case .back:
             return controller.handleBack()
@@ -202,7 +206,7 @@ public enum GLESBackend {
     /// `DesignSystem.sceneSize(for:)`, in points, from a drawable in pixels.
     @MainActor
     static func sceneSize(for drawable: CGSize) -> CGSize {
-        AndroidGameController.sceneSize(for: CGSize(width: drawable.width / pointScale, height: drawable.height / pointScale))
+        host.sceneSize(for: CGSize(width: drawable.width / pointScale, height: drawable.height / pointScale))
     }
 
     /// Pixels per point: the display's density (`SDL_GetWindowDisplayScale`,

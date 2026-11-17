@@ -37,12 +37,15 @@ import PackageDescription
 //                  PNG decoding that feed it, and the scene it draws. It
 //                  links TextShaping, so a shell build needs
 //                  PKG_CONFIG_PATH pointing at the Vendor prefix for the
-//                  ABI — Scripts/build-shell.sh sets it — and it is the
-//                  one target that depends on Compat's GameCompat, the
-//                  game's own sources.
+//                  ABI — Scripts/build-shell.sh sets it. It reaches the
+//                  game only through `GameHost`.
 //   AndroidShell   the window, the context, the lifecycle and the frame
-//                  loop. It depends on GLESBackend only to install it;
+//                  loop, and `Shell.start`, which a game's `SDL_main`
+//                  calls. It depends on GLESBackend only to install it;
 //                  nothing in the shell knows what a sprite is.
+//
+// No target here depends on a game. The game's package (../Compat for
+// Switchlings) depends on this one and builds the APK's library.
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 // The frame loop, the renderer and the game share one thread, which is the
@@ -54,21 +57,18 @@ let mainActor = SwiftSetting.defaultIsolation(MainActor.self)
 let package = Package(
     name: "SwitchlingsShell",
     products: [
-        // The shared library the APK loads. SDL's `nativeRunMain` dlopens it
-        // by this name and looks up `SDL_main`.
-        .library(name: "AndroidShell", type: .dynamic, targets: ["AndroidShell"]),
+        // The shell, for a game's package to build its app library from: the
+        // game's entry target calls `Shell.start(argc:argv:game:)` from its
+        // `SDL_main` and the game's package makes the dynamic library the APK
+        // loads (Switchlings': `AndroidShell` in ../Compat). The shell
+        // depends on no game.
+        .library(name: "AndroidShellKit", targets: ["AndroidShell", "GLESBackend", "ShellCore"]),
     ],
     dependencies: [
         .package(path: ".."),
         // The glyph atlas. Only GLESBackend links it, and only to upload
         // what it rasterises; nothing else in the shell knows about text.
         .package(path: "../Text"),
-        // The game's own sources, compiled for Android (symlinks into
-        // Source/, never copies). The shell links it so the port draws the
-        // real thing rather than stand-ins: the rigs, the levels and the
-        // board that play them, and Starry Sky's backdrop. Only GLESBackend
-        // depends on it — the shell proper still knows nothing about any of it.
-        .package(path: "../Compat"),
     ],
     targets: [
         .target(name: "CAndroidShell", path: "Sources/CAndroidShell"),
@@ -119,7 +119,6 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "Android"),
                 .product(name: "GLESRenderer", package: "Android"),
                 .product(name: "TextShaping", package: "Text"),
-                .product(name: "GameCompat", package: "Compat"),
                 .product(name: "PlatformShim", package: "Android"),
             ],
             path: "Sources/GLESBackend",

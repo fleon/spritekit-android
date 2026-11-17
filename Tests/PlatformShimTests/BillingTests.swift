@@ -2,79 +2,16 @@ import Foundation
 import Testing
 @testable import PlatformShim
 
-// What the game asks of a store, with no store behind it: is the full game
-// owned, and was it owned in time to keep the secret worlds. The launch
-// event's rule is the one worth testing — it decides whether a player keeps
-// The Mainframe for good, and it reads a date Apple's clock set.
+// The backends with no store behind them: none at all, and the simulated
+// one. (What Switchlings keeps about what's owned is tested with it, in
+// SwitchlingsStoreTests.)
+
+private let fullGameID = "com.example.game.fullgame"
 
 private func scratchDefaults(_ name: String = UUID().uuidString) -> UserDefaults {
     let defaults = UserDefaults(suiteName: name)!
     defaults.removePersistentDomain(forName: name)
     return defaults
-}
-
-@Suite("Entitlements")
-struct EntitlementTests {
-    @Test("Owning nothing keeps no secret worlds")
-    func nothingOwned() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        #expect(entitlements.keepsSecretWorlds(owns: false) == false)
-    }
-
-    @Test("Bought before the launch event ends keeps the secret worlds")
-    func boughtInTime() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        entitlements.noteBought(at: Entitlements.launchEventEnd.addingTimeInterval(-60))
-        #expect(entitlements.keepsSecretWorlds(owns: true))
-    }
-
-    @Test("Bought after it ends does not")
-    func boughtTooLate() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        entitlements.noteBought(at: Entitlements.launchEventEnd.addingTimeInterval(60))
-        #expect(entitlements.keepsSecretWorlds(owns: true) == false)
-    }
-
-    @Test("The earliest purchase date wins, so a later report cannot take the worlds away")
-    func earliestWins() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        entitlements.noteBought(at: Entitlements.launchEventEnd.addingTimeInterval(-60))
-        entitlements.noteBought(at: Entitlements.launchEventEnd.addingTimeInterval(600))
-        #expect(entitlements.keepsSecretWorlds(owns: true))
-    }
-
-    @Test("Owned with no purchase date during the event keeps them")
-    func ownedDuringEvent() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        entitlements.noteOwnedDuringEvent(owns: true, eventRunning: true)
-        #expect(entitlements.wasOwnedDuringEvent)
-        #expect(entitlements.keepsSecretWorlds(owns: true))
-    }
-
-    @Test("Owned with no purchase date after the event does not")
-    func ownedAfterEvent() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        entitlements.noteOwnedDuringEvent(owns: true, eventRunning: false)
-        #expect(entitlements.wasOwnedDuringEvent == false)
-        #expect(entitlements.keepsSecretWorlds(owns: true) == false)
-    }
-
-    @Test("A purchase date beats the seen-owned flag")
-    func dateWinsOverFlag() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        entitlements.noteOwnedDuringEvent(owns: true, eventRunning: true)
-        entitlements.noteBought(at: Entitlements.launchEventEnd.addingTimeInterval(3600))
-        #expect(entitlements.keepsSecretWorlds(owns: true) == false)
-    }
-
-    @Test("Owned products survive a relaunch")
-    func ownedPersists() {
-        let name = UUID().uuidString
-        let defaults = scratchDefaults(name)
-        Entitlements(defaults: defaults).owned = [Entitlements.fullGameID]
-        #expect(Entitlements(defaults: defaults).owned == [Entitlements.fullGameID])
-        defaults.removePersistentDomain(forName: name)
-    }
 }
 
 @Suite("Billing backends")
@@ -84,7 +21,7 @@ struct BillingBackendTests {
         let billing = NoBilling()
         #expect(billing.ownedProducts.isEmpty)
         #expect(billing.displayPrice == nil)
-        let result = await billing.purchase(Entitlements.fullGameID)
+        let result = await billing.purchase(fullGameID)
         #expect(result == .failed)
     }
 
@@ -97,13 +34,13 @@ struct BillingBackendTests {
         billing.start { changes += 1 }
 
         #expect(billing.ownedProducts.isEmpty)
-        let result = await billing.purchase(Entitlements.fullGameID)
+        let result = await billing.purchase(fullGameID)
         #expect(result == .purchased)
-        #expect(billing.ownedProducts == [Entitlements.fullGameID])
+        #expect(billing.ownedProducts == [fullGameID])
         #expect(changes == 1)
 
         // A relaunch still owns it.
-        #expect(SimulatedBilling(defaults: defaults).ownedProducts == [Entitlements.fullGameID])
+        #expect(SimulatedBilling(defaults: defaults).ownedProducts == [fullGameID])
         defaults.removePersistentDomain(forName: name)
     }
 
@@ -114,8 +51,8 @@ struct BillingBackendTests {
         var changes = 0
         let billing = SimulatedBilling(defaults: defaults)
         billing.start { changes += 1 }
-        _ = await billing.purchase(Entitlements.fullGameID)
-        _ = await billing.purchase(Entitlements.fullGameID)
+        _ = await billing.purchase(fullGameID)
+        _ = await billing.purchase(fullGameID)
         #expect(changes == 1)
         defaults.removePersistentDomain(forName: name)
     }
@@ -126,7 +63,7 @@ struct BillingBackendTests {
         let defaults = scratchDefaults(name)
         let billing = SimulatedBilling(defaults: defaults)
         billing.start {}
-        _ = await billing.purchase(Entitlements.fullGameID)
+        _ = await billing.purchase(fullGameID)
         billing.forgetPurchases()
         #expect(billing.ownedProducts.isEmpty)
         defaults.removePersistentDomain(forName: name)
@@ -182,51 +119,5 @@ struct AchievementTests {
     @Test("There is no maker credit on Android")
     func noPlayer() async {
         #expect(await LocalAchievements(defaults: scratchDefaults()).localPlayer() == nil)
-    }
-}
-
-@Suite("Pre-registration reward")
-struct MainframeRewardTests {
-    @Test("Play's reward keeps the secret worlds without the full game")
-    func rewardAlone() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        #expect(entitlements.keepsSecretWorlds(owns: false, rewarded: true))
-    }
-
-    @Test("The reward keeps them after the launch event, however late the full game was bought")
-    func rewardAfterEvent() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        entitlements.noteBought(at: Entitlements.launchEventEnd.addingTimeInterval(60 * 60 * 24 * 30))
-        #expect(entitlements.keepsSecretWorlds(owns: true) == false)
-        #expect(entitlements.keepsSecretWorlds(owns: true, rewarded: true))
-    }
-
-    @Test("The notice is shown once")
-    func announcedOnce() {
-        let defaults = scratchDefaults()
-        #expect(Entitlements(defaults: defaults).rewardAnnounced == false)
-        Entitlements(defaults: defaults).rewardAnnounced = true
-        #expect(Entitlements(defaults: defaults).rewardAnnounced)
-    }
-}
-
-@Suite("Claiming the pre-registration reward")
-struct RewardClaimTests {
-    @Test("While the launch event runs, the reward counts only once claimed")
-    func claimDuringEvent() {
-        let defaults = scratchDefaults()
-        let entitlements = Entitlements(defaults: defaults)
-        #expect(entitlements.rewardCounts(owned: true, eventRunning: true) == false)
-        entitlements.rewardClaimed = true
-        #expect(Entitlements(defaults: defaults).rewardCounts(owned: true, eventRunning: true))
-    }
-
-    @Test("Once the event is over, an unclaimed reward counts anyway, and no reward never does")
-    func afterEvent() {
-        let entitlements = Entitlements(defaults: scratchDefaults())
-        #expect(entitlements.rewardCounts(owned: true, eventRunning: false))
-        #expect(entitlements.rewardCounts(owned: false, eventRunning: false) == false)
-        entitlements.rewardClaimed = true
-        #expect(entitlements.rewardCounts(owned: false, eventRunning: true) == false)
     }
 }

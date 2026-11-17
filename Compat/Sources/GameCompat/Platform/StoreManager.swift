@@ -1,5 +1,6 @@
 import Foundation
 import PlatformShim
+import SwitchlingsStore
 
 /// `Source/Utils/StoreManager.swift` on Android: the same API for the same
 /// 15 calling files, with Google Play Billing where StoreKit was.

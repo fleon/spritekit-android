@@ -39,9 +39,14 @@ let package = Package(
     name: "SwitchlingsCompat",
     products: [
         .library(name: "GameCompat", targets: ["GameCompat"]),
+        // The shared library the APK loads: the runtime's shell with
+        // Switchlings in it. SDL's `nativeRunMain` dlopens it by this name
+        // and looks up `SDL_main`, which `SwitchlingsEntry` exports.
+        .library(name: "AndroidShell", type: .dynamic, targets: ["SwitchlingsEntry"]),
     ],
     dependencies: [
         .package(path: ".."),
+        .package(path: "../Shell"),
         .package(path: "../../Macros"),
     ],
     targets: [
@@ -103,11 +108,25 @@ let package = Package(
             dependencies: [
                 .product(name: "SpriteKitShim", package: "Android"),
                 .product(name: "PlatformShim", package: "Android"),
+                .product(name: "SwitchlingsStore", package: "Android"),
                 .product(name: "Macros", package: "Macros"),
                 "SpriteKit", "UIKit", "CoreText", "CoreGraphics", "CoreImage", "QuartzCore", "os", "simd",
                 "Metal", "CoreVideo", "AVFoundation", "StoreKit", "CryptoKit", "GameKit", "Network",
             ],
             path: "Sources/GameCompat",
+            swiftSettings: gameSettings
+        ),
+
+        // Where the runtime and the game meet: `SDL_main`, handing the
+        // shell `AndroidGameController` as its `GameHost`.
+        .target(
+            name: "SwitchlingsEntry",
+            dependencies: [
+                "GameCompat",
+                .product(name: "AndroidShellKit", package: "Shell"),
+                .product(name: "SpriteKitShim", package: "Android"),
+            ],
+            path: "Sources/SwitchlingsEntry",
             swiftSettings: gameSettings
         ),
     ]
