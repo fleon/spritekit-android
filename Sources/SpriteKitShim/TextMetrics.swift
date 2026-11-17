@@ -24,6 +24,17 @@ public enum TextMetrics {
     }
 }
 
+/// UIKit's string measuring (`NSAttributedString.size()`), apart from UIKit
+/// so it tests on the Mac against AppKit's.
+public enum StringDrawing {
+    /// One line's width: its advance, plus the letter spacing after every
+    /// character — the last one's included, as UIKit and AppKit count it.
+    public static func width(of text: String, font: FontKey, kern: CGFloat) -> CGFloat {
+        guard let provider = TextMetrics.provider else { return 0 }
+        return provider.measure(text, font: font).advance + kern * CGFloat(text.count)
+    }
+}
+
 /// A font as an attributed string's `.font` carries it: what
 /// `SKLabelNode.attributedText` takes the face and size from. `UIFont` is
 /// one.

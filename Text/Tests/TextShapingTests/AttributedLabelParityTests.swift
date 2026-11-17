@@ -57,6 +57,17 @@ struct AttributedLabelParityTests {
         #expect(matched == checked, "\(matched) of \(checked) frames match")
     }
 
+    @Test("A string's width with letter spacing is AppKit's: the spacing after every character, the last included", arguments: [0, 1.5, 3] as [CGFloat])
+    func width(kern: CGFloat) throws {
+        _ = Self.engine
+        let nsFont = try #require(NSFont(name: "Geneva", size: 20))
+        for text in ["Play", "W", "Select a level", "Continue"] {
+            let apple = NSAttributedString(string: text, attributes: [.font: nsFont, .kern: NSNumber(value: Double(kern))]).size().width
+            let ours = StringDrawing.width(of: text, font: FontKey(name: "Geneva", size: 20), kern: kern)
+            #expect(abs(apple - ours) < 0.01, "'\(text)' kern \(kern): AppKit \(apple), ours \(ours)")
+        }
+    }
+
     @Test("The font, colour and spacing come from the attributes, and clearing them keeps the text")
     func adopted() {
         let ours = SpriteKitShim.SKLabelNode(fontNamed: "Other")
