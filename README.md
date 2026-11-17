@@ -412,6 +412,8 @@ and tested on a Mac against a fake Java:
 - **Achievements and the player** (Play Games Services v2): silent sign-in,
   achievements mapped from Game Center's IDs, incremental ones from Game
   Center's percentages.
+- **Leaderboards** (Play Games Services v2): scores, entries and Play's
+  leaderboard screens behind GameKit's own calls (below).
 - **Saved data** (Play Games Saved Games): a key-value store's records in one
   snapshot, merged commutatively so a conflict resolves without loss.
 - **Audio:** sound effects (`.wav`) through SDL's audio streams, music
@@ -500,6 +502,88 @@ The Java half is a class of its own in the game's app (`PlayReview`, on
 `launchReviewFlow(activity, info)` and posts `requested {ok}` when the flow
 is over. A build not installed from Play runs the flow and shows nothing, as
 TestFlight shows nothing on iOS.
+
+### Leaderboards
+
+The `GameKit` module answers a game's leaderboard code with Apple's
+signatures, on `GKLeaderboard.backend`: `PlayGamesLeaderboards`
+(`Sources/PlatformShim/Leaderboards.swift`), which a game installs at launch
+beside its achievements, or by default `LocalLeaderboards`, which has none.
+
+- `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:)`, and the
+  instance `submitScore(_:context:player:)`, each with a completion handler
+  or `async throws`.
+- `GKLeaderboard.loadLeaderboards(IDs:)`, with `baseLeaderboardID` and
+  `title` (Play's display name).
+- `loadEntries(for:timeScope:range:)` and `loadEntries(for:timeScope:)`,
+  giving `GKLeaderboard.Entry` (`player`, `rank`, `score`, `formattedScore`,
+  `context`, `date`), with `TimeScope` and `PlayerScope`.
+- `GKAccessPoint.shared.trigger(state: .leaderboards, handler:)` and
+  `trigger(leaderboardID:playerScope:timeScope:handler:)`.
+- `GKGameCenterViewController(state:)` and
+  `(leaderboardID:playerScope:timeScope:)`, presented with
+  `present(_:animated:completion:)`, with `gameCenterDelegate`.
+- `GKError`, with all of Apple's codes as Swift sees them: `catch
+  GKError.notAuthenticated`, the static code shortcuts, and as an `NSError`
+  in `GKErrorDomain` with the code's number.
+
+Game Center leaderboard IDs map to Play's in the generated `PlayGamesMapping`
+file, under `leaderboards` (`{"leaderboard.high-score": {"id": "CgkI…"}}`).
+`today`, `week` and `allTime` are Play's daily, weekly and all-time spans;
+`global` and `friendsOnly` its public and friends collections. A score's
+64-bit context travels as Play's score tag, in decimal digits (none for 0),
+and Play keeps a player's best (`submitScoreImmediate`), as Game Center does.
+
+Where it differs from Apple:
+
+- **Every completion handler runs, once:** signed out with
+  `.notAuthenticated`; without Play Games on the device, or with no backend,
+  `.notSupported`; for a leaderboard ID with no Play counterpart,
+  `.invalidParameter`; and with `.communicationsFailure` when Play says no
+  or doesn't answer within 30 seconds. Game Center queues an offline score
+  and sends it later; Play's immediate submission doesn't, so a game that
+  must not lose one retries.
+- **Leaderboards are classic:** no recurring occurrences, start dates or
+  leaderboard sets.
+- **Other players:** `loadEntries(for players:timeScope:)` returns only the
+  local player's entry, as Play loads no other player's score by ID.
+- **No widget:** the access point draws nothing (`isActive` and `location`
+  are kept, `isVisible` is false). `trigger` opens Play's leaderboards for
+  `.leaderboards` or a leaderboard ID and nothing for other states
+  (achievements open through `AchievementsBackend.showDashboard()`); its
+  handler runs once Play has been asked.
+- **No view:** a presented `GKGameCenterViewController` opens Play's
+  leaderboards, an activity of its own over the game, and on the next turn
+  tells its delegate it has finished, so the game's dismissal runs as on
+  Apple. Play's list of all leaderboards takes no time span or collection.
+- As on Apple, only `GKGameCenterViewController` (a view controller) is
+  main-actor isolated. `GKLeaderboard`'s `async` calls are nonisolated and
+  run on their caller's actor, so Swift 6 code awaits them from any actor,
+  as it does Apple's; they reach the backend on the main actor, where
+  it lives, as `GKAccessPoint.trigger` does. `Modules/Checks` holds game
+  code calling GameKit in Swift 6, Swift 5, and Swift 5 with the main actor
+  as default, which `Scripts/check-android.sh` compiles.
+
+Play's half lives in the game's app, in its Play Games service, under
+`games`. Every request carries a `request` number its answer repeats; an
+answer with `ok: false` may add `reason: "signedOut"`, which Java answers at
+once when nobody is signed in. The leaderboard screens sign the player in
+first.
+
+| Call | Answer | Play Games Services v2 |
+|---|---|---|
+| `submitScores {items: [{id, score, tag}]}` | `scoresSubmitted {ok}` | `submitScoreImmediate` for each, then `Tasks.whenAll` |
+| `loadLeaderboards {ids?}` | `leaderboards {ok, items: [{id, title}]}` | `loadLeaderboardMetadata` |
+| `loadScores {id, timeSpan, collection, count}` | `scores {ok, items, local?, total}` | `loadTopScores`, then `loadMoreScores` up to `count`; `loadCurrentPlayerLeaderboardScore`; the variant's `getNumScores()` |
+| `showLeaderboards {id?, timeSpan?, collection?}` | — | `getLeaderboardIntent(id, timeSpan, collection)`, or `getAllLeaderboardsIntent()` |
+
+`timeSpan` is `daily`, `weekly` or `allTime` (`TIME_SPAN_*`); `collection`
+is `public` or `friends` (`COLLECTION_PUBLIC`, `COLLECTION_FRIENDS`). A
+score is `{rank, score, formattedScore, tag, time, playerId, name}`, from
+`LeaderboardScore` and its score holder, `time` in milliseconds since 1970
+(`getTimestampMillis`); `total` is -1 when Play doesn't know it; `count` 0
+loads only the signed-in player's. The base template's `PlayGamesServices`
+answers all four.
 
 ### A game's own fonts, and the system font
 
