@@ -103,11 +103,14 @@ public final class SyncEngine: @unchecked Sendable {
 
     /// Syncs every owner's keys, and every key starting with one of
     /// `prefixes` (for keys made as play goes on, one a level, say): merges
-    /// them with the cloud now, and again whenever it brings changes.
-    public func start(syncing keys: [[String: Merge]], prefixes: [String: Merge] = [:]) {
+    /// them with the cloud now, and again whenever it brings changes. With
+    /// `adoptingLaunchArguments`, launch arguments are adopted before that
+    /// first merge, so it never sees (or uploads) their raw strings.
+    public func start(syncing keys: [[String: Merge]], prefixes: [String: Merge] = [:], adoptingLaunchArguments: Bool = false) {
         syncedKeys = keys.reduce(into: [:]) { $0.merge($1) { first, _ in first } }
         syncedPrefixes = prefixes
         cloud.externalChanges = { [weak self] in self?.merge() }
+        if adoptingLaunchArguments { adoptLaunchArguments() }
         synchronize()
     }
 

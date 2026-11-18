@@ -205,7 +205,10 @@ their keys and times beside them, as games kept them before records), Play
 Games Saved Games on Android once the wiring hands it in, or
 `LocalOnlyCloud`, which keeps everything on the device (a test run kept
 off iCloud). `Configuration` names where each key's time is kept
-(`sync.<key>`, or an older build's layout, read alongside).
+(`sync.<key>`, or an older build's layout, read alongside). Set
+`ICloudSyncManager.configuration` and `cloud` before `start`: a game whose
+iCloud data is flat that started on the default `.records` cloud would
+replace its values with records its earlier builds can't read.
 
 ### Android's wiring (`PlatformAndroid`)
 

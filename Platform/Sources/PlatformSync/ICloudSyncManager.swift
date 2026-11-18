@@ -43,8 +43,11 @@ nonisolated public final class ICloudSyncManager: @unchecked Sendable {
     public static let didUpdateLocalData = Notification.Name("ICloudSyncManager.didUpdateLocalData")
     public static let updatedKeysUserInfoKey = "updatedKeys"
 
-    /// Set before `shared` is first used.
-    nonisolated(unsafe) public static var configuration = Configuration()
+    /// The layout `shared` keeps on this device. Set it, and `cloud`, before
+    /// `start`; setting it once `shared` has started merges again with it.
+    nonisolated(unsafe) public static var configuration = Configuration() {
+        didSet { shared.use(configuration) }
+    }
 
     /// The cloud `shared` syncs through: iCloud's key-value store on Apple
     /// platforms, none on Android until its wiring hands one in. A game
@@ -63,7 +66,7 @@ nonisolated public final class ICloudSyncManager: @unchecked Sendable {
         #endif
     }
 
-    private let configuration: Configuration
+    private var configuration: Configuration
     private let now: () -> TimeInterval
     private var cloud: CloudKeyValueStore
     private var madeEngine: SyncEngine?
@@ -109,6 +112,15 @@ nonisolated public final class ICloudSyncManager: @unchecked Sendable {
 
     private func use(_ cloud: CloudKeyValueStore) {
         self.cloud = cloud
+        restart()
+    }
+
+    private func use(_ configuration: Configuration) {
+        self.configuration = configuration
+        restart()
+    }
+
+    private func restart() {
         madeEngine = makeEngine()
         if let started { engine.start(syncing: started.keys, prefixes: started.prefixes) }
     }
@@ -125,8 +137,7 @@ nonisolated public final class ICloudSyncManager: @unchecked Sendable {
         adoptingLaunchArguments: Bool = ICloudSyncManager.isDebugBuild
     ) {
         started = (keys, prefixes)
-        engine.start(syncing: keys, prefixes: prefixes)
-        if adoptingLaunchArguments { engine.adoptLaunchArguments() }
+        engine.start(syncing: keys, prefixes: prefixes, adoptingLaunchArguments: adoptingLaunchArguments)
     }
 
     /// Asks the cloud for news (at launch and back in the foreground) and
