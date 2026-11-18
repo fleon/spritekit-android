@@ -17,3 +17,9 @@ Vendor/*
 # Arm's ASTC encoder, fetched and built by Tools/Art/ASTC/build-astcenc.sh.
 Tools/Art/ASTC/src/
 Tools/Art/ASTC/out/
+
+# The Android library's own Gradle build (Library/), when checked on its own.
+Library/.gradle/
+Library/.kotlin/
+Library/build/
+Library/local.properties

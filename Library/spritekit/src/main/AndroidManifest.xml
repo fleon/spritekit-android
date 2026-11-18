@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- The share sheet's files (SpriteKitActivity.shareFile): content://
+             URIs for what the game writes under the cache, granted per share. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/spritekit_shared_files" />
+        </provider>
+
+        <!-- Play Games Services' project (empty in a build without one;
+             PlayGamesServices then never initializes the SDK). -->
+        <meta-data
+            android:name="com.google.android.gms.games.APP_ID"
+            android:value="@string/game_services_project_id" />
+    </application>
+</manifest>
