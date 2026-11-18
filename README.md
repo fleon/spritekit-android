@@ -66,7 +66,17 @@ Shell/               Android-only. The app shell: SDL3, the EGL context, the
 Platform/            The platform code games share, on Apple platforms and
                      Android alike: `Macros` (`@NSCodingUnsupported`),
                      `PlatformCore` (geometry shorthands, timing curves and
+                     eased actions, seeded randomness, the launch-argument
+                     reader), `PlatformAudio` (sound effects and the
+                     soundtrack), `PlatformSprite` (the texture cache and
+                     sprite helpers, colours, text and fonts, SVG paths and
+                     icons, shape sprites, scene loading, localization,
+                     debug markers). See "Shared platform code".
                      eased actions, seeded randomness), `PlatformAudio`
+                     (sound effects and the soundtrack), `PlatformDevice`
+                     (haptics, rating prompts, play time), `PlatformSync`
+                     (synced saved data) and `PlatformAndroid` (Android's
+                     Play and device wiring). See "Shared platform code".
                      (sound effects and the soundtrack), `PlatformInput`
                      (focus for the remote, gamepads and the pointer;
                      keyboard and Menu protocols), `PlatformDisplay`
@@ -219,6 +229,106 @@ another device's. Android's audio focus arrives through
 reports another app's audio itself. Whatever a backend can't do (a voice of
 its own, on a backend without them) falls back to playing the sound once.
 
+### Sprites, text and scenes (`PlatformSprite`)
+
+The SpriteKit infrastructure with no game in it. What each game's content
+decides, it hands in:
+
+- **Sprites** (`txtr`, `sprite`, `tinted`, `sliced`, `textures(in:)`,
+  `forgetTextures(where:)`, `restingFrame(in:)`): a texture cache safe on
+  any thread. `SpriteArt.capInsets` gives `sliced` its caps (a generated
+  slice table), `SpriteArt.scale` sizes art drawn at a scale of its own,
+  and `SpriteArt.whenForgetting` hooks a game's own caches of assets'
+  textures (lit shaders' normal maps) onto `forgetTextures`.
+- **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
+  string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
+- **Text** (`wrappedLines`, CoreText's breaks on both platforms;
+  `capitalsOffset`, `centerCapitals`, `TextBlockNode`): `Typography` holds
+  the game's font and line height, and `Typography.follow(_:base:)` sets
+  them by the current language (`ScriptedLanguage`: a script's own face and
+  line height). `FontRegistry.register(fontFiles:)` registers the game's
+  font files once each.
+- **Icons** (`SVGPath`, `IconDrawing`, `IconPart`): a game's enum of icons
+  lists each one's path data, stroked or filled, on a grid; `node(size:color:)`
+  draws it once a size into `DrawnTexture`'s cache and tints it.
+  `ShapeSprite` draws rings, pills, discs and outlines the same way, never
+  as shape nodes.
+- **Scenes** (`LoadableScene`, `TransitionManager.show`/`present`,
+  `offMainActor`, `BuildGate`): `TransitionManager.sceneSize`, `scaleMode`
+  and `duration` are the game's, and `present` takes the game's loading
+  scene. `SceneLayout` is the safe area, the display's rounded corners
+  (`DisplayCorners`), a camera's occlusion (iOS 27.1's `reservedRegions`)
+  and where round buttons stand in the corners or a rail, by the game's
+  `SceneLayout.Metrics`.
+- **Localization** (`Localizer`): the player's pick, else the device's
+  language among the game's (`LocalizationLanguage`), its strings read from
+  the bundle's `.lproj` with a content table keyed by its text; on Android
+  from the APK's `lproj/`, through the shim's `.strings` parser, so the
+  player's pick holds there too.
+- **Debugging** (`Markers`, `FrameLog`; `LaunchArgumentReader` in
+  `PlatformCore`): the arguments are the game's; the reader answers fixed
+  values in a release build.
+### Haptics, ratings and play time (`PlatformDevice`)
+
+`HapticsManager` plays UIKit's kinds of feedback (`lightImpact()`,
+`mediumImpact()`, `softImpact()`, `selectionChanged()`, `success()`,
+`warning()`, `error()`, …) where the device has haptics and the player
+hasn't turned them off: an iPhone's generators (prepared again after each
+use), an Android device's vibrator wherever it has one (`VibrationSupport`,
+`-Vibrator NO` in a debug build), never Apple TV or an iPad. The switch
+(`isHapticsEnabled`, on by default) is kept in `storage` under `settingKey`
+(`settings.hapticsEnabled`); a game that syncs its settings hands in a
+`ValueStorage` that saves through its sync manager and lists
+`HapticsManager.syncedKeys`.
+
+`ReviewPrompt` is one rule for asking for a rating (`.milestones` reached,
+`.playTime` past a minimum, or `.once` when a condition first holds) and
+the record of what it asked, in a `ValueStorage` under its key: the
+milestones asked at as `[Int]`, `true` once a one-off asked, and a snooze's
+end as `<key>.snoozedUntil`. `requestIfDue()` asks the store (the App
+Store through the foreground window scene; Play In-App Review on Android)
+and records it; a game with its own "enjoying the game?" flow reads
+`isDue` and calls `markRequested()` or `snooze(for:)`.
+
+`AppUsageTracker` counts play time on every device: each device adds its
+own seconds under `<keyPrefix><device id>` while the game is in front, and
+the total sums every device's, so syncing the prefix (`.latest`) loses
+nothing.
+
+### Synced saved data (`PlatformSync`)
+
+`ICloudSyncManager` keeps saved data the same on the player's devices over
+`SyncEngine`: user defaults stay the store here, `set` saves a value where
+the latest change wins (nil removes it), `insert` and `resetSet` keep a set
+every device adds to, and the keys another device changed are posted as
+`didUpdateLocalData`. `start(syncing:prefixes:)` names what syncs: each
+owner's `syncedKeys`, and prefixes for keys made as play goes on. The
+cloud is `ICloudKeyValueStore` on Apple platforms (over
+`NSUbiquitousKeyValueStore`, one record a key, or `.flat`: values under
+their keys and times beside them, as games kept them before records), Play
+Games Saved Games on Android once the wiring hands it in, or
+`LocalOnlyCloud`, which keeps everything on the device (a test run kept
+off iCloud). `Configuration` names where each key's time is kept
+(`sync.<key>`, or an older build's layout, read alongside). Set
+`ICloudSyncManager.configuration` and `cloud` before `start`: a game whose
+iCloud data is flat that started on the default `.records` cloud would
+replace its values with records its earlier builds can't read.
+
+### Android's wiring (`PlatformAndroid`)
+
+`AndroidPlatformServices.install(_:)` puts a game's managers on Google Play
+and the device, once, before its launch work starts them. It makes each
+backend the configuration asks for and hands it to the receiver the game
+names: Play Games' achievements to its Game Center manager, the
+leaderboards to `GKLeaderboard.backend`, the signed-in player to
+`GKLocalPlayer.local`, Saved Games to its sync manager (flushed as the game
+leaves the front, synchronized as it comes back), Play Billing or simulated
+purchases to its store. Play Games needs the mapping packed in the APK
+(`PlayGamesMapping.bundled()`); without it achievements and saved data stay
+on the device. It also sets the device's hooks (haptics, battery saver as
+Low Power Mode, audio focus, and on request the status bar, battery,
+connection and image codecs). Its sources are all `SPRITEKIT_SHIM`, so Apple
+builds compile it empty.
 ### Input: focus, gamepads, keys (`PlatformInput`)
 
 Focus is how the Apple TV remote, gamepads and the Mac's pointer reach a
@@ -867,7 +977,9 @@ by `SystemFontFaces`.
   (`LocalizedStringsTests`, measured on a Mac). Only `NSLocalizedString`:
   `Bundle.localizedString(forKey:value:table:)`, `String(localized:)` and
   `.stringsdict` still answer with keys, and `bundle:` isn't read. A file
-  that imports only Foundation needs the shim re-exported in its module.
+  that imports only Foundation needs the shim re-exported in its module. A
+  game that picks its own language reads that folder's tables with
+  `LocalizedStrings.table(atPath:)`, as `PlatformSprite`'s `Localizer` does.
 - **Layout:** a point is a dp. The safe area includes the system bars, the
   cutout and the gesture handle; Back (and Android 16's predictive back)
   arrives as Escape.

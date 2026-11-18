@@ -19,7 +19,8 @@ import Foundation
 /// - A key that language's table lacks comes back as `value`, or as the key
 ///   when `value` is empty: Apple doesn't look in another language's table.
 ///
-/// Only `NSLocalizedString` is covered: `Bundle.localizedString(forKey:value:table:)`,
+/// Only `NSLocalizedString` is covered (and `table(atPath:)`, for a game that
+/// reads a language's folder itself): `Bundle.localizedString(forKey:value:table:)`,
 /// `String(localized:)` and `.stringsdict` plurals still answer with the key,
 /// and the `bundle:` argument is taken but not read (only the main bundle's
 /// strings are in the APK). A file that imports only Foundation sees these
@@ -38,6 +39,7 @@ public enum LocalizedStrings {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var tables: [String: [String: String]] = [:]
+    nonisolated(unsafe) private static var files: [String: [String: String]] = [:]
     nonisolated(unsafe) private static var chosen: String??
 
     /// The development language (`AppIdentity.developmentRegion`, Apple's
@@ -88,20 +90,39 @@ public enum LocalizedStrings {
         return parsed
     }
 
+    /// The `.strings` file at `path`, read once: for a game that picks its
+    /// language itself and reads that language's folder
+    /// (`BundleResources.folderProvider`). Empty if there's none.
+    public static func table(atPath path: String) -> [String: String] {
+        lock.lock()
+        if let cached = files[path] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+        let parsed = FileManager.default.contents(atPath: path).map(StringsFile.parse) ?? [:]
+        lock.lock()
+        files[path] = parsed
+        lock.unlock()
+        return parsed
+    }
+
     /// Forgets the tables and the language chosen (tests).
     static func reset() {
         lock.lock()
         tables = [:]
+        files = [:]
         chosen = nil
         lock.unlock()
     }
 }
 
 /// A `.strings` file: `"key" = "value";` pairs, with `/* */` and `//`
-/// comments, Apple's backslash escapes (`\"`, `\\`, `\n`, `\t`, `\r`,
-/// `\Uxxxx`), UTF-8 or UTF-16 with a byte order mark, and unquoted keys of
-/// letters, digits and `_.-:$/`, as Foundation's old-style property list
-/// parser takes them.
+/// comments, Apple's backslash escapes (`\"`, `\\`, `\n`, `\t`, `\r`, `\a`,
+/// `\b`, `\f`, `\v`, octal `\ooo`, `\Uxxxx` with surrogate pairs; any other
+/// character after a backslash is itself), UTF-8 or UTF-16 with a byte
+/// order mark, and unquoted keys of letters, digits and `_.-:$/`, as
+/// Foundation's old-style property list parser takes them.
 enum StringsFile {
     static func parse(_ data: Data) -> [String: String] {
         let text: String
@@ -165,30 +186,49 @@ enum StringsFile {
             guard let c = current else { return nil }
             if c == "\"" {
                 at += 1
-                var out = String.UnicodeScalarView()
+                // UTF-16, as Foundation builds it: `\U` escapes may pair into
+                // one character.
+                var out: [UInt16] = []
                 while let c = current, c != "\"" {
                     at += 1
                     guard c == "\\", let escaped = current else {
-                        out.append(c)
+                        out.append(contentsOf: c.utf16)
                         continue
                     }
                     at += 1
                     switch escaped {
-                    case "n": out.append("\n")
-                    case "t": out.append("\t")
-                    case "r": out.append("\r")
-                    case "U", "u":
-                        var hex = ""
-                        while hex.count < 4, let h = current, h.properties.isASCIIHexDigit {
-                            hex.unicodeScalars.append(h)
+                    case "a": out.append(0x07)
+                    case "b": out.append(0x08)
+                    case "f": out.append(0x0C)
+                    case "n": out.append(0x0A)
+                    case "r": out.append(0x0D)
+                    case "t": out.append(0x09)
+                    case "v": out.append(0x0B)
+                    case "U":
+                        var code: UInt16 = 0
+                        var digits = 0
+                        while digits < 4, let h = current, let digit = h.properties.isASCIIHexDigit ? UInt16(String(h), radix: 16) : nil {
+                            code = code << 4 | digit
+                            digits += 1
                             at += 1
                         }
-                        if let code = UInt32(hex, radix: 16), let scalar = Unicode.Scalar(code) { out.append(scalar) }
-                    default: out.append(escaped)
+                        out.append(code)
+                    case "0"..."7":
+                        // Up to three octal digits, a byte in NeXTSTEP's encoding.
+                        var code = UInt8(escaped.value - 48)
+                        var digits = 1
+                        while digits < 3, let o = current, ("0"..."7").contains(o) {
+                            code = code &<< 3 &+ UInt8(o.value - 48)
+                            digits += 1
+                            at += 1
+                        }
+                        let decoded = code < 0x80 ? String(UnicodeScalar(code)) : String(bytes: [code], encoding: .nextstep)
+                        out.append(contentsOf: (decoded ?? "").utf16)
+                    default: out.append(contentsOf: escaped.utf16)
                     }
                 }
                 guard take("\"") else { return nil }
-                return String(out)
+                return String(decoding: out, as: UTF16.self)
             }
             var out = String.UnicodeScalarView()
             while let c = current, c.properties.isAlphabetic || ("0"..."9").contains(c) || "_.-:$/".unicodeScalars.contains(c) {
