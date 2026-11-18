@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Play Games Services' project ID. The app's build sets its own
+         (resValue), which takes the place of this empty one: with none,
+         PlayGamesServices never initializes the SDK. A string because the
+         manifest's APP_ID must name one (a bare number reads as a float). -->
+    <string name="game_services_project_id" translatable="false"></string>
+</resources>

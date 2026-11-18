@@ -1,0 +1,32 @@
+<!-- Local notifications (PlatformNotifications), merged into the app's
+     manifest when it depends on this module. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Showing notifications: asked at runtime from Android 13, when the
+         game calls requestAuthorization. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Setting the alarms again after a reboot (NotificationBootReceiver).
+         A normal permission: granted at install. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+        <!-- Scheduled notifications' alarms. Only this app's own alarms reach it. -->
+        <receiver
+            android:name="com.spritekit.platform.notifications.NotificationReceiver"
+            android:exported="false" />
+
+        <!-- Re-arms the alarms after a reboot or an update (both clear them),
+             and works calendar triggers out again when the time zone or
+             clock changes. -->
+        <receiver
+            android:name="com.spritekit.platform.notifications.NotificationBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

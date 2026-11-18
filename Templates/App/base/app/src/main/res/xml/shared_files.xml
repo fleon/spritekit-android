@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- What MainActivity.shareFile may hand out: the cache, where the shell
-     points Foundation's temporary directory (TMPDIR) and a game writes what
-     it shares. -->
-<paths>
-    <cache-path name="cache" path="." />
-</paths>
