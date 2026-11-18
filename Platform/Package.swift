@@ -42,6 +42,7 @@ let package = Package(
     products: [
         .library(name: "Macros", targets: ["Macros"]),
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
+        .library(name: "PlatformRigs", targets: ["PlatformRigs"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -67,6 +68,23 @@ let package = Package(
                 .product(name: "PlatformServices", package: "spritekit-android"),
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
+            swiftSettings: settings
+        ),
+        // Spine skeletons played and drawn: the runtime (`RigData`, `RigPose`,
+        // spine-core 4.2 with spine-c 3.6's ways), their meshes as SpriteKit
+        // draws them (`RigMeshNode`) and the node that plays one (`RigNode`).
+        .target(
+            name: "PlatformRigs",
+            dependencies: [
+                "PlatformCore",
+                "Macros",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformRigsTests",
+            dependencies: ["PlatformRigs"],
             swiftSettings: settings
         ),
         .testTarget(
