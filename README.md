@@ -71,6 +71,11 @@ Platform/            The platform code games share, on Apple platforms and
                      (haptics, rating prompts, play time), `PlatformSync`
                      (synced saved data) and `PlatformAndroid` (Android's
                      Play and device wiring). See "Shared platform code".
+                     (sound effects and the soundtrack), `PlatformInput`
+                     (focus for the remote, gamepads and the pointer;
+                     keyboard and Menu protocols) and `PlatformDisplay`
+                     (frame-rate and graphics settings with Auto). See
+                     "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -225,6 +230,67 @@ on the device. It also sets the device's hooks (haptics, battery saver as
 Low Power Mode, audio focus, and on request the status bar, battery,
 connection and image codecs). Its sources are all `SPRITEKIT_SHIM`, so Apple
 builds compile it empty.
+### Input: focus, gamepads, keys (`PlatformInput`)
+
+Focus is how the Apple TV remote, gamepads and the Mac's pointer reach a
+scene's controls. A control adopts `Focusable` (where it sits, whether it
+takes focus now, showing focus its own way, `fadeFocusRing` for a ring that
+glows), and a control that takes some moves itself `FocusSteering`.
+`SceneControls` collects what's on screen in reading order, only a popup's
+while one is open (a direct child of the scene adopting `FocusOverlay`),
+skipping hidden, faint and `hidesFocus` subtrees; a scrolling list adopts
+`FocusScrollArea` so its controls out of view still take focus and scroll
+in. `FocusNavigator` moves focus to the nearest control each way
+(`nearest(from:among:_:)`), presses it, starts where the scene or popup
+says (`FocusDefaulting`) and comes back where it was when a popup closes.
+
+`FocusDriver` is what a view controller holds: on Apple TV focus always
+shows; elsewhere a gamepad's first press brings it up where the screen
+starts it, and a touch (`TouchWatcher` on iOS, `watchTouches(in:)` on
+Android), the Mac's pointer moving (`HoverFocus`, which shows focus under
+the pointer meanwhile) or the last gamepad going hide it again.
+
+`GamepadInput` reads extended gamepads: GameController on Apple, the
+shell's `GamepadEvents` on Android. The d-pad or left stick points a way
+(with press and release thresholds on the stick), the pad that last
+pointed holds it and a held way repeats; each button sends one press
+(`Action.move`, `Action.press`). `FocusDriver.connect` has the d-pad and A
+drive focus and hands the other buttons to the game. On Apple TV, which
+turns a gamepad's presses into the remote's too, `routeRemotePress` holds
+the remote's back for the echo window and drops the echoes; Menu stays the
+remote's way back. `playScript` plays `GamepadScript` steps on a pretend
+pad for test runs, and `showVirtualGamepad` puts up Apple's on-screen one.
+Timings and thresholds are `GamepadConfiguration`'s and
+`FocusConfiguration`'s (`FocusNavigator.configuration`).
+
+`KeyboardControllable` (keys by HID usage; the remote's Back and Android's
+back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene
+protocols the controllers route to, and `TouchOrigin` (with
+`TouchOriginWindow`) remembers where the player last touched or pressed.
+
+### Display: frame rate and graphics (`PlatformDisplay`)
+
+`DisplaySettings` holds the player's frame rate (Auto, or one of
+`Configuration.frameRates` the screen can draw) and graphics tier (Auto, or
+one of five shares of the pixels, `Graphics`, which a game names in its own
+strings), kept on the device under `keyPrefix`. Auto draws at 60 (50 on a
+50 Hz screen), never slower, and between Highest and Medium as
+`RenderScaleGovernor` chooses once for the device (`noteAutoChosen`); a
+pinned scale or a simulator leaves Auto nothing to choose. `choices` is
+what the renderer applies, `running` what it draws at now. A game
+configures the store, the scenes that measure (`isMeasured`: not a loading
+screen), a pinned scale, a logger and a save hook for syncing
+(`didSave`, `pickKeys`, `savedDataDidSync`).
+
+On Apple, `RenderScaleController` applies them to the game's `SKView`
+(rate, `contentScaleFactor` and the Metal drawable), timing frames as the
+view's delegate; the game calls `apply()` as each scene change starts,
+`fitDrawable()` after layout, and hears density changes through
+`onDensityChange`. On Android the shell's renderer applies them through
+`GameHost`: a controller that also adopts `DisplaySettingsHost` gets its
+display members (`displayChoices`, `observeDisplayChoices`, `isMeasured`,
+`setRunning`, `noteAutoChosen`, `pinnedRenderScale`) from
+`DisplaySettings`, so it needn't write them.
 
 Checks: `swift test --package-path Platform` on the host, the Apple builds
 (`xcodebuild -scheme <product> -destination 'generic/platform=iOS
