@@ -45,13 +45,40 @@ public final class SyncEngine: @unchecked Sendable {
         }
     }
 
-    /// Prefixes the user defaults key that holds when a synced key last
-    /// changed here (a set keeps its whole record there).
-    private static let stampPrefix = "sync."
+    /// Where the time a synced key last changed is kept beside it: the
+    /// key with a prefix and a suffix (a set keeps its whole record there).
+    /// `sync.<key>` unless a game kept its times elsewhere before.
+    public struct Stamps: Equatable, Sendable {
+        public var prefix: String
+        public var suffix: String
+
+        public init(prefix: String = "", suffix: String = "") {
+            self.prefix = prefix
+            self.suffix = suffix
+        }
+
+        public static let standard = Stamps(prefix: "sync.")
+
+        public func key(for key: String) -> String {
+            prefix + key + suffix
+        }
+
+        /// The synced key a stamp's key belongs to, or nil for any other key.
+        public func syncedKey(forStamp key: String) -> String? {
+            guard key.hasPrefix(prefix), key.hasSuffix(suffix), key.count > prefix.count + suffix.count else { return nil }
+            return String(key.dropFirst(prefix.count).dropLast(suffix.count))
+        }
+    }
 
     private let defaults: UserDefaults
     private let cloud: CloudKeyValueStore
+    private let stamps: Stamps
+    /// Where an older build kept its times, read alongside (the later of
+    /// the two counts) and never written.
+    private let legacyStamps: Stamps?
     private var syncedKeys: [String: Merge] = [:]
+    /// Every key starting with one of these syncs too, as it merges.
+    private var syncedPrefixes: [String: Merge] = [:]
     /// Called with the keys whose values here changed because another device
     /// had changed them.
     private let updated: ([String]) -> Void
@@ -61,21 +88,53 @@ public final class SyncEngine: @unchecked Sendable {
     public init(
         defaults: UserDefaults = .standard,
         cloud: CloudKeyValueStore = LocalOnlyCloud(),
+        stamps: Stamps = .standard,
+        legacyStamps: Stamps? = nil,
         now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 },
         updated: @escaping ([String]) -> Void
     ) {
         self.defaults = defaults
         self.cloud = cloud
+        self.stamps = stamps
+        self.legacyStamps = legacyStamps
         self.now = now
         self.updated = updated
     }
 
-    /// Syncs every owner's keys: merges them with the cloud now, and again
-    /// whenever it brings changes.
-    public func start(syncing keys: [[String: Merge]]) {
+    /// Syncs every owner's keys, and every key starting with one of
+    /// `prefixes` (for keys made as play goes on, one a level, say): merges
+    /// them with the cloud now, and again whenever it brings changes. With
+    /// `adoptingLaunchArguments`, launch arguments are adopted before that
+    /// first merge, so it never sees (or uploads) their raw strings.
+    public func start(syncing keys: [[String: Merge]], prefixes: [String: Merge] = [:], adoptingLaunchArguments: Bool = false) {
         syncedKeys = keys.reduce(into: [:]) { $0.merge($1) { first, _ in first } }
+        syncedPrefixes = prefixes
         cloud.externalChanges = { [weak self] in self?.merge() }
+        if adoptingLaunchArguments { adoptLaunchArguments() }
         synchronize()
+    }
+
+    /// How `key` merges, if it syncs.
+    public func merge(for key: String) -> Merge? {
+        if let merge = syncedKeys[key] { return merge }
+        guard !isStamp(key) else { return nil }
+        return syncedPrefixes.first { key.hasPrefix($0.key) }?.value
+    }
+
+    /// Every key that syncs: those named, and those here or in the cloud
+    /// under a synced prefix.
+    public var allSyncedKeys: [String: Merge] {
+        var keys = syncedKeys
+        guard !syncedPrefixes.isEmpty else { return keys }
+        let found = Set(defaults.dictionaryRepresentation().keys).union(cloud.keys)
+        for key in found where keys[key] == nil {
+            if let merge = merge(for: key) { keys[key] = merge }
+        }
+        return keys
+    }
+
+    private func isStamp(_ key: String) -> Bool {
+        stamps.syncedKey(forStamp: key) != nil || legacyStamps?.syncedKey(forStamp: key) != nil
     }
 
     /// Asks the cloud for news (at launch and back in the foreground) and
@@ -165,7 +224,7 @@ public final class SyncEngine: @unchecked Sendable {
     /// cloud, then announces what changed here.
     private func merge(_ keys: [String: Merge]? = nil) {
         var changed: [String] = []
-        for (key, kind) in keys ?? syncedKeys {
+        for (key, kind) in keys ?? allSyncedKeys {
             if reconcile(key, as: kind) { changed.append(key) }
         }
         guard !changed.isEmpty else { return }
@@ -183,7 +242,7 @@ public final class SyncEngine: @unchecked Sendable {
 
     private func reconcileLatest(_ key: String) -> Bool {
         let local = defaults.object(forKey: key)
-        let modifiedAt = defaults.double(forKey: Self.stampKey(key))
+        let modifiedAt = localModifiedAt(key)
         let record = cloud.dictionary(forKey: key)
         let remote = record?[Record.value]
         let remoteModifiedAt = record?[Record.modifiedAt] as? TimeInterval ?? 0
@@ -200,7 +259,7 @@ public final class SyncEngine: @unchecked Sendable {
         // Newer here, not in the cloud yet, or changed here without a new
         // stamp (a `defaults write` before a test run): this device wins.
         let stamp = modifiedAt > remoteModifiedAt ? modifiedAt : now()
-        defaults.set(stamp, forKey: Self.stampKey(key))
+        defaults.set(stamp, forKey: stamps.key(for: key))
         cloud.set(Self.record(local, modifiedAt: stamp), forKey: key)
         return false
     }
@@ -222,14 +281,14 @@ public final class SyncEngine: @unchecked Sendable {
     /// coming through here (from before syncing) count as added before any reset.
     private func savedSet(_ key: String) -> SetRecord {
         let listed = defaults.stringArray(forKey: key) ?? []
-        var record = SetRecord(defaults.dictionary(forKey: Self.stampKey(key)))
+        var record = SetRecord(defaults.dictionary(forKey: stamps.key(for: key)))
         record.items = Dictionary(listed.map { ($0, record.items[$0] ?? 0) }, uniquingKeysWith: min)
         return record
     }
 
     private func saveSet(_ record: SetRecord, forKey key: String) {
         defaults.set(record.items.keys.sorted(), forKey: key)
-        defaults.set(record.dictionary, forKey: Self.stampKey(key))
+        defaults.set(record.dictionary, forKey: stamps.key(for: key))
     }
 
     private func saveLocally(_ value: Any?, forKey key: String, modifiedAt: TimeInterval) {
@@ -238,7 +297,13 @@ public final class SyncEngine: @unchecked Sendable {
         } else {
             defaults.removeObject(forKey: key)
         }
-        defaults.set(modifiedAt, forKey: Self.stampKey(key))
+        defaults.set(modifiedAt, forKey: stamps.key(for: key))
+    }
+
+    private func localModifiedAt(_ key: String) -> TimeInterval {
+        let modifiedAt = defaults.double(forKey: stamps.key(for: key))
+        guard let legacyStamps else { return modifiedAt }
+        return max(modifiedAt, defaults.double(forKey: legacyStamps.key(for: key)))
     }
 
     private static func record(_ value: Any?, modifiedAt: TimeInterval) -> [String: Any] {
@@ -256,10 +321,6 @@ public final class SyncEngine: @unchecked Sendable {
         // member. Nothing a property list can hold reaches the second line.
         if let first = first as? NSObject, let second = second as? NSObject { return first.isEqual(second) }
         return String(describing: first) == String(describing: second)
-    }
-
-    private static func stampKey(_ key: String) -> String {
-        stampPrefix + key
     }
 }
 

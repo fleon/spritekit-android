@@ -67,6 +67,10 @@ Platform/            The platform code games share, on Apple platforms and
                      Android alike: `Macros` (`@NSCodingUnsupported`) and
                      `PlatformCore` (geometry shorthands, timing curves and
                      eased actions, seeded randomness), `PlatformAudio`
+                     (sound effects and the soundtrack), `PlatformDevice`
+                     (haptics, rating prompts, play time), `PlatformSync`
+                     (synced saved data) and `PlatformAndroid` (Android's
+                     Play and device wiring). See "Shared platform code".
                      (sound effects and the soundtrack), `PlatformInput`
                      (focus for the remote, gamepads and the pointer;
                      keyboard and Menu protocols) and `PlatformDisplay`
@@ -165,6 +169,67 @@ another device's. Android's audio focus arrives through
 reports another app's audio itself. Whatever a backend can't do (a voice of
 its own, on a backend without them) falls back to playing the sound once.
 
+### Haptics, ratings and play time (`PlatformDevice`)
+
+`HapticsManager` plays UIKit's kinds of feedback (`lightImpact()`,
+`mediumImpact()`, `softImpact()`, `selectionChanged()`, `success()`,
+`warning()`, `error()`, …) where the device has haptics and the player
+hasn't turned them off: an iPhone's generators (prepared again after each
+use), an Android device's vibrator wherever it has one (`VibrationSupport`,
+`-Vibrator NO` in a debug build), never Apple TV or an iPad. The switch
+(`isHapticsEnabled`, on by default) is kept in `storage` under `settingKey`
+(`settings.hapticsEnabled`); a game that syncs its settings hands in a
+`ValueStorage` that saves through its sync manager and lists
+`HapticsManager.syncedKeys`.
+
+`ReviewPrompt` is one rule for asking for a rating (`.milestones` reached,
+`.playTime` past a minimum, or `.once` when a condition first holds) and
+the record of what it asked, in a `ValueStorage` under its key: the
+milestones asked at as `[Int]`, `true` once a one-off asked, and a snooze's
+end as `<key>.snoozedUntil`. `requestIfDue()` asks the store (the App
+Store through the foreground window scene; Play In-App Review on Android)
+and records it; a game with its own "enjoying the game?" flow reads
+`isDue` and calls `markRequested()` or `snooze(for:)`.
+
+`AppUsageTracker` counts play time on every device: each device adds its
+own seconds under `<keyPrefix><device id>` while the game is in front, and
+the total sums every device's, so syncing the prefix (`.latest`) loses
+nothing.
+
+### Synced saved data (`PlatformSync`)
+
+`ICloudSyncManager` keeps saved data the same on the player's devices over
+`SyncEngine`: user defaults stay the store here, `set` saves a value where
+the latest change wins (nil removes it), `insert` and `resetSet` keep a set
+every device adds to, and the keys another device changed are posted as
+`didUpdateLocalData`. `start(syncing:prefixes:)` names what syncs: each
+owner's `syncedKeys`, and prefixes for keys made as play goes on. The
+cloud is `ICloudKeyValueStore` on Apple platforms (over
+`NSUbiquitousKeyValueStore`, one record a key, or `.flat`: values under
+their keys and times beside them, as games kept them before records), Play
+Games Saved Games on Android once the wiring hands it in, or
+`LocalOnlyCloud`, which keeps everything on the device (a test run kept
+off iCloud). `Configuration` names where each key's time is kept
+(`sync.<key>`, or an older build's layout, read alongside). Set
+`ICloudSyncManager.configuration` and `cloud` before `start`: a game whose
+iCloud data is flat that started on the default `.records` cloud would
+replace its values with records its earlier builds can't read.
+
+### Android's wiring (`PlatformAndroid`)
+
+`AndroidPlatformServices.install(_:)` puts a game's managers on Google Play
+and the device, once, before its launch work starts them. It makes each
+backend the configuration asks for and hands it to the receiver the game
+names: Play Games' achievements to its Game Center manager, the
+leaderboards to `GKLeaderboard.backend`, the signed-in player to
+`GKLocalPlayer.local`, Saved Games to its sync manager (flushed as the game
+leaves the front, synchronized as it comes back), Play Billing or simulated
+purchases to its store. Play Games needs the mapping packed in the APK
+(`PlayGamesMapping.bundled()`); without it achievements and saved data stay
+on the device. It also sets the device's hooks (haptics, battery saver as
+Low Power Mode, audio focus, and on request the status bar, battery,
+connection and image codecs). Its sources are all `SPRITEKIT_SHIM`, so Apple
+builds compile it empty.
 ### Input: focus, gamepads, keys (`PlatformInput`)
 
 Focus is how the Apple TV remote, gamepads and the Mac's pointer reach a

@@ -249,3 +249,63 @@ struct TwoDeviceTests {
         #expect(defaults.object(forKey: "settings.musicEnabled") as? Bool == false)
     }
 }
+
+@Suite("Sync: keys found by prefix, and times kept elsewhere")
+struct SyncLayoutTests {
+    @Test("A key made during play under a synced prefix travels to the other device")
+    func prefixedKeysTravel() {
+        let phoneCloud = MemoryCloud()
+        let padCloud = MemoryCloud()
+        let phoneDefaults = scratchDefaults()
+        let padDefaults = scratchDefaults()
+        var padChanged: [String] = []
+        let phone = SyncEngine(defaults: phoneDefaults, cloud: phoneCloud, now: { 100 }) { _ in }
+        let pad = SyncEngine(defaults: padDefaults, cloud: padCloud, now: { 50 }) { padChanged += $0 }
+        phone.start(syncing: [], prefixes: ["game.level.": .latest])
+        pad.start(syncing: [], prefixes: ["game.level.": .latest])
+
+        phone.set(Data([1, 2, 3]), forKey: "game.level.7")
+        phoneCloud.deliver(to: padCloud)
+
+        #expect(padDefaults.data(forKey: "game.level.7") == Data([1, 2, 3]))
+        #expect(padChanged == ["game.level.7"])
+        #expect(pad.merge(for: "game.level.7") == .latest)
+        #expect(pad.merge(for: "sync.game.level.7") == nil)
+        #expect(pad.merge(for: "other") == nil)
+    }
+
+    @Test("A value saved before syncing under a prefix reaches the cloud at start")
+    func prefixedLocalValuesUpload() {
+        let cloud = MemoryCloud()
+        let defaults = scratchDefaults()
+        defaults.set(3, forKey: "game.best")
+        let engine = SyncEngine(defaults: defaults, cloud: cloud, now: { 100 }) { _ in }
+        engine.start(syncing: [], prefixes: ["game.": .latest])
+
+        #expect(cloud.dictionary(forKey: "game.best")?[SyncEngine.Record.value] as? Int == 3)
+        #expect(cloud.dictionary(forKey: "sync.game.best") == nil)
+    }
+
+    @Test("Times kept under another layout, and an older one, are read as this device's")
+    func customStamps() {
+        let cloud = MemoryCloud()
+        let defaults = scratchDefaults()
+        let stamps = SyncEngine.Stamps(suffix: ".modifiedAt")
+        let legacy = SyncEngine.Stamps(prefix: "old.")
+        defaults.set("mine", forKey: "player")
+        defaults.set(TimeInterval(300), forKey: "old.player")
+        cloud.set([SyncEngine.Record.value: "theirs", SyncEngine.Record.modifiedAt: TimeInterval(200)], forKey: "player")
+        let engine = SyncEngine(defaults: defaults, cloud: cloud, stamps: stamps, legacyStamps: legacy, now: { 400 }) { _ in }
+        engine.start(syncing: [["player": .latest]])
+
+        // The legacy time (300) beats the cloud's (200): this device's value stands.
+        #expect(defaults.string(forKey: "player") == "mine")
+        #expect(cloud.dictionary(forKey: "player")?[SyncEngine.Record.value] as? String == "mine")
+        #expect(defaults.double(forKey: "player.modifiedAt") == 300)
+
+        engine.set("newer", forKey: "player")
+        #expect(defaults.double(forKey: "player.modifiedAt") == 400)
+        #expect(stamps.syncedKey(forStamp: "player.modifiedAt") == "player")
+        #expect(stamps.syncedKey(forStamp: "player") == nil)
+    }
+}
