@@ -72,7 +72,13 @@ public enum Shell {
             audio = soundtrack
             audioDidOpen?(soundtrack)
         }
-        defer { audio = NullAudioBackend() }
+        // Closed before SDL quits (the defers run last first): the game keeps
+        // its backend, and the soundtrack's thread must not outlive SDL's
+        // audio, whose locks SDL_Quit destroys.
+        defer {
+            audio = NullAudioBackend()
+            soundtrack?.shutdown()
+        }
         let probe = AudioProbe(audio: audio)
 
         // GLES 3.0. Chosen over Vulkan because `SKShader` sources are
