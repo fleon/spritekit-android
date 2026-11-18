@@ -550,6 +550,11 @@ idiom and refresh rate, takes Back, keys and links, gets the audio backend,
 reports the scene size for a view size, and answers the frame rate and render
 scale questions. Nothing in the shell imports a game.
 
+Back that a game doesn't take (`handleBack()` answering false) sends it to
+the background, as Back from any app does. A game that closes itself (Back
+pressed again on its title) calls `Shell.finishActivity()`, Android's
+`Activity.finish()`, which Apple has no equivalent of.
+
 ### Scripts
 
 The scripts find the game from the runtime's parent directory, or from
