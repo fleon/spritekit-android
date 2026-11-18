@@ -43,6 +43,7 @@ let package = Package(
         .library(name: "Macros", targets: ["Macros"]),
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
         .library(name: "PlatformRigs", targets: ["PlatformRigs"]),
+        .library(name: "PlatformAudio", targets: ["PlatformAudio"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -71,7 +72,7 @@ let package = Package(
             swiftSettings: settings
         ),
         // Spine skeletons played and drawn: the runtime (`RigData`, `RigPose`,
-        // spine-core 4.2 with spine-c 3.6's ways), their meshes as SpriteKit
+        // spine-core 4.2), their meshes as SpriteKit
         // draws them (`RigMeshNode`) and the node that plays one (`RigNode`).
         .target(
             name: "PlatformRigs",
@@ -90,6 +91,22 @@ let package = Package(
         .testTarget(
             name: "PlatformCoreTests",
             dependencies: ["PlatformCore"],
+            swiftSettings: settings
+        ),
+        // Sound effects and the soundtrack: one manager over
+        // `AudioBackend`, with AVAudioEngine's backend on Apple platforms;
+        // Android's shell hands the manager its own.
+        .target(
+            name: "PlatformAudio",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "PlatformServices", package: "spritekit-android"),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformAudioTests",
+            dependencies: ["PlatformAudio"],
             swiftSettings: settings
         ),
         .testTarget(

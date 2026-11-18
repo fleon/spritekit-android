@@ -66,8 +66,9 @@ Shell/               Android-only. The app shell: SDL3, the EGL context, the
 Platform/            The platform code games share, on Apple platforms and
                      Android alike: `Macros` (`@NSCodingUnsupported`) and
                      `PlatformCore` (geometry shorthands, timing curves and
-                     eased actions, seeded randomness). See "Shared platform
-                     code".
+                     eased actions, seeded randomness), `PlatformAudio`
+                     (sound effects and the soundtrack). See "Shared
+                     platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -75,9 +76,14 @@ Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
 Scripts/             Building SDL and a game's shell library, checking the
                      runtime alone, launching with arguments, the emulator
                      pool.
+Library/             Android-only Java: the Gradle library modules a
+                     game's app includes in place from the submodule.
+                     SDL's activity under `SpriteKitActivity`, and the
+                     Java half of each platform service (`spritekit`,
+                     `spritekit-billing`, `spritekit-notifications`).
 Templates/App/       The Android app a game copies: the Gradle project,
-                     MainActivity and the Java half of each platform
-                     service (Templates/App/README.md).
+                     its manifest and a `MainActivity` over the library
+                     (Templates/App/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -117,6 +123,45 @@ What belongs here: code a game's helpers and managers would otherwise copy
 that carries nothing of any one game. What a game configures (its sounds,
 products, achievements, constants) it passes in.
 
+### Audio (`PlatformAudio`)
+
+One `AudioManager` plays a game's sound effects and soundtrack on every
+platform, over `AudioBackend`: on Apple platforms `AppleAudioBackend`
+(pools of `AVAudioPlayer`s for sounds; an `AVAudioEngine` streaming each
+track, its intro once and then its loop section seamlessly, crossfading
+tracks on player nodes of their own, and picking the soundtrack up again
+after an interruption, a route change or the background), on Android the
+shell's, which the game hands over as it opens:
+
+```swift
+// At launch
+AudioManager.configure(AudioConfiguration(
+    sounds: AudioConfiguration.sounds(Sound.self) { sound in
+        sound == .step ? AudioConfiguration.Sound(sound.rawValue, rateVariation: 0.9...1.1) : nil
+    },
+    soundVolume: 0.8, musicVolume: 0.4,
+    crossfadeDuration: 2, musicFadeDuration: 0.25,
+    musicLoops: loops,                        // [track: MusicLoop]
+    settings: .init(write: { cloud.set($0, forKey: $1) })
+))
+// Android only, in the game's shell wiring
+Shell.audioDidOpen = { AudioManager.shared.use($0) }
+```
+
+Then `AudioManager.shared.play(_:)` (a name or a `String` enum; returns the
+sound's duration; `skipIfPlaying`, `variants`), `playEffect(_:repeats:
+variants:onFinish:)` and `stopEffect(_:fadeDuration:)` for sounds on voices
+of their own, `playMusic(_:loop:)` (the track already playing keeps going,
+another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
+`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`;
+`AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
+switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
+unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
+another device's. Android's audio focus arrives through
+`audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
+reports another app's audio itself. Whatever a backend can't do (a voice of
+its own, on a backend without them) falls back to playing the sound once.
+
 Checks: `swift test --package-path Platform` on the host, the Apple builds
 (`xcodebuild -scheme <product> -destination 'generic/platform=iOS
 Simulator'`, and tvOS and Mac Catalyst), and `Scripts/check-android.sh`,
@@ -134,7 +179,8 @@ directory's name, and the manifests here refer to this package as
   spritekit-android/   this repository (submodule)
   Game/                the game's package (GAME_PACKAGE_DIR)
   App/                 the game's Gradle project (APP_DIR), copied from
-                       Templates/App/base
+                       Templates/App/base, which builds the runtime's
+                       Library/ modules in place
 ```
 
 The game's package depends on `../spritekit-android`,
@@ -221,8 +267,16 @@ The shim issues no draw calls. `SKView.tick` returns a `DrawList`: a flat,
 ordered list of sprite, shape and label commands with nested effect and crop
 groups. The scene graph, transforms, actions and draw order are therefore
 testable on a Mac with no window, and the renderer is a separate consumer.
-Draw order is by accumulated `zPosition`, sorted stably, so ties fall in tree
-order (SpriteKit leaves ties unspecified; this is never less deterministic).
+Draw order is by accumulated `zPosition`, sorted stably. At the same z,
+keeping sibling order (`ignoresSiblingOrder` false, SpriteKit's default and
+the view's here), nodes draw in tree order; ignoring it, they fall in
+SpriteKit's three classes, each in tree order: colour sprites, shapes, crop
+and effect groups; then textured sprites and labels; then shader sprites
+(`DrawOrderTests`, measured by readback). In the middle class SpriteKit
+keeps each texture's sprites together, and the labels together, each group
+where its first member is: its most frequent answer, which the list gives
+every time. A snapshot (`texture(from:)`) is drawn in tree order whatever
+the view's setting.
 
 ### SpriteKit's behaviour, measured
 
@@ -301,6 +355,12 @@ A change to the shim's behaviour comes with a test of this kind.
   unsynchronised writes land over draws still pending).
 - **Meshes:** `SKTriangleMesh` and warped sprites batch as geometry with the
   sprites of their texture.
+- **Shapes** are rasterised on the CPU into coverage masks, cached by what
+  they draw. A shape whose path changes every frame (marching ants, a ring
+  drawing itself round) draws its last mask while the next is made on a
+  thread of the lowest priority (`MaskLag`), a frame or two behind; one
+  appearing gets its mask at once, and a fixed frame step makes every mask
+  at once. The frame report logs what masks have cost.
 - **Render scale:** fill rate decides frame time on mid-range GPUs, so the
   scene can draw at a share of the screen's size, the display scaling it up
   (`ANativeWindow_setBuffersGeometry`). `RenderScaleGovernor` picks the scale
@@ -413,8 +473,11 @@ placed by its combined ink as a one-style line is, so `frame` and every
 alignment mode agree with SpriteKit's (`AttributedLabelRunTests`, against
 Apple's `SKLabelNode` on the same font file). `SKLabelNode.runs` holds the
 runs; `laidOutRuns` is set when the layout placed them, and the draw list
-then emits one label command per run. A wrapped label in several styles
-still draws in its first run's style.
+then emits one label command per run. On several lines (`numberOfLines`
+other than 1, no `preferredMaxLayoutWidth`) the runs break at their
+newlines, and each line takes the largest ascent, descent and leading of the
+runs on it, as SpriteKit sizes the block (`AttributedParagraphParityTests`).
+A wrapped label in several styles still draws in its first run's style.
 
 ### UIKit around the scene
 
@@ -487,7 +550,7 @@ and tested on a Mac against a fake Java:
 A game with consumables passes them to `PlayBilling(consumables:)` and sets
 `deliver`, which is handed each product and quantity once. Nothing is
 delivered or consumed before `deliver` is set. On top of the one-time
-products' calls and events, the Java side answers:
+products' calls and events, the Java side (`Library/spritekit-billing`) answers:
 
 - `billing.consume` `{"token"}`: consume the purchase
   (`consumeAsync`), then send `consumed` `{"code": "ok" | <error>,
@@ -633,7 +696,7 @@ is `public` or `friends` (`COLLECTION_PUBLIC`, `COLLECTION_FRIENDS`). A
 score is `{rank, score, formattedScore, tag, time, playerId, name}`, from
 `LeaderboardScore` and its score holder, `time` in milliseconds since 1970
 (`getTimestampMillis`); `total` is -1 when Play doesn't know it; `count` 0
-loads only the signed-in player's. The base template's `PlayGamesServices`
+loads only the signed-in player's. The library's `PlayGamesServices`
 answers all four.
 
 ### A game's own fonts, and the system font

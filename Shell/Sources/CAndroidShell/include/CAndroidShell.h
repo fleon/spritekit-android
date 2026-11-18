@@ -58,7 +58,7 @@ int ska_set_main_executor(const void *identity, uintptr_t implementation);
 /// Whether libdispatch's main queue belongs to the calling thread: it binds
 /// the queue to whichever thread ran its constructor, so this says whether
 /// `libAndroidShell.so` (and with it libdispatch) first loaded on SDL's
-/// thread, as `MainActivity.loadLibraries` arranges.
+/// thread, as `SpriteKitActivity.loadLibraries` arranges.
 bool ska_owns_main_queue(void);
 
 /// Runs what `DispatchQueue.main` (and with it the main actor) has queued.
@@ -66,17 +66,17 @@ bool ska_owns_main_queue(void);
 void ska_drain_main_queue(void);
 
 /// Opens Android's share sheet with a file under the app's cache directory,
-/// through `MainActivity.shareFile` (JNI, on SDL's activity). `text` may be
-/// NULL. False if the call could not be made.
+/// through `SpriteKitActivity.shareFile` (JNI, on SDL's activity). `text`
+/// may be NULL. False if the call could not be made.
 bool ska_share_file(const char *path, const char *mime, const char *text);
 
 /// Google Play and the device, through `PlatformServices` on the Java side
-/// (`MainActivity.platformCall` / `platformDrain`). Both directions carry
-/// JSON as UTF-8 bytes.
+/// (`SpriteKitActivity.platformCall` / `platformDrain`). Both directions
+/// carry JSON as UTF-8 bytes.
 ///
 /// `ska_platform_install` registers
-/// `MainActivity.nativePlatformEventsReady`, which Java calls (on any thread)
-/// when it queues events: it only sets a flag, which
+/// `SpriteKitActivity.nativePlatformEventsReady`, which Java calls (on any
+/// thread) when it queues events: it only sets a flag, which
 /// `ska_platform_take_pending` reads and clears once a frame, so no
 /// Swift ever runs on a Java thread.
 bool ska_platform_install(void);
@@ -89,7 +89,7 @@ unsigned char *ska_platform_call(const char *name, const unsigned char *args, in
 
 /// The events Java has queued, as a JSON array: freed by the caller, or NULL.
 unsigned char *ska_platform_drain(int *out_length);
-/// Registers `MainActivity`'s native methods (`nativeOpenLink`,
+/// Registers `SpriteKitActivity`'s native methods (`nativeOpenLink`,
 /// `nativePaste`, `nativeKeyboard`) on SDL's activity, then tells it they're
 /// there (`nativesRegistered`), so it hands over a link it held meanwhile.
 /// SDL dlopens this library itself, so JNI would never find them by name.
@@ -106,7 +106,7 @@ char *ska_take_paste(void);
 bool ska_take_keyboard(int *height, int *viewHeight);
 
 /// Offers Android's Paste at a point in the view, in pixels
-/// (`MainActivity.offerPaste`).
+/// (`SpriteKitActivity.offerPaste`).
 bool ska_offer_paste(float x, float y);
 
 /// Sends what the process prints to standard output and standard error into

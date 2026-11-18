@@ -3,7 +3,7 @@
 # Cross-compile SDL3 for the ABIs in config.sh and stage it for the APK.
 #
 # Fetches the pinned SDL tag (shallow) into Vendor/SDL, builds a
-# shared libSDL3.so per ABI, and copies SDL's own Java sources into the
+# shared libSDL3.so per ABI, and stages SDL's own Java sources for the
 # Gradle project. Nothing binary is checked in; this script is the source of
 # truth for what ends up in the APK.
 #
@@ -50,10 +50,17 @@ for abi in "${targets[@]}"; do
 done
 
 # SDL's Android glue is Java: the activity, the GL surface, input, audio.
-# It is part of SDL, not of this project, so it is copied rather than forked.
+# It is part of SDL, not of this project, so it is compiled from the
+# checkout rather than forked: the runtime's Android library (Library/)
+# builds it from Vendor/SDL in place. An app that doesn't include the
+# library yet gets a copy in its own sources.
 java_src="$SDL_SRC/android-project/app/src/main/java/org/libsdl/app"
 java_dst="$APP_DIR/app/src/main/java/org/libsdl/app"
 rm -rf "$java_dst"
-mkdir -p "$java_dst"
-cp "$java_src"/*.java "$java_dst/"
-echo "==> copied $(ls "$java_dst" | wc -l | tr -d ' ') SDL Java sources to $java_dst"
+if grep -qs 'spritekit-android/Library' "$APP_DIR/settings.gradle.kts"; then
+    echo "==> SDL's Java builds in the runtime's library, from $java_src"
+else
+    mkdir -p "$java_dst"
+    cp "$java_src"/*.java "$java_dst/"
+    echo "==> copied $(ls "$java_dst" | wc -l | tr -d ' ') SDL Java sources to $java_dst"
+fi
