@@ -9,3 +9,7 @@
 // re-export means everything that reached them through `import GLESRenderer`
 // still does.
 @_exported import SpriteKitShim
+
+// The render-scale governor moved into PlatformServices, which Apple builds
+// share; the renderer still offers it to everything that imports it.
+@_exported import PlatformServices

@@ -8,6 +8,11 @@ surface, draws with GLES 3 through SDL3, and puts Google Play's billing,
 achievements, leaderboards and saved games behind the Apple-shaped APIs a
 game's managers already call.
 
+It also holds the platform code SpriteKit games share on every platform,
+Apple's included (`Platform/`): what's game-agnostic in a game's helpers and
+managers, so each game stops keeping its own copy and a fix reaches them
+all.
+
 Nothing here is specific to any game. A game keeps its own Android code (its
 controller, its managers' bodies, its Gradle app, its art pipeline and its
 notes) in its own repository, and changes here are described in SpriteKit's
@@ -27,9 +32,14 @@ and emitters.
 ## Layout
 
 ```
-Package.swift        SpriteKitShim, GLESRenderer, PlatformShim and their
-                     tests. Builds and tests on macOS.
+Package.swift        PlatformServices, SpriteKitShim, GLESRenderer,
+                     PlatformShim and their tests. Builds and tests on
+                     macOS.
 Sources/
+  PlatformServices/  Plain Foundation, on every platform: the protocols a
+                     game's audio, achievements, purchases and synced saved
+                     data stand on, the sync engine's merge and the render
+                     scale governor.
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
                      camera, SKRenderer, the UIKit / CoreGraphics /
@@ -37,12 +47,12 @@ Sources/
                      NSUbiquitousKeyValueStore. On Apple platforms it
                      re-exports the real SpriteKit.
   GLESRenderer/      The GL-free half of the renderer: shader translation,
-                     batching, render targets, compressed pages, the render
-                     scale governor. Host-tested.
+                     batching, render targets, compressed pages.
+                     Host-tested.
   PlatformShim/      The Android stand-ins for Apple's services, without the
                      device: Play Billing, Play Games, Saved Games (the
-                     key-value store's cloud) and the sync engine,
-                     MediaCodec-backed AVFoundation, haptics,
+                     key-value store's cloud), MediaCodec-backed
+                     AVFoundation, haptics,
                      sharing, the launch-argument domain.
 Tests/               Host tests: no device or GL context.
 Modules/             Android-only. Targets that exist to own a module name
@@ -53,6 +63,11 @@ Modules/             Android-only. Targets that exist to own a module name
 Shell/               Android-only. The app shell: SDL3, the EGL context, the
                      frame loop and its pacing, input, audio, the GL backend
                      and `GameHost`, the seam a game's controller adopts.
+Platform/            The platform code games share, on Apple platforms and
+                     Android alike: `Macros` (`@NSCodingUnsupported`) and
+                     `PlatformCore` (geometry shorthands, timing curves and
+                     eased actions, seeded randomness). See "Shared platform
+                     code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -70,6 +85,42 @@ cycles with the system module on macOS; keeping it apart is what lets the
 shim build and test on a Mac. `Text` is apart because it is the only part
 with C dependencies, and `Shell` because it needs SDL's and the NDK's
 headers.
+
+## Shared platform code
+
+`Platform/` is a package of its own, for Apple builds as much as Android's.
+On iPhone, iPad, Apple TV and the Mac (Catalyst) it builds against Apple's
+SpriteKit, UIKit and services; on Android, and on a Mac host for its tests,
+against the shim, which `SPRITEKIT_SHIM` selects there. Its sources import
+
+```swift
+#if SPRITEKIT_SHIM
+import SpriteKitShim
+#else
+import SpriteKit
+import UIKit
+#endif
+```
+
+and never `Modules/`, whose targets collide with Apple's frameworks. It
+reaches this package as `..`, so a game's graph holds one
+`spritekit-android`.
+
+A game adds `<submodule>/Platform` to its Xcode project as a local package
+and links the products it uses (in place of its own `Macros` package, which
+it deletes: two targets named `Macros` can't share a graph), and its Android
+package depends on it by path. Code moved here is public and keeps its
+names, so a game deletes its own copy and imports the module (`import
+PlatformCore`) in the files that use it.
+
+What belongs here: code a game's helpers and managers would otherwise copy
+that carries nothing of any one game. What a game configures (its sounds,
+products, achievements, constants) it passes in.
+
+Checks: `swift test --package-path Platform` on the host, the Apple builds
+(`xcodebuild -scheme <product> -destination 'generic/platform=iOS
+Simulator'`, and tvOS and Mac Catalyst), and `Scripts/check-android.sh`,
+which builds it for Android.
 
 ## Using it in a game
 
