@@ -45,6 +45,8 @@ let package = Package(
         .library(name: "PlatformGameCenter", targets: ["PlatformGameCenter"]),
         .library(name: "PlatformStore", targets: ["PlatformStore"]),
         .library(name: "PlatformAudio", targets: ["PlatformAudio"]),
+        .library(name: "PlatformInput", targets: ["PlatformInput"]),
+        .library(name: "PlatformDisplay", targets: ["PlatformDisplay"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -70,6 +72,38 @@ let package = Package(
                 .product(name: "PlatformServices", package: "spritekit-android"),
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
+            swiftSettings: settings
+        ),
+        // Focus for the Apple TV remote, gamepads and the Mac's pointer,
+        // moving between a scene's controls; gamepads (GameController on
+        // Apple, the shell's `GamepadEvents` on Android); the keyboard's
+        // and the Menu button's scene protocols.
+        .target(
+            name: "PlatformInput",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        // The frame-rate and graphics settings, with Auto, and on Apple the
+        // controller that applies them to the game's view.
+        .target(
+            name: "PlatformDisplay",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformInputTests",
+            dependencies: ["PlatformInput"],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformDisplayTests",
+            dependencies: ["PlatformDisplay"],
             swiftSettings: settings
         ),
         .testTarget(
