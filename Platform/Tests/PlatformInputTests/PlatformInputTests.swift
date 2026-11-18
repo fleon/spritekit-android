@@ -207,6 +207,18 @@ struct GamepadTests {
         #expect(taken() == [.move(.right)])
     }
 
+    @Test func onlyAWaysFirstMoveIsAHold() {
+        let clock = ManualClock()
+        let (pads, taken) = pads(clock)
+        var holds: [FocusNavigator.Direction] = []
+        pads.onHold = { holds.append($0) }
+        pads.connect(1)
+        pads.dpad(1, x: 0, y: 1)
+        clock.advance(to: 1)
+        #expect(taken().count == 5)
+        #expect(holds == [.up])
+    }
+
     @Test func theStickHasPressAndReleaseThresholds() {
         let clock = ManualClock()
         let (pads, taken) = pads(clock)

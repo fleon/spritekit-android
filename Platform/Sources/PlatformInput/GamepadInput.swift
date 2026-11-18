@@ -61,6 +61,11 @@ public final class GamepadInput {
         self.schedule = schedule
         pads = GamepadPads(configuration: configuration, schedule: schedule)
         pads.emit = { [weak self] in self?.emit($0) }
+        #if os(tvOS)
+        // Only a way's first move, not its repeats: while it's held,
+        // `isEcho` sees the hold itself.
+        pads.onHold = { [weak self] in self?.sent[$0.press] = CACurrentMediaTime() }
+        #endif
         pads.onDisconnectAll = { [weak self] in
             self?.updateConnected()
             self?.onDisconnectAll?()
@@ -93,9 +98,6 @@ public final class GamepadInput {
     private func emit(_ event: GamepadPads.Event) {
         switch event {
         case .move(let direction):
-            #if os(tvOS)
-            sent[direction.press] = CACurrentMediaTime()
-            #endif
             onAction?(.move(direction))
         case .press(let button):
             #if os(tvOS)

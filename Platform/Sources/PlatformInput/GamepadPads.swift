@@ -38,6 +38,8 @@ final class GamepadPads {
 
     var configuration: GamepadConfiguration
     var emit: ((Event) -> Void)?
+    /// A way was first held (not its repeats), just before its move.
+    var onHold: ((FocusNavigator.Direction) -> Void)?
     /// The last pad was disconnected.
     var onDisconnectAll: (() -> Void)?
 
@@ -125,6 +127,7 @@ final class GamepadPads {
         held = direction
         hold += 1
         guard let direction else { return }
+        onHold?(direction)
         emit?(.move(direction))
         repeatMove(hold, after: configuration.repeatDelay)
     }
