@@ -413,8 +413,11 @@ placed by its combined ink as a one-style line is, so `frame` and every
 alignment mode agree with SpriteKit's (`AttributedLabelRunTests`, against
 Apple's `SKLabelNode` on the same font file). `SKLabelNode.runs` holds the
 runs; `laidOutRuns` is set when the layout placed them, and the draw list
-then emits one label command per run. A wrapped label in several styles
-still draws in its first run's style.
+then emits one label command per run. On several lines (`numberOfLines`
+other than 1, no `preferredMaxLayoutWidth`) the runs break at their
+newlines, and each line takes the largest ascent, descent and leading of the
+runs on it, as SpriteKit sizes the block (`AttributedParagraphParityTests`).
+A wrapped label in several styles still draws in its first run's style.
 
 ### UIKit around the scene
 
