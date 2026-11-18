@@ -276,7 +276,7 @@ public struct SpriteBatcher {
     /// sprite struck them far off it (a plain sprite) and read their colour
     /// from a row of the page (streaks of whatever art sat there).
     static func ownImage(_ rect: CGRect, of texture: SKTexture?) -> CGRect {
-        guard let image = texture?.root.textureRect, image.width > 0, image.height > 0 else { return rect }
+        guard let image = texture?.root.textureRect(), image.width > 0, image.height > 0 else { return rect }
         return CGRect(
             x: (rect.minX - image.minX) / image.width,
             y: (rect.minY - image.minY) / image.height,

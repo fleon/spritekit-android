@@ -10,7 +10,7 @@ import Foundation
 ///
 /// A named texture resolves through `AssetIndex.shared`, which says which
 /// packed page holds its pixels and where: so `size()` reports the art's own
-/// size in points, as SpriteKit's does, and `textureRect` is the slice of
+/// size in points, as SpriteKit's does, and `textureRect()` is the slice of
 /// that page the renderer samples. With no index set — in a test that needs
 /// no art — a named texture stays unresolved and reports a zero size.
 public final class SKTexture: @unchecked Sendable {
@@ -87,6 +87,24 @@ public final class SKTexture: @unchecked Sendable {
         declaredSize = size
     }
 
+    /// Raw RGBA8 pixels whose first row is the top when `flipped`, as
+    /// SpriteKit takes them (measured on a Mac); otherwise the bottom, as
+    /// `init(data:size:)`.
+    public convenience init(data: Data, size: CGSize, flipped: Bool) {
+        guard flipped else {
+            self.init(data: data, size: size)
+            return
+        }
+        let rowBytes = Int(size.width) * 4
+        let rows = rowBytes > 0 ? data.count / rowBytes : 0
+        var reversed = Data(capacity: data.count)
+        for row in (0 ..< rows).reversed() {
+            let start = data.startIndex + row * rowBytes
+            reversed.append(data[start ..< start + rowBytes])
+        }
+        self.init(data: reversed, size: size)
+    }
+
     /// A sub-rectangle of `texture`, in its unit coordinate space, as
     /// SpriteKit takes it: nesting composes, so a slice of a texture that is
     /// itself a slice of a packed page lands in the right place on the page.
@@ -160,11 +178,11 @@ public final class SKTexture: @unchecked Sendable {
     /// The region of the page this texture covers, in that page's unit
     /// coordinates with a bottom-left origin — what the renderer turns into
     /// UVs. A named texture's is its rect on its packed page; a slice's is
-    /// its own rect taken inside its parent's.
-    public var textureRect: CGRect {
+    /// its own rect taken inside its parent's. A method, as SpriteKit's is.
+    public func textureRect() -> CGRect {
         switch source {
         case let .slice(parent, rect):
-            let outer = parent.textureRect
+            let outer = parent.textureRect()
             return CGRect(
                 x: outer.minX + rect.minX * outer.width,
                 y: outer.minY + rect.minY * outer.height,

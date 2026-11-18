@@ -71,6 +71,13 @@ open class SKLabelNode: SKNode {
     /// `.kern` (`NSKern`), 0 without one.
     public private(set) var kern: CGFloat = 0 { didSet { invalidateLayout() } }
 
+    /// Whether the attributed text's paragraph style (`.paragraphStyle`, its
+    /// first character's) right-aligns its lines. In a label of several
+    /// lines SpriteKit then lines each one up on the block's right edge;
+    /// otherwise each starts at its left, wherever the alignment mode puts
+    /// the block (measured on a Mac).
+    public private(set) var alignsLinesRight = false { didSet { invalidateLayout() } }
+
     /// One stretch of attributed text in a style of its own: its font,
     /// colour, letter spacing and how far it sits above the baseline
     /// (`.baselineOffset`).
@@ -109,14 +116,17 @@ open class SKLabelNode: SKNode {
         defer { runs = Self.styledRuns(of: attributedText, fontName: fontName, fontSize: fontSize, color: fontColor) }
         guard let attributedText else {
             kern = 0
+            alignsLinesRight = false
             return
         }
         text = attributedText.string
         guard attributedText.length > 0 else {
             kern = 0
+            alignsLinesRight = false
             return
         }
         let attributes = attributedText.attributes(at: 0, effectiveRange: nil)
+        alignsLinesRight = Self.alignment(of: attributes[NSAttributedString.Key("NSParagraphStyle")]) == Self.rightAlignment
         if let font = attributes[NSAttributedString.Key("NSFont")] as? LabelFont {
             fontName = font.fontName
             fontSize = font.pointSize
@@ -130,6 +140,18 @@ open class SKLabelNode: SKNode {
         case let value as Double: kern = CGFloat(value)
         default: kern = 0
         }
+    }
+
+    /// NSTextAlignment.right's raw value, on Apple's platforms and the shim's.
+    static let rightAlignment = 2
+
+    /// A paragraph style's alignment, as its raw value.
+    static func alignment(of style: Any?) -> Int? {
+        #if canImport(Darwin)
+        (style as? NSObject)?.value(forKey: "alignment") as? Int
+        #else
+        (style as? NSParagraphStyle)?.alignment.rawValue
+        #endif
     }
 
     /// The text's attribute runs, merged where neighbours share a style;
@@ -176,6 +198,7 @@ open class SKLabelNode: SKNode {
         var vertical: SKLabelVerticalAlignmentMode
         var numberOfLines: Int
         var maxWidth: CGFloat
+        var alignsLinesRight: Bool
     }
 
     private var cachedLayout: TextLayout?
@@ -225,7 +248,8 @@ open class SKLabelNode: SKNode {
             horizontal: horizontalAlignmentMode,
             vertical: verticalAlignmentMode,
             numberOfLines: numberOfLines,
-            maxWidth: preferredMaxLayoutWidth
+            maxWidth: preferredMaxLayoutWidth,
+            alignsLinesRight: alignsLinesRight
         )
     }
 
@@ -245,7 +269,7 @@ open class SKLabelNode: SKNode {
         if let runs, preferredMaxLayoutWidth == 0 {
             guard let (lines, pieces) = paragraphLines(runs, provider: provider) else { return nil }
             laidOutRuns = pieces
-            return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+            return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode, alignsLinesRight: alignsLinesRight)
         }
         let font = FontKey(name: fontName ?? "", size: fontSize)
         guard let metrics = provider.fontMetrics(font) else { return nil }
@@ -272,7 +296,7 @@ open class SKLabelNode: SKNode {
                 metrics: metrics
             )
         }
-        return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+        return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode, alignsLinesRight: alignsLinesRight)
     }
 
     /// A frame with nothing in it: SpriteKit's 2 × 2 of padding, placed by
@@ -414,7 +438,8 @@ open class SKLabelNode: SKNode {
     static func spriteKitParagraph(
         _ lines: [ParagraphLine],
         horizontal: SKLabelHorizontalAlignmentMode,
-        vertical: SKLabelVerticalAlignmentMode
+        vertical: SKLabelVerticalAlignmentMode,
+        alignsLinesRight: Bool = false
     ) -> TextLayout {
         // Each baseline below the block's top: the first line's ascent, then
         // a line's descent and leading and the next one's ascent, each
@@ -429,7 +454,8 @@ open class SKLabelNode: SKNode {
                 baselines.append(baselines[index - 1] + above.descent.rounded() + above.leading.rounded() + ascent)
             }
         }
-        let width = (lines.map(\.width).max() ?? 0).rounded(.up) + 2
+        let widest = lines.map(\.width).max() ?? 0
+        let width = widest.rounded(.up) + 2
         // 1 above the first ascent, the last line down to its descent, then
         // rounded out and 1 more below.
         let height = (1 + (baselines.last ?? 0) + (lines.last?.metrics.descent ?? 0)).rounded(.up) + 1
@@ -448,8 +474,9 @@ open class SKLabelNode: SKNode {
         let top = y + height - 1
         var placed: [TextLayout.Placed] = []
         for (index, line) in lines.enumerated() {
+            let indent = alignsLinesRight ? widest - line.width : 0
             for piece in line.pieces {
-                placed.append(TextLayout.Placed(line: piece.line, origin: CGPoint(x: x + 1 + piece.x, y: top - baselines[index] + piece.rise)))
+                placed.append(TextLayout.Placed(line: piece.line, origin: CGPoint(x: x + 1 + indent + piece.x, y: top - baselines[index] + piece.rise)))
             }
         }
         return TextLayout(lines: placed, bounds: CGRect(x: x, y: y, width: width, height: height))

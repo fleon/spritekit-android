@@ -66,6 +66,21 @@ public enum PathRasteriser {
         case nonZero, evenOdd
     }
 
+    /// The longest side a mask may have, in pixels.
+    public static let maximumSide = 8192
+
+    /// The scale to rasterise a path spanning `reach` points at: `scale`,
+    /// unless its mask would then be longer than `maximumSide` or
+    /// `textureSide` pixels, whichever is less; then the largest scale whose
+    /// mask fits, counting the pixel of margin each side and the pixel the
+    /// size rounds up by. A strip as tall as a long scrolling list is
+    /// tens of thousands of points, and it still draws, stretched.
+    public static func scale(_ scale: CGFloat, fitting reach: CGFloat, textureSide: Int) -> CGFloat {
+        let pixels = CGFloat(min(maximumSide, textureSide) - 3)
+        guard reach > 0, pixels > 0, reach * scale > pixels else { return scale }
+        return pixels / reach
+    }
+
     /// Fills `path` at `scale` pixels per point.
     ///
     /// Nil when the path encloses nothing — an empty path, or one so small
@@ -524,7 +539,7 @@ public enum PathRasteriser {
         let grain: CGFloat = 1e-6
         let width = max(1, Int((bounds.width * scale - grain).rounded(.up)))
         let height = max(1, Int((bounds.height * scale - grain).rounded(.up)))
-        guard width <= 8192, height <= 8192 else { return nil }
+        guard width <= maximumSide, height <= maximumSide else { return nil }
 
         // Into device pixels, row 0 at the top: y grows down the mask while
         // it grows up the path.

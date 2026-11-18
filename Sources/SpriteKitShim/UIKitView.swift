@@ -176,6 +176,10 @@ open class UIView {
     /// What system bars and cutouts cover, in points. The shell sets it.
     public var safeAreaInsets: UIEdgeInsets = .zero
 
+    /// Points-to-pixels, as the display reports it (the shell sets the
+    /// game's view's), as UIKit has it on every view.
+    public var contentScaleFactor: CGFloat = 3
+
     /// The window the view is in; none on Android yet (see above).
     public var window: UIWindow?
 
