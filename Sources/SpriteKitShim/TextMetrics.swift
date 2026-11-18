@@ -17,10 +17,97 @@ public enum TextMetrics {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var registered: TextProvider?
 
+    nonisolated(unsafe) private static var registeredCatalog: FontCatalog?
+
     /// Installed once, at start-up, by whatever owns the font files.
     public static var provider: TextProvider? {
         get { lock.lock(); defer { lock.unlock() }; return registered }
         set { lock.lock(); defer { lock.unlock() }; registered = newValue }
+    }
+
+    /// The font files behind the provider: what CoreText's font manager and
+    /// `UIFont(name:size:)` ask. Nil where no text stack is installed (a host
+    /// test of the scene graph), where every name is taken on trust, as
+    /// before the stack could answer.
+    public static var catalog: FontCatalog? {
+        get { lock.lock(); defer { lock.unlock() }; return registeredCatalog }
+        set { lock.lock(); defer { lock.unlock() }; registeredCatalog = newValue }
+    }
+}
+
+/// What a font file holds and which faces are registered, in CoreText's
+/// terms: a face is asked for by its PostScript name (or its family's), one
+/// file can hold several (a variable font's named instances), and a face is
+/// usable once its file has been registered.
+public protocol FontCatalog: AnyObject, Sendable {
+    /// The PostScript names of the faces in the file at `path`, as
+    /// `CTFontManagerCreateFontDescriptorsFromURL` lists them — a variable
+    /// font's named instances, else the one face — without registering it.
+    /// Nil when the file can't be read as a font.
+    func faceNames(inFontAt path: String) -> [String]?
+
+    /// Registers the file at `path` for the game, as
+    /// `CTFontManagerRegisterFontURLs` does.
+    func registerFont(at path: String) -> FontRegistration
+
+    /// Whether `name` (a PostScript, instance or family name) is a face the
+    /// stack can draw now.
+    func hasFace(named name: String) -> Bool
+
+    /// The registered faces standing for the system font, by name. The
+    /// device's own (Roboto on Android), the way the system font on Apple is
+    /// SF.
+    var systemFaceNames: [String] { get }
+}
+
+/// What registering a font file came to, as CoreText reports it: a second
+/// registration of the same file is an error there (`kCTFontManagerErrorAlreadyRegistered`),
+/// and so is a file that isn't a font.
+public enum FontRegistration: Equatable, Sendable {
+    case registered
+    case alreadyRegistered
+    case unreadable
+}
+
+/// The system font's faces by weight: which of the registered faces
+/// `UIFont.systemFont(ofSize:weight:)` draws with.
+public enum SystemFontFaces {
+    /// A face's weight class (CSS and OpenType's 100–900) from the style its
+    /// name ends in: "Roboto-SemiBold" is 600.
+    static let styleWeights: [(style: String, weight: Int)] = [
+        ("Thin", 100), ("ExtraLight", 200), ("UltraLight", 200), ("Light", 300),
+        ("Regular", 400), ("Medium", 500), ("SemiBold", 600), ("DemiBold", 600),
+        ("Bold", 700), ("ExtraBold", 800), ("Heavy", 800), ("Black", 900),
+    ]
+
+    /// UIKit's weights (`UIFont.Weight.rawValue`, -0.8 to 0.62) as weight
+    /// classes, as SF's faces carry them: `.ultraLight` is SF Ultralight,
+    /// 100, through `.black`, 900.
+    static func weightClass(_ weight: CGFloat) -> Int {
+        let classes: [(weight: CGFloat, weightClass: Int)] = [
+            (-0.8, 100), (-0.6, 200), (-0.4, 300), (0, 400), (0.23, 500),
+            (0.3, 600), (0.4, 700), (0.56, 800), (0.62, 900),
+        ]
+        return classes.min { abs($0.weight - weight) < abs($1.weight - weight) }?.weightClass ?? 400
+    }
+
+    /// The face among `names` for a UIKit weight: upright faces only, by the
+    /// nearest weight class, and between two equally near the heavier above
+    /// regular and the lighter below it, as CSS font matching picks. Nil
+    /// when none of the names says its weight.
+    public static func face(forWeight weight: CGFloat, among names: [String]) -> String? {
+        let target = weightClass(weight)
+        let weighted = names.compactMap { name -> (name: String, weight: Int)? in
+            guard let dash = name.lastIndex(of: "-") else { return nil }
+            let style = String(name[name.index(after: dash)...])
+            guard let entry = styleWeights.first(where: { $0.style == style }) else { return nil }
+            return (name, entry.weight)
+        }
+        return weighted.min { a, b in
+            let da = abs(a.weight - target), db = abs(b.weight - target)
+            if da != db { return da < db }
+            return target >= 400 ? a.weight > b.weight : a.weight < b.weight
+        }?.name
     }
 }
 
@@ -57,8 +144,9 @@ public struct FontKey: Hashable, Sendable {
 
 /// A face's vertical metrics at one size, in points.
 ///
-/// `lineHeight` is `ascent + descent + leading`, as UIKit reports it, so a
-/// game's line-height ratios keep their meaning.
+/// `lineHeight` is `ascent + descent + leading`, the whole line. UIKit's
+/// `UIFont.lineHeight` leaves the leading out, and SpriteKit spaces a
+/// label's lines by the three each rounded to whole points.
 public struct FontMetrics: Equatable, Sendable {
     public var ascent: CGFloat
     public var descent: CGFloat

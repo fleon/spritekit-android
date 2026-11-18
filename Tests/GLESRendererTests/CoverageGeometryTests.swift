@@ -107,6 +107,25 @@ final class CoverageGeometryTests: XCTestCase {
         XCTAssertEqual(corner(run, quad: 2, 0).x, 100 + 24 + 6)
     }
 
+    func testAShapesTextureStretchesOverThePathsBounds() {
+        // A mask padded 2 points round a 100×50 path at (10, 20).
+        let path = CGRect(x: 10, y: 20, width: 100, height: 50)
+        let mask = path.insetBy(dx: -2, dy: -2)
+        let map = CoverageGeometry.fillMap(mask: mask, path: path)
+        func fill(_ u: Float, _ v: Float) -> SIMD2<Float> { SIMD2(map.x + u * map.z, map.y + v * map.w) }
+        // The mask's top-left corner is 2 points beyond the path's.
+        XCTAssertEqual(fill(0, 0).x, -0.02, accuracy: 1e-6)
+        XCTAssertEqual(fill(0, 0).y, -0.04, accuracy: 1e-6)
+        // Its bottom-right, 2 points beyond the path's bottom-right.
+        XCTAssertEqual(fill(1, 1).x, 1.02, accuracy: 1e-6)
+        XCTAssertEqual(fill(1, 1).y, 1.04, accuracy: 1e-6)
+        // The path's own top-left is the texture's (0, 0).
+        let u = Float((path.minX - mask.minX) / mask.width), v = Float((mask.maxY - path.maxY) / mask.height)
+        XCTAssertEqual(fill(u, v).x, 0, accuracy: 1e-6)
+        XCTAssertEqual(fill(u, v).y, 0, accuracy: 1e-6)
+        XCTAssertEqual(CoverageGeometry.fillMap(mask: mask, path: .zero), SIMD4(0, 0, 0, 0))
+    }
+
     func testTheLayoutIsWhatIsDrawn() throws {
         // The lines' pen origins already carry both alignment modes — the
         // node worked them out when it measured itself, and this is the

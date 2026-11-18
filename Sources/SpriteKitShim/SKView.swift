@@ -123,9 +123,14 @@ open class SKView: UIView {
         bounds = CGRect(x: 0, y: 0, width: pixels.width / scale, height: pixels.height / scale)
     }
 
-    public init(bounds: CGRect) {
-        super.init(frame: bounds)
+    public convenience init(bounds: CGRect) {
+        self.init(frame: bounds)
         self.bounds = bounds
+    }
+
+    /// UIKit's: a view as big as `frame`, its own space at the origin.
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
     }
 
     /// Whether a transition is playing.
@@ -255,6 +260,8 @@ open class SKView: UIView {
         let counted = scene.actionClockStarted && delta <= Self.longestCountedFrame ? delta : 0
         scene.actionClockStarted = true
         scene.tickActions(counted)
+        scene.applyConstraints()
+        scene.didApplyConstraints()
     }
 
     /// The longest frame whose time actions count: a 0.98 s frame advances

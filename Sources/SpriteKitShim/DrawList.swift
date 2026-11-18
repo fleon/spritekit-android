@@ -76,6 +76,10 @@ public struct DrawList {
         public var lineCap: CGLineCap
         public var lineJoin: CGLineJoin
         public var alpha: CGFloat
+        /// The fill's and the stroke's textures, each stretched over the
+        /// path's bounds and tinted by its colour.
+        public var fillTexture: SKTexture? = nil
+        public var strokeTexture: SKTexture? = nil
     }
 
     public struct Label {
@@ -415,7 +419,9 @@ public struct DrawList {
                 lineWidth: shape.lineWidth,
                 lineCap: shape.lineCap,
                 lineJoin: shape.lineJoin,
-                alpha: alpha
+                alpha: alpha,
+                fillTexture: shape.fillTexture,
+                strokeTexture: shape.strokeTexture
             ))))
         } else if let label = node as? SKLabelNode, let layout = label.layout, let runs = label.laidOutRuns,
                   layout.lines.count == runs.count {
@@ -454,6 +460,9 @@ public struct DrawList {
                 if cull != nil, case let .sprite(particle) = entry.1, isCulled(particle, by: cull) { continue }
                 entries.append(entry)
             }
+        } else if let tileMap = node as? SKTileMapNode {
+            // Its filled cells, one sprite each, at its own depth.
+            entries.append(contentsOf: tileMap.tileCommands(transform: transform, alpha: alpha, z: z, cull: cull))
         }
 
         // Each descendant keeps its own accumulated z. Re-keying a whole

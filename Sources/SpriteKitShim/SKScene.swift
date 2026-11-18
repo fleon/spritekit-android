@@ -35,6 +35,11 @@ open class SKScene: SKNode {
     /// frame, so that frame counts no time (`SKView.advance`).
     var actionClockStarted = false
 
+    /// Nodes with constraints, in their turn order, and those that join it
+    /// at the next pass (`SKConstraint.swift`).
+    var constrained: [ConstrainedNode] = []
+    var pendingConstrained: [ConstrainedNode] = []
+
     public init(size: CGSize) {
         self.size = size
         super.init()
@@ -46,10 +51,40 @@ open class SKScene: SKNode {
 
     /// Called once a frame, before actions are advanced.
     open func update(_ currentTime: TimeInterval) {}
+    /// Called once a frame, after the constraints are applied.
+    open func didApplyConstraints() {}
     open func didChangeSize(_ oldSize: CGSize) {}
 
+    /// The scene's size, placed by its anchor point: a scene anchored at its
+    /// middle spans `-size / 2` to `size / 2` in its own space.
     open override var contentFrame: CGRect {
-        CGRect(origin: .zero, size: size)
+        CGRect(x: -anchorPoint.x * size.width, y: -anchorPoint.y * size.height,
+               width: size.width, height: size.height)
+    }
+
+    /// SpriteKit ignores a scene's position and scale: setting them has no
+    /// effect (measured: `SceneFrameTests`).
+    open override var position: CGPoint {
+        get { .zero }
+        set {}
+    }
+
+    open override var xScale: CGFloat {
+        get { 1 }
+        set {}
+    }
+
+    open override var yScale: CGFloat {
+        get { 1 }
+        set {}
+    }
+
+    open override var frame: CGRect { contentFrame }
+
+    /// Its frame and its children's, in its own space: its position and
+    /// scale stay out of this too.
+    open override func calculateAccumulatedFrame() -> CGRect {
+        accumulatedContents(includingHidden: true)
     }
 }
 

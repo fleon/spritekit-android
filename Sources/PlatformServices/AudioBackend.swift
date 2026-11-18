@@ -53,6 +53,38 @@ public protocol AudioBackend: AnyObject {
 
     /// The app came back: pick the track up where `suspend()` left it.
     func resume()
+
+    /// How long a prepared sound plays, as `AVAudioPlayer.duration` tells a
+    /// game that times something to it; nil for a sound not prepared.
+    func duration(ofSound name: String) -> TimeInterval?
+
+    /// Plays one sound on a voice of its own that `stop(_:over:)` can
+    /// silence, repeating it for ever when `looping`. Nil when the backend
+    /// can't hand one out; it then plays the sound once, as `play(sound:rate:)`.
+    func play(sound name: String, rate: Float, looping: Bool) -> AudioVoice?
+
+    /// Fades a voice from `play(sound:rate:looping:)` out and lets it go.
+    func stop(_ voice: AudioVoice, over fade: TimeInterval)
+}
+
+/// A sound playing on a voice of its own, to stop later.
+public struct AudioVoice: Hashable, Sendable {
+    public let id: Int
+
+    public init(id: Int) {
+        self.id = id
+    }
+}
+
+public extension AudioBackend {
+    func duration(ofSound name: String) -> TimeInterval? { nil }
+
+    func play(sound name: String, rate: Float, looping: Bool) -> AudioVoice? {
+        play(sound: name, rate: rate)
+        return nil
+    }
+
+    func stop(_ voice: AudioVoice, over fade: TimeInterval) {}
 }
 
 /// A backend that hears everything and does nothing: what the game runs on
@@ -74,11 +106,16 @@ public final class RecordingAudioBackend: AudioBackend {
         case prepare(names: [String], poolSize: Int, volume: Float)
         case sound(name: String, rate: Float)
         case music(track: String?, loop: MusicLoop?, volume: Float, fade: TimeInterval)
+        case voice(name: String, rate: Float, looping: Bool)
+        case stop(AudioVoice, fade: TimeInterval)
         case suspend
         case resume
     }
 
     public private(set) var calls: [Call] = []
+    /// How long each sound plays, for a test that times something to one.
+    public var durations: [String: TimeInterval] = [:]
+    private var voices = 0
 
     public init() {}
 
@@ -102,6 +139,20 @@ public final class RecordingAudioBackend: AudioBackend {
 
     public func playMusic(_ track: String?, loop: MusicLoop?, volume: Float, over fade: TimeInterval) {
         calls.append(.music(track: track, loop: loop, volume: volume, fade: fade))
+    }
+
+    public func duration(ofSound name: String) -> TimeInterval? {
+        durations[name]
+    }
+
+    public func play(sound name: String, rate: Float, looping: Bool) -> AudioVoice? {
+        calls.append(.voice(name: name, rate: rate, looping: looping))
+        voices += 1
+        return AudioVoice(id: voices)
+    }
+
+    public func stop(_ voice: AudioVoice, over fade: TimeInterval) {
+        calls.append(.stop(voice, fade: fade))
     }
 
     public func suspend() { calls.append(.suspend) }
