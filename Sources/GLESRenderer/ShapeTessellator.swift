@@ -197,9 +197,12 @@ public enum ShapeTessellator {
         return true
     }
 
-    /// How many pixels an edge with unit normal `n` feathers over.
+    /// How many pixels an edge with unit normal `n` feathers over: one,
+    /// across the edge at any angle. Measured against CoreGraphics' coverage
+    /// and Apple's SKShapeNode, a wider ramp on diagonals (|nx| + |ny|) was
+    /// further from both.
     private static func feather(_ n: CGPoint) -> CGFloat {
-        max(1, abs(n.x) + abs(n.y))
+        1
     }
 
     /// Where a vertex goes when the edge before it moves `h0` along `n0`
