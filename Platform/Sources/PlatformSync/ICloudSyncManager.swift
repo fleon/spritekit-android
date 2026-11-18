@@ -96,10 +96,11 @@ nonisolated public final class ICloudSyncManager: @unchecked Sendable {
             legacyStamps: configuration.legacyStamps,
             now: now
         ) { [weak self] keys in
+            let sender = self
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
                     name: Self.didUpdateLocalData,
-                    object: self,
+                    object: sender,
                     userInfo: [Self.updatedKeysUserInfoKey: keys]
                 )
             }
