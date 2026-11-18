@@ -42,6 +42,7 @@ let package = Package(
     products: [
         .library(name: "Macros", targets: ["Macros"]),
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
+        .library(name: "PlatformAudio", targets: ["PlatformAudio"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -72,6 +73,22 @@ let package = Package(
         .testTarget(
             name: "PlatformCoreTests",
             dependencies: ["PlatformCore"],
+            swiftSettings: settings
+        ),
+        // Sound effects and the soundtrack: one manager over
+        // `AudioBackend`, with AVAudioEngine's backend on Apple platforms;
+        // Android's shell hands the manager its own.
+        .target(
+            name: "PlatformAudio",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "PlatformServices", package: "spritekit-android"),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformAudioTests",
+            dependencies: ["PlatformAudio"],
             swiftSettings: settings
         ),
         .testTarget(

@@ -186,7 +186,27 @@ its typographic block, as SpriteKit frames it: the widest line without its
 trailing whitespace, rounded up and padded by a point a side, from a point
 above the first ascent to the last descent, rounded out, and a point below,
 the lines advancing by the rounded ascent, descent and leading and all
-starting at the block's left edge.
+starting at the block's left edge. In several styles, each line's metrics
+are the largest of its runs'.
+
+`numberOfLines` larger than 1 is SpriteKit's frame fitting: with P lines of
+the text's own (a trailing newline not counted) and adv the rounded ascent,
+descent and leading, the text is laid into a frame (n + 1) × ⌈round(a) +
+(P − 1)·adv + d⌉ tall, and line j is kept while round(a) + (j − 1)·adv + d
+fits in it. So the text's own lines are never cut unless it also wraps, and
+one wrapped paragraph keeps n + 1 lines when round(d) + round(l) ≤ ⌈d⌉
+(every face without a line gap), else n.
+
+An empty label frames 2 × 2, its padding alone, placed by the alignment; so
+does one line with no ink, 3 wide when it holds two or more characters
+besides newlines.
+
+Vertical metrics are Core Text's to the bit: each is kept as a 16.16 fraction
+of the em, round(units / unitsPerEm × 65536) / 65536 × size, which is what
+tips a rounded-up height at whole metrics. The exception is Core Text's own
+`.ttc` system collections (Hiragino Sans GB, Apple SD Gothic Neo), whose
+metrics come out the exact value × (1 + 2.03 × 10⁻⁶), up to 8.4 × 10⁻⁴ pt
+away; no game ships those.
 
 ## CoreText
 

@@ -313,6 +313,15 @@ public extension CGPath {
     }
 
     /// The path cut into dashes, each an open subpath of its own.
+    /// The path through `transform` (identity for nil), as CoreGraphics'
+    /// `copy(using:)`: arcs become the curves CoreGraphics records for them,
+    /// so any transform holds (`PathGeometry.transformed`).
+    func copy(using transform: UnsafePointer<CGAffineTransform>?) -> CGPath? {
+        let copy = CGPath()
+        copy.replace(with: PathGeometry.transformed(pathElements, by: transform?.pointee ?? .identity))
+        return copy
+    }
+
     func copy(dashingWithPhase phase: CGFloat, lengths: [CGFloat], transform: CGAffineTransform = .identity) -> CGPath {
         let path = CGPath()
         for dash in PathGeometry.dash(PathRasteriser.flatten(self, scale: 4), phase: phase, lengths: lengths) {
