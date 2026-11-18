@@ -42,6 +42,9 @@ let package = Package(
     products: [
         .library(name: "Macros", targets: ["Macros"]),
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
+        .library(name: "PlatformDevice", targets: ["PlatformDevice"]),
+        .library(name: "PlatformSync", targets: ["PlatformSync"]),
+        .library(name: "PlatformAndroid", targets: ["PlatformAndroid"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -72,6 +75,56 @@ let package = Package(
         .testTarget(
             name: "PlatformCoreTests",
             dependencies: ["PlatformCore"],
+            swiftSettings: settings
+        ),
+        // Haptic feedback and its switch, rating prompts and the play time
+        // they may wait for.
+        .target(
+            name: "PlatformDevice",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformDeviceTests",
+            dependencies: ["PlatformDevice"],
+            swiftSettings: settings
+        ),
+        // Saved data kept the same on the player's devices: the sync
+        // manager over `SyncEngine`, and iCloud's key-value store as its
+        // cloud on Apple platforms.
+        .target(
+            name: "PlatformSync",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformSyncTests",
+            dependencies: ["PlatformSync"],
+            swiftSettings: settings
+        ),
+        // Android's wiring: Play Games, Play Billing, Saved Games and the
+        // device, handed to the receivers a game names. Its sources are
+        // all `SPRITEKIT_SHIM`, so Apple builds compile it empty.
+        .target(
+            name: "PlatformAndroid",
+            dependencies: [
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformAndroidTests",
+            dependencies: [
+                "PlatformAndroid",
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
             swiftSettings: settings
         ),
         .testTarget(
