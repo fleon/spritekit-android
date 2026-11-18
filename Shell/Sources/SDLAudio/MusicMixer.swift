@@ -102,6 +102,9 @@ final class MusicMixer {
     /// request can be thrown away.
     private var current: String?
     private var isStopping = false
+    /// Signalled once the mixer thread has let go of its stream and decks.
+    private let finished = DispatchSemaphore(value: 0)
+    private var hasStopped = false
 
     /// Mixer-thread state.
     private var decks: [Deck] = []
@@ -122,7 +125,10 @@ final class MusicMixer {
         out = [Int16](repeating: 0, count: Self.blockFrames * Self.channels)
         scratch = [Int16](repeating: 0, count: Self.blockFrames * Self.channels)
 
-        let thread = Thread { [weak self] in self?.run() }
+        // Held strongly: `stop()` waits for this thread, so it must run even
+        // if the mixer's last other reference goes before it starts (it
+        // holds the mixer while it runs either way).
+        let thread = Thread { self.run() }
         thread.name = "spritekit.music"
         thread.stackSize = 256 * 1024
         thread.start()
@@ -132,10 +138,18 @@ final class MusicMixer {
         stop()
     }
 
+    /// Stops the mixer and waits for it: once this returns, no thread of the
+    /// soundtrack touches SDL again, so the device can close and SDL can
+    /// quit. A track still being opened is waited for and closed too.
     func stop() {
         lock.lock()
         isStopping = true
+        let alreadyStopped = hasStopped
+        hasStopped = true
         lock.unlock()
+        guard !alreadyStopped else { return }
+        opener.sync {}
+        finished.wait()
     }
 
     /// Crossfades to `track` (nil fades the soundtrack out). Asking for the
@@ -207,6 +221,7 @@ final class MusicMixer {
         for deck in decks { ska_audio_close(deck.decoder) }
         decks = []
         SDL_DestroyAudioStream(stream)
+        finished.signal()
     }
 
     private func apply(_ command: Command) {

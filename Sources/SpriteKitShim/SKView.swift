@@ -66,9 +66,6 @@ open class SKView: UIView {
     /// SpriteKit holds its last frame.
     public var isPaused: Bool = false
 
-    /// Points-to-pixels, as the display reports it.
-    public var contentScaleFactor: CGFloat = 3
-
     open weak var delegate: (any SKViewDelegate)?
 
     /// Carried: the GLES renderer always draws on the frame thread, so a
@@ -260,8 +257,10 @@ open class SKView: UIView {
         let counted = scene.actionClockStarted && delta <= Self.longestCountedFrame ? delta : 0
         scene.actionClockStarted = true
         scene.tickActions(counted)
+        scene.didEvaluateActions()
         scene.applyConstraints()
         scene.didApplyConstraints()
+        scene.didFinishUpdate()
     }
 
     /// The longest frame whose time actions count: a 0.98 s frame advances
