@@ -28,6 +28,7 @@ let package = Package(
         .library(name: "StoreKit", targets: ["StoreKit"]),
         .library(name: "CryptoKit", targets: ["CryptoKit"]),
         .library(name: "GameKit", targets: ["GameKit"]),
+        .library(name: "GameplayKit", targets: ["GameplayKit"]),
         .library(name: "Network", targets: ["Network"]),
         .library(name: "Metal", targets: ["Metal"]),
         .library(name: "CoreVideo", targets: ["CoreVideo"]),
@@ -66,7 +67,11 @@ let package = Package(
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
         // Two a game may import to describe the player and the network.
         .target(name: "GameKit",
+                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), .product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
+        // Empty: the SpriteKit template's unused `import GameplayKit`.
+        .target(name: "GameplayKit",
+                path: "Sources/GameplayKit", swiftSettings: [v5, shimDefine]),
         .target(name: "Network",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
                 path: "Sources/Network", swiftSettings: [v5, shimDefine]),
@@ -96,5 +101,14 @@ let package = Package(
         .target(name: "UserNotifications",
                 dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/UserNotifications", swiftSettings: [v5, shimDefine]),
+        // Compile-only checks, built with the rest by Scripts/check-android.sh:
+        // game code calling GameKit in each language mode a game may use,
+        // which must compile here as it does against Apple's.
+        .target(name: "GameKitSwift6", dependencies: ["GameKit", "UIKit"],
+                path: "Checks/GameKitSwift6", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(name: "GameKitSwift5", dependencies: ["GameKit", "UIKit"],
+                path: "Checks/GameKitSwift5", swiftSettings: [v5]),
+        .target(name: "GameKitMainActor", dependencies: ["GameKit", "UIKit"],
+                path: "Checks/GameKitMainActor", swiftSettings: [v5, .defaultIsolation(MainActor.self)]),
     ]
 )

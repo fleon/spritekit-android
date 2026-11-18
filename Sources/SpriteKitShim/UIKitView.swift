@@ -55,17 +55,29 @@ public final class UIScreen {
 
     /// The screen the game shows on: Android has one, the last made. A game
     /// reads its size here, where iOS finds it through its window scenes.
-    public private(set) static weak var main: UIScreen?
+    /// Not optional, as UIKit's isn't: until the shell makes the window's
+    /// screen, a placeholder (no size, one pixel a point) answers.
+    public private(set) static var main = UIScreen(placeholder: ())
 
     public var bounds: CGRect
     public var nativeBounds: CGRect
     public var nativeScale: CGFloat
+
+    /// Pixels a point. UIKit's is a whole 2 or 3 and its `nativeScale` the
+    /// panel's own; an Android display has only its density, which is both.
+    public var scale: CGFloat { nativeScale }
 
     /// Its bounds upright, whichever way it's turned, as UIKit's fixed
     /// coordinate space gives them.
     public var fixedCoordinateSpace: CoordinateSpace {
         CoordinateSpace(bounds: CGRect(x: 0, y: 0, width: min(bounds.width, bounds.height),
                                        height: max(bounds.width, bounds.height)))
+    }
+
+    private init(placeholder: Void) {
+        bounds = .zero
+        nativeScale = 1
+        nativeBounds = .zero
     }
 
     public init(bounds: CGRect, nativeScale: CGFloat) {
@@ -91,14 +103,42 @@ open class UIWindowScene {
         self.screen = screen
         effectiveGeometry = Geometry(interfaceOrientation: interfaceOrientation)
     }
+
+    /// The scene's windows: those whose `windowScene` is this scene.
+    public fileprivate(set) var windows: [UIWindow] = []
+
+    /// The window the scene shows (Android has one).
+    public var keyWindow: UIWindow? { windows.first }
+}
+
+/// What `UIImage` draws into a view; kept, not shown (see `addSubview`).
+@MainActor
+open class UIImageView: UIView {
+    public var image: UIImage?
+
+    public init(image: UIImage?) {
+        self.image = image
+        super.init(frame: CGRect(origin: .zero, size: image?.size ?? .zero))
+    }
 }
 
 @MainActor
 open class UIWindow {
     public var bounds: CGRect
     public var safeAreaInsets: UIEdgeInsets = .zero
-    public var windowScene: UIWindowScene?
+    /// Weak, as UIKit's: the scene holds its windows.
+    public weak var windowScene: UIWindowScene? {
+        didSet {
+            oldValue?.windows.removeAll { $0 === self }
+            if let windowScene, !windowScene.windows.contains(where: { $0 === self }) {
+                windowScene.windows.append(self)
+            }
+        }
+    }
     public var traitCollection: UITraitCollection { UITraitCollection.current }
+
+    /// Whether this is its scene's key window.
+    public var isKeyWindow: Bool { windowScene?.keyWindow === self }
 
     public init(bounds: CGRect) {
         self.bounds = bounds
@@ -141,6 +181,119 @@ open class UIView {
 
     public init(frame: CGRect) {
         bounds = CGRect(origin: .zero, size: frame.size)
+        origin = frame.origin
+    }
+
+    /// Where the view sits in its superview. Android shows one view, the
+    /// game's, so this only keeps what is set, for code that reads it back.
+    open var frame: CGRect {
+        get { CGRect(origin: origin, size: bounds.size) }
+        set {
+            origin = newValue.origin
+            bounds.size = newValue.size
+        }
+    }
+
+    private var origin = CGPoint.zero
+
+    public var isUserInteractionEnabled = true
+    public var clipsToBounds = false
+    public var contentMode: ContentMode = .scaleToFill
+    public var autoresizingMask: AutoresizingMask = []
+    public private(set) var subviews: [UIView] = []
+    public private(set) weak var superview: UIView?
+
+    public enum ContentMode: Int, Sendable {
+        case scaleToFill, scaleAspectFit, scaleAspectFill, redraw, center
+        case top, bottom, left, right, topLeft, topRight, bottomLeft, bottomRight
+    }
+
+    public struct AutoresizingMask: OptionSet, Sendable {
+        public let rawValue: UInt
+        public init(rawValue: UInt) { self.rawValue = rawValue }
+        public static let flexibleLeftMargin = AutoresizingMask(rawValue: 1 << 0)
+        public static let flexibleWidth = AutoresizingMask(rawValue: 1 << 1)
+        public static let flexibleRightMargin = AutoresizingMask(rawValue: 1 << 2)
+        public static let flexibleTopMargin = AutoresizingMask(rawValue: 1 << 3)
+        public static let flexibleHeight = AutoresizingMask(rawValue: 1 << 4)
+        public static let flexibleBottomMargin = AutoresizingMask(rawValue: 1 << 5)
+    }
+
+    /// Kept, not shown: nothing composites views on Android but the game's
+    /// own `SKView`, which draws through the shell.
+    public func addSubview(_ view: UIView) {
+        view.removeFromSuperview()
+        subviews.append(view)
+        view.superview = self
+    }
+
+    public func removeFromSuperview() {
+        superview?.subviews.removeAll { $0 === self }
+        superview = nil
+    }
+
+    /// No compositor to snapshot here: nil, as UIKit returns for a view it
+    /// can't render, so callers take their own fallback.
+    public func snapshotView(afterScreenUpdates afterUpdates: Bool) -> UIView? { nil }
+
+    /// Draws nothing and says so, as UIKit does for a view not in a window.
+    @discardableResult
+    public func drawHierarchy(in rect: CGRect, afterScreenUpdates afterUpdates: Bool) -> Bool { false }
+
+    /// The areas a device holds back from content (iOS 27.1: a foldable's
+    /// hinge, `division`, and what covers the screen, `occlusion`). The
+    /// shell sets `reservedRegionList` where Android reports them; none by
+    /// default, as on a phone with neither.
+    public func reservedRegions(
+        kind: ReservedRegion.Kind, options: ReservedRegion.QueryOptions = []
+    ) -> [ReservedRegion] {
+        reservedRegionList.filter { $0.kind == kind && ($0.isActive || options.contains(.includeInactive)) }
+    }
+
+    /// Runtime seam, not UIKit API: what the shell reports.
+    public var reservedRegionList: [ReservedRegion] = []
+
+    public struct ReservedRegion: Equatable, Hashable, Identifiable {
+        public struct ID: Equatable, Hashable {
+            let value: Int
+            public init(_ value: Int) { self.value = value }
+        }
+
+        public struct Kind: Equatable, Hashable {
+            let name: String
+            public static let occlusion = Kind(name: "occlusion")
+            public static let division = Kind(name: "division")
+        }
+
+        public struct QueryOptions: OptionSet {
+            public let rawValue: UInt
+            public init(rawValue: UInt) { self.rawValue = rawValue }
+            public static let includeInactive = QueryOptions(rawValue: 1 << 0)
+        }
+
+        public let id: ID
+        public let kind: Kind
+        public let frame: CGRect
+        public let margins: UIEdgeInsets
+        public let isActive: Bool
+
+        /// Runtime seam, not UIKit API: how the shell makes one.
+        public init(id: ID, kind: Kind, frame: CGRect, margins: UIEdgeInsets = .zero, isActive: Bool = true) {
+            self.id = id
+            self.kind = kind
+            self.frame = frame
+            self.margins = margins
+            self.isActive = isActive
+        }
+
+        public static func == (a: ReservedRegion, b: ReservedRegion) -> Bool {
+            a.id == b.id && a.kind == b.kind && a.frame == b.frame && a.margins == b.margins && a.isActive == b.isActive
+        }
+
+        public func hash(into hasher: inout Hasher) {
+            hasher.combine(id)
+            hasher.combine(kind)
+        }
     }
 
     /// The traits the game draws for: today's display scale.
@@ -168,11 +321,36 @@ open class UIView {
 /// What the game names as the thing that presents: Game Center's sign-in
 /// takes one, and the share sheet presents from one. On Android the
 /// presenter is the activity, so this only carries the view.
-@MainActor
+///
+/// Presenting draws nothing: it calls the presented controller's
+/// `viewDidAppear(_:)` at once, so a stand-in for a system controller (Game
+/// Center's) can open the Android counterpart from there.
+@preconcurrency @MainActor
 open class UIViewController {
     open var view: UIView!
 
+    public private(set) var presentedViewController: UIViewController?
+    public private(set) weak var presentingViewController: UIViewController?
+
     public init() {}
+
+    open func viewDidAppear(_ animated: Bool) {}
+
+    open func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
+        presentedViewController = viewControllerToPresent
+        viewControllerToPresent.presentingViewController = self
+        viewControllerToPresent.viewDidAppear(flag)
+        completion?()
+    }
+
+    /// Dismisses what this controller presented, or, presenting nothing,
+    /// this controller itself, as UIKit does.
+    open func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
+        let presenter = presentedViewController == nil ? presentingViewController : self
+        presenter?.presentedViewController?.presentingViewController = nil
+        presenter?.presentedViewController = nil
+        completion?()
+    }
 }
 
 #endif

@@ -16,11 +16,16 @@ public struct AppIdentity: Sendable, Equatable {
     /// A short lowercase key: `debug.<key>.*` properties and the saved game's
     /// name, `<key>-progress`.
     public var key: String
+    /// `CFBundleDevelopmentRegion`: the language `NSLocalizedString` falls
+    /// back to when none of the device's is one the app has (`en` unless the
+    /// Info.plist says otherwise).
+    public var developmentRegion: String
 
-    public init(name: String, bundleIdentifier: String, key: String) {
+    public init(name: String, bundleIdentifier: String, key: String, developmentRegion: String = "en") {
         self.name = name
         self.bundleIdentifier = bundleIdentifier
         self.key = key
+        self.developmentRegion = developmentRegion
     }
 
     /// The app this process is. Set once, at launch, before any other thread

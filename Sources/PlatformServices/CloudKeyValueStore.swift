@@ -1,5 +1,4 @@
 import Foundation
-import SpriteKitShim
 
 /// The small part of `NSUbiquitousKeyValueStore` a game's sync code
 /// actually needs: a dictionary per key, a nudge to fetch, and news that
@@ -26,10 +25,11 @@ import SpriteKitShim
 /// Play Games (a build without its IDs, a game with sync off, a host test), keeping
 /// saved data on the device.
 ///
-/// Every one is also a cloud for `NSUbiquitousKeyValueStore`
-/// (`UbiquitousCloud`), which keeps its keys apart under a prefix. One game
-/// uses one or the other: both set `externalChanges`.
-public protocol CloudKeyValueStore: UbiquitousCloud {
+/// Every one is also the cloud behind the Android `NSUbiquitousKeyValueStore`
+/// (`UbiquitousCloud` there is this protocol), which keeps its keys apart
+/// under a prefix. One game uses one or the other: both set
+/// `externalChanges`.
+public protocol CloudKeyValueStore: AnyObject {
     func dictionary(forKey key: String) -> [String: Any]?
     func set(_ dictionary: [String: Any], forKey key: String)
     /// Asks the service for news. Returns whether anything may have changed.

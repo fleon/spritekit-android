@@ -13,12 +13,18 @@ import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.images.ImageManager;
 import com.google.android.gms.games.AchievementsClient;
+import com.google.android.gms.games.AnnotatedData;
 import com.google.android.gms.games.LeaderboardsClient;
 import com.google.android.gms.games.PlayGames;
 import com.google.android.gms.games.PlayGamesSdk;
 import com.google.android.gms.games.SnapshotsClient;
 import com.google.android.gms.games.achievement.Achievement;
 import com.google.android.gms.games.achievement.AchievementBuffer;
+import com.google.android.gms.games.leaderboard.Leaderboard;
+import com.google.android.gms.games.leaderboard.LeaderboardBuffer;
+import com.google.android.gms.games.leaderboard.LeaderboardScore;
+import com.google.android.gms.games.leaderboard.LeaderboardScoreBuffer;
+import com.google.android.gms.games.leaderboard.LeaderboardVariant;
 import com.google.android.gms.games.snapshot.Snapshot;
 import com.google.android.gms.games.snapshot.SnapshotMetadataChange;
 import com.google.android.gms.tasks.Task;
@@ -33,6 +39,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntFunction;
 
 /**
  * Play Games Services v2: signing in (silently, at launch: v2 signs a
@@ -51,9 +58,11 @@ import java.util.Map;
  * achievements, as Game Center's button leads to its sign-in.
  *
  * <p>Events, under {@code games}: {@code signIn}, {@code achievements},
- * {@code reported}, {@code scoresSubmitted}, {@code identity}, {@code player},
- * {@code snapshotOpened},
- * {@code snapshotCommitted}.
+ * {@code reported}, {@code scoresSubmitted}, {@code leaderboards},
+ * {@code scores}, {@code identity}, {@code player}, {@code snapshotOpened},
+ * {@code snapshotCommitted}. A request's answer repeats its {@code request}
+ * number, and one refused because nobody is signed in says
+ * {@code reason: "signedOut"}.
  */
 final class PlayGamesServices {
     private static final String SERVICE = "games";
@@ -106,7 +115,24 @@ final class PlayGamesServices {
             }
             case "showLeaderboards": {
                 String id = args.optString("id", "");
-                activity.runOnUiThread(() -> showLeaderboards(id.isEmpty() ? null : id));
+                int span = timeSpan(args.optString("timeSpan", "allTime"));
+                int collection = collection(args.optString("collection", "public"));
+                activity.runOnUiThread(() -> showLeaderboards(id.isEmpty() ? null : id, span, collection));
+                return null;
+            }
+            case "loadLeaderboards": {
+                JSONArray ids = args.optJSONArray("ids");
+                int request = args.optInt("request");
+                activity.runOnUiThread(() -> loadLeaderboards(ids, request));
+                return null;
+            }
+            case "loadScores": {
+                String id = args.getString("id");
+                int span = timeSpan(args.optString("timeSpan", "allTime"));
+                int collection = collection(args.optString("collection", "public"));
+                int count = args.optInt("count");
+                int request = args.optInt("request");
+                activity.runOnUiThread(() -> loadScores(id, span, collection, count, request));
                 return null;
             }
             case "player":
@@ -254,7 +280,7 @@ final class PlayGamesServices {
      */
     private void submitScores(JSONArray items, int request) {
         if (!signedIn) {
-            services.post(SERVICE, "scoresSubmitted", PlatformServices.object("request", request, "ok", false));
+            services.post(SERVICE, "scoresSubmitted", refusal(request));
             return;
         }
         LeaderboardsClient leaderboards = PlayGames.getLeaderboardsClient(activity);
@@ -270,31 +296,195 @@ final class PlayGamesServices {
                 : leaderboards.submitScoreImmediate(id, score, tag));
         }
         Tasks.whenAll(tasks).addOnCompleteListener(done -> {
-            if (!done.isSuccessful()) Log.w(PlatformServices.TAG, "scores did not all arrive", done.getException());
-            services.post(SERVICE, "scoresSubmitted", PlatformServices.object("request", request, "ok", done.isSuccessful()));
+            if (!done.isSuccessful()) {
+                Log.w(PlatformServices.TAG, "scores did not all arrive", done.getException());
+                services.post(SERVICE, "scoresSubmitted", refusal(request));
+                return;
+            }
+            services.post(SERVICE, "scoresSubmitted", PlatformServices.object("request", request, "ok", true));
         });
     }
 
     /**
-     * Play Games' leaderboards over the game: one by its Play ID, or the
-     * list of all of them (Game Center's dashboard). A signed-out player is
-     * asked to sign in first, as for the achievements.
+     * Play Games' leaderboards over the game: one by its Play ID, at a time
+     * span and collection, or the list of all of them (Game Center's
+     * dashboard). A signed-out player is asked to sign in first, as for the
+     * achievements.
      */
-    private void showLeaderboards(String id) {
+    private void showLeaderboards(String id, int span, int collection) {
         if (!configured) return;
         if (!signedIn) {
             Log.i(PlatformServices.TAG, "Play Games: signing in before the leaderboards");
-            checkSignIn(true, () -> showLeaderboards(id));
+            checkSignIn(true, () -> showLeaderboards(id, span, collection));
             return;
         }
         Log.i(PlatformServices.TAG, "Play Games: opening the leaderboards");
         LeaderboardsClient leaderboards = PlayGames.getLeaderboardsClient(activity);
         Task<android.content.Intent> intent = id == null
             ? leaderboards.getAllLeaderboardsIntent()
-            : leaderboards.getLeaderboardIntent(id);
+            : leaderboards.getLeaderboardIntent(id, span, collection);
         intent
             .addOnSuccessListener(shown -> activity.startActivityForResult(shown, DASHBOARD_REQUEST))
             .addOnFailureListener(error -> Log.w(PlatformServices.TAG, "could not open leaderboards", error));
+    }
+
+    /** {@code daily}, {@code weekly} or {@code allTime}, as Play's constant. */
+    private static int timeSpan(String name) {
+        switch (name) {
+            case "daily": return LeaderboardVariant.TIME_SPAN_DAILY;
+            case "weekly": return LeaderboardVariant.TIME_SPAN_WEEKLY;
+            default: return LeaderboardVariant.TIME_SPAN_ALL_TIME;
+        }
+    }
+
+    /** {@code public} or {@code friends}, as Play's constant. */
+    private static int collection(String name) {
+        return "friends".equals(name) ? LeaderboardVariant.COLLECTION_FRIENDS : LeaderboardVariant.COLLECTION_PUBLIC;
+    }
+
+    /** A failed answer, saying when it is because nobody is signed in. */
+    private JSONObject refusal(int request) {
+        JSONObject body = PlatformServices.object("request", request, "ok", false);
+        if (!signedIn) put(body, "reason", "signedOut");
+        return body;
+    }
+
+    /**
+     * Each leaderboard's Play ID and title: those in {@code ids}, or every
+     * one the game has.
+     */
+    private void loadLeaderboards(JSONArray ids, int request) {
+        if (!signedIn) {
+            services.post(SERVICE, "leaderboards", refusal(request));
+            return;
+        }
+        PlayGames.getLeaderboardsClient(activity).loadLeaderboardMetadata(false).addOnCompleteListener(done -> {
+            if (!done.isSuccessful() || done.getResult() == null || done.getResult().get() == null) {
+                Log.w(PlatformServices.TAG, "could not load leaderboards", done.getException());
+                services.post(SERVICE, "leaderboards", refusal(request));
+                return;
+            }
+            List<String> wanted = new ArrayList<>();
+            if (ids != null) for (int i = 0; i < ids.length(); i++) wanted.add(ids.optString(i));
+            LeaderboardBuffer buffer = done.getResult().get();
+            JSONArray items = new JSONArray();
+            try {
+                for (Leaderboard leaderboard : buffer) {
+                    if (ids != null && !wanted.contains(leaderboard.getLeaderboardId())) continue;
+                    items.put(PlatformServices.object(
+                        "id", leaderboard.getLeaderboardId(), "title", leaderboard.getDisplayName()));
+                }
+            } finally {
+                buffer.release();
+            }
+            JSONObject body = PlatformServices.object("request", request, "ok", true);
+            put(body, "items", items);
+            services.post(SERVICE, "leaderboards", body);
+        });
+    }
+
+    /**
+     * Up to {@code count} of a leaderboard's top scores at a time span and
+     * collection (25 a page, as Play hands them out), the signed-in player's
+     * own, and how many scores the variant holds. A {@code count} of 0 loads
+     * only the player's.
+     */
+    private void loadScores(String id, int span, int collection, int count, int request) {
+        if (!signedIn) {
+            services.post(SERVICE, "scores", refusal(request));
+            return;
+        }
+        LeaderboardsClient leaderboards = PlayGames.getLeaderboardsClient(activity);
+        List<JSONObject> items = new ArrayList<>();
+        Runnable finish = () -> leaderboards.loadCurrentPlayerLeaderboardScore(id, span, collection)
+            .addOnCompleteListener(mine -> {
+                JSONObject body = PlatformServices.object("request", request, "ok", true);
+                put(body, "items", new JSONArray(items));
+                if (mine.isSuccessful() && mine.getResult() != null && mine.getResult().get() != null) {
+                    put(body, "local", score(mine.getResult().get()));
+                }
+                leaderboards.loadLeaderboardMetadata(id, false).addOnCompleteListener(meta -> {
+                    put(body, "total", total(meta, span, collection));
+                    services.post(SERVICE, "scores", body);
+                });
+            });
+        if (count <= 0) {
+            finish.run();
+            return;
+        }
+        leaderboards.loadTopScores(id, span, collection, Math.min(count, SCORES_PAGE))
+            .addOnCompleteListener(first -> collectScores(leaderboards, first, items, count, finish, request));
+    }
+
+    private static final int SCORES_PAGE = 25;
+
+    /** Adds a page's scores, asks for the next until there are {@code count}, then finishes. */
+    private void collectScores(LeaderboardsClient leaderboards,
+                               Task<AnnotatedData<LeaderboardsClient.LeaderboardScores>> page,
+                               List<JSONObject> items, int count, Runnable finish, int request) {
+        if (!page.isSuccessful() || page.getResult() == null || page.getResult().get() == null) {
+            Log.w(PlatformServices.TAG, "could not load scores", page.getException());
+            services.post(SERVICE, "scores", refusal(request));
+            return;
+        }
+        LeaderboardScoreBuffer buffer = page.getResult().get().getScores();
+        int added;
+        try {
+            added = addNewScores(buffer.getCount(), i -> score(buffer.get(i)), items, count);
+        } catch (RuntimeException e) {
+            buffer.release();
+            throw e;
+        }
+        if (added == 0 || items.size() >= count) {
+            buffer.release();
+            finish.run();
+            return;
+        }
+        leaderboards.loadMoreScores(buffer, Math.min(count - items.size(), SCORES_PAGE), com.google.android.gms.games.PageDirection.NEXT)
+            .addOnCompleteListener(next -> {
+                buffer.release();
+                collectScores(leaderboards, next, items, count, finish, request);
+            });
+    }
+
+    /**
+     * Adds the scores of a page past the ones already in {@code into}, up to
+     * {@code count} in all, and says how many it added. Play's
+     * {@code loadMoreScores} answers with the expanded buffer, every score
+     * loaded so far with the new page after them, so a page's new scores
+     * start at the number already collected.
+     */
+    static <T> int addNewScores(int available, IntFunction<T> scoreAt, List<T> into, int count) {
+        int added = 0;
+        for (int i = into.size(); i < available && into.size() < count; i++) {
+            into.add(scoreAt.apply(i));
+            added++;
+        }
+        return added;
+    }
+
+    /** One score as the game reads it. */
+    private static JSONObject score(LeaderboardScore score) {
+        return PlatformServices.object(
+            "rank", score.getRank(),
+            "score", score.getRawScore(),
+            "formattedScore", score.getDisplayScore(),
+            "tag", score.getScoreTag() == null ? "" : score.getScoreTag(),
+            "time", score.getTimestampMillis(),
+            "playerId", score.getScoreHolder() == null ? "" : score.getScoreHolder().getPlayerId(),
+            "name", score.getScoreHolderDisplayName());
+    }
+
+    /** How many scores the leaderboard's variant at this span and collection holds; -1 when unknown. */
+    private static long total(Task<AnnotatedData<Leaderboard>> meta, int span, int collection) {
+        if (!meta.isSuccessful() || meta.getResult() == null || meta.getResult().get() == null) return -1;
+        for (LeaderboardVariant variant : meta.getResult().get().getVariants()) {
+            if (variant.getTimeSpan() == span && variant.getCollection() == collection) {
+                long scores = variant.getNumScores();
+                return scores == LeaderboardVariant.NUM_SCORES_UNKNOWN ? -1 : scores;
+            }
+        }
+        return -1;
     }
 
     /** The signed-in player's ID and name. */

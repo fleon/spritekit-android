@@ -34,10 +34,22 @@ let package = Package(
         .library(name: "SpriteKitShim", targets: ["SpriteKitShim"]),
         .library(name: "GLESRenderer", targets: ["GLESRenderer"]),
         .library(name: "PlatformShim", targets: ["PlatformShim"]),
+        .library(name: "PlatformServices", targets: ["PlatformServices"]),
     ],
     targets: [
+        // What a game's services stand on, on every platform: the
+        // protocols its audio, achievements, purchases and saved data sit
+        // on, the merge synced saved data uses, and the render-scale
+        // governor. Plain Foundation, with no shim in it, so Apple builds
+        // (through Platform/) share it as Android's do.
+        .target(
+            name: "PlatformServices",
+            path: "Sources/PlatformServices",
+            swiftSettings: [v5]
+        ),
         .target(
             name: "SpriteKitShim",
+            dependencies: ["PlatformServices"],
             path: "Sources/SpriteKitShim",
             swiftSettings: [v5, shimDefine]
         ),
@@ -46,7 +58,7 @@ let package = Package(
         // GL calls themselves are Android-only and come behind them.
         .target(
             name: "GLESRenderer",
-            dependencies: ["SpriteKitShim"],
+            dependencies: ["SpriteKitShim", "PlatformServices"],
             path: "Sources/GLESRenderer",
             swiftSettings: [v5, shimDefine]
         ),
@@ -61,7 +73,7 @@ let package = Package(
         // the shim's CoreVideo pixel buffers, hence the dependency.
         .target(
             name: "PlatformShim",
-            dependencies: ["SpriteKitShim"],
+            dependencies: ["SpriteKitShim", "PlatformServices"],
             path: "Sources/PlatformShim",
             swiftSettings: [v5, shimDefine]
         ),

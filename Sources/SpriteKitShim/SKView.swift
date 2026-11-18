@@ -75,9 +75,9 @@ open class SKView: UIView {
     /// game turning it off changes nothing.
     public var isAsynchronous = true
 
-    /// Always so here: the draw list is ordered by depth alone (README,
-    /// "a frame is a value"), which is what this asks SpriteKit for.
-    public var ignoresSiblingOrder = true
+    /// False by default, as SpriteKit's: nodes at the same depth draw in
+    /// tree order. True, they fall by class first (`DrawList(scene:)`).
+    public var ignoresSiblingOrder = false
     /// Sprites wholly outside what the view shows are left out of the frame
     /// (`DrawList(scene:transform:culling:)`), as SpriteKit culls them.
     public var shouldCullNonVisibleNodes = true
@@ -123,9 +123,14 @@ open class SKView: UIView {
         bounds = CGRect(x: 0, y: 0, width: pixels.width / scale, height: pixels.height / scale)
     }
 
-    public init(bounds: CGRect) {
-        super.init(frame: bounds)
+    public convenience init(bounds: CGRect) {
+        self.init(frame: bounds)
         self.bounds = bounds
+    }
+
+    /// UIKit's: a view as big as `frame`, its own space at the origin.
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
     }
 
     /// Whether a transition is playing.
@@ -239,7 +244,7 @@ open class SKView: UIView {
 
         // Either scene may have presented another meanwhile.
         guard let shown = self.scene else { return DrawList() }
-        guard let flight else { return Self.picture(of: shown, culling: shouldCullNonVisibleNodes) }
+        guard let flight else { return Self.picture(of: shown, culling: shouldCullNonVisibleNodes, ignoresSiblingOrder: ignoresSiblingOrder) }
         return compose(flight, incoming: shown)
     }
 
@@ -255,6 +260,8 @@ open class SKView: UIView {
         let counted = scene.actionClockStarted && delta <= Self.longestCountedFrame ? delta : 0
         scene.actionClockStarted = true
         scene.tickActions(counted)
+        scene.applyConstraints()
+        scene.didApplyConstraints()
     }
 
     /// The longest frame whose time actions count: a 0.98 s frame advances
@@ -269,12 +276,13 @@ open class SKView: UIView {
     /// With `culling`, what lies wholly outside the view is left out: a
     /// transition moves a scene's picture after this, so it's culled by the
     /// scene's own frame, which keeps all that can show.
-    static func picture(of scene: SKScene, culling: Bool = false) -> DrawList {
+    static func picture(of scene: SKScene, culling: Bool = false, ignoresSiblingOrder: Bool = false) -> DrawList {
         var list = DrawList()
         if scene.backgroundColor.alpha > 0 {
             list.commands.append(.sprite(fill(scene.viewVisibleFrame, colour: scene.backgroundColor, alpha: 1)))
         }
-        list.commands += DrawList(scene: scene, transform: scene.cameraTransform, culling: culling ? scene.viewVisibleFrame : nil).commands
+        list.commands += DrawList(scene: scene, transform: scene.cameraTransform, culling: culling ? scene.viewVisibleFrame : nil,
+                                  ignoresSiblingOrder: ignoresSiblingOrder).commands
         return list
     }
 
@@ -297,12 +305,12 @@ open class SKView: UIView {
             switch layer {
             case let .outgoing(offset, alpha):
                 list.commands += Self.layer(
-                    Self.picture(of: flight.outgoing, culling: shouldCullNonVisibleNodes), of: flight.outgoing,
+                    Self.picture(of: flight.outgoing, culling: shouldCullNonVisibleNodes, ignoresSiblingOrder: ignoresSiblingOrder), of: flight.outgoing,
                     placed: across, offset: offset, alpha: alpha, in: frame
                 )
             case let .incoming(offset, alpha):
                 list.commands += Self.layer(
-                    Self.picture(of: incoming, culling: shouldCullNonVisibleNodes), of: incoming,
+                    Self.picture(of: incoming, culling: shouldCullNonVisibleNodes, ignoresSiblingOrder: ignoresSiblingOrder), of: incoming,
                     placed: .identity, offset: offset, alpha: alpha, in: frame
                 )
             case let .colour(colour, alpha):

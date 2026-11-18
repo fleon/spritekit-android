@@ -8,6 +8,11 @@ surface, draws with GLES 3 through SDL3, and puts Google Play's billing,
 achievements, leaderboards and saved games behind the Apple-shaped APIs a
 game's managers already call.
 
+It also holds the platform code SpriteKit games share on every platform,
+Apple's included (`Platform/`): what's game-agnostic in a game's helpers and
+managers, so each game stops keeping its own copy and a fix reaches them
+all.
+
 Nothing here is specific to any game. A game keeps its own Android code (its
 controller, its managers' bodies, its Gradle app, its art pipeline and its
 notes) in its own repository, and changes here are described in SpriteKit's
@@ -27,9 +32,14 @@ and emitters.
 ## Layout
 
 ```
-Package.swift        SpriteKitShim, GLESRenderer, PlatformShim and their
-                     tests. Builds and tests on macOS.
+Package.swift        PlatformServices, SpriteKitShim, GLESRenderer,
+                     PlatformShim and their tests. Builds and tests on
+                     macOS.
 Sources/
+  PlatformServices/  Plain Foundation, on every platform: the protocols a
+                     game's audio, achievements, purchases and synced saved
+                     data stand on, the sync engine's merge and the render
+                     scale governor.
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
                      camera, SKRenderer, the UIKit / CoreGraphics /
@@ -37,12 +47,12 @@ Sources/
                      NSUbiquitousKeyValueStore. On Apple platforms it
                      re-exports the real SpriteKit.
   GLESRenderer/      The GL-free half of the renderer: shader translation,
-                     batching, render targets, compressed pages, the render
-                     scale governor. Host-tested.
+                     batching, render targets, compressed pages.
+                     Host-tested.
   PlatformShim/      The Android stand-ins for Apple's services, without the
                      device: Play Billing, Play Games, Saved Games (the
-                     key-value store's cloud) and the sync engine,
-                     MediaCodec-backed AVFoundation, haptics,
+                     key-value store's cloud), MediaCodec-backed
+                     AVFoundation, haptics,
                      sharing, the launch-argument domain.
 Tests/               Host tests: no device or GL context.
 Modules/             Android-only. Targets that exist to own a module name
@@ -53,6 +63,12 @@ Modules/             Android-only. Targets that exist to own a module name
 Shell/               Android-only. The app shell: SDL3, the EGL context, the
                      frame loop and its pacing, input, audio, the GL backend
                      and `GameHost`, the seam a game's controller adopts.
+Platform/            The platform code games share, on Apple platforms and
+                     Android alike: `Macros` (`@NSCodingUnsupported`) and
+                     `PlatformCore` (geometry shorthands, timing curves and
+                     eased actions, seeded randomness), `PlatformAudio`
+                     (sound effects and the soundtrack). See "Shared
+                     platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -70,6 +86,81 @@ cycles with the system module on macOS; keeping it apart is what lets the
 shim build and test on a Mac. `Text` is apart because it is the only part
 with C dependencies, and `Shell` because it needs SDL's and the NDK's
 headers.
+
+## Shared platform code
+
+`Platform/` is a package of its own, for Apple builds as much as Android's.
+On iPhone, iPad, Apple TV and the Mac (Catalyst) it builds against Apple's
+SpriteKit, UIKit and services; on Android, and on a Mac host for its tests,
+against the shim, which `SPRITEKIT_SHIM` selects there. Its sources import
+
+```swift
+#if SPRITEKIT_SHIM
+import SpriteKitShim
+#else
+import SpriteKit
+import UIKit
+#endif
+```
+
+and never `Modules/`, whose targets collide with Apple's frameworks. It
+reaches this package as `..`, so a game's graph holds one
+`spritekit-android`.
+
+A game adds `<submodule>/Platform` to its Xcode project as a local package
+and links the products it uses (in place of its own `Macros` package, which
+it deletes: two targets named `Macros` can't share a graph), and its Android
+package depends on it by path. Code moved here is public and keeps its
+names, so a game deletes its own copy and imports the module (`import
+PlatformCore`) in the files that use it.
+
+What belongs here: code a game's helpers and managers would otherwise copy
+that carries nothing of any one game. What a game configures (its sounds,
+products, achievements, constants) it passes in.
+
+### Audio (`PlatformAudio`)
+
+One `AudioManager` plays a game's sound effects and soundtrack on every
+platform, over `AudioBackend`: on Apple platforms `AppleAudioBackend`
+(pools of `AVAudioPlayer`s for sounds; an `AVAudioEngine` streaming each
+track, its intro once and then its loop section seamlessly, crossfading
+tracks on player nodes of their own, and picking the soundtrack up again
+after an interruption, a route change or the background), on Android the
+shell's, which the game hands over as it opens:
+
+```swift
+// At launch
+AudioManager.configure(AudioConfiguration(
+    sounds: AudioConfiguration.sounds(Sound.self) { sound in
+        sound == .step ? AudioConfiguration.Sound(sound.rawValue, rateVariation: 0.9...1.1) : nil
+    },
+    soundVolume: 0.8, musicVolume: 0.4,
+    crossfadeDuration: 2, musicFadeDuration: 0.25,
+    musicLoops: loops,                        // [track: MusicLoop]
+    settings: .init(write: { cloud.set($0, forKey: $1) })
+))
+// Android only, in the game's shell wiring
+Shell.audioDidOpen = { AudioManager.shared.use($0) }
+```
+
+Then `AudioManager.shared.play(_:)` (a name or a `String` enum; returns the
+sound's duration; `skipIfPlaying`, `variants`), `playEffect(_:repeats:
+variants:onFinish:)` and `stopEffect(_:fadeDuration:)` for sounds on voices
+of their own, `playMusic(_:loop:)` (the track already playing keeps going,
+another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
+`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`;
+`AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
+switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
+unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
+another device's. Android's audio focus arrives through
+`audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
+reports another app's audio itself. Whatever a backend can't do (a voice of
+its own, on a backend without them) falls back to playing the sound once.
+
+Checks: `swift test --package-path Platform` on the host, the Apple builds
+(`xcodebuild -scheme <product> -destination 'generic/platform=iOS
+Simulator'`, and tvOS and Mac Catalyst), and `Scripts/check-android.sh`,
+which builds it for Android.
 
 ## Using it in a game
 
@@ -170,8 +261,16 @@ The shim issues no draw calls. `SKView.tick` returns a `DrawList`: a flat,
 ordered list of sprite, shape and label commands with nested effect and crop
 groups. The scene graph, transforms, actions and draw order are therefore
 testable on a Mac with no window, and the renderer is a separate consumer.
-Draw order is by accumulated `zPosition`, sorted stably, so ties fall in tree
-order (SpriteKit leaves ties unspecified; this is never less deterministic).
+Draw order is by accumulated `zPosition`, sorted stably. At the same z,
+keeping sibling order (`ignoresSiblingOrder` false, SpriteKit's default and
+the view's here), nodes draw in tree order; ignoring it, they fall in
+SpriteKit's three classes, each in tree order: colour sprites, shapes, crop
+and effect groups; then textured sprites and labels; then shader sprites
+(`DrawOrderTests`, measured by readback). In the middle class SpriteKit
+keeps each texture's sprites together, and the labels together, each group
+where its first member is: its most frequent answer, which the list gives
+every time. A snapshot (`texture(from:)`) is drawn in tree order whatever
+the view's setting.
 
 ### SpriteKit's behaviour, measured
 
@@ -182,12 +281,55 @@ through `SKRenderer` and pinned in host tests:
   time, frames over a second counting none, time a frame runs past an
   action's end handed on to what follows (`ActionTimingTests`,
   `ActionClockTests`).
+- **Timing functions:** `timingFunction` runs on the timing mode's curve
+  and is clamped to 0...1, finishing an action once it reaches 1; custom
+  actions get curved time, sequences and groups run their children on their
+  curve (jumping to the end once their time is past), repeats ignore it.
+  `reversed()` keeps a move's, rotation's, scale's or custom action's mode,
+  function and speed; sequences, groups, repeats, waits and fades come back
+  linear at speed 1, and a reversed fade takes no time, as SpriteKit's
+  does (`ActionTimingFunctionTests`). `SKShader` is open, its designated
+  initialisers main-actor isolated so a main-actor-by-default game can
+  subclass it.
+- **`run(_:) async`:** returns on the frame the action finishes (an instant
+  one included), awaited actions play in turn, and it never returns for an
+  action taken off or a node out of a scene (`AsyncRunTests`).
 - **Warps:** each cell subdivided bilinearly, levels past 3 drawn as 3, two
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
   descendants; a scaled 9-slice keeps its caps.
+- **Constraints:** applied after the actions each frame, before
+  `didApplyConstraints()`; nodes take turns in the order they were given
+  constraints or entered the scene, not in tree order, and each set after
+  a pass adds another turn while keeping the earlier ones, as SpriteKit's
+  list grows; ranges clamp as `max(lower, min(upper, v))`; `orient`
+  clamps between the target's direction, in [−π/2, 3π/2), plus its limits,
+  unwrapping nothing (`ConstraintTests`). A `zRotation` constraint's
+  `referenceNode` is ignored: SpriteKit's use of it follows no rule found.
+- **Scenes:** a scene's `frame` is its size placed by its anchor point, and
+  its position and scale stay out of it and of its accumulated frame; a
+  scene is never among its own `nodes(at:)` (`SceneFrameTests`).
+- **Tile maps:** `SKTileMapNode` draws one sprite per filled cell, each
+  definition at its own size from its cell's bottom-left corner, turned
+  counter-clockwise within that rect by its rotation, and tinted by the
+  map's colour as a sprite is; cell centres and tile indices (clamped at 0,
+  not at the far edge) are SpriteKit's (`TileMapTests`). Animated
+  definitions show their first texture, and automapping keeps a group's
+  centre rule.
 - **Paths and contexts:** checked against CoreGraphics' own API, every blend
   mode included.
+- **Core Image:** `CILinearGradient` and `CIRadialGradient` mix
+  premultiplied colour in linear light and encode sRGB as written (black to
+  white is 188 half way); pixels take their centre's colour; a fractional
+  rectangle ends in a part-covered pixel; `CIGaussianBlur`'s radius is
+  `applyingGaussianBlur`'s sigma, and an unclamped blur grows the extent by
+  Core Image's own margin (6 each side at sigma 2); an unknown filter name
+  gives an empty image (`CoreImageTests`, against Core Image's own output).
+  A bitmap cropped off whole pixels keeps every pixel it reaches, where
+  Core Image keeps the fraction. `SKEffectNode.filter` is kept, not yet
+  drawn.
+  mode included; `setLineDash(phase:lengths:)` strokes in dashes as
+  CoreGraphics does, the pattern scaled with the context (`LineDashTests`).
 
 A change to the shim's behaviour comes with a test of this kind.
 
@@ -215,6 +357,10 @@ A change to the shim's behaviour comes with a test of this kind.
   step moves the scene a whole number of refreshes.
 - **Programs** are kept as driver binaries between launches, keyed by source
   and driver, so an app update doesn't relink what didn't change.
+- **Shapes** are rasterised on the CPU into coverage masks at the density
+  they're drawn at, except that no mask is made larger than the GPU's
+  biggest texture: a very long shape is rasterised coarser instead, its
+  edges a little softer.
 
 ### Art
 
@@ -305,6 +451,51 @@ HarfBuzz shapes and FreeType measures and rasterises (`Text/`), behind
 at the screen's density into an atlas uploaded as `R8` pages. Complex scripts
 (Thai is the acceptance test) shape correctly, which FreeType alone cannot.
 
+#### Attributed labels in several styles
+
+An `SKLabelNode`'s `attributedText` whose runs differ in font, colour,
+`.kern` or `.baselineOffset` draws each run in its own style when the label
+is one line (`numberOfLines` 1), as SpriteKit does: the runs end to end on
+one baseline, each raised by its `.baselineOffset`, and the whole line
+placed by its combined ink as a one-style line is, so `frame` and every
+alignment mode agree with SpriteKit's (`AttributedLabelRunTests`, against
+Apple's `SKLabelNode` on the same font file). `SKLabelNode.runs` holds the
+runs; `laidOutRuns` is set when the layout placed them, and the draw list
+then emits one label command per run. On several lines (`numberOfLines`
+other than 1, no `preferredMaxLayoutWidth`) the runs break at their
+newlines, and each line takes the largest ascent, descent and leading of the
+runs on it, as SpriteKit sizes the block (`AttributedParagraphParityTests`).
+A wrapped label in several styles still draws in its first run's style.
+
+### UIKit around the scene
+
+A game's SpriteKit code also reads UIKit, so the shim carries the parts it
+reaches for, kept as values where Android has nothing to show:
+
+- **Views:** `UIView`'s `frame`, `subviews`, `isUserInteractionEnabled`,
+  `contentMode`, `autoresizingMask` and `clipsToBounds`, `UIImageView`,
+  `SKView(frame:)`. Only the game's `SKView` draws; other views are kept, not
+  composited, and `snapshotView(afterScreenUpdates:)` and `drawHierarchy`
+  answer nil and false, as UIKit does for a view it can't render.
+- **Reserved regions** (iOS 27.1): `reservedRegions(kind:options:)` answers
+  from `reservedRegionList`, which the shell may fill (a foldable's hinge);
+  none by default, as on a phone without one.
+- **Windows and scenes:** a window joins its scene through `windowScene`;
+  the scene's `windows`, `keyWindow` and `coordinateSpace` follow.
+- **SF Symbols:** Android has no symbol font, so
+  `UIImage(systemName:withConfiguration:)` looks a symbol up in the packed
+  art as `SystemSymbols/<name>`. `Tools/Art/system-symbols.sh` renders the
+  symbols a game names into an asset catalog for the packer, with UIKit as
+  a Mac Catalyst tool (AppKit rounds symbol sizes up to whole points); the
+  configuration a game passes is the one it rendered them with.
+- **Text types:** `NSParagraphStyle`/`NSMutableParagraphStyle`,
+  `NSTextAlignment`, `NSLineBreakMode` and the `.paragraphStyle` and
+  `.baselineOffset` keys, which corelibs Foundation leaves to the UI
+  frameworks; `NSMutableString(initialCapacity:)` (corelibs has only
+  `init(capacity:)`, and an extension can't add `init()`).
+- **Settings:** `UIApplication.openSettingsURLString` opens the app's own
+  page in Android's settings (`device.openAppSettings` on the channel).
+
 ### The platform layer
 
 Everything Apple-shaped that needs a device goes through one channel
@@ -316,9 +507,15 @@ and tested on a Mac against a fake Java:
 
 - **Purchases** (Play Billing): prices, purchases, pending purchases,
   acknowledgement, restore on launch and resume, refunds.
+- **Consumables** (Play Billing): a price per product; a purchased
+  consumable is never owned, handed to the game once (its token written
+  down first, so a stop before the consume never grants it twice) and then
+  consumed; a pending one when paid (`PlayBillingConsumableTests`).
 - **Achievements and the player** (Play Games Services v2): silent sign-in,
   achievements mapped from Game Center's IDs, incremental ones from Game
   Center's percentages.
+- **Leaderboards** (Play Games Services v2): scores, entries and Play's
+  leaderboard screens behind GameKit's own calls (below).
 - **Saved data** (Play Games Saved Games): a key-value store's records in one
   snapshot, merged commutatively so a conflict resolves without loss.
 - **Audio:** sound effects (`.wav`) through SDL's audio streams, music
@@ -329,10 +526,32 @@ and tested on a Mac against a fake Java:
   there too (`ResourceBundle.defaultFolder`).
   A track with no loop points of its own repeats whole with
   `MusicLoop.wholeTrack`, as `AVAudioPlayer`'s `numberOfLoops = -1` does.
+  `AudioBackend.duration(ofSound:)` is a prepared sound's length (from its
+  WAV), what a game reads from `AVAudioPlayer.duration`.
 - **Media:** `AVAssetWriter`, `AVAudioFile` and composition stand-ins over
   MediaCodec and MediaMuxer, for games that render video.
 - **The device:** haptics (primitives where the vibrator has them), audio
   focus, battery saver as Low Power Mode, sharing through Android's chooser.
+
+#### Consumables: what the app's Java answers
+
+A game with consumables passes them to `PlayBilling(consumables:)` and sets
+`deliver`, which is handed each product and quantity once. Nothing is
+delivered or consumed before `deliver` is set. On top of the one-time
+products' calls and events, the Java side answers:
+
+- `billing.consume` `{"token"}`: consume the purchase
+  (`consumeAsync`), then send `consumed` `{"code": "ok" | <error>,
+  "token"}`. A token answered `ok` is never delivered again this session,
+  though a query already under way may still list it; one that fails is
+  consumed again after the next query.
+- Each purchase in `owned` and `updated` carries `"quantity"`
+  (`Purchase.getQuantity()`, 1 unless the product allows more), which
+  `deliver` is given.
+
+A token is written to `PlayBilling.deliveredKey` in the game's user
+defaults before `deliver` and removed once consumed, so a game stopped
+between the two never grants it twice.
 
 ### iCloud's key-value store, as Apple names it
 
@@ -386,6 +605,116 @@ The Java half is a class of its own in the game's app (`PlayReview`, on
 is over. A build not installed from Play runs the flow and shows nothing, as
 TestFlight shows nothing on iOS.
 
+### Leaderboards
+
+The `GameKit` module answers a game's leaderboard code with Apple's
+signatures, on `GKLeaderboard.backend`: `PlayGamesLeaderboards`
+(`Sources/PlatformShim/Leaderboards.swift`), which a game installs at launch
+beside its achievements, or by default `LocalLeaderboards`, which has none.
+
+- `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:)`, and the
+  instance `submitScore(_:context:player:)`, each with a completion handler
+  or `async throws`.
+- `GKLeaderboard.loadLeaderboards(IDs:)`, with `baseLeaderboardID` and
+  `title` (Play's display name).
+- `loadEntries(for:timeScope:range:)` and `loadEntries(for:timeScope:)`,
+  giving `GKLeaderboard.Entry` (`player`, `rank`, `score`, `formattedScore`,
+  `context`, `date`), with `TimeScope` and `PlayerScope`.
+- `GKAccessPoint.shared.trigger(state: .leaderboards, handler:)` and
+  `trigger(leaderboardID:playerScope:timeScope:handler:)`.
+- `GKGameCenterViewController(state:)` and
+  `(leaderboardID:playerScope:timeScope:)`, presented with
+  `present(_:animated:completion:)`, with `gameCenterDelegate`.
+- `GKError`, with all of Apple's codes as Swift sees them: `catch
+  GKError.notAuthenticated`, the static code shortcuts, and as an `NSError`
+  in `GKErrorDomain` with the code's number.
+
+Game Center leaderboard IDs map to Play's in the generated `PlayGamesMapping`
+file, under `leaderboards` (`{"leaderboard.high-score": {"id": "CgkI…"}}`).
+`today`, `week` and `allTime` are Play's daily, weekly and all-time spans;
+`global` and `friendsOnly` its public and friends collections. A score's
+64-bit context travels as Play's score tag, in decimal digits (none for 0),
+and Play keeps a player's best (`submitScoreImmediate`), as Game Center does.
+
+Where it differs from Apple:
+
+- **Every completion handler runs, once:** signed out with
+  `.notAuthenticated`; without Play Games on the device, or with no backend,
+  `.notSupported`; for a leaderboard ID with no Play counterpart,
+  `.invalidParameter`; and with `.communicationsFailure` when Play says no
+  or doesn't answer within 30 seconds. Game Center queues an offline score
+  and sends it later; Play's immediate submission doesn't, so a game that
+  must not lose one retries.
+- **Leaderboards are classic:** no recurring occurrences, start dates or
+  leaderboard sets.
+- **Other players:** `loadEntries(for players:timeScope:)` returns only the
+  local player's entry, as Play loads no other player's score by ID.
+- **No widget:** the access point draws nothing (`isActive` and `location`
+  are kept, `isVisible` is false). `trigger` opens Play's leaderboards for
+  `.leaderboards` or a leaderboard ID and nothing for other states
+  (achievements open through `AchievementsBackend.showDashboard()`); its
+  handler runs once Play has been asked.
+- **No view:** a presented `GKGameCenterViewController` opens Play's
+  leaderboards, an activity of its own over the game, and on the next turn
+  tells its delegate it has finished, so the game's dismissal runs as on
+  Apple. Play's list of all leaderboards takes no time span or collection.
+- As on Apple, only `GKGameCenterViewController` (a view controller) is
+  main-actor isolated. `GKLeaderboard`'s `async` calls are nonisolated and
+  run on their caller's actor, so Swift 6 code awaits them from any actor,
+  as it does Apple's; they reach the backend on the main actor, where
+  it lives, as `GKAccessPoint.trigger` does. `Modules/Checks` holds game
+  code calling GameKit in Swift 6, Swift 5, and Swift 5 with the main actor
+  as default, which `Scripts/check-android.sh` compiles.
+
+Play's half lives in the game's app, in its Play Games service, under
+`games`. Every request carries a `request` number its answer repeats; an
+answer with `ok: false` may add `reason: "signedOut"`, which Java answers at
+once when nobody is signed in. The leaderboard screens sign the player in
+first.
+
+| Call | Answer | Play Games Services v2 |
+|---|---|---|
+| `submitScores {items: [{id, score, tag}]}` | `scoresSubmitted {ok}` | `submitScoreImmediate` for each, then `Tasks.whenAll` |
+| `loadLeaderboards {ids?}` | `leaderboards {ok, items: [{id, title}]}` | `loadLeaderboardMetadata` |
+| `loadScores {id, timeSpan, collection, count}` | `scores {ok, items, local?, total}` | `loadTopScores`, then `loadMoreScores` up to `count`; `loadCurrentPlayerLeaderboardScore`; the variant's `getNumScores()` |
+| `showLeaderboards {id?, timeSpan?, collection?}` | — | `getLeaderboardIntent(id, timeSpan, collection)`, or `getAllLeaderboardsIntent()` |
+
+`timeSpan` is `daily`, `weekly` or `allTime` (`TIME_SPAN_*`); `collection`
+is `public` or `friends` (`COLLECTION_PUBLIC`, `COLLECTION_FRIENDS`). A
+score is `{rank, score, formattedScore, tag, time, playerId, name}`, from
+`LeaderboardScore` and its score holder, `time` in milliseconds since 1970
+(`getTimestampMillis`); `total` is -1 when Play doesn't know it; `count` 0
+loads only the signed-in player's. The base template's `PlayGamesServices`
+answers all four.
+
+### A game's own fonts, and the system font
+
+The shell registers every `.ttf`/`.otf` the game stages in the APK's
+`fonts/` at launch (`AssetBundle.installFonts`), as an iOS app's
+`UIAppFonts` are. The files the game names in `Shell.start(fonts:)` come
+first, in its order, so its default face is the one it chose. A game that
+registers its fonts itself goes through
+CoreText's font manager, which `CoreTextCompat.swift` answers over
+`TextMetrics.catalog` (the `TextEngine`): `CTFontManagerCreateFontDescriptorsFromURL`
+lists a file's faces as CoreText does (one for a plain file, one per named
+instance for a variable font: pinned against CoreText on the Mac's own
+Geneva, New York and SF, all 369 of SF's), `CTFontCreateWithFontDescriptor`,
+`CTFontCopyPostScriptName` and `CTFontDescriptorCopyAttribute(_, kCTFontNameAttribute)`
+name them, and `CTFontManagerRegisterFontURLs` registers, reporting a second
+registration of a file as an error, as Apple does, with CoreText's error
+codes (101 missing file, 103 not a font, 105 already registered). A font
+collection (`.ttc`) registers its first face only. A file is known by its
+name without extension, so two files of one name in different folders count
+as one.
+
+`UIFont(name:size:)` is nil for a name no registered face answers to, as on
+Apple, so "this face, else the system font" falls back as it does there.
+`UIFont.systemFont(ofSize:weight:)` draws in the device's Roboto:
+`/system/fonts/Roboto-Regular.ttf`, whose named instances are its weights on
+Android 12 and later (a file a weight before that), at the instance of SF's
+weight class for each UIKit weight (`.semibold` is Roboto SemiBold), chosen
+by `SystemFontFaces`.
+
 ### The shell
 
 - **The main thread** is SDL's thread: `MainThread.claim()` makes it so for
@@ -397,12 +726,25 @@ TestFlight shows nothing on iOS.
 - **Resources:** the process is `app_process`, so `Bundle.main` has no files;
   resources (data files, fonts, `.lproj` folders) are copied out of the APK on
   first use. The version comes from the APK.
+- **Localized strings:** `NSLocalizedString` reads the APK's
+  `lproj/<language>.lproj/<table>.strings`, choosing the language as
+  `Bundle.main` does: the first preferred language a folder serves, else the
+  app's development region (`AppIdentity.developmentRegion`, its own folder
+  or `Base`). A key the chosen table lacks is the value or the key
+  (`LocalizedStringsTests`, measured on a Mac). Only `NSLocalizedString`:
+  `Bundle.localizedString(forKey:value:table:)`, `String(localized:)` and
+  `.stringsdict` still answer with keys, and `bundle:` isn't read. A file
+  that imports only Foundation needs the shim re-exported in its module.
 - **Layout:** a point is a dp. The safe area includes the system bars, the
   cutout and the gesture handle; Back (and Android 16's predictive back)
   arrives as Escape.
 - **Input:** one touch at a time, hardware keys by HID usage, gamepads
   through SDL.
 - **Threads:** libdispatch workers start below the frame thread's priority.
+- **Associated objects:** `objc_getAssociatedObject`, `objc_setAssociatedObject`
+  and `objc_removeAssociatedObjects` work without an Objective-C runtime,
+  answering as Apple's do (`AssociatedObjectsParityTests`); a value goes a
+  little after its object rather than with it.
 - **Launch arguments** (debuggable builds only) come from the intent, as
   `-Key value` pairs in the argument domain, as on Apple.
 - **Debug properties:** `adb shell setprop debug.<key>.<name> <value>`, read

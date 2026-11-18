@@ -157,6 +157,11 @@ final class FaceHandle {
         if let ftFace { FT_Done_Face(ftFace) }
     }
 
+    /// The face's own PostScript name (a variable font's default instance).
+    var postScriptName: String? {
+        ftFace.flatMap(FaceHandle.postScriptName)
+    }
+
     private static func postScriptName(_ face: FT_Face) -> String? {
         FT_Get_Postscript_Name(face).map { String(cString: $0) }
     }
@@ -214,11 +219,25 @@ final class FaceHandle {
             return FontMetrics(ascent: 0, descent: 0, leading: 0, capHeight: 0, xHeight: 0)
         }
         let scaled = size.pointee.metrics
-        let ascent = CGFloat(scaled.ascender) / 64
-        let descent = -CGFloat(scaled.descender) / 64          // FreeType's is negative
-        let lineHeight = CGFloat(scaled.height) / 64
         let upem = CGFloat(ftFace.pointee.units_per_EM)
         let scale = upem > 0 ? self.size / upem : 0
+        // A scalable face's size metrics are rounded out to whole pixels
+        // (ascender up, descender down), a point apiece at 72 dpi; CoreText's
+        // are the font's units scaled, so those are read instead.
+        let face = ftFace.pointee
+        let isScalable = face.face_flags & FT_Long(FT_FACE_FLAG_SCALABLE) != 0 && scale > 0
+        // Core Text keeps each as a fraction of the em in 16.16 fixed point,
+        // so a face of 1000 units comes out a hair off the exact value (and a
+        // whole one can tip a rounded-up height), where 2048 units are exact.
+        func scaled16(_ units: Int) -> CGFloat {
+            (CGFloat(units) / upem * 65536).rounded() / 65536 * self.size
+        }
+        let ascent = isScalable ? scaled16(Int(face.ascender)) : CGFloat(scaled.ascender) / 64
+        let descent = isScalable ? scaled16(-Int(face.descender)) : -CGFloat(scaled.descender) / 64 // FreeType's is negative
+        // The line gap in font units, so a face with none has exactly none.
+        let leading = isScalable
+            ? scaled16(max(0, Int(face.height) - Int(face.ascender) + Int(face.descender)))
+            : max(0, CGFloat(scaled.height) / 64 - ascent - descent)
 
         var capHeight = ascent * 0.7
         var xHeight = ascent * 0.5
@@ -231,10 +250,7 @@ final class FaceHandle {
         return FontMetrics(
             ascent: ascent,
             descent: descent,
-            // UIKit's lineHeight is ascent + descent + leading, and
-            // FreeType's `height` is the whole line, so the leading is
-            // whatever that line leaves over.
-            leading: max(0, lineHeight - ascent - descent),
+            leading: leading,
             capHeight: capHeight,
             xHeight: xHeight
         )
