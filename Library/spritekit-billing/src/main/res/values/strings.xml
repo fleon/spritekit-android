@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's licence key from Play Console (Monetization setup), with
+         which PlayBilling checks Play's signature on each purchase. The
+         app's build sets its own (resValue); empty skips the check. Public,
+         not a secret. -->
+    <string name="play_license_key" translatable="false"></string>
+</resources>

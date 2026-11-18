@@ -4,7 +4,7 @@ import Foundation
 // surface a game's reminder code uses, with Apple's spellings so it compiles
 // unedited (`Modules/Sources/UserNotifications` answers `import
 // UserNotifications`). The device half is `PlatformNotifications.java`
-// (Templates/App/notifications), reached over `PlatformChannel`:
+// (Library/spritekit-notifications), reached over `PlatformChannel`:
 //
 //   - calls, each answered at once (Java knows these without waiting):
 //     `notifications.start` → `{status}` (also releases taps held for Swift),
