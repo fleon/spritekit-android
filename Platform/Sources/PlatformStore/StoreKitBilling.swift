@@ -57,9 +57,6 @@ public final class StoreKitBilling: BillingBackend {
     /// What this device last asked the App Store to do with each promotion.
     private var promotionHidden: [String: Bool] = [:]
     #endif
-    /// Whether `owned` holds StoreKit's answer yet: until it does, a
-    /// promotion is left as it is, rather than shown and then hidden again.
-    private var knowsOwned = false
 
     /// Runs before each transaction is finished; false leaves it unfinished.
     public var confirm: ((Purchase) async -> Bool)?
@@ -91,6 +88,12 @@ public final class StoreKitBilling: BillingBackend {
 
     public var ownedProducts: Set<String> { owned }
     public var freeProducts: Set<String> { free }
+    /// After the first pass over `Transaction.currentEntitlements`. Until
+    /// then a promotion is left as it is, too, rather than shown and then
+    /// hidden again.
+    public private(set) var knowsOwnedProducts = false
+    /// After the products have loaded once.
+    public private(set) var knowsFreeProducts = false
     public var purchaseDates: [String: Date] { dates }
 
     public func start(changed: @escaping () -> Void) {
@@ -155,6 +158,7 @@ public final class StoreKitBilling: BillingBackend {
             products[product.id] = product
         }
         free = Set(loaded.filter { $0.price == 0 && !consumables.contains($0.id) }.map(\.id))
+        knowsFreeProducts = true
         updatePromotions()
         changed?()
     }
@@ -168,7 +172,10 @@ public final class StoreKitBilling: BillingBackend {
             current.insert(transaction.productID)
             noteBought(transaction)
         }
-        knowsOwned = true
+        // The first answer reaches the game even when it is "nothing".
+        let wasKnown = knowsOwnedProducts
+        knowsOwnedProducts = true
+        if !wasKnown, current == owned { changed?() }
         setOwned(current)
         updatePromotions()
     }
@@ -264,7 +271,7 @@ public final class StoreKitBilling: BillingBackend {
     /// again if that changes. iPhone and iPad only: the Mac can't hide one.
     private func updatePromotions() {
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        guard #available(iOS 18.0, *), knowsOwned else { return }
+        guard #available(iOS 18.0, *), knowsOwnedProducts else { return }
         for id in promoted {
             let hidden = owned.union(free).contains(id)
             guard promotionHidden[id] != hidden else { continue }

@@ -27,6 +27,13 @@ public protocol BillingBackend: AnyObject {
     var ownedProducts: Set<String> { get }
     /// Products that cost nothing where the player shops.
     var freeProducts: Set<String> { get }
+    /// Whether `ownedProducts` is the service's answer yet. Until it is, a
+    /// game keeps what it last knew, so locks are right at launch and
+    /// offline.
+    var knowsOwnedProducts: Bool { get }
+    /// Whether `freeProducts` is the service's answer yet (the prices have
+    /// loaded once).
+    var knowsFreeProducts: Bool { get }
     /// Loads prices and entitlements. Calls `changed` whenever either moves.
     func start(changed: @escaping () -> Void)
     func purchase(_ productID: String) async -> BillingResult
@@ -39,6 +46,10 @@ public protocol BillingBackend: AnyObject {
 
 public extension BillingBackend {
     var purchaseDates: [String: Date] { [:] }
+
+    /// A backend that answers at once.
+    var knowsOwnedProducts: Bool { true }
+    var knowsFreeProducts: Bool { true }
 
     /// A backend that sells one product, or keeps one price for all.
     func price(of productID: String) -> String? { displayPrice }

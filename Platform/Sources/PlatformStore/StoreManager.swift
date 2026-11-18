@@ -5,7 +5,9 @@ import Foundation
 ///
 /// What's owned (bought, or free where the player shops) is cached in user
 /// defaults, so locks are right at launch and offline, before the store has
-/// answered. The earliest purchase date the store reports for each product
+/// answered: the cache stands until the backend says it knows
+/// (`knowsOwnedProducts`, `knowsFreeProducts`). Simulated purchases are
+/// never cached, so a debug build's grants don't outlive it. The earliest purchase date the store reports for each product
 /// is kept, as is when this device first saw it owned, so a game can grant
 /// something to whoever owned a product by a date (`owned(_:by:)`) even
 /// where the store gives no date (free there, or simulated).
@@ -190,17 +192,26 @@ public final class StoreManager {
     }
 
     /// Takes whatever the backend now reports, keeps it and tells the game.
+    /// Before the backend knows, only what it adds (a purchase) is taken, and
+    /// the cache is left as it is.
     private func backendChanged() {
         let defaults = configuration.defaults
         let key = Key(prefix: configuration.keyPrefix)
         let consumables = configuration.products.consumableIDs
+        let caches = !(billing is SimulatedBilling)
         let reported = billing.ownedProducts.subtracting(consumables)
+        if billing.knowsOwnedProducts {
+            if reported != owned {
+                owned = reported
+                if caches { defaults.set(reported.sorted(), forKey: key.owned) }
+            }
+        } else {
+            owned.formUnion(reported)
+        }
         let reportedFree = billing.freeProducts.subtracting(consumables)
-        if reported != owned || reportedFree != free {
-            owned = reported
+        if billing.knowsFreeProducts, reportedFree != free {
             free = reportedFree
-            defaults.set(reported.sorted(), forKey: key.owned)
-            defaults.set(reportedFree.sorted(), forKey: key.free)
+            if caches { defaults.set(reportedFree.sorted(), forKey: key.free) }
         }
         // The earliest date wins, so a later report never moves it on.
         var dates = purchaseDates

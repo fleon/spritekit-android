@@ -21,6 +21,8 @@ private final class FakeBilling: BillingBackend {
     var ownedProducts: Set<String> = []
     var freeProducts: Set<String> = []
     var purchaseDates: [String: Date] = [:]
+    var knowsOwnedProducts = true
+    var knowsFreeProducts = true
     var changed: (() -> Void)?
 
     var displayPrice: String? { prices[unlock] }
@@ -57,15 +59,75 @@ struct StoreManagerTests {
     @Test("A purchase is owned, and known at the next launch before the store answers")
     func ownedAndKept() async {
         let defaults = scratchDefaults()
-        let manager = store(SimulatedBilling(products: products, defaults: scratchDefaults()), defaults: defaults)
+        let manager = store(FakeBilling(), defaults: defaults)
         manager.start()
         #expect(!manager.owns(unlock))
         #expect(await manager.purchase(unlock) == .purchased)
         #expect(manager.owns(unlock))
 
         // A relaunch with a store that hasn't answered yet.
-        let relaunched = store(NoBilling(), defaults: defaults)
+        let silent = FakeBilling()
+        silent.knowsOwnedProducts = false
+        silent.knowsFreeProducts = false
+        let relaunched = store(silent, defaults: defaults)
+        relaunched.start()
         #expect(relaunched.owns(unlock))
+    }
+
+    @Test("The cache stands until the store answers, which then replaces it")
+    func cacheUntilKnown() {
+        let defaults = scratchDefaults()
+        let free = "com.example.game.free"
+        defaults.set([unlock], forKey: "store.ownedProducts")
+        defaults.set([free], forKey: "store.freeProducts")
+        let billing = FakeBilling()
+        billing.knowsOwnedProducts = false
+        billing.knowsFreeProducts = false
+        let manager = store(billing, defaults: defaults)
+        manager.start()
+        billing.prices = [unlock: "4,99 €"]
+        billing.changed?()
+        #expect(manager.owns(unlock))
+        #expect(manager.owns(free))
+        #expect(defaults.stringArray(forKey: "store.ownedProducts") == [unlock])
+        #expect(defaults.stringArray(forKey: "store.freeProducts") == [free])
+
+        // Entitlements answer first (refunded meanwhile), the prices later.
+        billing.knowsOwnedProducts = true
+        billing.changed?()
+        #expect(!manager.owns(unlock))
+        #expect(manager.owns(free))
+        #expect(defaults.stringArray(forKey: "store.ownedProducts") == [])
+        #expect(defaults.stringArray(forKey: "store.freeProducts") == [free])
+        billing.knowsFreeProducts = true
+        billing.changed?()
+        #expect(!manager.owns(free))
+        #expect(defaults.stringArray(forKey: "store.freeProducts") == [])
+    }
+
+    @Test("A purchase before the store has answered is owned, and the cache is left alone")
+    func purchaseBeforeKnown() async {
+        let defaults = scratchDefaults()
+        defaults.set(["com.example.game.other"], forKey: "store.ownedProducts")
+        let billing = FakeBilling()
+        billing.knowsOwnedProducts = false
+        let manager = store(billing, defaults: defaults)
+        manager.start()
+        #expect(await manager.purchase(unlock) == .purchased)
+        #expect(manager.owns(unlock))
+        #expect(manager.owns("com.example.game.other"))
+        #expect(defaults.stringArray(forKey: "store.ownedProducts") == ["com.example.game.other"])
+    }
+
+    @Test("Simulated purchases never reach the cache")
+    func simulatedNotCached() async {
+        let defaults = scratchDefaults()
+        let manager = store(SimulatedBilling(products: products, defaults: scratchDefaults()), defaults: defaults)
+        manager.start()
+        #expect(await manager.purchase(unlock) == .purchased)
+        #expect(manager.owns(unlock))
+        #expect(defaults.stringArray(forKey: "store.ownedProducts") == nil)
+        #expect(!store(FakeBilling(), defaults: defaults).owns(unlock))
     }
 
     @Test("Free where the player shops counts as owned")

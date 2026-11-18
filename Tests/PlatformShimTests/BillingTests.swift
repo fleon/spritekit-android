@@ -56,6 +56,13 @@ struct BillingBackendTests {
         defaults.removePersistentDomain(forName: name)
     }
 
+    @Test("Simulated and absent stores know what's owned at once")
+    func knownAtOnce() {
+        let simulated = SimulatedBilling(defaults: scratchDefaults())
+        #expect(simulated.knowsOwnedProducts && simulated.knowsFreeProducts)
+        #expect(NoBilling().knowsOwnedProducts && NoBilling().knowsFreeProducts)
+    }
+
     @Test("Every backend answers a price by product")
     func pricesByProduct() {
         #expect(NoBilling().price(of: fullGameID) == nil)
