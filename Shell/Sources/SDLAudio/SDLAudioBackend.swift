@@ -48,6 +48,8 @@ public final class SDLAudioBackend: AudioBackend {
     private var sounds: [String: SoundPool] = [:]
     private var mixer: MusicMixer?
     private var soundVolume: Float = 1
+    /// Closed for good (`shutdown`): every call after does nothing.
+    private var isShutDown = false
 
     /// Opens the audio device. Returns nil, having said why, if Android
     /// gives none — the game then runs silent rather than not at all.
@@ -74,13 +76,26 @@ public final class SDLAudioBackend: AudioBackend {
     }
 
     deinit {
+        shutdown()
+    }
+
+    /// Stops the soundtrack and waits for its thread, drops the voices and
+    /// closes the device: the shell's last word to SDL's audio before it
+    /// quits, since the game may still hold this backend then and a thread
+    /// left running would touch SDL after its locks are gone. Calls after
+    /// this do nothing.
+    public func shutdown() {
+        guard !isShutDown else { return }
+        isShutDown = true
         mixer?.stop()
+        mixer = nil
         // The voices are bound to the device, so they go first.
         sounds.removeAll()
         SDL_CloseAudioDevice(device)
     }
 
     public func prepareSounds(_ names: [String], poolSize: Int, volume: Float) {
+        guard !isShutDown else { return }
         soundVolume = volume
         var loaded = 0
         for name in names where sounds[name] == nil {
@@ -111,10 +126,12 @@ public final class SDLAudioBackend: AudioBackend {
     }
 
     public func suspend() {
+        guard !isShutDown else { return }
         SDL_PauseAudioDevice(device)
     }
 
     public func resume() {
+        guard !isShutDown else { return }
         SDL_ResumeAudioDevice(device)
     }
 }

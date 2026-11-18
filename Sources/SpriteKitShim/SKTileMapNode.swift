@@ -383,7 +383,7 @@ open class SKTileMapNode: SKNode {
                     size: quad,
                     anchorPoint: CGPoint(x: 0.5, y: 0.5),
                     texture: texture,
-                    textureRect: texture.textureRect,
+                    textureRect: texture.textureRect(),
                     color: color,
                     colorBlendFactor: colorBlendFactor,
                     alpha: alpha,

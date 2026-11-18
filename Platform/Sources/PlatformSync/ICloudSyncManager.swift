@@ -53,10 +53,25 @@ nonisolated public final class ICloudSyncManager: @unchecked Sendable {
     /// platforms, none on Android until its wiring hands one in. A game
     /// kept off iCloud (a test run on a Mac signed in to a real account)
     /// sets `LocalOnlyCloud()`. Setting it once `shared` has started merges
-    /// again with the new one.
-    nonisolated(unsafe) public static var cloud: CloudKeyValueStore = defaultCloud() {
-        didSet { shared.use(cloud) }
+    /// again with the new one. The platform's own is made only when read
+    /// before any is set: merely making iCloud's store starts it syncing,
+    /// which a game kept off iCloud must never do.
+    public static var cloud: CloudKeyValueStore {
+        get {
+            if let chosenCloud { return chosenCloud }
+            let made = makeDefaultCloud()
+            chosenCloud = made
+            return made
+        }
+        set {
+            chosenCloud = newValue
+            shared.use(newValue)
+        }
     }
+
+    nonisolated(unsafe) private static var chosenCloud: CloudKeyValueStore?
+    /// Makes the platform's own cloud (a test counts how often).
+    nonisolated(unsafe) static var makeDefaultCloud: () -> CloudKeyValueStore = defaultCloud
 
     private static func defaultCloud() -> CloudKeyValueStore {
         #if SPRITEKIT_SHIM

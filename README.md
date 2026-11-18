@@ -58,7 +58,7 @@ Tests/               Host tests: no device or GL context.
 Modules/             Android-only. Targets that exist to own a module name
                      (SpriteKit, UIKit, CoreGraphics, CoreText, CoreImage,
                      QuartzCore, AVFoundation, StoreKit, GameKit, Metal,
-                     CoreVideo, CryptoKit, Network, os, simd), each
+                     CoreVideo, CryptoKit, Network, os, Security, simd), each
                      re-exporting the shim, so a game's imports resolve.
 Shell/               Android-only. The app shell: SDL3, the EGL context, the
                      frame loop and its pacing, input, audio, the GL backend
@@ -78,9 +78,11 @@ Platform/            The platform code games share, on Apple platforms and
                      gamepads and the pointer; keyboard and Menu protocols),
                      `PlatformDisplay` (frame-rate and graphics settings
                      with Auto), `PlatformGameCenter` (sign-in,
-                     achievements, leaderboards), `PlatformStore` (in-app
-                     purchases) and `PlatformRigs` (Spine 4.2 skeletons,
-                     posed and drawn). See "Shared platform code".
+                     achievements, leaderboards, Play Games' mark),
+                     `PlatformStore` (in-app purchases), `PlatformShare`
+                     (share sheet, pasteboard, review page, feedback mail)
+                     and `PlatformRigs` (Spine 4.2 skeletons, posed and
+                     drawn). See "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -163,6 +165,30 @@ screen may wait on. `player` (`GamePlayer`: the service's ID, name and
 GameKit's legacy `playerID`) and `signInChanged`/`playerChanged` are for a
 server or a credit; `submitScore(_:context:to:)`, `standing(on:)` and
 `showLeaderboards(_:)` for leaderboards.
+
+Where the service is Play Games, a game's Game Center button wears Google
+Play Games' mark in its own greens (`PlayGamesMark`: the path data and
+colours, and `node(size:manager:isButton:)` drawing it on the button's
+centre). Where Play Games can't run (no Google Play services, a build
+without it) the button hides itself (`hidesButton(for:)`); Game Center's
+button on Apple is never hidden by it. Each game keeps its own button.
+
+### Sharing (`PlatformShare`)
+
+`ShareSheet.present(_:from:)` opens the system's share sheet with strings,
+web links and files, from a node: `UIActivityViewController` on Apple
+platforms, as a popover pointed at the node (its `RestingBounds`) on iPad
+and the Mac; on Android the items are sorted into a `ShareRequest` for the
+shell's `SystemShare.sheet`, an App Store link becoming the game's Google
+Play page in `storePageLanguage()`. `copy(_:)` puts text on the pasteboard,
+`didPresent` is told each time a sheet opens (a recording's marker).
+`StoreReviewPage.open(appStoreID:language:)` opens the App Store's
+write-a-review page, or the game's Play page on Android;
+`FeedbackMail.compose(to:subject:body:over:)` writes a mail in
+`MFMailComposeViewController` where mail is set up, else through its
+`mailto:` link. Links leave the game through `SystemLinks.open`. Apple TV has
+no sheet, pasteboard, review page or mail. Every address, ID and word is the
+game's own.
 
 ### Store (`PlatformStore`)
 
@@ -477,7 +503,11 @@ holds:
 
 - **Its sources**, as symlinks into the game's `Source/` at their own paths,
   leaving out the Apple app's entry (`AppDelegate`, `SceneDelegate`, the view
-  controller) and the managers that reach Apple's services.
+  controller) and the managers that reach Apple's services. Link whole
+  folders, not files one by one, so a file the Apple build adds compiles on
+  Android too rather than going missing: what a folder leaves out goes in the
+  target's `exclude:` (or an Apple-only subfolder), and a file is linked on
+  its own only where its folder can't be.
 - **A controller** adopting `GameHost`: the Android counterpart of the game's
   view controller and app delegate (launch work in the Apple order, the
   first scene, layout, Back, keys, links).
@@ -680,7 +710,7 @@ A game's images reach the runtime as an index and pages:
 ```
 
 `AssetIndex` reads it and `SKTexture(imageNamed:)` resolves through it, so a
-texture reports its art's size in points and `textureRect` is its slice of
+texture reports its art's size in points and `textureRect()` is its slice of
 the page. Pages are ASTC with mip levels where the GPU samples ASTC
 (`GL_KHR_texture_compression_astc_ldr`), else decoded on the CPU
 (`ASTCDecoder`) and uploaded as RGBA8. Images over 512 px take a page of
@@ -1055,7 +1085,12 @@ by `SystemFontFaces`.
   loop, and the loop drains `DispatchQueue.main` too.
 - **Saved defaults:** corelibs keeps `UserDefaults` in memory on Android; the
   shell writes them to internal storage every few seconds and on going to the
-  background.
+  background. As on Apple, launch arguments are an overlay on reads alone: a
+  value set for a key an argument also names is saved, though reads return
+  the argument's until the next launch, and the arguments are never saved
+  (`SavedDefaults`). Corelibs' `setVolatileDomain` merges into a domain
+  where Apple's replaces it, so code that changes the argument domain
+  replaces it with `SavedDefaults.replaceArguments` (`SavedDefaultsTests`).
 - **Resources:** the process is `app_process`, so `Bundle.main` has no files;
   resources (data files, fonts, `.lproj` folders) are copied out of the APK on
   first use. The version comes from the APK.

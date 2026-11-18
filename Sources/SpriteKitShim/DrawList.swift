@@ -483,7 +483,7 @@ public struct DrawList {
         of sprite: SKSpriteNode,
         scale: CGSize = CGSize(width: 1, height: 1)
     ) -> [(size: CGSize, anchorPoint: CGPoint, textureRect: CGRect)] {
-        let textureRect = sprite.texture?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        let textureRect = sprite.texture?.textureRect() ?? CGRect(x: 0, y: 0, width: 1, height: 1)
         guard sprite.isSliced, let art = sprite.texture?.size(), art.width > 0, art.height > 0 else {
             return [(sprite.size, sprite.anchorPoint, textureRect)]
         }

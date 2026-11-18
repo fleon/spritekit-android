@@ -61,6 +61,17 @@ public final class SKColor: @unchecked Sendable {
         return true
     }
 
+    /// UIColor's grey getter. A colour holds no colour space here, so a
+    /// grey (equal components, as `init(white:alpha:)` makes) converts and
+    /// any other colour reports false.
+    @discardableResult
+    public func getWhite(_ white: UnsafeMutablePointer<CGFloat>?, alpha: UnsafeMutablePointer<CGFloat>?) -> Bool {
+        guard red == green, green == blue else { return false }
+        white?.pointee = red
+        alpha?.pointee = self.alpha
+        return true
+    }
+
     public static let white = SKColor(white: 1, alpha: 1)
     public static let black = SKColor(white: 0, alpha: 1)
     public static let clear = SKColor(white: 0, alpha: 0)
