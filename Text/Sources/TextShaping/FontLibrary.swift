@@ -18,6 +18,10 @@ public final class FontLibrary: @unchecked Sendable {
     private var names: [String: (file: FontFile, instance: String?)] = [:]
     private var faces: [Key: FaceHandle] = [:]
     private var missing: Set<Key> = []
+    /// Every registered face as a font descriptor matches it, by lowercased
+    /// name, and each family's, by lowercased family, in registration order.
+    private var described: [String: CatalogFace] = [:]
+    private var families: [String: [CatalogFace]] = [:]
     /// What an unnamed label falls back to, set by the first registration.
     private var defaultName: String?
 
@@ -92,13 +96,29 @@ public final class FontLibrary: @unchecked Sendable {
         }
         registered.append(contentsOf: probe.instanceNames.filter { !$0.isEmpty })
 
+        let faces = probe.catalogFaces
         lock.withLock {
+            for face in faces where described[face.name.lowercased()] == nil {
+                described[face.name.lowercased()] = face
+                families[face.family.lowercased(), default: []].append(face)
+            }
             for name in registered where names[name] == nil {
                 names[name] = (file, probe.instanceNames.contains(name) ? name : nil)
             }
             if defaultName == nil { defaultName = registered.first }
         }
         return registered
+    }
+
+    /// The registered face `name` stands for, in any case (CoreText's
+    /// matching); nil for a family's name.
+    public func describedFace(named name: String) -> CatalogFace? {
+        lock.withLock { described[name.lowercased()] }
+    }
+
+    /// The registered faces of `family`, in any case.
+    public func describedFaces(inFamily family: String) -> [CatalogFace] {
+        lock.withLock { families[family.lowercased()] ?? [] }
     }
 
     /// Every name that can be asked for, for diagnostics and tests.

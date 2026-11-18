@@ -704,6 +704,37 @@ newlines, and each line takes the largest ascent, descent and leading of the
 runs on it, as SpriteKit sizes the block (`AttributedParagraphParityTests`).
 A wrapped label in several styles still draws in its first run's style.
 
+#### Font descriptors
+
+`UIFontDescriptor` and `UIFont(descriptor:size:)` resolve against the font
+catalog's faces (`TextMetrics.catalog`: each registered face's FreeType
+family name, style, weight and slant) as Core Text does, pinned by
+`FontDescriptorParityTests` against Core Text on the same files, Montserrat
+and KoHo (Core Text's answers there are UIKit's, measured on Mac Catalyst):
+
+- A family's faces are its files' family name, whatever their PostScript
+  names; `.name` wins outright, in any case.
+- `.face` (a style) wins over the traits, a `wght` variation over the style.
+- A weight trait, or the bold bit's 0.4, takes the face whose Core Text
+  weight trait is nearest. Core Text gives a face a trait from its weight
+  class (an instance's `wght`, else OS/2's: 100 −0.6, 200 −0.4, 300 −0.23,
+  400 0, 500 0.2, 600 0.3, 700 0.4, 800 0.6, 900 0.8, straight between),
+  kept as a `Float`. On Montserrat, `.ultraLight` and `.thin` are Thin,
+  `.light` ExtraLight, `.heavy` and `.black` ExtraBold.
+- `withSymbolicTraits(_:)` gives the face with exactly those traits: a family
+  with `.traitBold` is Bold; a named instance Thin to Medium becomes Bold,
+  SemiBold and up stay; `.traitItalic` with no italic face is nil for the
+  family, and from another instance goes to Regular's `wght`, as Core Text's
+  does.
+  `symbolicTraits` is the face's bold (weight trait 0.3 and over) and italic.
+
+The text stack draws named instances only, so a `wght` between them takes
+the nearest, where Core Text draws the weight between. A font's widths
+aren't known, so `.traitCondensed` and `.traitExpanded` find no face. With
+no family or name, or one the catalog lacks, the descriptor is the system
+font (Helvetica on Apple). `withDesign(_:)` answers for the system font
+only, as UIKit's does.
+
 ### UIKit around the scene
 
 A game's SpriteKit code also reads UIKit, so the shim carries the parts it
