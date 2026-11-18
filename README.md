@@ -173,6 +173,7 @@ transactions, buys promoted purchases started on the App Store
 (`PurchaseIntent`), hides a promotion on a device that owns its product
 (`promoted`), and, with `confirm`, lets a server credit each transaction
 before it is finished.
+
 ### Audio (`PlatformAudio`)
 
 One `AudioManager` plays a game's sound effects and soundtrack on every

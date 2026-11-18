@@ -9,8 +9,8 @@ import UIKit
 /// GameKit calls the authentication handler at launch and again whenever
 /// the player signs in or out; `answered` runs at its first answer (signed
 /// in, offering its sign-in sheet, or failed) and again each time the player
-/// becomes signed in, so the manager catches up then. The sheet is offered
-/// once a launch.
+/// signs in or out, so the manager catches up and tells the game, as Play
+/// Games' backend does. The sheet is offered once a launch.
 public final class GameKitAchievements: AchievementsBackend {
     /// Shows GameKit's sign-in sheet; over the top view controller when nil.
     public var presentSignIn: ((UIViewController) -> Void)?
@@ -99,7 +99,7 @@ public final class GameKitAchievements: AchievementsBackend {
         updatePlayer()
         let signedIn = isSignedIn
         defer { wasSignedIn = signedIn }
-        guard !hasAnswered || (signedIn && !wasSignedIn) else { return }
+        guard !hasAnswered || signedIn != wasSignedIn else { return }
         hasAnswered = true
         answered?()
     }

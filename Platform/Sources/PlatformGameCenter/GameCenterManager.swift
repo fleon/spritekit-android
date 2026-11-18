@@ -207,8 +207,9 @@ public final class GameCenterManager {
     /// game tells the player to sign in from the system's settings.
     public var opensDashboard: Bool { achievementService.opensDashboard }
 
-    /// Whether the service's dashboard can be shown on this device at all
-    /// (Play Games; Game Center's is always there).
+    /// Whether the service has a dashboard that signs a signed-out player in
+    /// (Play Games, where it can run). False for Game Center, whose dashboard
+    /// opens only signed in (`opensDashboard`).
     public var hasDashboard: Bool { achievementService.hasDashboard }
 
     /// Opens the service's dashboard over the game, in `window` where the

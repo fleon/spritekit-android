@@ -13,7 +13,8 @@ import UIKit
 ///   - **Consumables** are never owned. Each transaction is handed to
 ///     `deliver` once, its ID written down first so a game that stops
 ///     before it is finished never grants it twice, then finished. Until
-///     `deliver` is set they stay unfinished, and StoreKit hands them back.
+///     `deliver` is set they stay unfinished, and StoreKit hands them back;
+///     with `confirm` and no `deliver`, the server's credit is the delivery.
 ///   - **Confirming** (`confirm`): a game whose server credits purchases
 ///     sees each transaction, verified or not, before it is finished; one
 ///     it doesn't confirm stays unfinished and is tried again at the next
@@ -56,6 +57,9 @@ public final class StoreKitBilling: BillingBackend {
     /// What this device last asked the App Store to do with each promotion.
     private var promotionHidden: [String: Bool] = [:]
     #endif
+    /// Whether `owned` holds StoreKit's answer yet: until it does, a
+    /// promotion is left as it is, rather than shown and then hidden again.
+    private var knowsOwned = false
 
     /// Runs before each transaction is finished; false leaves it unfinished.
     public var confirm: ((Purchase) async -> Bool)?
@@ -164,7 +168,9 @@ public final class StoreKitBilling: BillingBackend {
             current.insert(transaction.productID)
             noteBought(transaction)
         }
+        knowsOwned = true
         setOwned(current)
+        updatePromotions()
     }
 
     private func handleUnfinished() async {
@@ -203,9 +209,9 @@ public final class StoreKitBilling: BillingBackend {
         }
         if consumables.contains(productID) {
             // Held, unfinished, until the game can take it.
-            guard let deliver else { return .purchased }
+            guard deliver != nil || confirm != nil else { return .purchased }
             let id = String(transaction.id)
-            if !delivered.contains(id) {
+            if let deliver, !delivered.contains(id) {
                 delivered.insert(id)
                 deliver(productID, max(1, transaction.purchasedQuantity))
             }
@@ -258,7 +264,7 @@ public final class StoreKitBilling: BillingBackend {
     /// again if that changes. iPhone and iPad only: the Mac can't hide one.
     private func updatePromotions() {
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        guard #available(iOS 18.0, *) else { return }
+        guard #available(iOS 18.0, *), knowsOwned else { return }
         for id in promoted {
             let hidden = owned.union(free).contains(id)
             guard promotionHidden[id] != hidden else { continue }
