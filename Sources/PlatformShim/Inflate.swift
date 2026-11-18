@@ -32,7 +32,8 @@ extension NSData {
         do {
             return try Inflate.decompress(Data(referencing: self)) as NSData
         } catch {
-            throw CocoaError(.coderReadCorrupt)
+            // Apple's NSDecompressionFailedError, for empty input too.
+            throw CocoaError(CocoaError.Code(rawValue: 5377))
         }
     }
 }
