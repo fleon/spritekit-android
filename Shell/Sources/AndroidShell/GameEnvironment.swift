@@ -82,13 +82,15 @@ enum GameEnvironment {
         Log.info("saved data: \(values.count) values read back")
     }
 
-    /// Writes what the game has saved: everything in user defaults but the
-    /// launch arguments (which are this run's alone). Cheap enough to call
+    /// Writes what the game has saved, as Apple keeps it: the app's own
+    /// domain, a value set under a launch argument included, and never the
+    /// arguments themselves (`SavedDefaults`), nor the languages, which are
+    /// the device's or an argument's each launch. Cheap enough to call
     /// every few seconds; written only when something changed.
     static func save() {
         guard let url = savedDefaultsURL else { return }
-        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        let values = UserDefaults.standard.dictionaryRepresentation().filter { arguments[$0.key] == nil }
+        var values = SavedDefaults.stored()
+        values.removeValue(forKey: "AppleLanguages")
         guard let data = try? PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0),
               data != lastSaved else { return }
         do {

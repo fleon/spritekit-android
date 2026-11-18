@@ -239,7 +239,7 @@ open class SKEmitterNode: SKNode {
         } else {
             space = transform
         }
-        let textureRect = particleTexture?.textureRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        let textureRect = particleTexture?.textureRect() ?? CGRect(x: 0, y: 0, width: 1, height: 1)
         let depth = z + particleZPosition
         var commands: [(CGFloat, DrawList.Command)] = []
         commands.reserveCapacity(particles.count)
