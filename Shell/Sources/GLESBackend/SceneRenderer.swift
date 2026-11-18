@@ -53,6 +53,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private let glyphPages = GlyphPages(atlas: TextEngine.shared.atlas)
     private let glyphSource = EngineGlyphSource(engine: TextEngine.shared)
     private let shapeMasks = ShapeMasks()
+    /// Shapes as triangles in the sprite batches; what it can't take
+    /// (textured, crossing itself, a crop's mask) falls to `shapeMasks`.
+    private let shapeMeshes = ShapeMeshes()
 
     /// Pixels per point, so glyphs are rasterised and masks filled at the
     /// density they are drawn at rather than at one pixel per point.
@@ -500,6 +503,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // context, at the top of each frame.
         MetalExecution.executor = self
 
+        batcher.shapeMeshes = shapeMeshes
         batcher.rasterIsFresh = { [weak self] owner, generation, digest in
             guard let self, rasterContents[owner] != nil,
                   targets.isFresh(.init(owner: owner), generation: generation, contents: digest) else { return false }
@@ -544,6 +548,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         pageDecodes.forgetResident()
         glyphPages.removeAll()
         shapeMasks.removeAll()
+        shapeMeshes.removeAll()
         glyphSource.flush()
         if coverageProgram != 0 { device.deleteProgram(coverageProgram) }
         if texturedCoverageProgram != 0 { device.deleteProgram(texturedCoverageProgram) }
@@ -608,6 +613,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         SceneDump.check(view, at: frame.time)
         noteSceneChange(at: frame.time)
         let ticked = MediaTime.source()
+        // Shapes are tessellated as they're batched, for the density the
+        // scene is drawn at: the screen's, times the share of it drawn.
+        shapeMeshes.pixelsPerPoint = max(viewport.scale.x, viewport.scale.y) * drawnFraction(of: frame)
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
         // the runtime's own cost, with no GL in it. Worth separating, because
@@ -739,7 +747,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     + "\(glyphPages.uploads) glyph uploads (\(glyphPages.uploadedBytes / 1024) KB), "
                     + "\(shapeMasks.rasterised) masks rasterised "
                     + "(\(Int((shapeMasks.rasteriseSeconds * 1000).rounded())) ms, "
-                    + "uploaded in \(Int((shapeMasks.uploadSeconds * 1000).rounded())) ms)"
+                    + "uploaded in \(Int((shapeMasks.uploadSeconds * 1000).rounded())) ms), "
+                    + "\(shapeMeshes.tessellated) shapes tessellated "
+                    + "(\(Int((shapeMeshes.tessellateSeconds * 1000).rounded())) ms)"
             )
         }
     }
@@ -1095,6 +1105,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         deviceScale = max(frame.scale.x, frame.scale.y)
         glyphSource.deviceScale = deviceScale
+        shapeMeshes.pixelsPerPoint = deviceScale
         target = Target(
             framebuffer: handle.framebuffer,
             widthInPixels: width,
@@ -1192,7 +1203,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // SpriteKit draws a snapshot in tree order, whatever the view's
         // `ignoresSiblingOrder` (measured by readback on a Mac).
         list.commands = DrawList(scene: node).commands
+        // Its shapes for the snapshot's density, the frame's put back after.
+        let framePixelsPerPoint = shapeMeshes.pixelsPerPoint
+        shapeMeshes.pixelsPerPoint = density
         let passes = batcher.passes(for: list)
+        shapeMeshes.pixelsPerPoint = framePixelsPerPoint
 
         let outer = target
         let outerDepth = cropDepth
@@ -1324,6 +1339,18 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     public var surfaceScale: CGFloat { renderScale }
     public var preferredFrameRate: Int { view.preferredFramesPerSecond }
+
+    /// How much of the screen's resolution the scene is drawn at, as
+    /// `sceneDrawTarget` will choose: the display's stretch of a smaller
+    /// buffer, else `renderScale` below 1, else all of it.
+    private func drawnFraction(of frame: Frame) -> CGFloat {
+        let screen = frame.size, surface = frame.surfaceSize
+        guard screen.width > 0, screen.height > 0 else { return 1 }
+        if surface.width < screen.width || surface.height < screen.height {
+            return max(surface.width / screen.width, surface.height / screen.height)
+        }
+        return min(max(renderScale, 0.25), 1)
+    }
 
     /// Where the frame draws: `.none` for the window's buffer, else a target
     /// `renderScale` of the screen's size (made again when that changes),
