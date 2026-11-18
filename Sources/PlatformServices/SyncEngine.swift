@@ -206,6 +206,12 @@ public final class SyncEngine: @unchecked Sendable {
             arguments.removeValue(forKey: key).map { (key, Self.launchValue($0)) }
         }
         guard !passed.isEmpty else { return }
+        // Replaced, not merged into: corelibs' `setVolatileDomain` merges
+        // into the domain it holds, which would leave the adopted keys there,
+        // hiding what's saved for the whole run. Apple's replaces it (and its
+        // remove leaves the argument domain alone), so remove then set
+        // replaces it on both.
+        defaults.removeVolatileDomain(forName: UserDefaults.argumentDomain)
         defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         for (key, value) in passed {
             set(value, forKey: key)
