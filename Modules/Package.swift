@@ -27,6 +27,7 @@ let package = Package(
         .library(name: "QuartzCore", targets: ["QuartzCore"]),
         .library(name: "StoreKit", targets: ["StoreKit"]),
         .library(name: "CryptoKit", targets: ["CryptoKit"]),
+        .library(name: "Security", targets: ["Security"]),
         .library(name: "GameKit", targets: ["GameKit"]),
         .library(name: "GameplayKit", targets: ["GameplayKit"]),
         .library(name: "Network", targets: ["Network"]),
@@ -65,6 +66,9 @@ let package = Package(
         .target(name: "CryptoKit",
                 dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
                 path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
+        .target(name: "Security",
+                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), .product(name: "PlatformShim", package: "spritekit-android")],
+                path: "Sources/Security", swiftSettings: [v5, shimDefine]),
         // Two a game may import to describe the player and the network.
         .target(name: "GameKit",
                 dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), .product(name: "PlatformShim", package: "spritekit-android")],

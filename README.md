@@ -58,7 +58,7 @@ Tests/               Host tests: no device or GL context.
 Modules/             Android-only. Targets that exist to own a module name
                      (SpriteKit, UIKit, CoreGraphics, CoreText, CoreImage,
                      QuartzCore, AVFoundation, StoreKit, GameKit, Metal,
-                     CoreVideo, CryptoKit, Network, os, simd), each
+                     CoreVideo, CryptoKit, Network, os, Security, simd), each
                      re-exporting the shim, so a game's imports resolve.
 Shell/               Android-only. The app shell: SDL3, the EGL context, the
                      frame loop and its pacing, input, audio, the GL backend
