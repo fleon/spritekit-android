@@ -560,7 +560,7 @@ struct TextureAssetTests {
             let texture = SKTexture(imageNamed: "Brick1")
             #expect(texture.page == 0)
             #expect(texture.asset?.rect == CGRect(x: 1822, y: 246, width: 192, height: 240))
-            #expect(texture.textureRect == texture.asset?.textureRect)
+            #expect(texture.textureRect() == texture.asset?.textureRect)
             #expect(texture.root === texture)
         }
     }
@@ -573,11 +573,11 @@ struct TextureAssetTests {
             #expect(half.size() == CGSize(width: 60, height: 120))
             #expect(half.root === whole)
             #expect(half.page == 0)
-            let outer = whole.textureRect
-            #expect(abs(half.textureRect.minX - (outer.minX + outer.width / 2)) < 1e-12)
-            #expect(abs(half.textureRect.width - outer.width / 2) < 1e-12)
-            #expect(half.textureRect.minY == outer.minY)
-            #expect(half.textureRect.height == outer.height)
+            let outer = whole.textureRect()
+            #expect(abs(half.textureRect().minX - (outer.minX + outer.width / 2)) < 1e-12)
+            #expect(abs(half.textureRect().width - outer.width / 2) < 1e-12)
+            #expect(half.textureRect().minY == outer.minY)
+            #expect(half.textureRect().height == outer.height)
         }
     }
 
@@ -590,7 +590,7 @@ struct TextureAssetTests {
         #expect(texture.size() == .zero)
         #expect(texture.asset == nil)
         #expect(texture.page == nil)
-        #expect(texture.textureRect == CGRect(x: 0, y: 0, width: 1, height: 1))
+        #expect(texture.textureRect() == CGRect(x: 0, y: 0, width: 1, height: 1))
     }
 }
 

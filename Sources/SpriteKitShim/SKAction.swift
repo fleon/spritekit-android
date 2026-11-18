@@ -36,7 +36,7 @@ public final class SKAction {
         case moveBy(CGVector)
         case fadeTo(CGFloat)
         case fadeBy(CGFloat)
-        case scaleTo(CGFloat?, CGFloat?, CGFloat?)  // uniform, x only, y only
+        case scaleTo(CGFloat?, CGFloat?, CGFloat?)  // uniform, else x and/or y
         case scaleBy(CGFloat)
         case rotateTo(CGFloat)
         case rotateToShortest(CGFloat)              // the shortest way round
@@ -181,6 +181,10 @@ public final class SKAction {
 
     public static func scaleY(to y: CGFloat, duration: TimeInterval) -> SKAction {
         SKAction(kind: .scaleTo(nil, nil, y), duration: duration)
+    }
+
+    public static func scaleX(to x: CGFloat, y: CGFloat, duration: TimeInterval) -> SKAction {
+        SKAction(kind: .scaleTo(nil, x, y), duration: duration)
     }
 
     public static func rotate(toAngle angle: CGFloat, duration: TimeInterval) -> SKAction {
@@ -513,10 +517,9 @@ public final class SKAction {
                 if let uniform {
                     node.xScale = from.xScale + (uniform - from.xScale) * t
                     node.yScale = from.yScale + (uniform - from.yScale) * t
-                } else if let onlyX {
-                    node.xScale = from.xScale + (onlyX - from.xScale) * t
-                } else if let onlyY {
-                    node.yScale = from.yScale + (onlyY - from.yScale) * t
+                } else {
+                    if let onlyX { node.xScale = from.xScale + (onlyX - from.xScale) * t }
+                    if let onlyY { node.yScale = from.yScale + (onlyY - from.yScale) * t }
                 }
 
             case let .scaleBy(factor):

@@ -38,7 +38,7 @@ public final class AssetIndex: Sendable {
         /// units: carried for the game, not read here.
         public let anchor: UIEdgeInsets?
         /// The same rect in the page's unit coordinates with a bottom-left
-        /// origin, which is what `SKTexture.textureRect` reports and what
+        /// origin, which is what `SKTexture.textureRect()` reports and what
         /// the renderer turns into UVs.
         public let textureRect: CGRect
     }

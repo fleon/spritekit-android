@@ -684,7 +684,7 @@ A game's images reach the runtime as an index and pages:
 ```
 
 `AssetIndex` reads it and `SKTexture(imageNamed:)` resolves through it, so a
-texture reports its art's size in points and `textureRect` is its slice of
+texture reports its art's size in points and `textureRect()` is its slice of
 the page. Pages are ASTC with mip levels where the GPU samples ASTC
 (`GL_KHR_texture_compression_astc_ldr`), else decoded on the CPU
 (`ASTCDecoder`) and uploaded as RGBA8. Images over 512 px take a page of
