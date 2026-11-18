@@ -31,7 +31,8 @@ import Foundation
 ///     consume that fails is tried again after the next query.
 ///   - **Confirming** (`confirm`), as StoreKit's backend does it: a game
 ///     whose server credits purchases sees each purchased one before it is
-///     acknowledged or consumed, and nothing is until `confirm` says yes. A
+///     acknowledged or consumed, and nothing is until `confirm` says yes. One
+///     Play already holds acknowledged is settled and never offered again. A
 ///     purchase it doesn't confirm is left as it is, its flow ends
 ///     `.failed`, and it's offered again after the next query (at launch,
 ///     on resume, on restore); Play refunds one still unacknowledged after
@@ -315,9 +316,11 @@ public final class PlayBilling: BillingBackend {
         !purchase.products.isEmpty && purchase.products.allSatisfy(serverConsumed.contains)
     }
 
-    /// Whether a purchased purchase is past `confirm` (or there's none).
+    /// Whether a purchased purchase is past `confirm` (or there's none). One
+    /// Play holds acknowledged was settled before, on this device or another:
+    /// it isn't offered again, so an owned product stays owned offline.
     private func isSettled(_ purchase: Purchase) -> Bool {
-        confirm == nil || confirmed.contains(purchase.token)
+        confirm == nil || purchase.acknowledged || confirmed.contains(purchase.token)
     }
 
     /// Products with a purchased purchase past `confirm`.
@@ -332,7 +335,7 @@ public final class PlayBilling: BillingBackend {
 
     private func acknowledgeWhatNeedsIt() {
         if let confirm {
-            for purchase in purchases where purchase.state == .purchased && !confirmed.contains(purchase.token)
+            for purchase in purchases where purchase.state == .purchased && !isSettled(purchase)
                 && !consumed.contains(purchase.token) && !declined.contains(purchase.token) {
                 guard confirming.insert(purchase.token).inserted else { continue }
                 Task { @MainActor [weak self] in

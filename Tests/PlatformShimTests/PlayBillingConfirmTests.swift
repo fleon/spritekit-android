@@ -138,6 +138,21 @@ struct PlayBillingConfirmTests {
         #expect(java.count("billing.consume") == 1)
     }
 
+    @Test("After a relaunch an acknowledged unlock is owned at once and never confirmed again, offline included")
+    func acknowledgedIsSettled() async {
+        let java = FakeJava(), server = Server()
+        server.answer = false   // the server is unreachable
+        let billing = billing(java, server)
+        java.send("billing", "owned", ["code": "ok", "purchases": [purchase(fullGame, acknowledged: true)]])
+        await settle()
+        #expect(server.seen.isEmpty)
+        #expect(billing.ownedProducts == [fullGame])
+        #expect(java.count("billing.acknowledge") == 0)
+        // Buying it again asks Play nothing: it's owned.
+        #expect(await billing.purchase(fullGame) == .purchased)
+        #expect(java.count("billing.purchase") == 0)
+    }
+
     @Test("Nothing is acknowledged while the server is still answering")
     func waitsForTheAnswer() async {
         let java = FakeJava()
