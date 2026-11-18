@@ -62,14 +62,20 @@ public enum AndroidPlatformServices {
     public struct Billing {
         public var products: [String]
         public var consumables: Set<String>
+        /// Consumables the game's server consumes (`PlayBilling.serverConsumed`).
+        public var serverConsumed: Set<String>
         /// Granted on the device without a store (a debug run's simulated
         /// purchases).
         public var simulated: Bool
         public var receive: (BillingBackend) -> Void
 
-        public init(products: [String], consumables: Set<String> = [], simulated: Bool = false, receive: @escaping (BillingBackend) -> Void) {
+        public init(
+            products: [String], consumables: Set<String> = [], serverConsumed: Set<String> = [], simulated: Bool = false,
+            receive: @escaping (BillingBackend) -> Void
+        ) {
             self.products = products
             self.consumables = consumables
+            self.serverConsumed = serverConsumed
             self.simulated = simulated
             self.receive = receive
         }
@@ -116,7 +122,8 @@ public enum AndroidPlatformServices {
             if billing.simulated {
                 installed.billing = SimulatedBilling()
             } else if let channel {
-                installed.billing = PlayBilling(channel: channel, products: billing.products, consumables: billing.consumables)
+                installed.billing = PlayBilling(channel: channel, products: billing.products, consumables: billing.consumables,
+                                               serverConsumed: billing.serverConsumed)
             }
             installed.billing.map(billing.receive)
         }
