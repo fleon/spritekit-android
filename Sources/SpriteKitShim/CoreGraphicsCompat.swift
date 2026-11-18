@@ -268,12 +268,13 @@ public extension CGPath {
         transform: CGAffineTransform = .identity
     ) {
         let scale = sqrt(abs(transform.a * transform.d - transform.b * transform.c))
-        append(.arc(
+        append(portable: PathGeometry.arc(
             center: center.applying(transform),
             radius: radius * (scale > 0 ? scale : 1),
             start: startAngle,
             end: endAngle,
-            clockwise: !clockwise
+            clockwise: !clockwise,
+            hasPen: hasPen
         ))
     }
 
