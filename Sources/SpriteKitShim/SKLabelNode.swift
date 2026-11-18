@@ -250,14 +250,18 @@ open class SKLabelNode: SKNode {
         let font = FontKey(name: fontName ?? "", size: fontSize)
         guard let metrics = provider.fontMetrics(font) else { return nil }
 
-        let broken = brokenLines(text, font: font, provider: provider)
+        let broken = brokenLines(text, font: font, metrics: metrics, provider: provider)
         guard !broken.isEmpty else { return nil }
 
         if numberOfLines == 1 {
             let line = measure(broken[0], font: font, provider: provider)
             guard !line.inkBounds.isEmpty else {
-                // Only spaces: no ink to frame, so the padding alone.
-                return Self.emptyFrame(horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
+                // Only whitespace: no ink to frame, so the padding alone,
+                // a point wider for two characters or more besides newlines.
+                return Self.emptyFrame(
+                    horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode,
+                    width: text.filter { $0 != "\n" }.count >= 2 ? 3 : 2
+                )
             }
             return Self.spriteKitLine(line, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode)
         }
@@ -273,15 +277,17 @@ open class SKLabelNode: SKNode {
 
     /// A frame with nothing in it: SpriteKit's 2 × 2 of padding, placed by
     /// the alignment.
-    static func emptyFrame(horizontal: SKLabelHorizontalAlignmentMode, vertical: SKLabelVerticalAlignmentMode) -> TextLayout {
-        let x: CGFloat = horizontal == .left ? 0 : horizontal == .right ? -2 : -1
+    static func emptyFrame(
+        horizontal: SKLabelHorizontalAlignmentMode, vertical: SKLabelVerticalAlignmentMode, width: CGFloat = 2
+    ) -> TextLayout {
+        let x: CGFloat = horizontal == .left ? 0 : horizontal == .right ? -width : -(width / 2).rounded(.down)
         let y: CGFloat
         switch vertical {
         case .baseline, .bottom: y = 0
         case .center: y = -1
         case .top: y = -2
         }
-        return TextLayout(lines: [], bounds: CGRect(x: x, y: y, width: 2, height: 2))
+        return TextLayout(lines: [], bounds: CGRect(x: x, y: y, width: width, height: 2))
     }
 
     static func trimmingTrailingWhitespace(_ text: String) -> String {
@@ -517,13 +523,18 @@ open class SKLabelNode: SKNode {
 
     /// `numberOfLines` of 1 means one line whatever the text holds, 0 means
     /// as many as it takes; `preferredMaxLayoutWidth` of 0 means no wrapping.
-    /// A larger `numberOfLines` never cuts lines the text breaks itself, and
-    /// keeps one line more than it says of wrapped text, as SpriteKit does
-    /// for faces without a line gap and most with one (measured: 165 of 198
-    /// face, size and limit cases; the rest keep exactly the number).
+    /// A larger `numberOfLines` n is SpriteKit's frame fitting (measured on
+    /// 16,848 frames): the text is laid into a frame (n + 1)·S tall, S being
+    /// the height of the text's own lines (P of them, a trailing newline not
+    /// counted), ⌈round(a) + (P − 1)·adv + d⌉, and line j is kept while
+    /// round(a) + (j − 1)·adv + d ≤ (n + 1)·S, with adv = round(a) + round(d)
+    /// + round(l). So the text's own lines are never cut unless it also
+    /// wraps, and a single paragraph keeps n + 1 lines when
+    /// round(d) + round(l) ≤ ⌈d⌉ (any face without a line gap), else n.
     private func brokenLines(
         _ text: String,
         font: FontKey,
+        metrics: FontMetrics,
         provider: TextProvider
     ) -> [String] {
         if numberOfLines == 1 {
@@ -546,8 +557,14 @@ open class SKLabelNode: SKNode {
             }
         }
 
-        if numberOfLines > 1, paragraphs.count == 1, lines.count > numberOfLines + 1 {
-            lines = Array(lines.prefix(numberOfLines + 1))
+        if numberOfLines > 1 {
+            let ascent = metrics.ascent.rounded()
+            let advance = ascent + metrics.descent.rounded() + metrics.leading.rounded()
+            let own = (ascent + CGFloat(paragraphs.count - 1) * advance + metrics.descent).rounded(.up)
+            let frame = CGFloat(numberOfLines + 1) * own
+            var kept = 0
+            while kept < lines.count, ascent + CGFloat(kept) * advance + metrics.descent <= frame { kept += 1 }
+            lines = Array(lines.prefix(max(1, kept)))
         }
         return lines
     }

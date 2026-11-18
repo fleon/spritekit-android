@@ -208,7 +208,7 @@ struct SpriteKitLabelParityTests {
         _ = Self.registered
         _ = Fonts.engine
         var checked = 0, matched = 0
-        for text in ["", " ", "\n", "\n\n"] {
+        for text in ["", " ", "\n", "\n\n", "  ", "   "] {
             for lines in [0, 1, 2] {
                 Self.compare(font, 20, text, lines: lines, checked: &checked, matched: &matched)
             }
@@ -220,16 +220,19 @@ struct SpriteKitLabelParityTests {
     // hair off Core Text's (HarfBuzz rounds the instance deltas), and a
     // wrapped line within a thousandth of a whole point rounds the frame the
     // other way.
-    @Test("numberOfLines never cuts the text's own lines, and keeps one more of wrapped text", arguments: ["Montserrat-Black", "KoHo-Bold"])
+    // Geneva has a line gap, which decides at some sizes whether a wrapped
+    // paragraph keeps n or n + 1 lines.
+    @Test("numberOfLines fits lines into SpriteKit's frame of (n + 1) times the text's own height", arguments: ["Montserrat-Black", "KoHo-Bold", "Geneva"])
     func lineLimits(font: String) {
         _ = Self.registered
         _ = Fonts.engine
         var checked = 0, matched = 0
-        let long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen"
-        for size in [13, 20, 26] as [CGFloat] {
-            for lines in [2, 3, 4] {
+        let long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+        for size in [11, 13, 20, 26, 33] as [CGFloat] {
+            for lines in [2, 3, 4, 7, 15, 22, 30] {
                 Self.compare(font, size, "A\nB\nC\nD\nE", lines: lines, checked: &checked, matched: &matched)
-                Self.compare(font, size, long, lines: lines, width: size * 5, checked: &checked, matched: &matched)
+                Self.compare(font, size, long, lines: lines, width: size * 6, checked: &checked, matched: &matched)
+                Self.compare(font, size, "Hx\n" + long, lines: lines, width: size * 6, checked: &checked, matched: &matched)
             }
         }
         #expect(matched == checked, "\(matched) of \(checked) frames match")
