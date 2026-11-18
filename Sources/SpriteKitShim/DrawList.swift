@@ -139,8 +139,7 @@ public struct DrawList {
 
     public init() {}
 
-    /// Flattens a subtree in SpriteKit's draw order, as the game's view sets
-    /// it: `ignoresSiblingOrder = true`.
+    /// Flattens a subtree in SpriteKit's draw order.
     ///
     /// That orders **every** node in the scene by its accumulated zPosition,
     /// globally — a grandchild can draw between two of a cousin's
@@ -149,15 +148,26 @@ public struct DrawList {
     /// wall in front over the tiles behind it. Sorting each subtree as a
     /// block would draw every wall under every tile.
     ///
-    /// Ties are nondeterministic in SpriteKit, which is why the game sets
-    /// explicit z for overlapping siblings. This sorts stably, so ties fall
-    /// in tree order: strictly more deterministic than SpriteKit, never less.
+    /// Ties, measured by reading back `SKRenderer` on a Mac (macOS 27.2,
+    /// `DrawOrderTests`): keeping sibling order (`ignoresSiblingOrder`
+    /// false, SpriteKit's default), they fall in tree order. Ignoring it,
+    /// they fall in three classes, each in tree order: colour sprites,
+    /// shapes (filled with a texture or not), crop and effect nodes first;
+    /// then textured sprites and labels; then sprites with a shader.
+    /// Within the middle class SpriteKit keeps each texture's sprites
+    /// together, and every label together: for a sprite of texture A, one
+    /// of B and another of A it drew A, A, B in 28 of 30 runs, and for a
+    /// label, a textured sprite and another label (in whatever fonts) the
+    /// sprite over both labels in 19 of 30, against 5 for tree order. So
+    /// the middle class falls in groups (a packed page or a texture and its
+    /// slices, or the labels), each where its first member is, in tree order
+    /// within: SpriteKit's most frequent answer, and the same every time.
     ///
     /// Effect and crop nodes are the exception, as they are in SpriteKit:
     /// each composites its subtree as one picture, so it is one command at
     /// its own depth, with its contents ordered the same way inside it.
-    @MainActor public init(scene: SKNode) {
-        self.init(scene: scene, transform: .identity)
+    @MainActor public init(scene: SKNode, ignoresSiblingOrder: Bool = false) {
+        self.init(scene: scene, transform: .identity, ignoresSiblingOrder: ignoresSiblingOrder)
     }
 
     /// The same, drawn through `transform`: how the view puts a scene behind
@@ -169,12 +179,19 @@ public struct DrawList {
     /// picture can't change. Quads are culled by their frame, warped sprites
     /// by where their grid reaches (which can be past their frame); effect
     /// and crop nodes, labels and shapes are kept whole.
-    @MainActor public init(scene: SKNode, transform: CGAffineTransform, culling: CGRect? = nil) {
+    @MainActor public init(scene: SKNode, transform: CGAffineTransform, culling: CGRect? = nil, ignoresSiblingOrder: Bool = false) {
         var entries: [(CGFloat, Command)] = []
         let cull = culling.map { $0.insetBy(dx: -Self.cullMargin, dy: -Self.cullMargin) }
+        let outer = Self.tiesByClass
+        Self.tiesByClass = ignoresSiblingOrder
+        defer { Self.tiesByClass = outer }
         DrawList.collect(scene, parentTransform: transform, parentAlpha: 1, parentZ: 0, cull: cull, into: &entries)
-        commands = DrawList.ordered(entries)
+        commands = DrawList.ordered(entries, byClass: ignoresSiblingOrder)
     }
+
+    /// Whether the list being built breaks ties by class
+    /// (`ignoresSiblingOrder`): read by the groups nested in it.
+    @MainActor private static var tiesByClass = false
 
     /// Points kept round the culling rect, so rounding never drops a quad
     /// that touches its edge.
@@ -208,25 +225,80 @@ public struct DrawList {
         return isCulled(size: size, anchor: .zero, transform: sprite.transform.translatedBy(x: origin.x, y: origin.y), by: cull)
     }
 
-    /// Stable sort by accumulated z: ties keep tree order.
+    /// Stable sort by accumulated z: ties keep tree order, or, `byClass`,
+    /// fall by class first (`tieClass`), and within the textured class by
+    /// texture group (`tieGroup`), each group where its first member is.
     /// The commands are big, so their places are sorted rather than they
-    /// are, and not at all when the depths already rise in tree order.
-    private static func ordered(_ entries: [(CGFloat, Command)]) -> [Command] {
+    /// are, and not at all when they're already in order.
+    private static func ordered(_ entries: [(CGFloat, Command)], byClass: Bool) -> [Command] {
+        var places = [(z: CGFloat, layer: Int, group: Int, offset: Int)]()
+        places.reserveCapacity(entries.count)
+        var firstOfGroup: [TieKey: Int] = [:]
+        for (offset, entry) in entries.enumerated() {
+            guard byClass else {
+                places.append((entry.0, 0, offset, offset))
+                continue
+            }
+            let layer = tieClass(entry.1)
+            var group = offset
+            if let key = tieGroup(entry.1).map({ TieKey(z: entry.0, group: $0) }) {
+                if let first = firstOfGroup[key] { group = first } else { firstOfGroup[key] = offset }
+            }
+            places.append((entry.0, layer, group, offset))
+        }
+        func before(_ a: (z: CGFloat, layer: Int, group: Int, offset: Int), _ b: (z: CGFloat, layer: Int, group: Int, offset: Int)) -> Bool {
+            if a.z != b.z { return a.z < b.z }
+            if a.layer != b.layer { return a.layer < b.layer }
+            if a.group != b.group { return a.group < b.group }
+            return a.offset < b.offset
+        }
         var inOrder = true
         var index = 1
-        while index < entries.count {
-            if entries[index].0 < entries[index - 1].0 {
+        while index < places.count {
+            if before(places[index], places[index - 1]) {
                 inOrder = false
                 break
             }
             index += 1
         }
         if inOrder { return entries.map(\.1) }
-        var places = [(z: CGFloat, offset: Int)]()
-        places.reserveCapacity(entries.count)
-        for (offset, entry) in entries.enumerated() { places.append((entry.0, offset)) }
-        places.sort { $0.z == $1.z ? $0.offset < $1.offset : $0.z < $1.z }
+        places.sort(by: before)
         return places.map { entries[$0.offset].1 }
+    }
+
+    /// Where a command falls among those at the same z when sibling order
+    /// is ignored (see `init(scene:)`): colour sprites, shapes, crop and
+    /// effect groups 0; textured sprites and labels 1; shader sprites 2.
+    private static func tieClass(_ command: Command) -> Int {
+        switch command {
+        case .label: return 1
+        case let .sprite(sprite): return sprite.shader != nil ? 2 : sprite.texture != nil ? 1 : 0
+        default: return 0
+        }
+    }
+
+    private enum TieGroup: Hashable {
+        case page(Int)
+        case texture(ObjectIdentifier)
+        case labels
+    }
+
+    private struct TieKey: Hashable {
+        let z: CGFloat
+        let group: TieGroup
+    }
+
+    /// Which texture a command in the textured class draws from, as
+    /// SpriteKit groups them: one packed page (an atlas), one texture and
+    /// its slices, or every label.
+    private static func tieGroup(_ command: Command) -> TieGroup? {
+        switch command {
+        case .label: return .labels
+        case let .sprite(sprite):
+            guard sprite.shader == nil, let texture = sprite.texture else { return nil }
+            return texture.page.map(TieGroup.page) ?? .texture(ObjectIdentifier(texture.root))
+        default: return nil
+        }
     }
 
     /// Every command under `node`, each with its **own** accumulated z, in
@@ -262,7 +334,7 @@ public struct DrawList {
                transform.a * transform.d - transform.b * transform.c != 0 {
                 inner = cull.applying(transform.inverted())
             }
-            let contents = wrap(ordered(children(of: node, transform: .identity, alpha: 1, z: 0, cull: inner)))
+            let contents = wrap(ordered(children(of: node, transform: .identity, alpha: 1, z: 0, cull: inner), byClass: tiesByClass))
             entries.append((z, Command.effect(Effect(
                 bounds: effect.effectBounds,
                 transform: transform,
@@ -292,8 +364,8 @@ public struct DrawList {
             let contents = children(of: node, transform: transform, alpha: alpha, z: 0, cull: cull)
             entries.append((z, Command.crop(Crop(
                 transform: transform,
-                mask: wrap(ordered(mask)),
-                contents: wrap(ordered(contents))
+                mask: wrap(ordered(mask, byClass: tiesByClass)),
+                contents: wrap(ordered(contents, byClass: tiesByClass))
             ))))
             return
         }
@@ -392,6 +464,9 @@ public struct DrawList {
                 if cull != nil, case let .sprite(particle) = entry.1, isCulled(particle, by: cull) { continue }
                 entries.append(entry)
             }
+        } else if let tileMap = node as? SKTileMapNode {
+            // Its filled cells, one sprite each, at its own depth.
+            entries.append(contentsOf: tileMap.tileCommands(transform: transform, alpha: alpha, z: z, cull: cull))
         }
 
         // Each descendant keeps its own accumulated z. Re-keying a whole

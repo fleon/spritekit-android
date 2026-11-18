@@ -43,9 +43,10 @@ struct LabelTests {
         }
     }
 
-    @Test("An empty or unknown label has no frame at all")
+    @Test("An empty label frames its padding alone, and an unknown face nothing at all")
     func nothingToMeasure() {
-        #expect(label("").contentFrame == .zero)
+        // SpriteKit frames an empty label 2 × 2.
+        #expect(label("").contentFrame.size == CGSize(width: 2, height: 2))
 
         let unknown = label("Lightning")
         unknown.fontName = "NoSuchFont"
@@ -121,9 +122,9 @@ struct LabelTests {
         let metrics = try #require(Fonts.engine.fontMetrics(Fonts.display(20)))
         let lineHeight = metrics.ascent.rounded() + metrics.descent.rounded() + metrics.leading.rounded()
 
-        #expect(layout.lines[0].origin.y == 0)
-        #expect(abs(layout.lines[1].origin.y + lineHeight) < 0.001)
-        #expect(abs(layout.lines[2].origin.y + lineHeight * 2) < 0.001)
+        let first = layout.lines[0].origin.y
+        #expect(abs(layout.lines[1].origin.y - (first - lineHeight)) < 0.001)
+        #expect(abs(layout.lines[2].origin.y - (first - lineHeight * 2)) < 0.001)
         #expect(node.contentFrame.height > lineHeight * 2)
     }
 
@@ -144,13 +145,17 @@ struct LabelTests {
         #expect(rejoined == text)
     }
 
-    @Test("numberOfLines caps how many lines a wrap produces")
+    @Test("numberOfLines caps a wrap at one line more, as SpriteKit does, and never the text's own lines")
     func lineLimit() throws {
         let text = "Tap a tile to send it one step, and bump another to trade places"
         let node = label(text, size: 18)
         node.numberOfLines = 2
         node.preferredMaxLayoutWidth = 180
-        #expect(try #require(node.layout).lines.count == 2)
+        #expect(try #require(node.layout).lines.count == 3)
+
+        let own = label("A\nB\nC\nD", size: 18)
+        own.numberOfLines = 2
+        #expect(try #require(own.layout).lines.count == 4)
     }
 
     @Test("Layout is stable across repeated calls and reflects every change")

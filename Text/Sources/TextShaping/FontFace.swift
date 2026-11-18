@@ -157,6 +157,11 @@ final class FaceHandle {
         if let ftFace { FT_Done_Face(ftFace) }
     }
 
+    /// The face's own PostScript name (a variable font's default instance).
+    var postScriptName: String? {
+        ftFace.flatMap(FaceHandle.postScriptName)
+    }
+
     private static func postScriptName(_ face: FT_Face) -> String? {
         FT_Get_Postscript_Name(face).map { String(cString: $0) }
     }
@@ -221,11 +226,17 @@ final class FaceHandle {
         // are the font's units scaled, so those are read instead.
         let face = ftFace.pointee
         let isScalable = face.face_flags & FT_Long(FT_FACE_FLAG_SCALABLE) != 0 && scale > 0
-        let ascent = isScalable ? CGFloat(face.ascender) * scale : CGFloat(scaled.ascender) / 64
-        let descent = isScalable ? -CGFloat(face.descender) * scale : -CGFloat(scaled.descender) / 64 // FreeType's is negative
+        // Core Text keeps each as a fraction of the em in 16.16 fixed point,
+        // so a face of 1000 units comes out a hair off the exact value (and a
+        // whole one can tip a rounded-up height), where 2048 units are exact.
+        func scaled16(_ units: Int) -> CGFloat {
+            (CGFloat(units) / upem * 65536).rounded() / 65536 * self.size
+        }
+        let ascent = isScalable ? scaled16(Int(face.ascender)) : CGFloat(scaled.ascender) / 64
+        let descent = isScalable ? scaled16(-Int(face.descender)) : -CGFloat(scaled.descender) / 64 // FreeType's is negative
         // The line gap in font units, so a face with none has exactly none.
         let leading = isScalable
-            ? CGFloat(max(0, Int(face.height) - Int(face.ascender) + Int(face.descender))) * scale
+            ? scaled16(max(0, Int(face.height) - Int(face.ascender) + Int(face.descender)))
             : max(0, CGFloat(scaled.height) / 64 - ascent - descent)
 
         var capHeight = ascent * 0.7

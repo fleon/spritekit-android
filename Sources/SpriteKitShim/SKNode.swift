@@ -27,24 +27,48 @@ open class SKNode {
         precondition(node !== self, "a node cannot be its own child")
         node.parent = self
         children.append(node)
+        if SKNode.constraintsInUse, let scene { node.constraintsEnter(scene) }
     }
 
     open func insertChild(_ node: SKNode, at index: Int) {
         precondition(node.parent == nil, "node already has a parent")
         node.parent = self
         children.insert(node, at: index)
+        if SKNode.constraintsInUse, let scene { node.constraintsEnter(scene) }
     }
 
     open func removeFromParent() {
         guard let parent else { return }
         parent.children.removeAll { $0 === self }
         self.parent = nil
+        if SKNode.constraintsInUse { constraintsLeave() }
     }
 
     open func removeAllChildren() {
-        for child in children { child.parent = nil }
+        for child in children {
+            child.parent = nil
+            if SKNode.constraintsInUse { child.constraintsLeave() }
+        }
         children.removeAll()
     }
+
+    // MARK: Constraints (SKConstraint.swift)
+
+    /// SpriteKit's constraints, applied by the scene once a frame after the
+    /// actions, in the order nodes were given them.
+    open var constraints: [SKConstraint]? {
+        didSet {
+            // None or an empty list takes no turn, and takes none away.
+            guard constraints?.isEmpty == false else { return }
+            SKNode.constraintsInUse = true
+            if let scene { enterConstraintOrder(scene) } else { leaveConstraintOrder() }
+        }
+    }
+
+    /// The scene whose turn order this node is in, and whether it is still
+    /// waiting to join it at the next pass.
+    weak var constraintScene: SKScene?
+    var constraintPending = false
 
     open func removeChildren(in nodes: [SKNode]) {
         for node in nodes where node.parent === self { node.removeFromParent() }
@@ -95,15 +119,14 @@ open class SKNode {
     open var isUserInteractionEnabled: Bool = false
 
     /// Whether `point`, in **this node's parent's** coordinates, falls inside
-    /// everything the node draws — SpriteKit's own meaning, which is why the
-    /// point is in the parent's space and not the node's. `open`, as in
-    /// SpriteKit: games narrow a button's hit area by overriding it. As
-    /// there, `nodes(at:)` and `atPoint(_:)` don't consult an override.
+    /// the accumulated frame — SpriteKit's own meaning, which is why the
+    /// point is in the parent's space and not the node's. As measured on a
+    /// Mac, hidden nodes answer too and the far edges are open (unlike
+    /// `nodes(at:)`'s). `open`, as in SpriteKit: games narrow a button's hit
+    /// area by overriding it. As there, `nodes(at:)` and `atPoint(_:)` don't
+    /// consult an override.
     open func contains(_ point: CGPoint) -> Bool {
-        guard !isHidden else { return false }
-        return accumulatedContents(includingHidden: false)
-            .applying(localTransform)
-            .contains(point)
+        calculateAccumulatedFrame().contains(point)
     }
 
     /// Action playback rate, inherited multiplicatively as SpriteKit does.
@@ -223,6 +246,21 @@ open class SKNode {
 
     open func run(_ action: SKAction, completion: @escaping () -> Void) {
         runningActions.append(RunningAction(key: nil, state: action.makeState(), completion: completion))
+    }
+
+    /// SpriteKit's `run(_:) async`, the Swift form of `run(_:completion:)`:
+    /// it returns once the action has finished. Without it, `await
+    /// node.run(action)` resolves to the synchronous `run(_:)` and returns at
+    /// once, so a game's awaited sequences all play over one another.
+    ///
+    /// As SpriteKit's (measured with `SKRenderer` on a Mac, macOS 27.2;
+    /// `AsyncRunTests`), it never returns if the action doesn't finish: taken
+    /// off with `removeAllActions`, or the node out of a scene, where actions
+    /// don't run.
+    open func run(_ action: SKAction) async {
+        await withUnsafeContinuation { (continuation: UnsafeContinuation<Void, Never>) in
+            run(action) { continuation.resume() }
+        }
     }
 
     open func action(forKey key: String) -> SKAction? {

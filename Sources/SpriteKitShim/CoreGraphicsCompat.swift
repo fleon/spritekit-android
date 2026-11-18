@@ -25,8 +25,11 @@ public typealias CGPathDrawingMode = BitmapContext.DrawMode
 public typealias CGGradientDrawingOptions = BitmapContext.GradientOptions
 public typealias CGInterpolationQuality = BitmapContext.InterpolationQuality
 
-/// What `colors.map(\.cgColor) as CFArray` has to land on.
-public typealias CFArray = [CGColor]
+/// Any CoreFoundation array the games build or receive: gradients' colours
+/// (`colors.map(\.cgColor) as CFArray`), font URLs and font descriptors
+/// (`[url as CFURL] as CFArray`, `… as? [CTFontDescriptor]`), as on Apple,
+/// where one `CFArray` holds any of them.
+public typealias CFArray = [Any]
 
 public extension SKColor {
     /// The game converts to `CGColor` at every context call. With the two
@@ -80,13 +83,16 @@ public enum CGImageAlphaInfo: UInt32, Sendable {
 
 public extension Gradient {
     /// `CGGradient(colorsSpace:colors:locations:)`, as the game writes it:
-    /// the colours are already a `[CGColor]` behind the `CFArray` name, and
-    /// `locations` is a C array, which an `[CGFloat]` argument becomes.
+    /// the colours are `CGColor`s behind the `CFArray` name, and `locations`
+    /// is a C array, which an `[CGFloat]` argument becomes. Nil if anything
+    /// in the array isn't a colour.
     init?(colorsSpace: CGColorSpace?, colors: CFArray, locations: UnsafePointer<CGFloat>?) {
+        let colours = colors.compactMap { $0 as? CGColor }
+        guard colours.count == colors.count else { return nil }
         let stops: [CGFloat]? = locations.map { pointer in
-            (0 ..< colors.count).map { pointer[$0] }
+            (0 ..< colours.count).map { pointer[$0] }
         }
-        self.init(colours: colors, locations: stops)
+        self.init(colours: colours, locations: stops)
     }
 }
 
@@ -307,6 +313,15 @@ public extension CGPath {
     }
 
     /// The path cut into dashes, each an open subpath of its own.
+    /// The path through `transform` (identity for nil), as CoreGraphics'
+    /// `copy(using:)`: arcs become the curves CoreGraphics records for them,
+    /// so any transform holds (`PathGeometry.transformed`).
+    func copy(using transform: UnsafePointer<CGAffineTransform>?) -> CGPath? {
+        let copy = CGPath()
+        copy.replace(with: PathGeometry.transformed(pathElements, by: transform?.pointee ?? .identity))
+        return copy
+    }
+
     func copy(dashingWithPhase phase: CGFloat, lengths: [CGFloat], transform: CGAffineTransform = .identity) -> CGPath {
         let path = CGPath()
         for dash in PathGeometry.dash(PathRasteriser.flatten(self, scale: 4), phase: phase, lengths: lengths) {
