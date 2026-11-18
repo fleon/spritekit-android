@@ -48,6 +48,7 @@ let package = Package(
         .library(name: "PlatformDevice", targets: ["PlatformDevice"]),
         .library(name: "PlatformSync", targets: ["PlatformSync"]),
         .library(name: "PlatformAndroid", targets: ["PlatformAndroid"]),
+        .library(name: "PlatformSprite", targets: ["PlatformSprite"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -175,6 +176,28 @@ let package = Package(
             dependencies: [
                 "PlatformAndroid",
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        // The SpriteKit infrastructure no game's content is in: the texture
+        // cache and sprite helpers, colours, text and fonts, SVG paths and
+        // icons drawn from them, shape sprites, scene loading, the
+        // localization mechanism, debug markers and the display's corners.
+        // Every game-specific piece (art scale, slice table, icon table,
+        // languages, fonts) is passed in.
+        .target(
+            name: "PlatformSprite",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformSpriteTests",
+            dependencies: [
+                "PlatformSprite",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
         ),
