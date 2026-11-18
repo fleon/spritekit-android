@@ -29,6 +29,18 @@ import Foundation
 ///     nothing. A token Play has said is consumed is never delivered again
 ///     this session, though a query already under way still lists it. A
 ///     consume that fails is tried again after the next query.
+///   - **Confirming** (`confirm`), as StoreKit's backend does it: a game
+///     whose server credits purchases sees each purchased one before it is
+///     acknowledged or consumed, and nothing is until `confirm` says yes. A
+///     purchase it doesn't confirm is left as it is, its flow ends
+///     `.failed`, and it's offered again after the next query (at launch,
+///     on resume, on restore); Play refunds one still unacknowledged after
+///     three days, which is logged. With `confirm` and no `deliver`, the
+///     server's credit is a consumable's delivery.
+///   - **Who consumes**: a consumable the server consumes itself (the
+///     `serverConsumed` products), once confirmed, is neither consumed nor
+///     acknowledged here, since the server's consume acknowledges it; it's
+///     done for this session, and gone once Play stops listing it.
 public final class PlayBilling: BillingBackend {
     public enum State: String, Sendable {
         case purchased
@@ -44,16 +56,30 @@ public final class PlayBilling: BillingBackend {
         public var acknowledged: Bool
         /// How many were bought at once (Play's multi-quantity purchases).
         public var quantity: Int
+        /// Play's order ID (`GPA.…`); none for a promotional purchase.
+        public var orderID: String?
+        /// Play's purchase JSON and its signature, for a server to check.
+        public var originalJSON: String?
+        public var signature: String?
 
-        public init(products: [String], state: State, token: String, time: Date, acknowledged: Bool, quantity: Int = 1) {
+        public init(
+            products: [String], state: State, token: String, time: Date, acknowledged: Bool, quantity: Int = 1,
+            orderID: String? = nil, originalJSON: String? = nil, signature: String? = nil
+        ) {
             self.products = products
             self.state = state
             self.token = token
             self.time = time
             self.acknowledged = acknowledged
             self.quantity = quantity
+            self.orderID = orderID
+            self.originalJSON = originalJSON
+            self.signature = signature
         }
     }
+
+    /// Where a confirmation that didn't go through is reported.
+    nonisolated(unsafe) public static var log: (String) -> Void = { NSLog("%@", $0) }
 
     private static let service = "billing"
 
@@ -75,6 +101,18 @@ public final class PlayBilling: BillingBackend {
 
     /// Products bought to be used up rather than owned.
     public let consumables: Set<String>
+    /// Consumables the game's server consumes itself, once it has credited them.
+    public let serverConsumed: Set<String>
+    /// Runs before each purchased purchase is acknowledged or consumed;
+    /// false leaves it as it is, to be offered again after the next query.
+    public var confirm: ((Purchase) async -> Bool)? {
+        didSet { if confirm != nil { acknowledgeWhatNeedsIt() } }
+    }
+    /// Tokens `confirm` said yes to, this session.
+    private var confirmed: Set<String> = []
+    private var confirming: Set<String> = []
+    /// Tokens `confirm` said no to, offered again after the next query.
+    private var declined: Set<String> = []
     /// Hands the game a consumable bought: the product and how many. Called
     /// once a purchase, before it is consumed (as StoreKit's game grants a
     /// consumable before it finishes the transaction).
@@ -89,10 +127,14 @@ public final class PlayBilling: BillingBackend {
     /// and not yet known consumed.
     public static let deliveredKey = "billing.deliveredTokens"
 
-    public init(channel: PlatformChannel, products: [String], consumables: Set<String> = [], defaults: UserDefaults = .standard) {
+    public init(
+        channel: PlatformChannel, products: [String], consumables: Set<String> = [], serverConsumed: Set<String> = [],
+        defaults: UserDefaults = .standard
+    ) {
         self.channel = channel
         productIDs = products
         self.consumables = consumables
+        self.serverConsumed = serverConsumed.intersection(consumables)
         self.defaults = defaults
         channel.on(Self.service) { [weak self] event, body in self?.handle(event, body) }
     }
@@ -206,13 +248,16 @@ public final class PlayBilling: BillingBackend {
         }
         purchases = Self.parse(body).filter { !consumed.contains($0.token) }
         knowsOwnedProducts = true
+        declined = []
         acknowledgeWhatNeedsIt()
         let owned = ownedProducts
-        for product in awaitingOwned {
-            finishPurchases(of: product, owned.contains(product) ? .purchased : .failed)
+        let settled = settledProducts
+        for product in awaitingOwned where !settled.contains(product) && !awaitingConfirmation.contains(product) {
+            finishPurchases(of: product, .failed)
         }
         awaitingOwned = []
-        for product in owned { finishPurchases(of: product, .purchased) }
+        // A purchase still being confirmed finishes when it's confirmed.
+        for product in settled { finishPurchases(of: product, .purchased) }
         changed?()
         finishRestores(owning: !owned.isEmpty)
     }
@@ -233,7 +278,8 @@ public final class PlayBilling: BillingBackend {
             acknowledgeWhatNeedsIt()
             for purchase in reported {
                 let result: BillingResult? = switch purchase.state {
-                case .purchased: .purchased
+                // Being confirmed, it finishes when it's confirmed.
+                case .purchased: isSettled(purchase) ? .purchased : nil
                 case .pending: .pending
                 case .unspecified: nil
                 }
@@ -265,22 +311,71 @@ public final class PlayBilling: BillingBackend {
         !purchase.products.isEmpty && purchase.products.allSatisfy(consumables.contains)
     }
 
+    private func isServerConsumed(_ purchase: Purchase) -> Bool {
+        !purchase.products.isEmpty && purchase.products.allSatisfy(serverConsumed.contains)
+    }
+
+    /// Whether a purchased purchase is past `confirm` (or there's none).
+    private func isSettled(_ purchase: Purchase) -> Bool {
+        confirm == nil || confirmed.contains(purchase.token)
+    }
+
+    /// Products with a purchased purchase past `confirm`.
+    private var settledProducts: Set<String> {
+        Set(purchases.filter { $0.state == .purchased && isSettled($0) }.flatMap(\.products))
+    }
+
+    /// Products with a purchased purchase `confirm` hasn't answered for yet.
+    private var awaitingConfirmation: Set<String> {
+        Set(purchases.filter { $0.state == .purchased && confirming.contains($0.token) }.flatMap(\.products))
+    }
+
     private func acknowledgeWhatNeedsIt() {
-        for purchase in purchases where purchase.state == .purchased && isConsumable(purchase) {
-            guard !consumed.contains(purchase.token) else { continue }
+        if let confirm {
+            for purchase in purchases where purchase.state == .purchased && !confirmed.contains(purchase.token)
+                && !consumed.contains(purchase.token) && !declined.contains(purchase.token) {
+                guard confirming.insert(purchase.token).inserted else { continue }
+                Task { @MainActor [weak self] in
+                    let isConfirmed = await confirm(purchase)
+                    self?.didConfirm(purchase, isConfirmed)
+                }
+            }
+        }
+        for purchase in purchases where purchase.state == .purchased && isConsumable(purchase) && isSettled(purchase) {
+            // The server consumes it, which acknowledges it too.
+            guard !consumed.contains(purchase.token), !isServerConsumed(purchase) else { continue }
             if !delivered.contains(purchase.token) {
-                // Held, unconsumed, until the game can take it.
-                guard let deliver else { continue }
-                delivered.insert(purchase.token)
-                for product in purchase.products { deliver(product, max(1, purchase.quantity)) }
+                if let deliver {
+                    delivered.insert(purchase.token)
+                    for product in purchase.products { deliver(product, max(1, purchase.quantity)) }
+                } else if confirm == nil {
+                    // Held, unconsumed, until the game can take it.
+                    continue
+                }
+                // Confirmed and no `deliver`: the server's credit was the delivery.
             }
             guard consuming.insert(purchase.token).inserted else { continue }
             channel.call("billing.consume", ["token": purchase.token])
         }
-        for purchase in purchases where purchase.state == .purchased && !purchase.acknowledged && !isConsumable(purchase) {
+        for purchase in purchases where purchase.state == .purchased && !purchase.acknowledged && !isConsumable(purchase) && isSettled(purchase) {
             guard acknowledging.insert(purchase.token).inserted else { continue }
             channel.call("billing.acknowledge", ["token": purchase.token])
         }
+    }
+
+    private func didConfirm(_ purchase: Purchase, _ isConfirmed: Bool) {
+        confirming.remove(purchase.token)
+        guard isConfirmed else {
+            declined.insert(purchase.token)
+            Self.log("billing: \(purchase.products.joined(separator: ", ")) not confirmed; offered again after the next query "
+                + "(Play refunds a purchase left unacknowledged for three days)")
+            for product in purchase.products { finishPurchases(of: product, .failed) }
+            return
+        }
+        confirmed.insert(purchase.token)
+        acknowledgeWhatNeedsIt()
+        for product in purchase.products { finishPurchases(of: product, .purchased) }
+        changed?()
     }
 
     private func finish(_ product: String?, _ result: BillingResult) {
@@ -315,7 +410,10 @@ public final class PlayBilling: BillingBackend {
                 token: token,
                 time: Date(timeIntervalSince1970: (item.double("time") ?? 0) / 1000),
                 acknowledged: item.bool("acknowledged") ?? false,
-                quantity: (item["quantity"] as? Int) ?? item.double("quantity").map { Int($0) } ?? 1
+                quantity: (item["quantity"] as? Int) ?? item.double("quantity").map { Int($0) } ?? 1,
+                orderID: (item["orderId"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                originalJSON: item["originalJson"] as? String,
+                signature: item["signature"] as? String
             )
         }
     }
