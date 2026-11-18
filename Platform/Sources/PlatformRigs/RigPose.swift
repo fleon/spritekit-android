@@ -171,6 +171,8 @@ public nonisolated final class RigPose {
     private var trails: [Trail]
     /// Skeleton.time.
     private var time: CGFloat = 0
+    /// How long no trailing part has moved.
+    private var stillFor: CGFloat = 0
 
     private var tracks: [Entry?] = []
     private var queue: [(EventKind, Entry)] = []
@@ -335,9 +337,17 @@ public nonisolated final class RigPose {
     /// Whether any track is playing (or waiting to).
     public var isAnimating: Bool { tracks.contains { $0 != nil } }
 
-    /// Whether every trailing part has come to rest: its swing has died
-    /// away, though wind or gravity may hold it off its setup place.
-    public var isSettled: Bool {
+    /// How long every trailing part must stay still before the rig counts
+    /// as settled: a swing slows to nothing at each end of its arc too.
+    public var settlingTime: CGFloat = 0.5
+
+    /// Whether every trailing part has come to rest: its swing has stayed
+    /// still for `settlingTime`, though wind or gravity may hold it off its
+    /// setup place.
+    public var isSettled: Bool { trails.isEmpty || stillFor >= settlingTime }
+
+    /// Whether no trailing part moves this frame.
+    private var isStill: Bool {
         let rest: CGFloat = 1e-4
         return trails.allSatisfy {
             abs($0.xVelocity) < rest && abs($0.yVelocity) < rest && abs($0.rotateVelocity) < rest && abs($0.scaleVelocity) < rest
@@ -350,6 +360,7 @@ public nonisolated final class RigPose {
         apply()
         time += delta
         updateWorldTransform()
+        stillFor = isStill ? stillFor + delta : 0
     }
 
     // MARK: - Reading the pose

@@ -292,6 +292,32 @@ struct RigPhysicsTests {
         #expect(abs(pose.angle("tail") - rest) < swung / 10, "it did not settle")
     }
 
+    @Test("A slow swing isn't settled at the ends of its arc, wind or not")
+    func slowSwingSettlesOnce() throws {
+        var json = RigFixture.json
+        var physics = try #require(json["physics"] as? [[String: Any]])
+        for i in physics.indices {
+            physics[i]["damping"] = 0.97
+            physics[i]["strength"] = 70
+        }
+        json["physics"] = physics
+        let rig = try #require(RigData(json: json, textureURL: URL(fileURLWithPath: "/dev/null")))
+        let pose = settled(rig)
+        for _ in 0..<20 {
+            pose.origin.x += 9
+            pose.advance(frame)
+        }
+        var settledAt: Int?
+        var swingsAgain = false
+        for f in 0..<1800 {
+            pose.advance(frame)
+            if pose.isSettled, settledAt == nil { settledAt = f }
+            if !pose.isSettled, settledAt != nil { swingsAgain = true }
+        }
+        #expect(settledAt != nil)
+        #expect(!swingsAgain, "it counted as settled mid-swing (frame \(settledAt ?? -1))")
+    }
+
     @Test("Physics is stepped by time, not by frames")
     func steppedByTime() throws {
         let rig = try #require(RigFixture.data)
