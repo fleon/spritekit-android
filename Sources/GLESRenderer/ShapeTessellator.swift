@@ -153,9 +153,8 @@ public enum ShapeTessellator {
     /// A simple counter-clockwise polygon, triangulated over its rim pulled
     /// in by half its feather, with a ramp out to its rim pushed out as far.
     ///
-    /// Each edge feathers over `|nx| + |ny|` pixels: what a pixel's square
-    /// spans across an edge with normal `n`, so a diagonal's ramp is as wide
-    /// as its exact coverage's. False, and the shape keeps its mask, where
+    /// Each edge feathers as `feather` says, each vertex moved to where its
+    /// two edges' moves meet. False, and the shape keeps its mask, where
     /// the polygon is thinner than its feather: pulled in, its rim turns
     /// inside out and the fill would cover a band where only a sliver is.
     private static func appendFill(_ polygon: [CGPoint], fringe: CGFloat, coverage: Float, into builder: inout Builder) -> Bool {
@@ -353,8 +352,8 @@ public enum ShapeTessellator {
         var outer: CGFloat { (width + fringe) / 2 }
         var coverage: Float { Float(min(1, width / fringe)) }
 
-        /// The pen where the stroke runs along `direction`: its feather as
-        /// wide as a pixel's square reaches across it (`feather`).
+        /// The pen where the stroke runs along `direction`, its feather as
+        /// `feather` says for that direction.
         func feathered(across direction: CGPoint) -> Pen {
             var pen = self
             pen.fringe *= ShapeTessellator.feather(CGPoint(x: -direction.y, y: direction.x))

@@ -77,9 +77,9 @@ final class ShapeTessellatorTests: XCTestCase {
         XCTAssertNotNil(ShapeTessellator.fill(PathRasteriser.flatten(line, scale: 1), scale: 1), "a pixel and more is drawn")
     }
 
-    func testDiagonalEdgesFeatherAsWideAsTheirCoverage() throws {
-        // A square stood on its corner: every edge at 45 degrees, where a
-        // pixel's square spans 1.41 pixels across it.
+    func testDiagonalEdgesMatchTheMask() throws {
+        // A square stood on its corner, and a stroke, every edge at 45
+        // degrees: feathered over a pixel across, as an axis-aligned edge is.
         let diamond = CGMutablePath()
         diamond.addLines(between: [CGPoint(x: 0, y: -20), CGPoint(x: 20, y: 0), CGPoint(x: 0, y: 20), CGPoint(x: -20, y: 0)])
         diamond.closeSubpath()
