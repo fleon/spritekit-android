@@ -166,7 +166,10 @@ build's simulated purchases, `NoBilling` with no store. A game lists its
 products (`StoreProduct`: `.nonConsumable` or `.consumable`), with
 `deliver` for consumables, and an optional preview price. What's owned
 (bought, or free where the player shops) is cached, so locks are right
-before the store answers; the earliest purchase date and when the device
+before the store answers: the cache stands until the backend says it knows
+(`knowsOwnedProducts` after StoreKit's entitlements or Play's first query,
+`knowsFreeProducts` once prices have loaded), and simulated purchases never
+reach it. The earliest purchase date and when the device
 first saw each product owned are kept, so `owned(_:by:)` grants an offer to
 whoever owned a product by a deadline. `StoreManager.didChange` is posted
 whenever anything moves.
