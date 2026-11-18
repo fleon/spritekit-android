@@ -1059,7 +1059,12 @@ by `SystemFontFaces`.
   loop, and the loop drains `DispatchQueue.main` too.
 - **Saved defaults:** corelibs keeps `UserDefaults` in memory on Android; the
   shell writes them to internal storage every few seconds and on going to the
-  background.
+  background. As on Apple, launch arguments are an overlay on reads alone: a
+  value set for a key an argument also names is saved, though reads return
+  the argument's until the next launch, and the arguments are never saved
+  (`SavedDefaults`). Corelibs' `setVolatileDomain` merges into a domain
+  where Apple's replaces it, so code that changes the argument domain
+  replaces it with `SavedDefaults.replaceArguments` (`SavedDefaultsTests`).
 - **Resources:** the process is `app_process`, so `Bundle.main` has no files;
   resources (data files, fonts, `.lproj` folders) are copied out of the APK on
   first use. The version comes from the APK.
