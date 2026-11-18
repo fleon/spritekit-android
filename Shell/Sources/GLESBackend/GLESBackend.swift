@@ -55,6 +55,8 @@ public enum GLESBackend {
         // `-FixedFrameStep`: the shell moves that clock on a step a frame
         // instead, from 0, before the game reads it.
         MediaTime.fixedStep = host.fixedFrameStep
+        // A capture draws every frame exactly: no shape a frame behind.
+        ShapeMasks.lagsChangingPaths = host.fixedFrameStep == nil
 
         configureGame?()
 
