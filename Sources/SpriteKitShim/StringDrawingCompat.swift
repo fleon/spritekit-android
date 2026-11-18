@@ -76,13 +76,14 @@ extension NSAttributedString {
     }
 
     private static func style(_ paragraph: NSParagraphStyle) -> TextBlock.Style {
-        TextBlock.Style(
-            alignment: switch paragraph.alignment {
-            case .center: .center
-            case .right: .right
-            case .justified: .justified
-            case .left, .natural: .left
-            },
+        let alignment: TextBlock.Alignment = switch paragraph.alignment {
+        case .center: .center
+        case .right: .right
+        case .justified: .justified
+        case .left, .natural: .left
+        }
+        return TextBlock.Style(
+            alignment: alignment,
             wrapping: paragraph.lineBreakMode == .byCharWrapping ? .characters : .words,
             lineSpacing: paragraph.lineSpacing
         )
