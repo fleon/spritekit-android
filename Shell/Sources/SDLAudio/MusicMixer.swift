@@ -125,7 +125,10 @@ final class MusicMixer {
         out = [Int16](repeating: 0, count: Self.blockFrames * Self.channels)
         scratch = [Int16](repeating: 0, count: Self.blockFrames * Self.channels)
 
-        let thread = Thread { [weak self] in self?.run() }
+        // Held strongly: `stop()` waits for this thread, so it must run even
+        // if the mixer's last other reference goes before it starts (it
+        // holds the mixer while it runs either way).
+        let thread = Thread { self.run() }
         thread.name = "spritekit.music"
         thread.stackSize = 256 * 1024
         thread.start()
