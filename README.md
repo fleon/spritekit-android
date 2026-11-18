@@ -261,8 +261,16 @@ The shim issues no draw calls. `SKView.tick` returns a `DrawList`: a flat,
 ordered list of sprite, shape and label commands with nested effect and crop
 groups. The scene graph, transforms, actions and draw order are therefore
 testable on a Mac with no window, and the renderer is a separate consumer.
-Draw order is by accumulated `zPosition`, sorted stably, so ties fall in tree
-order (SpriteKit leaves ties unspecified; this is never less deterministic).
+Draw order is by accumulated `zPosition`, sorted stably. At the same z,
+keeping sibling order (`ignoresSiblingOrder` false, SpriteKit's default and
+the view's here), nodes draw in tree order; ignoring it, they fall in
+SpriteKit's three classes, each in tree order: colour sprites, shapes, crop
+and effect groups; then textured sprites and labels; then shader sprites
+(`DrawOrderTests`, measured by readback). In the middle class SpriteKit
+keeps each texture's sprites together, and the labels together, each group
+where its first member is: its most frequent answer, which the list gives
+every time. A snapshot (`texture(from:)`) is drawn in tree order whatever
+the view's setting.
 
 ### SpriteKit's behaviour, measured
 
