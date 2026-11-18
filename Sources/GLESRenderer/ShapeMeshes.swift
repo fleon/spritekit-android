@@ -22,6 +22,9 @@ public final class ShapeMeshes {
     public struct Meshes {
         public var fill: ShapeTessellator.Mesh?
         public var stroke: ShapeTessellator.Mesh?
+        /// Which meshes these are: equal for the same keys, so a node's
+        /// finished vertices (`Placed`) know when to be made again.
+        public var signature: Int = 0
     }
 
     private struct Key: Hashable {
@@ -67,7 +70,7 @@ public final class ShapeMeshes {
         let quantised = Int((pixelsPerPoint * Self.transformScale(shape.transform) * 20).rounded())
         guard quantised > 0 else { return Meshes() }
         let scale = CGFloat(quantised) / 20
-        let digest = PathDigest.of(path)
+        let digest = self.digest(of: path, owner: shape.owner)
 
         var result = Meshes()
         var subpaths: [PathRasteriser.Subpath]?
@@ -82,6 +85,7 @@ public final class ShapeMeshes {
             let key = Key(digest: digest, kind: 0, width: 0, cap: 0, join: 0, scale: quantised)
             guard let mesh = mesh(for: key, make: { ShapeTessellator.fill(flattened(), scale: scale) }) else { return nil }
             result.fill = mesh
+            result.signature = key.hashValue
         }
         if wantsStroke {
             let key = Key(
@@ -92,13 +96,130 @@ public final class ShapeMeshes {
                 ShapeTessellator.stroke(flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale)
             }) else { return nil }
             result.stroke = mesh
+            result.signature = result.signature &* 31 &+ key.hashValue
         }
         return result
     }
 
+    #if !canImport(Darwin)
+    /// Each node's path as last digested: the object (held, so its identity
+    /// can't pass to another), how many times it had changed, and its digest.
+    private var pathDigests: [ObjectIdentifier: (path: CGPath, version: Int, digest: Int)] = [:]
+    #endif
+
+    /// The path's digest (`PathDigest`), read again only when the node's
+    /// path is another object or has changed since: hashing every segment of
+    /// every shape every frame was most of what a still shape cost. On a Mac
+    /// `CGPath` is CoreGraphics' own, with no count of its changes, so it is
+    /// always read.
+    private func digest(of path: CGPath, owner: ObjectIdentifier?) -> Int {
+        #if !canImport(Darwin)
+        if let owner {
+            if let known = pathDigests[owner], known.path === path, known.version == path.version { return known.digest }
+            let digest = PathDigest.of(path)
+            if pathDigests.count > 8192 { pathDigests.removeAll() }
+            pathDigests[owner] = (path, path.version, digest)
+            return digest
+        }
+        #endif
+        return PathDigest.of(path)
+    }
+
     public func removeAll() {
+        #if !canImport(Darwin)
+        pathDigests.removeAll()
+        #endif
         cache.removeAll()
         bytes = 0
+        placed.removeAll()
+        placedBytes = 0
+    }
+
+    // MARK: Finished vertices
+
+    /// A node's fill and stroke as the batch takes them, moved and
+    /// coloured, kept while what went into them holds: a still shape is
+    /// then two copies a frame instead of a sum per vertex. Indices are
+    /// kept as last offset too, as a still scene puts each shape at the
+    /// same place in its batch every frame.
+    ///
+    /// Kept only once a node has drawn the same way twice running: one
+    /// that moves every frame would otherwise pay to keep vertices it never
+    /// uses again, so it is written straight into the batch instead.
+    struct Placed {
+        var signature: Int
+        var transform: CGAffineTransform
+        var colours: SIMD8<Float>
+        var vertices: [Float] = []
+        var indices: [UInt16] = []
+        var offsetIndices: [UInt16] = []
+        var offsetFirst: Int = -1
+        var isKept = false
+        var used: UInt64 = 0
+        var byteCount: Int { 64 + vertices.count * 4 + (indices.count + offsetIndices.count) * 2 }
+    }
+
+    private var placed: [ObjectIdentifier: Placed] = [:]
+    private var placedBytes = 0
+    private let placedBudget = 16 * 1024 * 1024
+
+    /// `shape`'s finished vertices and its indices offset by `first`, or
+    /// nil when the caller should write them itself: a shape no node owns,
+    /// or one that has changed since the frame before.
+    func placed(
+        for shape: DrawList.Shape,
+        _ meshes: Meshes,
+        colours: SIMD8<Float>,
+        first: Int,
+        make: () -> (vertices: [Float], indices: [UInt16])
+    ) -> (vertices: [Float], indices: [UInt16])? {
+        guard let owner = shape.owner else { return nil }
+        clock += 1
+        guard var entry = placed[owner], entry.signature == meshes.signature,
+              entry.transform == shape.transform, entry.colours == colours else {
+            // New, or changed: noted, and written by the caller this time.
+            if let old = placed[owner] { placedBytes -= old.byteCount }
+            let note = Placed(signature: meshes.signature, transform: shape.transform, colours: colours, used: clock)
+            placed[owner] = note
+            placedBytes += note.byteCount
+            if placedBytes > placedBudget { evictPlaced() }
+            return nil
+        }
+        placedBytes -= entry.byteCount
+        entry.used = clock
+        if !entry.isKept {
+            let made = make()
+            entry.vertices = made.vertices
+            entry.indices = made.indices
+            entry.isKept = true
+            entry.offsetFirst = -1
+        }
+        if entry.offsetFirst != first {
+            let offset = UInt16(first)
+            entry.offsetIndices = first == 0 ? entry.indices : entry.indices.map { $0 &+ offset }
+            entry.offsetFirst = first
+        }
+        placedBytes += entry.byteCount
+        placed[owner] = entry
+        if placedBytes > placedBudget { evictPlaced() }
+        return (entry.vertices, entry.offsetIndices)
+    }
+
+    /// The fill's rgb and alpha, the stroke's, each alpha times the node's.
+    static func colours(_ shape: DrawList.Shape) -> SIMD8<Float> {
+        let f = shape.fillColor, s = shape.strokeColor, a = shape.alpha
+        return SIMD8(
+            Float(f.red), Float(f.green), Float(f.blue), Float(f.alpha * a),
+            Float(s.red), Float(s.green), Float(s.blue), Float(s.alpha * a)
+        )
+    }
+
+    private func evictPlaced() {
+        for (owner, entry) in placed.sorted(by: { $0.value.used < $1.value.used }) {
+            placed.removeValue(forKey: owner)
+            placedBytes -= entry.byteCount
+            if placedBytes <= placedBudget / 2 { break }
+        }
     }
 
     private func mesh(for key: Key, make: () -> ShapeTessellator.Mesh?) -> ShapeTessellator.Mesh? {

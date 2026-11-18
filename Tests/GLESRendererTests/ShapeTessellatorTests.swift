@@ -189,6 +189,36 @@ final class ShapeTessellatorTests: XCTestCase {
         XCTAssertEqual(batches.count, 1, "one draw for both sprites and both shapes")
     }
 
+    func testKeptVerticesMatchWritingThemAfresh() {
+        // One node through still frames, a move, a fade, a new colour and a
+        // shift along its batch (a sprite before it comes and goes): each
+        // frame as a batcher writes it with nothing kept.
+        let owner = NSObject()
+        let path = CGPath(roundedRect: CGRect(x: 0, y: 0, width: 40, height: 20), cornerWidth: 6, cornerHeight: 6, transform: nil)
+        func frame(_ step: Int, owned: Bool) -> DrawList {
+            var s = shape(path)
+            s.owner = owned ? ObjectIdentifier(owner) : nil
+            if step >= 3 { s.transform = CGAffineTransform(translationX: 5, y: 2) }
+            if step >= 5 { s.alpha = 0.5 }
+            if step >= 7 { s.fillColor = .green }
+            var list = DrawList()
+            list.commands = (step >= 9 && step < 11 ? [.sprite(colourSprite())] : []) + [.shape(s), .sprite(colourSprite())]
+            return list
+        }
+        var kept = SpriteBatcher()
+        kept.shapeMeshes = ShapeMeshes()
+        var fresh = SpriteBatcher()
+        fresh.shapeMeshes = ShapeMeshes()
+        for step in 0 ..< 13 {
+            guard case let .batches(a) = kept.passes(for: frame(step, owned: true)).first,
+                  case let .batches(b) = fresh.passes(for: frame(step, owned: false)).first else {
+                return XCTFail("expected batches at step \(step)")
+            }
+            XCTAssertEqual(a.map(\.vertices), b.map(\.vertices), "vertices at step \(step)")
+            XCTAssertEqual(a.map(\.indices), b.map(\.indices), "indices at step \(step)")
+        }
+    }
+
     func testTexturedShapesAndCropMasksKeepTheirMasks() {
         var batcher = SpriteBatcher()
         batcher.shapeMeshes = ShapeMeshes()
