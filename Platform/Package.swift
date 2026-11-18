@@ -44,6 +44,14 @@ let package = Package(
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
         .library(name: "PlatformRigs", targets: ["PlatformRigs"]),
         .library(name: "PlatformAudio", targets: ["PlatformAudio"]),
+        .library(name: "PlatformInput", targets: ["PlatformInput"]),
+        .library(name: "PlatformDisplay", targets: ["PlatformDisplay"]),
+        .library(name: "PlatformDevice", targets: ["PlatformDevice"]),
+        .library(name: "PlatformSync", targets: ["PlatformSync"]),
+        .library(name: "PlatformAndroid", targets: ["PlatformAndroid"]),
+        .library(name: "PlatformSprite", targets: ["PlatformSprite"]),
+        .library(name: "PlatformGameCenter", targets: ["PlatformGameCenter"]),
+        .library(name: "PlatformStore", targets: ["PlatformStore"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -71,9 +79,9 @@ let package = Package(
             ],
             swiftSettings: settings
         ),
-        // Spine skeletons played and drawn: the runtime (`RigData`, `RigPose`,
-        // spine-core 4.2), their meshes as SpriteKit
-        // draws them (`RigMeshNode`) and the node that plays one (`RigNode`).
+        // Spine skeletons played and drawn: the runtime (`RigData`,
+        // `RigPose`, spine-core 4.2), their meshes as SpriteKit draws them
+        // (`RigMeshNode`) and the node that plays one (`RigNode`).
         .target(
             name: "PlatformRigs",
             dependencies: [
@@ -83,10 +91,42 @@ let package = Package(
             ],
             swiftSettings: settings
         ),
+        // Focus for the Apple TV remote, gamepads and the Mac's pointer,
+        // moving between a scene's controls; gamepads (GameController on
+        // Apple, the shell's `GamepadEvents` on Android); the keyboard's
+        // and the Menu button's scene protocols.
+        .target(
+            name: "PlatformInput",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        // The frame-rate and graphics settings, with Auto, and on Apple the
+        // controller that applies them to the game's view.
+        .target(
+            name: "PlatformDisplay",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
         .testTarget(
             name: "PlatformRigsTests",
             dependencies: ["PlatformRigs"],
             resources: [.copy("Fixtures")],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformInputTests",
+            dependencies: ["PlatformInput"],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformDisplayTests",
+            dependencies: ["PlatformDisplay"],
             swiftSettings: settings
         ),
         .testTarget(
@@ -108,6 +148,111 @@ let package = Package(
         .testTarget(
             name: "PlatformAudioTests",
             dependencies: ["PlatformAudio"],
+            swiftSettings: settings
+        ),
+        // Haptic feedback and its switch, rating prompts and the play time
+        // they may wait for.
+        .target(
+            name: "PlatformDevice",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformDeviceTests",
+            dependencies: ["PlatformDevice"],
+            swiftSettings: settings
+        ),
+        // Saved data kept the same on the player's devices: the sync
+        // manager over `SyncEngine`, and iCloud's key-value store as its
+        // cloud on Apple platforms.
+        .target(
+            name: "PlatformSync",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformSyncTests",
+            dependencies: ["PlatformSync"],
+            swiftSettings: settings
+        ),
+        // Android's wiring: Play Games, Play Billing, Saved Games and the
+        // device, handed to the receivers a game names. Its sources are
+        // all `SPRITEKIT_SHIM`, so Apple builds compile it empty.
+        .target(
+            name: "PlatformAndroid",
+            dependencies: [
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformAndroidTests",
+            dependencies: [
+                "PlatformAndroid",
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        // The SpriteKit infrastructure no game's content is in: the texture
+        // cache and sprite helpers, colours, text and fonts, SVG paths and
+        // icons drawn from them, shape sprites, scene loading, the
+        // localization mechanism, debug markers and the display's corners.
+        // Every game-specific piece (art scale, slice table, icon table,
+        // languages, fonts) is passed in.
+        .target(
+            name: "PlatformSprite",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformSpriteTests",
+            dependencies: [
+                "PlatformSprite",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        // Game Center: sign-in, achievements reported as they move, scores,
+        // the dashboard. GameKit on Apple; Play Games (PlatformShim) on
+        // Android.
+        .target(
+            name: "PlatformGameCenter",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformGameCenterTests",
+            dependencies: ["PlatformGameCenter"],
+            swiftSettings: settings
+        ),
+        // In-app purchases: what's owned and since when, prices, buying,
+        // consumables. StoreKit 2 on Apple; Play Billing (PlatformShim) on
+        // Android.
+        .target(
+            name: "PlatformStore",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformStoreTests",
+            dependencies: ["PlatformStore"],
             swiftSettings: settings
         ),
         .testTarget(

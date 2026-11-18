@@ -69,6 +69,9 @@ public final class PlayBilling: BillingBackend {
 
     /// The purchases Play last reported, by token.
     public private(set) var purchases: [Purchase] = []
+    /// Whether a query has answered yet: until then `ownedProducts` holds
+    /// only what was bought this session.
+    public private(set) var knowsOwnedProducts = false
 
     /// Products bought to be used up rather than owned.
     public let consumables: Set<String>
@@ -202,6 +205,7 @@ public final class PlayBilling: BillingBackend {
             return
         }
         purchases = Self.parse(body).filter { !consumed.contains($0.token) }
+        knowsOwnedProducts = true
         acknowledgeWhatNeedsIt()
         let owned = ownedProducts
         for product in awaitingOwned {

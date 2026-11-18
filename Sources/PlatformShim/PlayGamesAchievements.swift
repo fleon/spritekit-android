@@ -109,6 +109,9 @@ public final class PlayGamesAchievements: AchievementsBackend {
     public private(set) var identity: (id: String, name: String)?
     /// Called whenever `identity` changes.
     public var identityChanged: (((id: String, name: String)?) -> Void)?
+    /// `identity`, as every achievements backend says who is signed in.
+    public var player: GamePlayer? { identity.map { GamePlayer(id: $0.id, name: $0.name) } }
+    public var playerChanged: ((GamePlayer?) -> Void)?
 
     public init(channel: PlatformChannel, mapping: PlayGamesMapping) {
         self.channel = channel
@@ -187,6 +190,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
             if !signedIn, identity != nil {
                 identity = nil
                 identityChanged?(nil)
+                playerChanged?(nil)
             }
             // The first answer, whatever it is, and every sign-in after it.
             if let answered, changed || !hasAnswered {
@@ -212,6 +216,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
             guard isSignedIn, let id = body["id"] as? String, !id.isEmpty else { return }
             identity = (id, body["name"] as? String ?? "")
             identityChanged?(identity)
+            playerChanged?(player)
         case "player":
             var player: (name: String, photo: Data?)?
             if body.bool("ok") == true, let name = body["name"] as? String {

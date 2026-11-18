@@ -37,9 +37,9 @@ Package.swift        PlatformServices, SpriteKitShim, GLESRenderer,
                      macOS.
 Sources/
   PlatformServices/  Plain Foundation, on every platform: the protocols a
-                     game's audio, achievements, purchases and synced saved
-                     data stand on, the sync engine's merge and the render
-                     scale governor.
+                     game's audio, achievements, leaderboards, purchases and
+                     synced saved data stand on, the sync engine's merge and
+                     the render scale governor.
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
                      camera, SKRenderer, the UIKit / CoreGraphics /
@@ -64,12 +64,23 @@ Shell/               Android-only. The app shell: SDL3, the EGL context, the
                      frame loop and its pacing, input, audio, the GL backend
                      and `GameHost`, the seam a game's controller adopts.
 Platform/            The platform code games share, on Apple platforms and
-                     Android alike: `Macros` (`@NSCodingUnsupported`) and
+                     Android alike: `Macros` (`@NSCodingUnsupported`),
                      `PlatformCore` (geometry shorthands, timing curves and
-                     eased actions, seeded randomness), `PlatformAudio`
-                     (sound effects and the soundtrack), `PlatformRigs`
-                     (Spine 4.2 skeletons, posed and drawn). See "Shared
-                     platform code".
+                     eased actions, seeded randomness, the launch-argument
+                     reader), `PlatformAudio` (sound effects and the
+                     soundtrack), `PlatformSprite` (the texture cache and
+                     sprite helpers, colours, text and fonts, SVG paths and
+                     icons, shape sprites, scene loading, localization,
+                     debug markers), `PlatformDevice` (haptics, rating
+                     prompts, play time), `PlatformSync` (synced saved
+                     data), `PlatformAndroid` (Android's Play and device
+                     wiring), `PlatformInput` (focus for the remote,
+                     gamepads and the pointer; keyboard and Menu protocols),
+                     `PlatformDisplay` (frame-rate and graphics settings
+                     with Auto), `PlatformGameCenter` (sign-in,
+                     achievements, leaderboards), `PlatformStore` (in-app
+                     purchases) and `PlatformRigs` (Spine 4.2 skeletons,
+                     posed and drawn). See "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -124,6 +135,58 @@ What belongs here: code a game's helpers and managers would otherwise copy
 that carries nothing of any one game. What a game configures (its sounds,
 products, achievements, constants) it passes in.
 
+### Game Center (`PlatformGameCenter`)
+
+`GameCenterManager` signs the player in at launch, reports achievements,
+sends scores and opens the dashboard and leaderboards, over
+`AchievementsBackend` and `LeaderboardsBackend`: GameKit on Apple
+(`GameKitAchievements`, `GameKitLeaderboards`), Play Games on Android
+(`usePlayGames(channel:mapping:)`, with `PlayGamesMapping(resource:)` reading
+the mapping the APK carries), `LocalAchievements` and `LocalLeaderboards`
+otherwise. A game configures it with:
+
+- `progress`: each achievement's percentage by its ID, from the game's saved
+  data and the moments recorded so far (`percent(_:of:)` and
+  `percent(when:)` round as the services count);
+- moments (`record(_:)`): firsts saved progress can't tell, kept under
+  `momentsKey`, or saved by the game itself (`saveMoments`,
+  `resetMoments`) when its synced saved data carries them;
+- `banners`: `.whenEarnedHere` (the default: not for what a sign-in catches
+  up or another device earned), `.always` or `.never`;
+- `logSubsystem`, and `resetsOnSignIn` for a debug reset.
+
+At each sign-in it loads what the service holds and sends only what has
+moved past it; a report that doesn't arrive is sent again next time.
+`start(presentSignIn:answered:)` hands GameKit's sheet to the game (or the
+top view controller) and runs `answered` at the first answer, which a launch
+screen may wait on. `player` (`GamePlayer`: the service's ID, name and
+GameKit's legacy `playerID`) and `signInChanged`/`playerChanged` are for a
+server or a credit; `submitScore(_:context:to:)`, `standing(on:)` and
+`showLeaderboards(_:)` for leaderboards.
+
+### Store (`PlatformStore`)
+
+`StoreManager` keeps what's owned, prices and purchase dates over a
+`BillingBackend`: `StoreKitBilling` (StoreKit 2) on Apple,
+`PlayBilling(channel:products:)` on Android, `SimulatedBilling` for a debug
+build's simulated purchases, `NoBilling` with no store. A game lists its
+products (`StoreProduct`: `.nonConsumable` or `.consumable`), with
+`deliver` for consumables, and an optional preview price. What's owned
+(bought, or free where the player shops) is cached, so locks are right
+before the store answers: the cache stands until the backend says it knows
+(`knowsOwnedProducts` after StoreKit's entitlements or Play's first query,
+`knowsFreeProducts` once prices have loaded), and simulated purchases never
+reach it. The earliest purchase date and when the device
+first saw each product owned are kept, so `owned(_:by:)` grants an offer to
+whoever owned a product by a deadline. `StoreManager.didChange` is posted
+whenever anything moves.
+
+`StoreKitBilling` listens to `Transaction.updates`, finishes unfinished
+transactions, buys promoted purchases started on the App Store
+(`PurchaseIntent`), hides a promotion on a device that owns its product
+(`promoted`), and, with `confirm`, lets a server credit each transaction
+before it is finished.
+
 ### Audio (`PlatformAudio`)
 
 One `AudioManager` plays a game's sound effects and soundtrack on every
@@ -162,6 +225,168 @@ another device's. Android's audio focus arrives through
 `audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
 reports another app's audio itself. Whatever a backend can't do (a voice of
 its own, on a backend without them) falls back to playing the sound once.
+
+### Sprites, text and scenes (`PlatformSprite`)
+
+The SpriteKit infrastructure with no game in it. What each game's content
+decides, it hands in:
+
+- **Sprites** (`txtr`, `sprite`, `tinted`, `sliced`, `textures(in:)`,
+  `forgetTextures(where:)`, `restingFrame(in:)`): a texture cache safe on
+  any thread. `SpriteArt.capInsets` gives `sliced` its caps (a generated
+  slice table), `SpriteArt.scale` sizes art drawn at a scale of its own,
+  and `SpriteArt.whenForgetting` hooks a game's own caches of assets'
+  textures (lit shaders' normal maps) onto `forgetTextures`.
+- **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
+  string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
+- **Text** (`wrappedLines`, CoreText's breaks on both platforms;
+  `capitalsOffset`, `centerCapitals`, `TextBlockNode`): `Typography` holds
+  the game's font and line height, and `Typography.follow(_:base:)` sets
+  them by the current language (`ScriptedLanguage`: a script's own face and
+  line height). `FontRegistry.register(fontFiles:)` registers the game's
+  font files once each.
+- **Icons** (`SVGPath`, `IconDrawing`, `IconPart`): a game's enum of icons
+  lists each one's path data, stroked or filled, on a grid; `node(size:color:)`
+  draws it once a size into `DrawnTexture`'s cache and tints it.
+  `ShapeSprite` draws rings, pills, discs and outlines the same way, never
+  as shape nodes.
+- **Scenes** (`LoadableScene`, `TransitionManager.show`/`present`,
+  `offMainActor`, `BuildGate`): `TransitionManager.sceneSize`, `scaleMode`
+  and `duration` are the game's, and `present` takes the game's loading
+  scene. `SceneLayout` is the safe area, the display's rounded corners
+  (`DisplayCorners`), a camera's occlusion (iOS 27.1's `reservedRegions`)
+  and where round buttons stand in the corners or a rail, by the game's
+  `SceneLayout.Metrics`.
+- **Localization** (`Localizer`): the player's pick, else the device's
+  language among the game's (`LocalizationLanguage`), its strings read from
+  the bundle's `.lproj` with a content table keyed by its text; on Android
+  from the APK's `lproj/`, through the shim's `.strings` parser, so the
+  player's pick holds there too.
+- **Debugging** (`Markers`, `FrameLog`; `LaunchArgumentReader` in
+  `PlatformCore`): the arguments are the game's; the reader answers fixed
+  values in a release build.
+### Haptics, ratings and play time (`PlatformDevice`)
+
+`HapticsManager` plays UIKit's kinds of feedback (`lightImpact()`,
+`mediumImpact()`, `softImpact()`, `selectionChanged()`, `success()`,
+`warning()`, `error()`, …) where the device has haptics and the player
+hasn't turned them off: an iPhone's generators (prepared again after each
+use), an Android device's vibrator wherever it has one (`VibrationSupport`,
+`-Vibrator NO` in a debug build), never Apple TV or an iPad. The switch
+(`isHapticsEnabled`, on by default) is kept in `storage` under `settingKey`
+(`settings.hapticsEnabled`); a game that syncs its settings hands in a
+`ValueStorage` that saves through its sync manager and lists
+`HapticsManager.syncedKeys`.
+
+`ReviewPrompt` is one rule for asking for a rating (`.milestones` reached,
+`.playTime` past a minimum, or `.once` when a condition first holds) and
+the record of what it asked, in a `ValueStorage` under its key: the
+milestones asked at as `[Int]`, `true` once a one-off asked, and a snooze's
+end as `<key>.snoozedUntil`. `requestIfDue()` asks the store (the App
+Store through the foreground window scene; Play In-App Review on Android)
+and records it; a game with its own "enjoying the game?" flow reads
+`isDue` and calls `markRequested()` or `snooze(for:)`.
+
+`AppUsageTracker` counts play time on every device: each device adds its
+own seconds under `<keyPrefix><device id>` while the game is in front, and
+the total sums every device's, so syncing the prefix (`.latest`) loses
+nothing.
+
+### Synced saved data (`PlatformSync`)
+
+`ICloudSyncManager` keeps saved data the same on the player's devices over
+`SyncEngine`: user defaults stay the store here, `set` saves a value where
+the latest change wins (nil removes it), `insert` and `resetSet` keep a set
+every device adds to, and the keys another device changed are posted as
+`didUpdateLocalData`. `start(syncing:prefixes:)` names what syncs: each
+owner's `syncedKeys`, and prefixes for keys made as play goes on. The
+cloud is `ICloudKeyValueStore` on Apple platforms (over
+`NSUbiquitousKeyValueStore`, one record a key, or `.flat`: values under
+their keys and times beside them, as games kept them before records), Play
+Games Saved Games on Android once the wiring hands it in, or
+`LocalOnlyCloud`, which keeps everything on the device (a test run kept
+off iCloud). `Configuration` names where each key's time is kept
+(`sync.<key>`, or an older build's layout, read alongside). Set
+`ICloudSyncManager.configuration` and `cloud` before `start`: a game whose
+iCloud data is flat that started on the default `.records` cloud would
+replace its values with records its earlier builds can't read.
+
+### Android's wiring (`PlatformAndroid`)
+
+`AndroidPlatformServices.install(_:)` puts a game's managers on Google Play
+and the device, once, before its launch work starts them. It makes each
+backend the configuration asks for and hands it to the receiver the game
+names: Play Games' achievements to its Game Center manager, the
+leaderboards to `GKLeaderboard.backend`, the signed-in player to
+`GKLocalPlayer.local`, Saved Games to its sync manager (flushed as the game
+leaves the front, synchronized as it comes back), Play Billing or simulated
+purchases to its store. Play Games needs the mapping packed in the APK
+(`PlayGamesMapping.bundled()`); without it achievements and saved data stay
+on the device. It also sets the device's hooks (haptics, battery saver as
+Low Power Mode, audio focus, and on request the status bar, battery,
+connection and image codecs). Its sources are all `SPRITEKIT_SHIM`, so Apple
+builds compile it empty.
+### Input: focus, gamepads, keys (`PlatformInput`)
+
+Focus is how the Apple TV remote, gamepads and the Mac's pointer reach a
+scene's controls. A control adopts `Focusable` (where it sits, whether it
+takes focus now, showing focus its own way, `fadeFocusRing` for a ring that
+glows), and a control that takes some moves itself `FocusSteering`.
+`SceneControls` collects what's on screen in reading order, only a popup's
+while one is open (a direct child of the scene adopting `FocusOverlay`),
+skipping hidden, faint and `hidesFocus` subtrees; a scrolling list adopts
+`FocusScrollArea` so its controls out of view still take focus and scroll
+in. `FocusNavigator` moves focus to the nearest control each way
+(`nearest(from:among:_:)`), presses it, starts where the scene or popup
+says (`FocusDefaulting`) and comes back where it was when a popup closes.
+
+`FocusDriver` is what a view controller holds: on Apple TV focus always
+shows; elsewhere a gamepad's first press brings it up where the screen
+starts it, and a touch (`TouchWatcher` on iOS, `watchTouches(in:)` on
+Android), the Mac's pointer moving (`HoverFocus`, which shows focus under
+the pointer meanwhile) or the last gamepad going hide it again.
+
+`GamepadInput` reads extended gamepads: GameController on Apple, the
+shell's `GamepadEvents` on Android. The d-pad or left stick points a way
+(with press and release thresholds on the stick), the pad that last
+pointed holds it and a held way repeats; each button sends one press
+(`Action.move`, `Action.press`). `FocusDriver.connect` has the d-pad and A
+drive focus and hands the other buttons to the game. On Apple TV, which
+turns a gamepad's presses into the remote's too, `routeRemotePress` holds
+the remote's back for the echo window and drops the echoes; Menu stays the
+remote's way back. `playScript` plays `GamepadScript` steps on a pretend
+pad for test runs, and `showVirtualGamepad` puts up Apple's on-screen one.
+Timings and thresholds are `GamepadConfiguration`'s and
+`FocusConfiguration`'s (`FocusNavigator.configuration`).
+
+`KeyboardControllable` (keys by HID usage; the remote's Back and Android's
+back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene
+protocols the controllers route to, and `TouchOrigin` (with
+`TouchOriginWindow`) remembers where the player last touched or pressed.
+
+### Display: frame rate and graphics (`PlatformDisplay`)
+
+`DisplaySettings` holds the player's frame rate (Auto, or one of
+`Configuration.frameRates` the screen can draw) and graphics tier (Auto, or
+one of five shares of the pixels, `Graphics`, which a game names in its own
+strings), kept on the device under `keyPrefix`. Auto draws at 60 (50 on a
+50 Hz screen), never slower, and between Highest and Medium as
+`RenderScaleGovernor` chooses once for the device (`noteAutoChosen`); a
+pinned scale or a simulator leaves Auto nothing to choose. `choices` is
+what the renderer applies, `running` what it draws at now. A game
+configures the store, the scenes that measure (`isMeasured`: not a loading
+screen), a pinned scale, a logger and a save hook for syncing
+(`didSave`, `pickKeys`, `savedDataDidSync`).
+
+On Apple, `RenderScaleController` applies them to the game's `SKView`
+(rate, `contentScaleFactor` and the Metal drawable), timing frames as the
+view's delegate; the game calls `apply()` as each scene change starts,
+`fitDrawable()` after layout, and hears density changes through
+`onDensityChange`. On Android the shell's renderer applies them through
+`GameHost`: a controller that also adopts `DisplaySettingsHost` gets its
+display members (`displayChoices`, `observeDisplayChoices`, `isMeasured`,
+`setRunning`, `noteAutoChosen`, `pinnedRenderScale`) from
+`DisplaySettings`, so it needn't write them.
 
 ### Spine rigs (`PlatformRigs`)
 
@@ -684,8 +909,10 @@ TestFlight shows nothing on iOS.
 
 The `GameKit` module answers a game's leaderboard code with Apple's
 signatures, on `GKLeaderboard.backend`: `PlayGamesLeaderboards`
-(`Sources/PlatformShim/Leaderboards.swift`), which a game installs at launch
-beside its achievements, or by default `LocalLeaderboards`, which has none.
+(`Sources/PlatformShim/PlayGamesLeaderboards.swift`), which a game installs
+at launch beside its achievements, or by default `LocalLeaderboards`, which
+has none. `LeaderboardsBackend` itself is in `PlatformServices`, so Apple
+builds share it (`PlatformGameCenter` puts GameKit behind it).
 
 - `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:)`, and the
   instance `submitScore(_:context:player:)`, each with a completion handler
@@ -809,7 +1036,9 @@ by `SystemFontFaces`.
   (`LocalizedStringsTests`, measured on a Mac). Only `NSLocalizedString`:
   `Bundle.localizedString(forKey:value:table:)`, `String(localized:)` and
   `.stringsdict` still answer with keys, and `bundle:` isn't read. A file
-  that imports only Foundation needs the shim re-exported in its module.
+  that imports only Foundation needs the shim re-exported in its module. A
+  game that picks its own language reads that folder's tables with
+  `LocalizedStrings.table(atPath:)`, as `PlatformSprite`'s `Localizer` does.
 - **Layout:** a point is a dp. The safe area includes the system bars, the
   cutout and the gesture handle; Back (and Android 16's predictive back)
   arrives as Escape.

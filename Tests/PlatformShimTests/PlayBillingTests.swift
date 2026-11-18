@@ -99,6 +99,19 @@ struct PlayBillingTests {
         #expect(changes == 2)
     }
 
+    @Test("What's owned is known once a query answers, not before nor when it fails")
+    func ownershipKnown() {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
+        billing.start {}
+        #expect(!billing.knowsOwnedProducts)
+        java.send("billing", "owned", ["code": "error"])
+        #expect(!billing.knowsOwnedProducts)
+        java.send("billing", "owned", ["code": "ok", "purchases": []])
+        #expect(billing.knowsOwnedProducts)
+        #expect(billing.knowsFreeProducts)
+    }
+
     @Test("A pending purchase completed while away is found by the next query")
     func pendingCompletedAway() {
         let java = FakeJava()
