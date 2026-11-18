@@ -94,6 +94,22 @@ bool ska_share_file(const char *path, const char *mime, const char *text) {
     return ok;
 }
 
+/* The class the activity's natives are declared on: the runtime's library
+   activity when the game's extends it, else the game's own (an app whose
+   activity still carries them itself). Registering on the declaring class
+   spares ART's walk up the superclasses, which CheckJNI warns about. */
+static jclass ska_natives_class(JNIEnv *env, jobject activity) {
+    jclass library = (*env)->FindClass(env, "com/spritekit/platform/SpriteKitActivity");
+    if (library == NULL) {
+        (*env)->ExceptionClear(env);
+    } else if ((*env)->IsInstanceOf(env, activity, library)) {
+        return library;
+    } else {
+        (*env)->DeleteLocalRef(env, library);
+    }
+    return (*env)->GetObjectClass(env, activity);
+}
+
 static atomic_int ska_platform_pending;
 
 static void JNICALL ska_platform_events_ready(JNIEnv *env, jclass cls) {
@@ -106,7 +122,7 @@ bool ska_platform_install(void) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject activity = (jobject)SDL_GetAndroidActivity();
     if (env == NULL || activity == NULL) return false;
-    jclass cls = (*env)->GetObjectClass(env, activity);
+    jclass cls = ska_natives_class(env, activity);
     JNINativeMethod methods[] = {
         { "nativePlatformEventsReady", "()V", (void *)ska_platform_events_ready },
     };
@@ -235,10 +251,11 @@ bool ska_redirect_stdio(const char *tag) {
 }
 /* What Android tells the game outside SDL's events: a link the activity was
    handed while running (`onNewIntent`), the soft keyboard's insets, and text
-   picked from the Paste a long press offers. `MainActivity` calls its native
-   methods on Android's UI thread; the frame loop takes what they left on
-   SDL's. Registered on the activity's own class, because SDL dlopens this
-   library itself, so the class loader never looks in it for natives. */
+   picked from the Paste a long press offers. `SpriteKitActivity` calls its
+   native methods on Android's UI thread; the frame loop takes what they left
+   on SDL's. Registered on the class that declares them
+   (`ska_natives_class`), because SDL dlopens this library itself, so the
+   class loader never looks in it for natives. */
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -288,7 +305,7 @@ bool ska_register_natives(void) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject activity = (jobject)SDL_GetAndroidActivity();
     if (env == NULL || activity == NULL) return false;
-    jclass cls = (*env)->GetObjectClass(env, activity);
+    jclass cls = ska_natives_class(env, activity);
     JNINativeMethod methods[] = {
         { "nativeOpenLink", "(Ljava/lang/String;)V", (void *)ska_native_open_link },
         { "nativePaste", "(Ljava/lang/String;)V", (void *)ska_native_paste },

@@ -86,10 +86,27 @@ public enum SystemServices {
 }
 
 public extension UIApplication {
-    func open(_ url: URL, options: [String: Any] = [:], completionHandler: ((Bool) -> Void)? = nil) {
+    struct OpenExternalURLOptionsKey: Hashable, RawRepresentable, Sendable {
+        public var rawValue: String
+        public init(rawValue: String) { self.rawValue = rawValue }
+        public static let universalLinksOnly = OpenExternalURLOptionsKey(rawValue: "UIApplicationOpenURLOptionUniversalLinksOnly")
+    }
+
+    func open(_ url: URL, options: [OpenExternalURLOptionsKey: Any] = [:], completionHandler: ((Bool) -> Void)? = nil) {
         let opened = SystemServices.openURL(url)
         completionHandler?(opened)
     }
+
+    /// The async spelling.
+    @discardableResult
+    func open(_ url: URL, options: [OpenExternalURLOptionsKey: Any] = [:]) async -> Bool {
+        SystemServices.openURL(url)
+    }
+
+    /// The app's own page in the system settings (its notifications among
+    /// them): `SystemServices.openURL` hands this to the app, which opens
+    /// Android's app details there.
+    static let openSettingsURLString = "app-settings:"
 
     func canOpenURL(_ url: URL) -> Bool { true }
 

@@ -63,10 +63,17 @@ struct FontCatalogTests {
 
     @Test("Registering makes a file's faces drawable; registering it again is an error, as on Apple")
     func registration() throws {
-        // A copy, so CoreText sees a file it has never registered.
-        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("Geneva-\(UUID()).ttf")
-        try FileManager.default.copyItem(atPath: geneva, toPath: copy.path)
-        defer { try? FileManager.default.removeItem(at: copy) }
+        // A copy, so CoreText sees a file it has never registered. New York,
+        // which no other suite asks for by name: a second copy of a face
+        // registered for the process changes what its name resolves to in
+        // the AppKit and SpriteKit parity suites running alongside. It is
+        // unregistered again before the copy goes.
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("NewYork-\(UUID()).ttf")
+        try FileManager.default.copyItem(atPath: newYork, toPath: copy.path)
+        defer {
+            CTFontManagerUnregisterFontsForURL(copy as CFURL, .process, nil)
+            try? FileManager.default.removeItem(at: copy)
+        }
 
         let engine = TextEngine(library: FontLibrary(), atlas: .shared)
         let face = try #require(engine.faceNames(inFontAt: copy.path)?.first)

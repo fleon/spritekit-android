@@ -7,9 +7,12 @@ import Foundation
 ///
 ///     {"applicationId": "123456789012",
 ///      "achievements": {"com.example.game.achievement.levels.10":
-///                         {"id": "CgkI…", "steps": 10}, …}}
+///                         {"id": "CgkI…", "steps": 10}, …},
+///      "leaderboards": {"com.example.game.leaderboard.high-score":
+///                         {"id": "CgkI…"}, …}}
 ///
-/// No `steps` (or 0) is a standard achievement, unlocked at 100%.
+/// No `steps` (or 0) is a standard achievement, unlocked at 100%. A game
+/// with no leaderboards leaves `leaderboards` out.
 public struct PlayGamesMapping: Equatable, Sendable {
     public struct Entry: Equatable, Sendable {
         public var id: String
@@ -24,10 +27,13 @@ public struct PlayGamesMapping: Equatable, Sendable {
     public var applicationID: String
     /// By Game Center ID.
     public var achievements: [String: Entry]
+    /// Play's leaderboard ID, by Game Center leaderboard ID.
+    public var leaderboards: [String: String]
 
-    public init(applicationID: String, achievements: [String: Entry]) {
+    public init(applicationID: String, achievements: [String: Entry], leaderboards: [String: String] = [:]) {
         self.applicationID = applicationID
         self.achievements = achievements
+        self.leaderboards = leaderboards
     }
 
     public init?(data: Data) {
@@ -39,6 +45,11 @@ public struct PlayGamesMapping: Equatable, Sendable {
         achievements = entries.compactMapValues { entry -> Entry? in
             guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
             return Entry(id: id, steps: entry.int("steps") ?? 0)
+        }
+        let boards = root["leaderboards"] as? [String: [String: Any]] ?? [:]
+        leaderboards = boards.compactMapValues { entry -> String? in
+            guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
+            return id
         }
     }
 
@@ -98,6 +109,9 @@ public final class PlayGamesAchievements: AchievementsBackend {
     public private(set) var identity: (id: String, name: String)?
     /// Called whenever `identity` changes.
     public var identityChanged: (((id: String, name: String)?) -> Void)?
+    /// `identity`, as every achievements backend says who is signed in.
+    public var player: GamePlayer? { identity.map { GamePlayer(id: $0.id, name: $0.name) } }
+    public var playerChanged: ((GamePlayer?) -> Void)?
 
     public init(channel: PlatformChannel, mapping: PlayGamesMapping) {
         self.channel = channel
@@ -176,6 +190,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
             if !signedIn, identity != nil {
                 identity = nil
                 identityChanged?(nil)
+                playerChanged?(nil)
             }
             // The first answer, whatever it is, and every sign-in after it.
             if let answered, changed || !hasAnswered {
@@ -201,6 +216,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
             guard isSignedIn, let id = body["id"] as? String, !id.isEmpty else { return }
             identity = (id, body["name"] as? String ?? "")
             identityChanged?(identity)
+            playerChanged?(player)
         case "player":
             var player: (name: String, photo: Data?)?
             if body.bool("ok") == true, let name = body["name"] as? String {
