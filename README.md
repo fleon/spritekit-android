@@ -78,9 +78,14 @@ Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
 Scripts/             Building SDL and a game's shell library, checking the
                      runtime alone, launching with arguments, the emulator
                      pool.
+Library/             Android-only Java: the Gradle library modules a
+                     game's app includes in place from the submodule.
+                     SDL's activity under `SpriteKitActivity`, and the
+                     Java half of each platform service (`spritekit`,
+                     `spritekit-billing`, `spritekit-notifications`).
 Templates/App/       The Android app a game copies: the Gradle project,
-                     MainActivity and the Java half of each platform
-                     service (Templates/App/README.md).
+                     its manifest and a `MainActivity` over the library
+                     (Templates/App/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -235,7 +240,8 @@ directory's name, and the manifests here refer to this package as
   spritekit-android/   this repository (submodule)
   Game/                the game's package (GAME_PACKAGE_DIR)
   App/                 the game's Gradle project (APP_DIR), copied from
-                       Templates/App/base
+                       Templates/App/base, which builds the runtime's
+                       Library/ modules in place
 ```
 
 The game's package depends on `../spritekit-android`,
@@ -410,6 +416,12 @@ A change to the shim's behaviour comes with a test of this kind.
   unsynchronised writes land over draws still pending).
 - **Meshes:** `SKTriangleMesh` and warped sprites batch as geometry with the
   sprites of their texture.
+- **Shapes** are rasterised on the CPU into coverage masks, cached by what
+  they draw. A shape whose path changes every frame (marching ants, a ring
+  drawing itself round) draws its last mask while the next is made on a
+  thread of the lowest priority (`MaskLag`), a frame or two behind; one
+  appearing gets its mask at once, and a fixed frame step makes every mask
+  at once. The frame report logs what masks have cost.
 - **Render scale:** fill rate decides frame time on mid-range GPUs, so the
   scene can draw at a share of the screen's size, the display scaling it up
   (`ANativeWindow_setBuffersGeometry`). `RenderScaleGovernor` picks the scale
@@ -599,7 +611,7 @@ and tested on a Mac against a fake Java:
 A game with consumables passes them to `PlayBilling(consumables:)` and sets
 `deliver`, which is handed each product and quantity once. Nothing is
 delivered or consumed before `deliver` is set. On top of the one-time
-products' calls and events, the Java side answers:
+products' calls and events, the Java side (`Library/spritekit-billing`) answers:
 
 - `billing.consume` `{"token"}`: consume the purchase
   (`consumeAsync`), then send `consumed` `{"code": "ok" | <error>,
@@ -745,7 +757,7 @@ is `public` or `friends` (`COLLECTION_PUBLIC`, `COLLECTION_FRIENDS`). A
 score is `{rank, score, formattedScore, tag, time, playerId, name}`, from
 `LeaderboardScore` and its score holder, `time` in milliseconds since 1970
 (`getTimestampMillis`); `total` is -1 when Play doesn't know it; `count` 0
-loads only the signed-in player's. The base template's `PlayGamesServices`
+loads only the signed-in player's. The library's `PlayGamesServices`
 answers all four.
 
 ### A game's own fonts, and the system font

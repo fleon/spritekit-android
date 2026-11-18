@@ -80,6 +80,9 @@ public struct DrawList {
         /// path's bounds and tinted by its colour.
         public var fillTexture: SKTexture? = nil
         public var strokeTexture: SKTexture? = nil
+        /// Which node this is, so a shape whose path changes every frame can
+        /// draw its last mask while the new one is made (`MaskLag`).
+        public var owner: ObjectIdentifier? = nil
     }
 
     public struct Label {
@@ -421,7 +424,8 @@ public struct DrawList {
                 lineJoin: shape.lineJoin,
                 alpha: alpha,
                 fillTexture: shape.fillTexture,
-                strokeTexture: shape.strokeTexture
+                strokeTexture: shape.strokeTexture,
+                owner: ObjectIdentifier(shape)
             ))))
         } else if let label = node as? SKLabelNode, let layout = label.layout, let runs = label.laidOutRuns,
                   layout.lines.count == runs.count {
