@@ -108,7 +108,9 @@ struct PlayGamesTests {
         let java = FakeJava()
         let games = PlayGamesAchievements(channel: java.channel, mapping: mapping)
         var changes: [String?] = []
+        var players: [GamePlayer?] = []
         games.identityChanged = { changes.append($0?.id) }
+        games.playerChanged = { players.append($0) }
         games.start {}
         java.send("games", "identity", ["id": "early", "name": "Nobody"])
         #expect(games.identity == nil)
@@ -116,9 +118,12 @@ struct PlayGamesTests {
         java.send("games", "identity", ["id": "g123", "name": "Zoë 🦊"])
         #expect(games.identity?.id == "g123")
         #expect(games.identity?.name == "Zoë 🦊")
+        #expect(games.player == GamePlayer(id: "g123", name: "Zoë 🦊"))
         java.send("games", "signIn", ["signedIn": false])
         #expect(games.identity == nil)
+        #expect(games.player == nil)
         #expect(changes == ["g123", nil])
+        #expect(players == [GamePlayer(id: "g123", name: "Zoë 🦊"), nil])
     }
 
     @Test("The player's name and picture come through for a credit")

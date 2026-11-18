@@ -49,6 +49,8 @@ let package = Package(
         .library(name: "PlatformSync", targets: ["PlatformSync"]),
         .library(name: "PlatformAndroid", targets: ["PlatformAndroid"]),
         .library(name: "PlatformSprite", targets: ["PlatformSprite"]),
+        .library(name: "PlatformGameCenter", targets: ["PlatformGameCenter"]),
+        .library(name: "PlatformStore", targets: ["PlatformStore"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -199,6 +201,39 @@ let package = Package(
                 "PlatformSprite",
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
+            swiftSettings: settings
+        ),
+        // Game Center: sign-in, achievements reported as they move, scores,
+        // the dashboard. GameKit on Apple; Play Games (PlatformShim) on
+        // Android.
+        .target(
+            name: "PlatformGameCenter",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformGameCenterTests",
+            dependencies: ["PlatformGameCenter"],
+            swiftSettings: settings
+        ),
+        // In-app purchases: what's owned and since when, prices, buying,
+        // consumables. StoreKit 2 on Apple; Play Billing (PlatformShim) on
+        // Android.
+        .target(
+            name: "PlatformStore",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformStoreTests",
+            dependencies: ["PlatformStore"],
             swiftSettings: settings
         ),
         .testTarget(

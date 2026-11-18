@@ -1,6 +1,6 @@
 // Stands in for GameKit on Android: the signed-in player by their id and
 // alias, and leaderboards (`GKLeaderboard`, `GKAccessPoint`,
-// `GKGameCenterViewController`) through PlatformShim's `LeaderboardsBackend`
+// `GKGameCenterViewController`) through `LeaderboardsBackend`
 // (Play Games). Achievements and sign-in go through PlatformShim's
 // `AchievementsBackend` instead.
 import Foundation
