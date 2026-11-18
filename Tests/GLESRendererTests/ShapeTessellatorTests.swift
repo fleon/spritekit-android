@@ -68,6 +68,38 @@ final class ShapeTessellatorTests: XCTestCase {
         XCTAssertNil(ShapeTessellator.fill(PathRasteriser.flatten(ring, scale: 1), scale: 1))
     }
 
+    func testFillsThinnerThanAPixelAreLeftToTheMask() {
+        // Pulled in by half a pixel each side, a quarter-pixel band turns
+        // inside out: drawn, it would cover four times its area.
+        let sliver = CGPath(rect: CGRect(x: 0, y: 0, width: 60, height: 0.25), transform: nil)
+        XCTAssertNil(ShapeTessellator.fill(PathRasteriser.flatten(sliver, scale: 1), scale: 1))
+        let line = CGPath(rect: CGRect(x: 0, y: 0, width: 60, height: 1.2), transform: nil)
+        XCTAssertNotNil(ShapeTessellator.fill(PathRasteriser.flatten(line, scale: 1), scale: 1), "a pixel and more is drawn")
+    }
+
+    func testDiagonalEdgesFeatherAsWideAsTheirCoverage() throws {
+        // A square stood on its corner: every edge at 45 degrees, where a
+        // pixel's square spans 1.41 pixels across it.
+        let diamond = CGMutablePath()
+        diamond.addLines(between: [CGPoint(x: 0, y: -20), CGPoint(x: 20, y: 0), CGPoint(x: 0, y: 20), CGPoint(x: -20, y: 0)])
+        diamond.closeSubpath()
+        try assertFillMatches(diamond, scale: 1.5, meanTolerance: 0.035)
+
+        let slash = CGMutablePath()
+        slash.move(to: CGPoint(x: 0, y: 0))
+        slash.addLine(to: CGPoint(x: 40, y: 40))
+        try assertStrokeMatches(slash, width: 3, cap: .butt, join: .miter, scale: 2, meanTolerance: 0.035)
+    }
+
+    func testADiagonalHairlineKeepsItsArea() throws {
+        let slash = CGMutablePath()
+        slash.move(to: CGPoint(x: 0, y: 0))
+        slash.addLine(to: CGPoint(x: 40, y: 30))
+        // Its area is exact; its profile is a linear trapezoid where a
+        // pixel's square, seen across a diagonal, weighs its middle more.
+        try assertStrokeMatches(slash, width: 0.5, cap: .butt, join: .miter, scale: 1, meanTolerance: 0.1)
+    }
+
     func testAnEmptyFillIsAnEmptyMeshNotAFallback() throws {
         let line = CGMutablePath()
         line.move(to: .zero)
@@ -197,10 +229,10 @@ final class ShapeTessellatorTests: XCTestCase {
         )
     }
 
-    private func assertFillMatches(_ path: CGPath, scale: CGFloat, file: StaticString = #filePath, line: UInt = #line) throws {
+    private func assertFillMatches(_ path: CGPath, scale: CGFloat, meanTolerance: Float = 0.05, file: StaticString = #filePath, line: UInt = #line) throws {
         let mesh = try XCTUnwrap(ShapeTessellator.fill(PathRasteriser.flatten(path, scale: scale), scale: scale), file: file, line: line)
         let mask = try XCTUnwrap(PathRasteriser.fill(path, scale: scale), file: file, line: line)
-        compare(mesh, mask, file: file, line: line)
+        compare(mesh, mask, meanTolerance: meanTolerance, file: file, line: line)
     }
 
     private func assertStrokeMatches(

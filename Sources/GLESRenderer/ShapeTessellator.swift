@@ -104,9 +104,9 @@ public enum ShapeTessellator {
         // A stroke thinner than a pixel is drawn a pixel wide and fainter,
         // which is what its coverage comes to.
         let pen = Pen(
-            half: max(width, fringe) / 2,
+            width: width,
+            half: width / 2,
             fringe: fringe,
-            coverage: Float(min(1, width / fringe)),
             scale: scale,
             join: join,
             miterLimit: miterLimit
@@ -130,14 +130,14 @@ public enum ShapeTessellator {
                     let disc = (0 ..< max(steps, 8)).map {
                         point(on: only, radius: pen.half, angle: CGFloat($0) / CGFloat(max(steps, 8)) * 2 * .pi)
                     }
-                    _ = appendFill(disc, fringe: fringe, coverage: pen.coverage, into: &builder)
+                    guard appendFill(disc, fringe: fringe, coverage: pen.coverage, into: &builder) else { return nil }
                 case .square:
                     let h = pen.half
                     let square = [
                         CGPoint(x: only.x - h, y: only.y - h), CGPoint(x: only.x + h, y: only.y - h),
                         CGPoint(x: only.x + h, y: only.y + h), CGPoint(x: only.x - h, y: only.y + h),
                     ]
-                    _ = appendFill(square, fringe: fringe, coverage: pen.coverage, into: &builder)
+                    guard appendFill(square, fringe: fringe, coverage: pen.coverage, into: &builder) else { return nil }
                 default:
                     break
                 }
@@ -151,25 +151,44 @@ public enum ShapeTessellator {
     // MARK: - Fills
 
     /// A simple counter-clockwise polygon, triangulated over its rim pulled
-    /// in by half a pixel, with a pixel-wide ramp out to its rim pushed out
-    /// by half a pixel.
+    /// in by half its feather, with a ramp out to its rim pushed out as far.
+    ///
+    /// Each edge feathers over `|nx| + |ny|` pixels: what a pixel's square
+    /// spans across an edge with normal `n`, so a diagonal's ramp is as wide
+    /// as its exact coverage's. False, and the shape keeps its mask, where
+    /// the polygon is thinner than its feather: pulled in, its rim turns
+    /// inside out and the fill would cover a band where only a sliver is.
     private static func appendFill(_ polygon: [CGPoint], fringe: CGFloat, coverage: Float, into builder: inout Builder) -> Bool {
         guard let triangles = triangulate(polygon) else { return false }
         let n = polygon.count
-        let half = fringe / 2
-        var inner: [Int] = []
-        var outer: [Int] = []
-        inner.reserveCapacity(n)
-        outer.reserveCapacity(n)
+        var normals: [CGPoint] = []
+        var halves: [CGFloat] = []
+        normals.reserveCapacity(n)
+        halves.reserveCapacity(n)
         for i in 0 ..< n {
-            let previous = polygon[(i - 1 + n) % n], v = polygon[i], next = polygon[(i + 1) % n]
             // Outward is the right of travel round a counter-clockwise rim.
-            let n0 = rightNormal(from: previous, to: v) ?? .zero
-            let n1 = rightNormal(from: v, to: next) ?? .zero
-            let m = miterOffset(n0, n1)
-            inner.append(builder.add(CGPoint(x: v.x - m.x * half, y: v.y - m.y * half), coverage))
-            outer.append(builder.add(CGPoint(x: v.x + m.x * half, y: v.y + m.y * half), 0))
+            let normal = rightNormal(from: polygon[i], to: polygon[(i + 1) % n]) ?? .zero
+            normals.append(normal)
+            halves.append(feather(normal) * fringe / 2)
         }
+        var inside: [CGPoint] = []
+        var outside: [CGPoint] = []
+        inside.reserveCapacity(n)
+        outside.reserveCapacity(n)
+        for i in 0 ..< n {
+            let previous = (i - 1 + n) % n
+            let m = offset(normals[previous], halves[previous], normals[i], halves[i])
+            let v = polygon[i]
+            inside.append(CGPoint(x: v.x - m.x, y: v.y - m.y))
+            outside.append(CGPoint(x: v.x + m.x, y: v.y + m.y))
+        }
+        for i in 0 ..< n {
+            let j = (i + 1) % n
+            let edge = CGPoint(x: polygon[j].x - polygon[i].x, y: polygon[j].y - polygon[i].y)
+            if (inside[j].x - inside[i].x) * edge.x + (inside[j].y - inside[i].y) * edge.y <= 0 { return false }
+        }
+        let inner = inside.map { builder.add($0, coverage) }
+        let outer = outside.map { builder.add($0, 0) }
         for (a, b, c) in triangles { builder.triangle(inner[a], inner[b], inner[c]) }
         for i in 0 ..< n {
             let j = (i + 1) % n
@@ -178,16 +197,27 @@ public enum ShapeTessellator {
         return true
     }
 
-    /// The vector from a vertex to where its two edges, each moved one unit
-    /// along its normal, meet: axmol's `(n1 + n2) / (n1·n2 + 1)`. Capped, so
-    /// a needle-sharp corner's feather stays near it.
-    private static func miterOffset(_ n0: CGPoint, _ n1: CGPoint) -> CGPoint {
-        let denominator = 1 + n0.x * n1.x + n0.y * n1.y
-        var m = denominator > 1e-6
-            ? CGPoint(x: (n0.x + n1.x) / denominator, y: (n0.y + n1.y) / denominator)
-            : n0
-        let length = hypot(m.x, m.y)
-        if length > 4 { m = CGPoint(x: m.x / length * 4, y: m.y / length * 4) }
+    /// How many pixels an edge with unit normal `n` feathers over.
+    private static func feather(_ n: CGPoint) -> CGFloat {
+        max(1, abs(n.x) + abs(n.y))
+    }
+
+    /// Where a vertex goes when the edge before it moves `h0` along `n0`
+    /// and the one after moves `h1` along `n1`. With equal moves it is
+    /// axmol's `(n0 + n1) / (n0·n1 + 1)`, scaled. Capped, so a needle-sharp
+    /// corner's feather stays near it.
+    private static func offset(_ n0: CGPoint, _ h0: CGFloat, _ n1: CGPoint, _ h1: CGFloat) -> CGPoint {
+        let determinant = n0.x * n1.y - n0.y * n1.x
+        var m: CGPoint
+        if abs(determinant) > 1e-6 {
+            m = CGPoint(x: (h0 * n1.y - h1 * n0.y) / determinant, y: (n0.x * h1 - n1.x * h0) / determinant)
+        } else {
+            // Straight on (or straight back): along the shared normal.
+            let h = (h0 + h1) / 2
+            m = CGPoint(x: n0.x * h, y: n0.y * h)
+        }
+        let length = hypot(m.x, m.y), limit = 4 * max(h0, h1)
+        if length > limit { m = CGPoint(x: m.x / length * limit, y: m.y / length * limit) }
         return m
     }
 
@@ -303,15 +333,37 @@ public enum ShapeTessellator {
 
     /// The stroke's measures, in points. `half` is at least half a pixel.
     private struct Pen {
+        var width: CGFloat
         var half: CGFloat
         var fringe: CGFloat
-        var coverage: Float
         var scale: CGFloat
         var join: CGLineJoin
         var miterLimit: CGFloat
         /// Where full coverage ends and where the feather reaches nothing.
-        var core: CGFloat { max(0, half - fringe / 2) }
-        var outer: CGFloat { half + fringe / 2 }
+        ///
+        /// Across the stroke its exact coverage is a trapezoid: the width
+        /// swept by a pixel's span, `fringe`. Its foot reaches `(width +
+        /// fringe) / 2` out, its top `|width - fringe| / 2`, at full
+        /// coverage unless the stroke is thinner than the span: then at
+        /// `width / fringe`, a hairline drawn fainter rather than wider.
+        var core: CGFloat { abs(width - fringe) / 2 }
+        var outer: CGFloat { (width + fringe) / 2 }
+        var coverage: Float { Float(min(1, width / fringe)) }
+
+        /// The pen where the stroke runs along `direction`: its feather as
+        /// wide as a pixel's square reaches across it (`feather`).
+        func feathered(across direction: CGPoint) -> Pen {
+            var pen = self
+            pen.fringe *= ShapeTessellator.feather(CGPoint(x: -direction.y, y: direction.x))
+            return pen
+        }
+    }
+
+    /// The direction halfway between two, for the feather at a join.
+    private static func bisector(_ d0: CGPoint, _ d1: CGPoint) -> CGPoint {
+        let sum = CGPoint(x: d0.x + d1.x, y: d0.y + d1.y)
+        let length = hypot(sum.x, sum.y)
+        return length > 1e-9 ? CGPoint(x: sum.x / length, y: sum.y / length) : d0
     }
 
     /// One cross-section of a stroke: two points each side of the path, the
@@ -370,17 +422,20 @@ public enum ShapeTessellator {
                 at: points[i],
                 from: directions[incoming], length: lengths[incoming],
                 to: directions[i], length: lengths[i],
-                pen: pen, into: &builder
+                pen: pen.feathered(across: bisector(directions[incoming], directions[i])), into: &builder
             )
             arriving[i] = a
             leaving[i] = b
         }
 
         if !closed {
-            leaving[0] = appendCap(at: points[0], direction: directions[0], isStart: true, cap: cap, pen: pen, trueHalf: trueHalf, into: &builder)
+            leaving[0] = appendCap(
+                at: points[0], direction: directions[0], isStart: true,
+                cap: cap, pen: pen.feathered(across: directions[0]), trueHalf: trueHalf, into: &builder
+            )
             arriving[n - 1] = appendCap(
                 at: points[n - 1], direction: directions[segments - 1], isStart: false,
-                cap: cap, pen: pen, trueHalf: trueHalf, into: &builder
+                cap: cap, pen: pen.feathered(across: directions[segments - 1]), trueHalf: trueHalf, into: &builder
             )
         }
 

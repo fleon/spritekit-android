@@ -614,8 +614,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         noteSceneChange(at: frame.time)
         let ticked = MediaTime.source()
         // Shapes are tessellated as they're batched, for the density the
-        // scene is drawn at.
-        shapeMeshes.pixelsPerPoint = max(viewport.scale.x, viewport.scale.y)
+        // scene is drawn at: the screen's, times the share of it drawn.
+        shapeMeshes.pixelsPerPoint = max(viewport.scale.x, viewport.scale.y) * drawnFraction(of: frame)
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
         // the runtime's own cost, with no GL in it. Worth separating, because
@@ -1203,7 +1203,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // SpriteKit draws a snapshot in tree order, whatever the view's
         // `ignoresSiblingOrder` (measured by readback on a Mac).
         list.commands = DrawList(scene: node).commands
+        // Its shapes for the snapshot's density, the frame's put back after.
+        let framePixelsPerPoint = shapeMeshes.pixelsPerPoint
+        shapeMeshes.pixelsPerPoint = density
         let passes = batcher.passes(for: list)
+        shapeMeshes.pixelsPerPoint = framePixelsPerPoint
 
         let outer = target
         let outerDepth = cropDepth
@@ -1335,6 +1339,18 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     public var surfaceScale: CGFloat { renderScale }
     public var preferredFrameRate: Int { view.preferredFramesPerSecond }
+
+    /// How much of the screen's resolution the scene is drawn at, as
+    /// `sceneDrawTarget` will choose: the display's stretch of a smaller
+    /// buffer, else `renderScale` below 1, else all of it.
+    private func drawnFraction(of frame: Frame) -> CGFloat {
+        let screen = frame.size, surface = frame.surfaceSize
+        guard screen.width > 0, screen.height > 0 else { return 1 }
+        if surface.width < screen.width || surface.height < screen.height {
+            return max(surface.width / screen.width, surface.height / screen.height)
+        }
+        return min(max(renderScale, 0.25), 1)
+    }
 
     /// Where the frame draws: `.none` for the window's buffer, else a target
     /// `renderScale` of the screen's size (made again when that changes),
