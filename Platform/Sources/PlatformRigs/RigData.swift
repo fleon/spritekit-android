@@ -3,8 +3,7 @@ import CoreGraphics
 #endif
 import Foundation
 
-/// A Spine skeleton as a game plays it: what Spine exported as JSON (4.2's
-/// format; older exports converted to it), with its images packed into one
+/// A Spine skeleton as a game plays it: what Spine 4.2 exported as JSON, with its images packed into one
 /// texture whose places the JSON's `atlas` table gives (`[x, y, width,
 /// height]` in pixels, y down, by image name). Read once and shared by every
 /// `RigPose` that plays it.
@@ -15,7 +14,7 @@ import Foundation
 /// constraints, and bone, colour, attachment and deform keys. Whatever else
 /// the JSON carries at its top level (a game's own fields) is kept in `extras`.
 ///
-/// A port of the Spine Runtimes (spine-core 4.2, spine-c 3.6), which may only
+/// A port of the Spine Runtimes (spine-core 4.2), which may only
 /// be used under the Spine Runtimes License by holders of a Spine license.
 public nonisolated final class RigData: @unchecked Sendable {
     public struct Color: Equatable, Sendable {
@@ -66,8 +65,8 @@ public nonisolated final class RigData: @unchecked Sendable {
     }
 
     /// An image on a bone. `offsets` are its corners in the bone's space and
-    /// `uvs` where they lie in its image (0…1, y down), in spine-c 3.6's
-    /// order: bottom right, bottom left, top left, top right.
+    /// `uvs` where they lie in its image (0…1, y down), in this order:
+    /// bottom right, bottom left, top left, top right.
     public struct Region: Sendable {
         public let offsets: [CGPoint]
         public let uvs: [CGPoint]
@@ -77,7 +76,7 @@ public nonisolated final class RigData: @unchecked Sendable {
         /// As the skeleton places it on its bone.
         public let x, y, rotation, scaleX, scaleY, width, height: CGFloat
 
-        /// The quad's two triangles, as spine-cocos2dx 3.6 draws them.
+        /// The quad's two triangles.
         public static let triangles = [0, 1, 2, 2, 3, 0]
     }
 
@@ -197,10 +196,8 @@ public nonisolated final class RigData: @unchecked Sendable {
         public let names: [Int?]
         /// Per key, `linear`, `stepped` or a bezier's index.
         public let curves: [Int]
-        /// Per bezier, spine-c 3.6's polyline: nine percent pairs (x, y).
-        public let samples36: [CGFloat]
         /// Per bezier and channel, spine-core 4.2's polyline: nine (time, value) pairs.
-        public let samples42: [CGFloat]
+        public let samples: [CGFloat]
     }
 
     public struct Animation: Sendable {
@@ -485,7 +482,7 @@ public nonisolated final class RigData: @unchecked Sendable {
         var animations: [String: Animation] = [:]
         for (name, entry) in json["animations"] as? [String: [String: Any]] ?? [:] {
             var timelines: [Timeline] = []
-            // Slots first, then bones, then deform, as both runtimes read them:
+            // Slots first, then bones, then deform, as Spine reads them:
             // a deform key applies only once the slot shows its attachment.
             let slotMaps = entry["slots"] as? [String: [String: [[String: Any]]]] ?? [:]
             for slotName in slotMaps.keys.sorted(by: { (slotIndex[$0] ?? 0) < (slotIndex[$1] ?? 0) }) {
@@ -693,7 +690,7 @@ public nonisolated final class RigData: @unchecked Sendable {
             times: keys.map { number($0["time"]) },
             values: [], width: 0, channels: 0,
             names: keys.map { ($0["name"] as? String).flatMap { skin[$0] } },
-            curves: [], samples36: [], samples42: []
+            curves: [], samples: []
         )
     }
 
@@ -724,14 +721,14 @@ public nonisolated final class RigData: @unchecked Sendable {
         return curveTimeline(.deform, target: slot, attachment: attachment, keys: keys, values: values, width: length, channels: 1)
     }
 
-    /// Reads each key's curve both ways: spine-core 4.2's per-channel handles
-    /// as stored, and spine-c 3.6's single normalized curve recovered from them.
+    /// Reads each key's curve: spine-core 4.2's per-channel handles, each
+    /// as a polyline.
     private static func curveTimeline(
         _ kind: Timeline.Kind, target: Int, attachment: Int = -1, keys: [[String: Any]], values: [CGFloat], width: Int, channels: Int
     ) -> Timeline {
         let times = keys.map { number($0["time"]) }
         var curves: [Int] = []
-        var samples36: [CGFloat] = [], samples42: [CGFloat] = []
+        var samples: [CGFloat] = []
         var bezier = 0
         for (i, key) in keys.enumerated() {
             if (key["curve"] as? String) == "stepped" {
@@ -747,26 +744,9 @@ public nonisolated final class RigData: @unchecked Sendable {
             func value(_ key: Int, _ channel: Int) -> CGFloat {
                 kind == .deform ? CGFloat(key - i) : values[key * width + channel]
             }
-            // 3.6 kept one curve for all of a key's values; 4.2 wrote it per
-            // value. Read it back from the value that moves most (the best precision).
-            var best = 0, range: CGFloat = 0
-            for channel in 0..<channels where abs(value(i + 1, channel) - value(i, channel)) > range {
-                best = channel
-                range = abs(value(i + 1, channel) - value(i, channel))
-            }
-            let duration = t1 - t0
-            let cx1 = duration != 0 ? (handles[best * 4] - t0) / duration : 0
-            let cx2 = duration != 0 ? (handles[best * 4 + 2] - t0) / duration : 1
-            var cy1 = cx1, cy2 = cx2
-            if range > 0 {
-                let v0 = value(i, best), delta = value(i + 1, best) - v0
-                cy1 = (handles[best * 4 + 1] - v0) / delta
-                cy2 = (handles[best * 4 + 3] - v0) / delta
-            }
-            samples36.append(contentsOf: polyline36(cx1, cy1, cx2, cy2))
             for channel in 0..<channels {
                 let h = channel * 4
-                samples42.append(contentsOf: polyline42(
+                samples.append(contentsOf: polyline(
                     t0, value(i, channel), handles[h], handles[h + 1], handles[h + 2], handles[h + 3], t1, value(i + 1, channel)
                 ))
             }
@@ -775,34 +755,12 @@ public nonisolated final class RigData: @unchecked Sendable {
         }
         return Timeline(
             kind: kind, target: target, attachment: attachment, times: times, values: values, width: width, channels: channels,
-            names: [], curves: curves, samples36: samples36, samples42: samples42
+            names: [], curves: curves, samples: samples
         )
     }
 
-    /// spCurveTimeline_setCurve (spine-c 3.6): the normalized bezier as a
-    /// nine-point polyline, by forward differences.
-    private static func polyline36(_ cx1: CGFloat, _ cy1: CGFloat, _ cx2: CGFloat, _ cy2: CGFloat) -> [CGFloat] {
-        let tmpx = (-cx1 * 2 + cx2) * 0.03, tmpy = (-cy1 * 2 + cy2) * 0.03
-        let dddfx = ((cx1 - cx2) * 3 + 1) * 0.006, dddfy = ((cy1 - cy2) * 3 + 1) * 0.006
-        var ddfx = tmpx * 2 + dddfx, ddfy = tmpy * 2 + dddfy
-        var dfx = cx1 * 0.3 + tmpx + dddfx * 0.16666667, dfy = cy1 * 0.3 + tmpy + dddfy * 0.16666667
-        var x = dfx, y = dfy
-        var points: [CGFloat] = []
-        for _ in 0..<9 {
-            points.append(x)
-            points.append(y)
-            dfx += ddfx
-            dfy += ddfy
-            ddfx += dddfx
-            ddfy += dddfy
-            x += dfx
-            y += dfy
-        }
-        return points
-    }
-
     /// CurveTimeline.setBezier (spine-core 4.2).
-    private static func polyline42(
+    private static func polyline(
         _ time1: CGFloat, _ value1: CGFloat, _ cx1: CGFloat, _ cy1: CGFloat, _ cx2: CGFloat, _ cy2: CGFloat, _ time2: CGFloat, _ value2: CGFloat
     ) -> [CGFloat] {
         let tmpx = (time1 - cx1 * 2 + cx2) * 0.03, tmpy = (value1 - cy1 * 2 + cy2) * 0.03
@@ -864,20 +822,18 @@ public nonisolated final class RigData: @unchecked Sendable {
 
 public nonisolated extension RigData.Timeline {
     /// Channel `channel` at `time` (held before the first key and after the
-    /// last), eased as `runtime` eases: spine-core 4.2 along each channel's
-    /// polyline, spine-c 3.6 by the one normalized curve.
-    func value(at time: CGFloat, channel: Int, runtime: RigPose.Runtime = .spine42) -> CGFloat {
+    /// last), eased along the channel's polyline.
+    func value(at time: CGFloat, channel: Int) -> CGFloat {
         guard let first = times.first else { return 0 }
         if time < first { return values[channel] }
         let last = times.count - 1
         if time >= times[last] { return values[last * width + channel] }
         let k = frame(time)
-        return value(k, time, channel: channel, values[k * width + channel], values[(k + 1) * width + channel], runtime: runtime)
+        return value(k, time, channel: channel, values[k * width + channel], values[(k + 1) * width + channel])
     }
 
     /// Eases from `v0` at key `k` to `v1` at the next key.
-    internal func value(_ k: Int, _ time: CGFloat, channel: Int, _ v0: CGFloat, _ v1: CGFloat, runtime: RigPose.Runtime) -> CGFloat {
-        if runtime == .spine36 { return v0 + (v1 - v0) * percent36(k, time) }
+    internal func value(_ k: Int, _ time: CGFloat, channel: Int, _ v0: CGFloat, _ v1: CGFloat) -> CGFloat {
         let t0 = times[k], t1 = times[k + 1]
         let curve = curves[k]
         switch curve {
@@ -887,7 +843,6 @@ public nonisolated extension RigData.Timeline {
         }
         // CurveTimeline.getBezierValue (4.2).
         let s = (curve * channels + channel) * 18
-        let samples = samples42
         if samples[s] > time { return v0 + (time - t0) / (samples[s] - t0) * (samples[s + 1] - v0) }
         var i = s + 2
         while i < s + 18 {
@@ -899,31 +854,6 @@ public nonisolated extension RigData.Timeline {
         }
         let x = samples[s + 16], y = samples[s + 17]
         return y + (time - x) / (t1 - x) * (v1 - y)
-    }
-
-    /// spCurveTimeline_getCurvePercent (3.6) between key `k` and the next.
-    internal func percent36(_ k: Int, _ time: CGFloat) -> CGFloat {
-        let frameTime = times[k + 1]
-        let percent = min(max(1 - (time - frameTime) / (times[k] - frameTime), 0), 1)
-        let curve = curves[k]
-        switch curve {
-        case Self.linear: return percent
-        case Self.stepped: return 0
-        default: break
-        }
-        let s = curve * 18
-        let samples = samples36
-        var i = s
-        while i < s + 18 {
-            let x = samples[i]
-            if x >= percent {
-                let previousX = i == s ? 0 : samples[i - 2], previousY = i == s ? 0 : samples[i - 1]
-                return previousY + (samples[i + 1] - previousY) * (percent - previousX) / (x - previousX)
-            }
-            i += 2
-        }
-        let x = samples[s + 16], y = samples[s + 17]
-        return y + (1 - y) * (percent - x) / (1 - x)
     }
 
     /// The last key at or before `time` (which is before the last key).
@@ -940,13 +870,13 @@ public nonisolated extension RigData.Timeline {
 public nonisolated extension RigData {
     /// How far `animation` moves `bone` along y from its setup place at `time`
     /// (its translate keys), in the skeleton's units.
-    func lift(of bone: Int, in animation: String, at time: CGFloat, runtime: RigPose.Runtime = .spine42) -> CGFloat {
+    func lift(of bone: Int, in animation: String, at time: CGFloat) -> CGFloat {
         guard let animation = animations[animation] else { return 0 }
         return animation.timelines.reduce(CGFloat(0)) { sum, timeline in
             guard timeline.target == bone else { return sum }
             switch timeline.kind {
-            case .translate: return sum + timeline.value(at: time, channel: 1, runtime: runtime)
-            case .translateY: return sum + timeline.value(at: time, channel: 0, runtime: runtime)
+            case .translate: return sum + timeline.value(at: time, channel: 1)
+            case .translateY: return sum + timeline.value(at: time, channel: 0)
             default: return sum
             }
         }

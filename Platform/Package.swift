@@ -86,6 +86,7 @@ let package = Package(
         .testTarget(
             name: "PlatformRigsTests",
             dependencies: ["PlatformRigs"],
+            resources: [.copy("Fixtures")],
             swiftSettings: settings
         ),
         .testTarget(

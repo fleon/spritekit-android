@@ -1,18 +1,17 @@
 // Plays the schedules in a verify-pose.js plan through RigData and RigPose
 // and writes each frame's pose as JSON lines, for comparing against
-// spine-core 4.2 (spine42-dump.mjs) and spine-c 3.6 (spine36-dump.c).
+// spine-core 4.2 (spine-dump.mjs).
 //
-//   posedump <plan.json> <out dir> <36|42>
+//   posedump <plan.json> <out dir>
 
 import CoreGraphics
 import Foundation
 
 let arguments = CommandLine.arguments
-guard arguments.count == 4 else {
-    FileHandle.standardError.write("usage: posedump <plan.json> <out dir> <36|42>\n".data(using: .utf8) ?? Data())
+guard arguments.count == 3 else {
+    FileHandle.standardError.write("usage: posedump <plan.json> <out dir>\n".data(using: .utf8) ?? Data())
     exit(2)
 }
-let runtime: RigPose.Runtime = arguments[3] == "42" ? .spine42 : .spine36
 
 guard
     let planData = FileManager.default.contents(atPath: arguments[1]),
@@ -60,7 +59,7 @@ for run in runs {
         dataCache[rig] = loaded
         data = loaded
     }
-    let pose = RigPose(data: data, scale: double(run["scale"], 1), runtime: runtime)
+    let pose = RigPose(data: data, scale: double(run["scale"], 1))
     pose.defaultMix = double(run["mix"])
     pose.riseBone = (run["riseBone"] as? String).flatMap { data.bone(named: $0) }
     let frames = run["frames"] as? Int ?? 0

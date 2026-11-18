@@ -2,7 +2,7 @@
 // writes each frame's pose as JSON lines, in posedump's format: positions
 // relative to the skeleton's place, as RigPose gives them.
 //
-//   node spine42-dump.mjs <plan.json> <out dir> <spine-core package dir>
+//   node spine-dump.mjs <plan.json> <out dir> <spine-core package dir>
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -107,7 +107,7 @@ for (const run of plan.runs) {
         if (a instanceof RegionAttachment) {
           buffer = new Array(8).fill(0)
           a.computeWorldVertices(s, buffer, 0, 2)
-          // spine-c 3.6's order starts at the bottom right corner.
+          // RigData.Region's order starts at the bottom right corner.
           buffer = [buffer[6], buffer[7], buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]]
         } else {
           buffer = new Array(a.worldVerticesLength).fill(0)

@@ -28,17 +28,6 @@ public nonisolated final class RigPose {
         }
     }
 
-    /// Whose behaviour to follow where spine-core 4.2 and spine-c 3.6 differ.
-    /// 4.2 is the whole runtime. 3.6 (for skeletons made for it, played as a
-    /// cocos2d-x game played them) eases curves its way, turns rotate keys
-    /// the short way, treats layered tracks before their first key, queue
-    /// delays, loop completion and path edge cases as 3.6 did, poses bones,
-    /// IK and paths by 3.6's maths, and plays without crossfades, physics or
-    /// transform constraints, as that game did.
-    public enum Runtime: Sendable {
-        case spine36, spine42
-    }
-
     /// A track's place in the queue (`TrackEntry`): what it plays and how.
     public final class Entry {
         public let track: Int
@@ -111,7 +100,6 @@ public nonisolated final class RigPose {
         var x, y, rotation, scaleX, scaleY, shearX, shearY: CGFloat
         var ax: CGFloat = 0, ay: CGFloat = 0, arotation: CGFloat = 0, ascaleX: CGFloat = 1, ascaleY: CGFloat = 1
         var ashearX: CGFloat = 0, ashearY: CGFloat = 0
-        var appliedValid = false
         var world = Transform()
     }
 
@@ -138,7 +126,7 @@ public nonisolated final class RigPose {
         case setup, first, replace, add
     }
 
-    /// AnimationState's timeline modes (3.6 knew the first three).
+    /// AnimationState's timeline modes.
     enum Mode: UInt8 {
         case subsequent, first, holdSubsequent, holdFirst, holdMix
     }
@@ -153,7 +141,6 @@ public nonisolated final class RigPose {
 
     public let data: RigData
     public let scale: CGFloat
-    public let runtime: Runtime
     /// Speeds every track up or slows it down (AnimationState.timeScale).
     public var timeScale: CGFloat = 1
     /// The skeleton's colour, multiplied into every slot's.
@@ -181,7 +168,6 @@ public nonisolated final class RigPose {
     private var slots: [SlotState]
     private var children: [[Int]]
     private var updates: [Update] = []
-    private var resets: [Int] = []
     private var trails: [Trail]
     /// Skeleton.time.
     private var time: CGFloat = 0
@@ -203,10 +189,9 @@ public nonisolated final class RigPose {
     private var pathCurves: [CGFloat] = []
     private var pathSegments = [CGFloat](repeating: 0, count: 10)
 
-    public init(data: RigData, scale: CGFloat = 1, runtime: Runtime = .spine42) {
+    public init(data: RigData, scale: CGFloat = 1) {
         self.data = data
         self.scale = scale
-        self.runtime = runtime
         bones = data.bones.map {
             BoneState(x: $0.x, y: $0.y, rotation: $0.rotation, scaleX: $0.scaleX, scaleY: $0.scaleY, shearX: $0.shearX, shearY: $0.shearY)
         }
@@ -224,8 +209,8 @@ public nonisolated final class RigPose {
         slots = data.slots.enumerated().map { index, slot in
             SlotState(color: slot.color, attachment: slot.attachment, deform: Array(repeating: 0, count: deformSizes[index]))
         }
-        trails = Array(repeating: Trail(), count: runtime == .spine42 ? data.physics.count : 0)
-        if runtime == .spine42 { updateCache42() } else { updateCache36() }
+        trails = Array(repeating: Trail(), count: data.physics.count)
+        updateCache()
         updateWorldTransform()
     }
 
@@ -237,7 +222,7 @@ public nonisolated final class RigPose {
     }
 
     private func mix(from: Entry?, to name: String) -> CGFloat {
-        guard runtime == .spine42, let from else { return 0 }
+        guard let from else { return 0 }
         return mixes["\(from.name)\u{0}\(name)"] ?? defaultMix
     }
 
@@ -280,18 +265,12 @@ public nonisolated final class RigPose {
         if let last {
             last.next = entry
             if delay <= 0 {
-                let duration = last.animation.duration
-                switch runtime {
-                case .spine36:
-                    delay = duration != 0 ? delay + duration * (1 + (last.trackTime / duration).rounded(.towardZero)) : 0
-                case .spine42:
-                    delay = max(delay + last.trackComplete - entry.mixDuration, 0)
-                }
+                delay = max(delay + last.trackComplete - entry.mixDuration, 0)
             }
         } else {
             setCurrent(track, entry, interrupt: true)
             drain()
-            if runtime == .spine42, delay < 0 { delay = 0 }
+            if delay < 0 { delay = 0 }
         }
         entry.delay = delay
         return entry
@@ -307,7 +286,7 @@ public nonisolated final class RigPose {
         then next: String? = nil, rise: CGFloat = 1, mix: CGFloat? = nil, track: Int = 0
     ) -> Entry? {
         guard let entry = setAnimation(track, name, loop: loop) else { return nil }
-        if let mix, runtime == .spine42 { entry.mixDuration = mix }
+        if let mix { entry.mixDuration = mix }
         entry.timeScale = rate
         entry.trackTime = start
         entry.stop = stop
@@ -356,12 +335,12 @@ public nonisolated final class RigPose {
     /// Whether any track is playing (or waiting to).
     public var isAnimating: Bool { tracks.contains { $0 != nil } }
 
-    /// Whether every trailing part has come to rest.
+    /// Whether every trailing part has come to rest: its swing has died
+    /// away, though wind or gravity may hold it off its setup place.
     public var isSettled: Bool {
         let rest: CGFloat = 1e-4
         return trails.allSatisfy {
             abs($0.xVelocity) < rest && abs($0.yVelocity) < rest && abs($0.rotateVelocity) < rest && abs($0.scaleVelocity) < rest
-                && abs($0.xOffset) < rest && abs($0.yOffset) < rest && abs($0.rotateOffset) < rest && abs($0.scaleOffset) < rest
         }
     }
 
@@ -550,15 +529,12 @@ public nonisolated final class RigPose {
                 let nextTime = current.trackLast - next.delay
                 if nextTime >= 0 {
                     next.delay = 0
-                    switch runtime {
-                    case .spine36: next.trackTime = nextTime + delta
-                    case .spine42: next.trackTime += current.timeScale == 0 ? 0 : (nextTime / current.timeScale + delta) * next.timeScale
-                    }
+                    next.trackTime += current.timeScale == 0 ? 0 : (nextTime / current.timeScale + delta) * next.timeScale
                     current.trackTime += currentDelta
                     setCurrent(i, next, interrupt: true)
                     var entry = next
                     while let from = entry.mixingFrom {
-                        entry.mixTime += runtime == .spine36 ? currentDelta : delta
+                        entry.mixTime += delta
                         entry = from
                     }
                     continue
@@ -598,23 +574,16 @@ public nonisolated final class RigPose {
     private func updateMixingFrom(_ to: Entry, _ delta: CGFloat) -> Bool {
         guard let from = to.mixingFrom else { return true }
         let finished = updateMixingFrom(from, delta)
-        let applied = runtime == .spine36 ? to.mixTime > 0 : to.nextTrackLast != -1
-        if runtime == .spine42 {
-            from.animationLast = from.nextAnimationLast
-            from.trackLast = from.nextTrackLast
-        }
-        if applied, to.mixTime >= to.mixDuration {
-            if runtime == .spine36 || from.totalAlpha == 0 || to.mixDuration == 0 {
+        from.animationLast = from.nextAnimationLast
+        from.trackLast = from.nextTrackLast
+        if to.nextTrackLast != -1, to.mixTime >= to.mixDuration {
+            if from.totalAlpha == 0 || to.mixDuration == 0 {
                 to.mixingFrom = from.mixingFrom
                 from.mixingFrom?.mixingTo = to
                 to.interruptAlpha = from.interruptAlpha
                 enqueue(.end, from)
             }
             return finished
-        }
-        if runtime == .spine36 {
-            from.animationLast = from.nextAnimationLast
-            from.trackLast = from.nextTrackLast
         }
         from.trackTime += delta * from.timeScale
         to.mixTime += delta
@@ -625,23 +594,18 @@ public nonisolated final class RigPose {
         if animationsChanged { updateModes() }
         for i in tracks.indices {
             guard let current = tracks[i], current.delay <= 0 else { continue }
-            switch runtime {
-            case .spine36: apply36(current, track: i)
-            case .spine42: apply42(current, track: i)
-            }
+            applyTrack(current, track: i)
             queueComplete(current, current.animationTime)
             current.nextAnimationLast = current.animationTime
             current.nextTrackLast = current.trackTime
         }
-        if runtime == .spine42 {
-            // Slots that only an animation mixing out keyed go back to their
-            // setup attachment (so deform keys saw theirs meanwhile).
-            let setupState = unkeyedState + Self.setupState
-            for slot in slots.indices where slots[slot].attachmentState == setupState {
-                setAttachment(slot, data.slots[slot].attachment)
-            }
-            unkeyedState += 2
+        // Slots that only an animation mixing out keyed go back to their
+        // setup attachment (so deform keys saw theirs meanwhile).
+        let setupState = unkeyedState + Self.setupState
+        for slot in slots.indices where slots[slot].attachmentState == setupState {
+            setAttachment(slot, data.slots[slot].attachment)
         }
+        unkeyedState += 2
         drain()
     }
 
@@ -649,7 +613,7 @@ public nonisolated final class RigPose {
     private static let currentState = 2
 
     /// AnimationState.apply for one track (4.2).
-    private func apply42(_ current: Entry, track i: Int) {
+    private func applyTrack(_ current: Entry, track i: Int) {
         let blend: Blend = i == 0 ? .first : .replace
         var alpha = current.alpha
         if current.mixingFrom != nil {
@@ -814,75 +778,12 @@ public nonisolated final class RigPose {
         value > 0 ? 1 : value < 0 ? -1 : 0
     }
 
-    /// AnimationState.apply for one track as spine-c 3.6 played it, without crossfades.
-    private func apply36(_ current: Entry, track i: Int) {
-        var mix: CGFloat = 1
-        if current.mixingFrom != nil {
-            applyMixingFrom36(current)
-        } else if current.trackTime >= current.trackEnd, current.next == nil {
-            mix = 0
-        }
-        let time = current.animationTime
-        for (index, timeline) in current.animation.timelines.enumerated() {
-            let mode = index < current.modes.count ? current.modes[index] : .first
-            if mix == 0 {
-                apply36(timeline, time: time, reset: mode != .subsequent ? true : nil)
-            } else {
-                apply36(timeline, time: time, reset: false)
-            }
-        }
-    }
-
-    private func applyMixingFrom36(_ to: Entry) {
-        guard let from = to.mixingFrom else { return }
-        if from.mixingFrom != nil { applyMixingFrom36(from) }
-        let time = from.animationTime
-        for (index, timeline) in from.animation.timelines.enumerated() {
-            let mode = index < from.modes.count ? from.modes[index] : .first
-            switch mode {
-            case .subsequent, .holdSubsequent: break
-            case .holdFirst, .holdMix: apply36(timeline, time: time, reset: timeline.kind == .attachment)
-            case .first: apply36(timeline, time: time, reset: true)
-            }
-        }
-        from.nextAnimationLast = time
-        from.nextTrackLast = from.trackTime
-    }
-
-    /// A timeline as 3.6 applied it: in full from the setup pose, or (`reset`)
-    /// back to the setup pose; nil leaves it alone.
-    private func apply36(_ timeline: RigData.Timeline, time: CGFloat, reset: Bool?) {
-        guard let reset, let first = timeline.times.first else { return }
-        let slot = timeline.target
-        switch timeline.kind {
-        case .attachment:
-            if time < first || reset {
-                setAttachment(slot, data.slots[slot].attachment)
-            } else {
-                setAttachment(slot, timeline.names[keyIndex(timeline.times, time)])
-            }
-        case .rgba, .rgb, .alpha:
-            if reset || time < first {
-                slots[slot].color = data.slots[slot].color
-            } else {
-                apply(timeline, last: 0, time: time, alpha: 1, blend: .setup, out: false, rise: 1)
-            }
-        default:
-            apply(timeline, last: 0, time: time, alpha: reset ? 0 : 1, blend: .setup, out: reset, rise: 1)
-        }
-    }
-
     private func queueComplete(_ entry: Entry, _ time: CGFloat) {
         let duration = entry.animation.duration
         let complete: Bool
         if entry.loop {
-            switch runtime {
-            case .spine36:
-                complete = entry.trackLast.truncatingRemainder(dividingBy: duration) > entry.trackTime.truncatingRemainder(dividingBy: duration)
-            case .spine42:
-                let cycles = duration == 0 ? 1 : (entry.trackTime / duration).rounded(.down)
-                complete = duration == 0 || cycles > 0 && cycles > (entry.trackLast / duration).rounded(.down)
-            }
+            let cycles = duration == 0 ? 1 : (entry.trackTime / duration).rounded(.down)
+            complete = duration == 0 || cycles > 0 && cycles > (entry.trackLast / duration).rounded(.down)
         } else {
             complete = time >= duration && entry.animationLast < duration
         }
@@ -912,56 +813,50 @@ public nonisolated final class RigPose {
             let added = ids[i].reduce(false) { claimed.insert($1).inserted || $0 }
             guard added else { return .subsequent }
             guard let to, timeline.kind != .attachment, propertyIDs(to.animation).all.contains(where: ids[i].contains) else { return .first }
-            if runtime == .spine42 {
-                var next = to.mixingTo
-                while let later = next {
-                    if !propertyIDs(later.animation).all.isDisjoint(with: ids[i]) {
-                        next = later.mixingTo
-                        continue
-                    }
-                    if entry.mixDuration > 0 {
-                        entry.holdMix[i] = later
-                        return .holdMix
-                    }
-                    break
+            var next = to.mixingTo
+            while let later = next {
+                if !propertyIDs(later.animation).all.isDisjoint(with: ids[i]) {
+                    next = later.mixingTo
+                    continue
                 }
+                if entry.mixDuration > 0 {
+                    entry.holdMix[i] = later
+                    return .holdMix
+                }
+                break
             }
             return .holdFirst
         }
     }
 
-    /// Each timeline's property IDs (Timeline.getPropertyIds): 4.2 keys x and
-    /// y apart; 3.6 kept one per bone property, slot colour or attachment.
+    /// Each timeline's property IDs (Timeline.getPropertyIds): x and y apart,
+    /// colour and alpha apart.
     private func propertyIDs(_ animation: RigData.Animation) -> (ids: [[Int]], all: Set<Int>) {
         if let known = properties[animation.name] { return known }
-        let ids = animation.timelines.map { Self.properties(of: $0, runtime: runtime) }
+        let ids = animation.timelines.map { Self.properties(of: $0) }
         let result = (ids, Set(ids.joined()))
         properties[animation.name] = result
         return result
     }
 
-    private static func properties(of timeline: RigData.Timeline, runtime: Runtime) -> [Int] {
+    private static func properties(of timeline: RigData.Timeline) -> [Int] {
         let kinds: [Int]
-        switch (timeline.kind, runtime) {
-        case (.rotate, _): kinds = [0]
-        case (.translate, .spine36), (.translateX, .spine36), (.translateY, .spine36): kinds = [1]
-        case (.translate, _): kinds = [1, 2]
-        case (.translateX, _): kinds = [1]
-        case (.translateY, _): kinds = [2]
-        case (.scale, .spine36), (.scaleX, .spine36), (.scaleY, .spine36): kinds = [3]
-        case (.scale, _): kinds = [3, 4]
-        case (.scaleX, _): kinds = [3]
-        case (.scaleY, _): kinds = [4]
-        case (.shear, .spine36), (.shearX, .spine36), (.shearY, .spine36): kinds = [5]
-        case (.shear, _): kinds = [5, 6]
-        case (.shearX, _): kinds = [5]
-        case (.shearY, _): kinds = [6]
-        case (.rgba, .spine36), (.rgb, .spine36), (.alpha, .spine36): kinds = [7]
-        case (.rgba, _): kinds = [7, 8]
-        case (.rgb, _): kinds = [7]
-        case (.alpha, _): kinds = [8]
-        case (.attachment, _): kinds = [10]
-        case (.deform, _): kinds = [11]
+        switch timeline.kind {
+        case .rotate: kinds = [0]
+        case .translate: kinds = [1, 2]
+        case .translateX: kinds = [1]
+        case .translateY: kinds = [2]
+        case .scale: kinds = [3, 4]
+        case .scaleX: kinds = [3]
+        case .scaleY: kinds = [4]
+        case .shear: kinds = [5, 6]
+        case .shearX: kinds = [5]
+        case .shearY: kinds = [6]
+        case .rgba: kinds = [7, 8]
+        case .rgb: kinds = [7]
+        case .alpha: kinds = [8]
+        case .attachment: kinds = [10]
+        case .deform: kinds = [11]
         }
         return kinds.map { $0 << 40 | (timeline.attachment + 1) << 20 | timeline.target }
     }
@@ -1039,7 +934,7 @@ public nonisolated final class RigPose {
         var b = bones[index]
         switch timeline.kind {
         case .rotate:
-            b.rotation = relative(b.rotation, setup.rotation) { rotation(timeline, time) }
+            b.rotation = relative(b.rotation, setup.rotation) { sample(timeline, time, channel: 0) }
         case .translate:
             b.x = relative(b.x, setup.x) { sample(timeline, time, channel: 0) }
             b.y = relative(b.y, setup.y) { sample(timeline, time, channel: 1) * lift }
@@ -1173,30 +1068,14 @@ public nonisolated final class RigPose {
         }
     }
 
-    /// A rotate key's value: 3.6 turns the short way between keys.
-    private func rotation(_ timeline: RigData.Timeline, _ time: CGFloat) -> CGFloat {
-        let last = timeline.times.count - 1
-        if time >= timeline.times[last] { return timeline.values[last] }
-        guard runtime == .spine36 else { return sample(timeline, time, channel: 0) }
-        let k = timeline.frame(time)
-        let previous = timeline.values[k]
-        let r = Self.wrap(timeline.values[k + 1] - previous)
-        return Self.wrap(previous + r * timeline.percent36(k, time))
-    }
-
-    /// Wraps degrees to -180…180 as spine-c 3.6 does.
-    private static func wrap(_ r: CGFloat) -> CGFloat {
-        r - CGFloat(16384 - Int(16384.499999999996 - r / 360)) * 360
-    }
-
     /// One of a timeline's values at `time` (at or after its first key).
     private func sample(_ timeline: RigData.Timeline, _ time: CGFloat, channel: Int) -> CGFloat {
-        timeline.value(at: time, channel: channel, runtime: runtime)
+        timeline.value(at: time, channel: channel)
     }
 
     /// How far between key `k` and the next `time` is, along their curve.
     private func percent(_ timeline: RigData.Timeline, _ k: Int, _ time: CGFloat) -> CGFloat {
-        timeline.value(k, time, channel: 0, 0, 1, runtime: runtime)
+        timeline.value(k, time, channel: 0, 0, 1)
     }
 
     /// The last key at or before `time` (Timeline.search1).
@@ -1222,23 +1101,14 @@ public nonisolated final class RigPose {
     // MARK: - Skeleton
 
     private func updateWorldTransform() {
-        switch runtime {
-        case .spine36:
-            for bone in resets { resetApplied(bone) }
-        case .spine42:
-            for bone in bones.indices { resetApplied(bone) }
-        }
+        for bone in bones.indices { resetApplied(bone) }
         for update in updates {
             switch update {
             case let .bone(i):
                 let b = bones[i]
-                if runtime == .spine42 {
-                    updateWorldTransform42(i, b.ax, b.ay, b.arotation, b.ascaleX, b.ascaleY, b.ashearX, b.ashearY)
-                } else {
-                    updateWorldTransform36(i, b.x, b.y, b.rotation, b.scaleX, b.scaleY, b.shearX, b.shearY)
-                }
+                updateWorldTransform(i, b.ax, b.ay, b.arotation, b.ascaleX, b.ascaleY, b.ashearX, b.ashearY)
             case let .ik(i):
-                if runtime == .spine42 { applyIk42(i) } else { applyIk36(i) }
+                applyIk(i)
             case let .transform(i):
                 applyTransform(i)
             case let .path(i):
@@ -1258,12 +1128,11 @@ public nonisolated final class RigPose {
         bones[bone].ascaleY = b.scaleY
         bones[bone].ashearX = b.shearX
         bones[bone].ashearY = b.shearY
-        bones[bone].appliedValid = true
     }
 
     /// Skeleton.updateCache (4.2): bones and constraints in the order they
     /// update, constraints by their `order`.
-    private func updateCache42() {
+    private func updateCache() {
         updates.removeAll()
         var sorted = Array(repeating: false, count: bones.count)
         func sortBone(_ bone: Int) {
@@ -1339,60 +1208,13 @@ public nonisolated final class RigPose {
         }
     }
 
-    /// spSkeleton_updateCache (3.6): IK and path constraints only.
-    private func updateCache36() {
-        var sorted = Array(repeating: false, count: bones.count)
-        updates.removeAll()
-        resets.removeAll()
-
-        func sortBone(_ bone: Int) {
-            if sorted[bone] { return }
-            if let parent = data.bones[bone].parent { sortBone(parent) }
-            sorted[bone] = true
-            updates.append(.bone(bone))
-        }
-        func sortReset(_ list: [Int]) {
-            for bone in list {
-                if sorted[bone] { sortReset(children[bone]) }
-                sorted[bone] = false
-            }
-        }
-        func contains(_ bone: Int) -> Bool {
-            updates.contains { if case let .bone(b) = $0 { b == bone } else { false } }
-        }
-
-        let constraintCount = data.iks.count + data.paths.count
-        for order in 0..<constraintCount {
-            if let index = data.iks.firstIndex(where: { $0.order == order }) {
-                let ik = data.iks[index]
-                sortBone(ik.target)
-                let parent = ik.bones[0]
-                sortBone(parent)
-                if ik.bones.count > 1, let child = ik.bones.last, !contains(child) { resets.append(child) }
-                updates.append(.ik(index))
-                sortReset(children[parent])
-                if let last = ik.bones.last { sorted[last] = true }
-            } else if let index = data.paths.firstIndex(where: { $0.order == order }) {
-                let path = data.paths[index]
-                for attachment in data.skin[path.target].values {
-                    sortPathAttachment(attachment, slot: path.target, sortBone)
-                }
-                for bone in path.bones { sortBone(bone) }
-                updates.append(.path(index))
-                for bone in path.bones { sortReset(children[bone]) }
-                for bone in path.bones { sorted[bone] = true }
-            }
-        }
-        for bone in bones.indices { sortBone(bone) }
-    }
-
     private static func cosDeg(_ degrees: CGFloat) -> CGFloat { cos(degrees * .pi / 180) }
     private static func sinDeg(_ degrees: CGFloat) -> CGFloat { sin(degrees * .pi / 180) }
     private static let radDeg: CGFloat = 180 / .pi
     private static let degRad: CGFloat = .pi / 180
 
     /// Bone.updateWorldTransformWith (4.2, the skeleton unscaled).
-    private func updateWorldTransform42(
+    private func updateWorldTransform(
         _ index: Int, _ x: CGFloat, _ y: CGFloat, _ rotation: CGFloat, _ scaleX: CGFloat, _ scaleY: CGFloat, _ shearX: CGFloat, _ shearY: CGFloat
     ) {
         bones[index].ax = x
@@ -1470,7 +1292,7 @@ public nonisolated final class RigPose {
     }
 
     /// Bone.updateAppliedTransform (4.2): local values from the world transform.
-    private func updateAppliedTransform42(_ index: Int) {
+    private func updateAppliedTransform(_ index: Int) {
         let w = bones[index].world
         guard let parent = data.bones[index].parent else {
             bones[index].ax = w.x - origin.x
@@ -1544,130 +1366,10 @@ public nonisolated final class RigPose {
         }
     }
 
-    /// spBone_updateWorldTransformWith (3.6).
-    private func updateWorldTransform36(
-        _ index: Int, _ x: CGFloat, _ y: CGFloat, _ rotation: CGFloat, _ scaleX: CGFloat, _ scaleY: CGFloat, _ shearX: CGFloat, _ shearY: CGFloat
-    ) {
-        bones[index].ax = x
-        bones[index].ay = y
-        bones[index].arotation = rotation
-        bones[index].ascaleX = scaleX
-        bones[index].ascaleY = scaleY
-        bones[index].ashearX = shearX
-        bones[index].ashearY = shearY
-        bones[index].appliedValid = true
-        let rotationY = rotation + 90 + shearY
-        guard let parent = data.bones[index].parent else {
-            bones[index].world = Transform(
-                a: Self.cosDeg(rotation + shearX) * scaleX, b: Self.cosDeg(rotationY) * scaleY,
-                c: Self.sinDeg(rotation + shearX) * scaleX, d: Self.sinDeg(rotationY) * scaleY,
-                x: x + origin.x, y: y + origin.y
-            )
-            return
-        }
-        var pa = bones[parent].world.a, pb = bones[parent].world.b, pc = bones[parent].world.c, pd = bones[parent].world.d
-        var t = Transform()
-        t.x = pa * x + pb * y + bones[parent].world.x
-        t.y = pc * x + pd * y + bones[parent].world.y
-        switch data.bones[index].inherit {
-        case .normal:
-            let la = Self.cosDeg(rotation + shearX) * scaleX, lb = Self.cosDeg(rotationY) * scaleY
-            let lc = Self.sinDeg(rotation + shearX) * scaleX, ld = Self.sinDeg(rotationY) * scaleY
-            t.a = pa * la + pb * lc
-            t.b = pa * lb + pb * ld
-            t.c = pc * la + pd * lc
-            t.d = pc * lb + pd * ld
-        case .onlyTranslation:
-            t.a = Self.cosDeg(rotation + shearX) * scaleX
-            t.b = Self.cosDeg(rotationY) * scaleY
-            t.c = Self.sinDeg(rotation + shearX) * scaleX
-            t.d = Self.sinDeg(rotationY) * scaleY
-        case .noRotationOrReflection:
-            var s = pa * pa + pc * pc
-            let prx: CGFloat
-            if s > 0.0001 {
-                s = abs(pa * pd - pb * pc) / s
-                pb = pc * s
-                pd = pa * s
-                prx = atan2(pc, pa) * 180 / .pi
-            } else {
-                pa = 0
-                pc = 0
-                prx = 90 - atan2(pd, pb) * 180 / .pi
-            }
-            let rx = rotation + shearX - prx, ry = rotation + shearY - prx + 90
-            let la = Self.cosDeg(rx) * scaleX, lb = Self.cosDeg(ry) * scaleY
-            let lc = Self.sinDeg(rx) * scaleX, ld = Self.sinDeg(ry) * scaleY
-            t.a = pa * la - pb * lc
-            t.b = pa * lb - pb * ld
-            t.c = pc * la + pd * lc
-            t.d = pc * lb + pd * ld
-        case .noScale, .noScaleOrReflection:
-            let cosine = Self.cosDeg(rotation), sine = Self.sinDeg(rotation)
-            var za = pa * cosine + pb * sine, zc = pc * cosine + pd * sine
-            var s = sqrt(za * za + zc * zc)
-            if s > 0.00001 { s = 1 / s }
-            za *= s
-            zc *= s
-            s = sqrt(za * za + zc * zc)
-            let r = .pi / 2 + atan2(zc, za)
-            var zb = cos(r) * s, zd = sin(r) * s
-            let la = Self.cosDeg(shearX) * scaleX, lb = Self.cosDeg(90 + shearY) * scaleY
-            let lc = Self.sinDeg(shearX) * scaleX, ld = Self.sinDeg(90 + shearY) * scaleY
-            if data.bones[index].inherit == .noScale, pa * pd - pb * pc < 0 {
-                zb = -zb
-                zd = -zd
-            }
-            t.a = za * la + zb * lc
-            t.b = za * lb + zb * ld
-            t.c = zc * la + zd * lc
-            t.d = zc * lb + zd * ld
-        }
-        bones[index].world = t
-    }
-
-    /// spBone_updateAppliedTransform (3.6).
-    private func updateAppliedTransform36(_ index: Int) {
-        bones[index].appliedValid = true
-        let w = bones[index].world
-        guard let parent = data.bones[index].parent else {
-            bones[index].ax = w.x - origin.x
-            bones[index].ay = w.y - origin.y
-            bones[index].arotation = atan2(w.c, w.a) * 180 / .pi
-            bones[index].ascaleX = sqrt(w.a * w.a + w.c * w.c)
-            bones[index].ascaleY = sqrt(w.b * w.b + w.d * w.d)
-            bones[index].ashearX = 0
-            bones[index].ashearY = atan2(w.a * w.b + w.c * w.d, w.a * w.d - w.b * w.c) * 180 / .pi
-            return
-        }
-        let p = bones[parent].world
-        let pid = 1 / (p.a * p.d - p.b * p.c)
-        let dx = w.x - p.x, dy = w.y - p.y
-        let ia = pid * p.d, id = pid * p.a, ib = pid * p.b, ic = pid * p.c
-        let ra = ia * w.a - ib * w.c, rb = ia * w.b - ib * w.d
-        let rc = id * w.c - ic * w.a, rd = id * w.d - ic * w.b
-        bones[index].ax = dx * p.d * pid - dy * p.b * pid
-        bones[index].ay = dy * p.a * pid - dx * p.c * pid
-        bones[index].ashearX = 0
-        let scaleX = sqrt(ra * ra + rc * rc)
-        if scaleX > 0.0001 {
-            let det = ra * rd - rb * rc
-            bones[index].ascaleX = scaleX
-            bones[index].ascaleY = det / scaleX
-            bones[index].ashearY = atan2(ra * rb + rc * rd, det) * 180 / .pi
-            bones[index].arotation = atan2(rc, ra) * 180 / .pi
-        } else {
-            bones[index].ascaleX = 0
-            bones[index].ascaleY = sqrt(rb * rb + rd * rd)
-            bones[index].ashearY = 0
-            bones[index].arotation = 90 - atan2(rd, rb) * 180 / .pi
-        }
-    }
-
     // MARK: - IK
 
     /// IkConstraint.update (4.2).
-    private func applyIk42(_ index: Int) {
+    private func applyIk(_ index: Int) {
         let ik = data.iks[index]
         guard ik.mix != 0 else { return }
         let target = bones[ik.target].world
@@ -1724,7 +1426,7 @@ public nonisolated final class RigPose {
                 }
             }
         }
-        updateWorldTransform42(bone, b.ax, b.ay, b.arotation + rotationIK * alpha, sx, sy, b.ashearX, b.ashearY)
+        updateWorldTransform(bone, b.ax, b.ay, b.arotation + rotationIK * alpha, sx, sy, b.ashearX, b.ashearY)
     }
 
     private func applyIk2(
@@ -1777,7 +1479,7 @@ public nonisolated final class RigPose {
         var l2 = data.bones[child].length * csx
         if l1 < 0.0001 {
             applyIk1(parent, targetX, targetY, compress: false, stretch: stretch, uniform: false, alpha: alpha)
-            updateWorldTransform42(child, cx, cy, 0, c.ascaleX, c.ascaleY, c.ashearX, c.ashearY)
+            updateWorldTransform(child, cx, cy, 0, c.ascaleX, c.ascaleY, c.ashearX, c.ashearY)
             return
         }
         x = targetX - pp.x
@@ -1869,152 +1571,11 @@ public nonisolated final class RigPose {
         var rotation = p.arotation
         a1 = (a1 - os) * Self.radDeg + os1 - rotation
         if a1 > 180 { a1 -= 360 } else if a1 < -180 { a1 += 360 }
-        updateWorldTransform42(parent, px, py, rotation + a1 * alpha, sx, sy, 0, 0)
+        updateWorldTransform(parent, px, py, rotation + a1 * alpha, sx, sy, 0, 0)
         rotation = c.arotation
         a2 = ((a2 + os) * Self.radDeg - c.ashearX) * s2 + os2 - rotation
         if a2 > 180 { a2 -= 360 } else if a2 < -180 { a2 += 360 }
-        updateWorldTransform42(child, cx, cy, rotation + a2 * alpha, c.ascaleX, c.ascaleY, c.ashearX, c.ashearY)
-    }
-
-    /// spIkConstraint_apply (3.6).
-    private func applyIk36(_ index: Int) {
-        let ik = data.iks[index]
-        let target = bones[ik.target].world
-        if ik.bones.count == 1 {
-            applyIk1Of36(ik.bones[0], target.x, target.y, ik.mix)
-        } else {
-            applyIk2Of36(ik.bones[0], ik.bones[1], target.x, target.y, ik.bendDirection, ik.mix)
-        }
-    }
-
-    private func applyIk1Of36(_ bone: Int, _ targetX: CGFloat, _ targetY: CGFloat, _ alpha: CGFloat) {
-        guard let parent = data.bones[bone].parent else { return }
-        if !bones[bone].appliedValid { updateAppliedTransform36(bone) }
-        let p = bones[parent].world, b = bones[bone]
-        let id = 1 / (p.a * p.d - p.b * p.c)
-        let x = targetX - p.x, y = targetY - p.y
-        let tx = (x * p.d - y * p.b) * id - b.ax, ty = (y * p.a - x * p.c) * id - b.ay
-        var rotationIK = atan2(ty, tx) * 180 / .pi - b.ashearX - b.arotation
-        if b.ascaleX < 0 { rotationIK += 180 }
-        if rotationIK > 180 { rotationIK -= 360 } else if rotationIK < -180 { rotationIK += 360 }
-        updateWorldTransform36(bone, b.ax, b.ay, b.arotation + rotationIK * alpha, b.ascaleX, b.ascaleY, b.ashearX, b.ashearY)
-    }
-
-    private func applyIk2Of36(_ parent: Int, _ child: Int, _ targetX: CGFloat, _ targetY: CGFloat, _ bendDirection: CGFloat, _ alpha: CGFloat) {
-        if alpha == 0 {
-            let c = bones[child]
-            updateWorldTransform36(child, c.x, c.y, c.rotation, c.scaleX, c.scaleY, c.shearX, c.shearY)
-            return
-        }
-        guard let grandparent = data.bones[parent].parent else { return }
-        if !bones[parent].appliedValid { updateAppliedTransform36(parent) }
-        if !bones[child].appliedValid { updateAppliedTransform36(child) }
-        let p = bones[parent], c = bones[child], pp = bones[grandparent].world
-        let px = p.ax, py = p.ay
-        var psx = p.ascaleX, psy = p.ascaleY, csx = c.ascaleX
-        let o1: CGFloat, o2: CGFloat
-        var s2: CGFloat
-        if psx < 0 {
-            psx = -psx
-            o1 = 180
-            s2 = -1
-        } else {
-            o1 = 0
-            s2 = 1
-        }
-        if psy < 0 {
-            psy = -psy
-            s2 = -s2
-        }
-        if csx < 0 {
-            csx = -csx
-            o2 = 180
-        } else {
-            o2 = 0
-        }
-        let cx = c.ax
-        let cy: CGFloat, cwx: CGFloat, cwy: CGFloat
-        let u = abs(psx - psy) <= 0.0001
-        if !u {
-            cy = 0
-            cwx = p.world.a * cx + p.world.x
-            cwy = p.world.c * cx + p.world.y
-        } else {
-            cy = c.ay
-            cwx = p.world.a * cx + p.world.b * cy + p.world.x
-            cwy = p.world.c * cx + p.world.d * cy + p.world.y
-        }
-        let id = 1 / (pp.a * pp.d - pp.b * pp.c)
-        var x = targetX - pp.x, y = targetY - pp.y
-        let tx = (x * pp.d - y * pp.b) * id - px, ty = (y * pp.a - x * pp.c) * id - py
-        x = cwx - pp.x
-        y = cwy - pp.y
-        let dx = (x * pp.d - y * pp.b) * id - px, dy = (y * pp.a - x * pp.c) * id - py
-        let l1 = sqrt(dx * dx + dy * dy)
-        var l2 = data.bones[child].length * csx
-        var a1: CGFloat, a2: CGFloat
-        solve: if u {
-            l2 *= psx
-            let cosine = min(max((tx * tx + ty * ty - l1 * l1 - l2 * l2) / (2 * l1 * l2), -1), 1)
-            a2 = acos(cosine) * bendDirection
-            let a = l1 + l2 * cosine, b = l2 * sin(a2)
-            a1 = atan2(ty * a - tx * b, tx * a + ty * b)
-        } else {
-            let a = psx * l2, b = psy * l2
-            let aa = a * a, bb = b * b, ll = l1 * l1, dd = tx * tx + ty * ty, ta = atan2(ty, tx)
-            var c0 = bb * ll + aa * dd - aa * bb
-            let c1 = -2 * bb * l1, c2 = bb - aa
-            let d = c1 * c1 - 4 * c2 * c0
-            if d >= 0 {
-                var q = sqrt(d)
-                if c1 < 0 { q = -q }
-                q = -(c1 + q) / 2
-                let r0 = q / c2, r1 = c0 / q
-                let r = abs(r0) < abs(r1) ? r0 : r1
-                if r * r <= dd {
-                    y = sqrt(dd - r * r) * bendDirection
-                    a1 = ta - atan2(y, r)
-                    a2 = atan2(y / psy, (r - l1) / psx)
-                    break solve
-                }
-            }
-            var minAngle = CGFloat.pi, minX = l1 - a, minDist = minX * minX, minY: CGFloat = 0
-            var maxAngle: CGFloat = 0, maxX = l1 + a, maxDist = maxX * maxX, maxY: CGFloat = 0
-            c0 = -a * l1 / (aa - bb)
-            if c0 >= -1, c0 <= 1 {
-                c0 = acos(c0)
-                x = a * cos(c0) + l1
-                y = b * sin(c0)
-                let dist = x * x + y * y
-                if dist < minDist {
-                    minAngle = c0
-                    minDist = dist
-                    minX = x
-                    minY = y
-                }
-                if dist > maxDist {
-                    maxAngle = c0
-                    maxDist = dist
-                    maxX = x
-                    maxY = y
-                }
-            }
-            if dd <= (minDist + maxDist) / 2 {
-                a1 = ta - atan2(minY * bendDirection, minX)
-                a2 = minAngle * bendDirection
-            } else {
-                a1 = ta - atan2(maxY * bendDirection, maxX)
-                a2 = maxAngle * bendDirection
-            }
-        }
-        let os = atan2(cy, cx) * s2
-        a1 = (a1 - os) * 180 / .pi + o1 - p.arotation
-        if a1 > 180 { a1 -= 360 } else if a1 < -180 { a1 += 360 }
-        updateWorldTransform36(parent, px, py, p.rotation + a1 * alpha, p.ascaleX, p.ascaleY, 0, 0)
-        let child2 = bones[child]
-        a2 = ((a2 + os) * 180 / .pi - child2.ashearX) * s2 + o2 - child2.arotation
-        if a2 > 180 { a2 -= 360 } else if a2 < -180 { a2 += 360 }
-        updateWorldTransform36(child, cx, cy, child2.arotation + a2 * alpha, child2.ascaleX, child2.ascaleY, child2.ashearX, child2.ashearY)
+        updateWorldTransform(child, cx, cy, rotation + a2 * alpha, c.ascaleX, c.ascaleY, c.ashearX, c.ashearY)
     }
 
     // MARK: - Transform constraint (4.2)
@@ -2044,7 +1605,7 @@ public nonisolated final class RigPose {
                     if mixScaleY != 0, scaleY != 0 { scaleY = (scaleY + (target.ascaleY - scaleY + constraint.offsetScaleY) * mixScaleY) / scaleY }
                     if mixShearY != 0 { shearY += (target.ashearY - shearY + constraint.offsetShearY) * mixShearY }
                 }
-                updateWorldTransform42(bone, x, y, rotation, scaleX, scaleY, b.ashearX, shearY)
+                updateWorldTransform(bone, x, y, rotation, scaleX, scaleY, b.ashearX, shearY)
             }
             return
         }
@@ -2115,7 +1676,7 @@ public nonisolated final class RigPose {
                 w.d = sin(r) * s
             }
             bones[bone].world = w
-            updateAppliedTransform42(bone)
+            updateAppliedTransform(bone)
         }
     }
 
@@ -2261,7 +1822,7 @@ public nonisolated final class RigPose {
         state.ty = length * t.c
         bones[bone].world = t
         trails[index] = state
-        updateAppliedTransform42(bone)
+        updateAppliedTransform(bone)
     }
 
     /// Lets every trailing part go from where it is, as if the rig had always stood there.
@@ -2277,35 +1838,18 @@ public nonisolated final class RigPose {
     private func applyPath(_ index: Int) {
         let constraint = data.paths[index]
         let mixRotate = constraint.mixRotate, mixX = constraint.mixX
-        let mixY = runtime == .spine36 ? mixX : constraint.mixY
+        let mixY = constraint.mixY
         guard
             mixX > 0 || mixY > 0 || mixRotate > 0,
             let attachment = slots[constraint.target].attachment,
             case let .path(path) = data.attachments[attachment]
         else { return }
-        let lengthSpacing = constraint.spacingMode == .length
         let tangents = constraint.rotateMode == .tangent, chainScale = constraint.rotateMode == .chainScale
         let boneCount = constraint.bones.count, spacesCount = tangents ? boneCount : boneCount + 1
         if pathSpaces.count < spacesCount { pathSpaces = Array(repeating: 0, count: spacesCount) }
         if pathLengths.count < boneCount { pathLengths = Array(repeating: 0, count: boneCount) }
         pathSpaces[0] = 0
-        let spacing = constraint.spacing
-        if runtime == .spine42 {
-            spaces42(constraint, spacesCount: spacesCount, chainScale: chainScale)
-        } else if chainScale || lengthSpacing {
-            for i in 0..<(spacesCount - 1) {
-                let bone = constraint.bones[i]
-                let setupLength = data.bones[bone].length
-                let t = bones[bone].world
-                let length36 = setupLength == 0 ? 0.000000001 : setupLength
-                let x = length36 * t.a, y = length36 * t.c
-                let length = sqrt(x * x + y * y)
-                if chainScale { pathLengths[i] = length }
-                pathSpaces[i + 1] = (lengthSpacing ? length36 + spacing : spacing) * length / length36
-            }
-        } else {
-            for i in 1..<spacesCount { pathSpaces[i] = spacing }
-        }
+        spaces(constraint, spacesCount: spacesCount, chainScale: chainScale)
         computeWorldPositions(path, constraint: constraint, spacesCount: spacesCount, tangents: tangents)
         var boneX = pathPositions[0], boneY = pathPositions[1]
         var offsetRotation = constraint.offsetRotation
@@ -2344,8 +1888,7 @@ public nonisolated final class RigPose {
                 } else {
                     r = atan2(dy, dx)
                 }
-                // 3.6 converts the offset to radians twice here (and adds it again below).
-                r -= atan2(c, a) - (runtime == .spine36 ? offsetRotation * .pi / 180 : 0)
+                r -= atan2(c, a)
                 if tip {
                     let cosine = cos(r), sine = sin(r)
                     let length = data.bones[bone].length
@@ -2363,13 +1906,13 @@ public nonisolated final class RigPose {
                 t.d = sine * b + cosine * d
             }
             bones[bone].world = t
-            if runtime == .spine42 { updateAppliedTransform42(bone) } else { bones[bone].appliedValid = false }
+            updateAppliedTransform(bone)
             p += 3
         }
     }
 
     /// PathConstraint.update's spaces (4.2).
-    private func spaces42(_ constraint: RigData.PathConstraint, spacesCount: Int, chainScale: Bool) {
+    private func spaces(_ constraint: RigData.PathConstraint, spacesCount: Int, chainScale: Bool) {
         let spacing = constraint.spacing
         let epsilon: CGFloat = 0.00001
         switch constraint.spacingMode {
@@ -2431,7 +1974,7 @@ public nonisolated final class RigPose {
         func multiplier(_ pathLength: CGFloat) -> CGFloat {
             switch constraint.spacingMode {
             case .percent: pathLength
-            case .proportional where runtime == .spine42: pathLength / CGFloat(spacesCount)
+            case .proportional: pathLength / CGFloat(spacesCount)
             default: 1
             }
         }
@@ -2661,15 +2204,11 @@ public nonisolated final class RigPose {
         _ p: CGFloat, _ x1: CGFloat, _ y1: CGFloat, _ cx1: CGFloat, _ cy1: CGFloat, _ cx2: CGFloat, _ cy2: CGFloat,
         _ x2: CGFloat, _ y2: CGFloat, _ o: Int, _ tangents: Bool
     ) {
-        var p = p
         if p == 0 || p.isNaN {
-            if runtime == .spine42 {
-                pathPositions[o] = x1
-                pathPositions[o + 1] = y1
-                pathPositions[o + 2] = atan2(cy1 - y1, cx1 - x1)
-                return
-            }
-            p = 0.0001
+            pathPositions[o] = x1
+            pathPositions[o + 1] = y1
+            pathPositions[o + 2] = atan2(cy1 - y1, cx1 - x1)
+            return
         }
         let tt = p * p, ttt = tt * p, u = 1 - p, uu = u * u, uuu = uu * u
         let ut = u * p, ut3 = ut * 3, uut3 = u * ut3, utt3 = ut3 * p
@@ -2677,7 +2216,7 @@ public nonisolated final class RigPose {
         pathPositions[o] = x
         pathPositions[o + 1] = y
         if tangents {
-            if runtime == .spine42, p < 0.001 {
+            if p < 0.001 {
                 pathPositions[o + 2] = atan2(cy1 - y1, cx1 - x1)
             } else {
                 pathPositions[o + 2] = atan2(y - (y1 * uu + cy1 * ut * 2 + cy2 * tt), x - (x1 * uu + cx1 * ut * 2 + cx2 * tt))

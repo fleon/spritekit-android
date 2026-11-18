@@ -1,18 +1,15 @@
-// Checks PlatformRigs' runtime (RigData, RigPose) against Spine's own
-// runtimes, frame by frame.
+// Checks PlatformRigs' runtime (RigData, RigPose) against spine-core 4.2,
+// frame by frame.
 //
-//   node verify-pose.js --rigs <dir> [--spine-core <dir>] [--spine-c <dir>]
+//   node verify-pose.js --rigs <dir> --spine-core <dir>
 //     [--schedules <file.json>] [--only <substring>] [--out <dir>]
 //     [--scale <s>] [--mix <seconds>] [--drift <x,y>] [--no-loops]
 //
 // --rigs: a folder of rigs, each Rig<Name>.json: a Spine 4.2 skeleton, or
 //   places only (`atlas`) naming its skeleton (`rig`) in a deflated
 //   Rig<rig>.skel beside it.
-// 1. RigPose in its 4.2 mode against spine-core 4.2 (spine42-dump.mjs;
-//    --spine-core: an installed @esotericsoftware/spine-core).
-// 2. RigPose in its 3.6 mode against spine-c 3.6 (spine36-dump.c; --spine-c:
-//    its sources), in float and in double precision, on the 4.2 JSON written
-//    back as 3.6 (spine36-convert.js).
+// --spine-core: an installed @esotericsoftware/spine-core 4.2, which
+//   spine-dump.mjs plays the same runs through.
 // Every rig's animations each play looped (unless --no-loops; with --mix, also crossfading from
 // the one before, and with --drift, while the skeleton travels that far each
 // frame, which its physics trails), plus the runs in --schedules: a JSON list
@@ -34,11 +31,10 @@ const option = (name, fallback) => {
 }
 const rigsSource = option('--rigs')
 if (!rigsSource) {
-  console.error('usage: node verify-pose.js --rigs <dir> [--spine-core <dir>] [--spine-c <dir>] [--schedules <file>] [--only <s>] [--out <dir>]')
+  console.error('usage: node verify-pose.js --rigs <dir> --spine-core <dir> [--schedules <file>] [--only <s>] [--out <dir>]')
   process.exit(2)
 }
 const spineCore = option('--spine-core', process.env.SPINE_CORE)
-const spineC = option('--spine-c', process.env.SPINE_C)
 const outDir = option('--out', path.join(os.tmpdir(), 'rig-verify'))
 const only = option('--only', '')
 const scale = Number(option('--scale', '1'))
@@ -50,7 +46,7 @@ const sources = path.resolve(__dirname, '../../Sources/PlatformRigs')
 fs.mkdirSync(outDir, { recursive: true })
 
 // A step that never lands exactly on a key or loop boundary, where float32
-// (spine-c) and double (RigPose) times round to opposite sides.
+// (spine-core's Float32Array keys) and double times round to opposite sides.
 const FPS = 60
 const DT = 1 / 60.02
 
@@ -65,7 +61,11 @@ for (const file of fs.readdirSync(rigsSource).filter((f) => /^Rig.+\.json$/.test
   if (!json.bones && json.rig) {
     const skel = path.join(rigsSource, `Rig${json.rig}.skel`)
     if (!fs.existsSync(skel)) continue
-    json = { ...JSON.parse(zlib.inflateSync(fs.readFileSync(skel)).toString('utf8')), ...json }
+    // Raw DEFLATE, as Apple's Compression writes it (zlib-wrapped also read).
+    const bytes = fs.readFileSync(skel)
+    let text
+    try { text = zlib.inflateRawSync(bytes) } catch { text = zlib.inflateSync(bytes) }
+    json = { ...JSON.parse(text.toString('utf8')), ...json }
   }
   if (!json.bones || !json.animations) continue
   fs.writeFileSync(path.join(rigsDir, file), JSON.stringify(json))
@@ -117,7 +117,7 @@ function readRun (file) {
   return { header: lines[0], frames: lines.slice(1, -1), events: lines[lines.length - 1].events }
 }
 
-// Compares two dumps by bone and slot name (3.6 and 4.2 JSON may order them differently).
+// Compares two dumps by bone and slot name.
 function compare (a, b) {
   const result = { abcd: 0, xy: 0, vertices: 0, color: 0, attachments: 0, events: 0, worst: '' }
   const boneMap = a.header.bones.map((n) => b.header.bones.indexOf(n))
@@ -178,40 +178,10 @@ execFileSync('swiftc', ['-O', '-swift-version', '5', '-default-isolation', 'Main
 const dir = (name) => { const d = path.join(outDir, name); fs.mkdirSync(d, { recursive: true }); return d }
 const ids = thePlan.runs.map((r) => r.id)
 
-if (spineCore) {
-  execFileSync(posedump, [planPath, dir('swift42'), '42'], { stdio: 'inherit' })
-  execFileSync('node', [path.join(__dirname, 'spine42-dump.mjs'), planPath, dir('core42'), spineCore], { stdio: 'inherit' })
-  report('RigPose (4.2) vs spine-core 4.2', ids.map((id) => [id, compare(readRun(path.join(outDir, 'swift42', `${id}.jsonl`)), readRun(path.join(outDir, 'core42', `${id}.jsonl`)))]))
-} else {
-  console.log('(skipping spine-core 4.2: pass --spine-core <dir of @esotericsoftware/spine-core>)')
+if (!spineCore) {
+  console.error('pass --spine-core <dir of @esotericsoftware/spine-core 4.2>')
+  process.exit(2)
 }
-
-if (spineC && fs.existsSync(spineC)) {
-  // 3.6 played without crossfades or travel.
-  const plain36 = { rigsDir, runs: thePlan.runs.filter((r) => !r.mix && !r.drift) }
-  const plan36 = path.join(outDir, 'plan36.json')
-  fs.writeFileSync(plan36, JSON.stringify(plain36))
-  const ids36 = plain36.runs.map((r) => r.id)
-  execFileSync(posedump, [plan36, dir('swift36'), '36'], { stdio: 'inherit' })
-  const spinec = path.join(outDir, 'spine36dump')
-  const spinecDouble = path.join(outDir, 'spine36dump-double')
-  const include = dir('include')
-  try { fs.symlinkSync(spineC, path.join(include, 'spine')) } catch {}
-  const cSources = fs.readdirSync(spineC).filter((f) => f.endsWith('.c')).map((f) => path.join(spineC, f))
-  const build = (output, flags) => execFileSync('cc', ['-O1', '-w', ...flags, '-I', include, ...cSources,
-    path.join(__dirname, 'spine36-dump.c'), '-o', output, '-lm'], { stdio: 'inherit' })
-  build(spinec, [])
-  // The same code in double precision (its float maths functions too), which
-  // separates float32 rounding (times drift over long runs) from logic.
-  build(spinecDouble, ['-Dfloat=double', '-U__STDC_VERSION__'])
-  const converted = dir('converted36')
-  execFileSync('node', [path.join(__dirname, 'spine36-convert.js'), rigsDir, converted], { stdio: 'inherit' })
-  execFileSync(spinecDouble, [plan36, dir('c36double'), converted], { stdio: 'inherit' })
-  report('RigPose (3.6) vs spine-c 3.6 in double precision',
-    ids36.map((id) => [id, compare(readRun(path.join(outDir, 'swift36', `${id}.jsonl`)), readRun(path.join(outDir, 'c36double', `${id}.jsonl`)))]))
-  execFileSync(spinec, [plan36, dir('c36'), converted], { stdio: 'inherit' })
-  report('RigPose (3.6) vs spine-c 3.6 in float',
-    ids36.map((id) => [id, compare(readRun(path.join(outDir, 'swift36', `${id}.jsonl`)), readRun(path.join(outDir, 'c36', `${id}.jsonl`)))]))
-} else {
-  console.log('(skipping spine-c 3.6: pass --spine-c <dir of its sources>)')
-}
+execFileSync(posedump, [planPath, dir('swift')], { stdio: 'inherit' })
+execFileSync('node', [path.join(__dirname, 'spine-dump.mjs'), planPath, dir('core'), spineCore], { stdio: 'inherit' })
+report('RigPose vs spine-core 4.2', ids.map((id) => [id, compare(readRun(path.join(outDir, 'swift', `${id}.jsonl`)), readRun(path.join(outDir, 'core', `${id}.jsonl`)))]))

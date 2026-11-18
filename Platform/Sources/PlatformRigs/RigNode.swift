@@ -18,11 +18,11 @@ import UIKit
 /// While the rig stands still (paused, or nothing playing and nothing
 /// swinging) it caches its parts as one texture: SpriteKit otherwise prepares
 /// every mesh sprite's per-node attributes again each frame. A rig whose
-/// look changes while still (a light that moves over it) passes `caching: false`.
+/// look changes while still (a light that moves over it) passes `caching: false`,
+/// or a subclass returns false from `mayCache` while it changes.
 ///
 /// Subclass it to add what a game draws on a rig (faces, riders): override
 /// `didRender()`, which runs after every pose is drawn.
-@NSCodingUnsupported
 open class RigNode: SKNode {
     private enum ActionKey {
         static let tick = "rig.tick"
@@ -107,25 +107,25 @@ open class RigNode: SKNode {
     /// The rig `name` (`RigData.named`) at `unit` points per skeleton unit;
     /// nil if it can't be read. `hiding` names slots that never show.
     public convenience init?(
-        name: String, unit: CGFloat = 1, runtime: RigPose.Runtime = .spine42, hiding: Set<String> = [], slotZ: CGFloat = 0.0001,
+        name: String, unit: CGFloat = 1, hiding: Set<String> = [], slotZ: CGFloat = 0.0001,
         regionsAsSprites: Bool = false, caching: Bool = true, shading: RigMeshNode.Shading = .plain, mipmaps: Bool = true
     ) {
         guard let data = RigData.named(name), let texture = Self.texture(data.textureURL, mipmaps: mipmaps) else { return nil }
         self.init(
-            data: data, texture: texture, unit: unit, runtime: runtime, hiding: hiding, slotZ: slotZ,
+            data: data, texture: texture, unit: unit, hiding: hiding, slotZ: slotZ,
             regionsAsSprites: regionsAsSprites, caching: caching, shading: shading
         )
     }
 
     public init(
-        data: RigData, texture: SKTexture, unit: CGFloat = 1, runtime: RigPose.Runtime = .spine42, hiding: Set<String> = [], slotZ: CGFloat = 0.0001,
+        data: RigData, texture: SKTexture, unit: CGFloat = 1, hiding: Set<String> = [], slotZ: CGFloat = 0.0001,
         regionsAsSprites: Bool = false, caching: Bool = true, shading: RigMeshNode.Shading = .plain
     ) {
         self.data = data
         self.texture = texture
         self.unit = unit
         self.slotZ = slotZ
-        pose = RigPose(data: data, runtime: runtime)
+        pose = RigPose(data: data)
         hiddenSlots = Set(data.slots.indices.filter { hiding.contains(data.slots[$0].name) })
         if caching {
             let canvas = SKEffectNode()
@@ -194,6 +194,10 @@ open class RigNode: SKNode {
         startTicking()
     }
 
+    public required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     private func mesh(uvs: [CGPoint], triangles: [Int], tinted: Bool, shading: RigMeshNode.Shading) -> RigMeshNode {
         let node = RigMeshNode(uvs: uvs, triangles: triangles, texture: texture, shading: shading, tinted: tinted, slotZ: slotZ)
         meshes.append(node)
@@ -260,7 +264,7 @@ open class RigNode: SKNode {
             content.addChild(node)
             return
         }
-        let rest = RigPose(data: data, runtime: pose.runtime)
+        let rest = RigPose(data: data)
         rest.advance(0)
         let t = rest.boneTransform(bone)
         let carrier = SKNode()
@@ -341,11 +345,16 @@ open class RigNode: SKNode {
         return true
     }
 
+    /// Whether its parts may be cached while the pose stands still: a
+    /// subclass whose look changes meanwhile (a blink, a light moving over
+    /// it) returns false while it does, and calls `updateCaching()`.
+    open var mayCache: Bool { true }
+
     /// Caches the parts while nothing moves them; draws them live otherwise.
     /// Never while a mesh waits for its shader, which the cache would leave out.
     public func updateCaching() {
         guard let canvas else { return }
-        let still = (isPaused || (!pose.isAnimating && pose.isSettled)) && !meshes.contains(where: \.needsPriming)
+        let still = mayCache && (isPaused || (!pose.isAnimating && pose.isSettled)) && !meshes.contains(where: \.needsPriming)
         guard canvas.shouldRasterize != still else { return }
         canvas.shouldRasterize = still
         canvas.shouldEnableEffects = still
