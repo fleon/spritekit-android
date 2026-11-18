@@ -52,6 +52,7 @@ let package = Package(
         .library(name: "PlatformSprite", targets: ["PlatformSprite"]),
         .library(name: "PlatformGameCenter", targets: ["PlatformGameCenter"]),
         .library(name: "PlatformStore", targets: ["PlatformStore"]),
+        .library(name: "PlatformShare", targets: ["PlatformShare"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -228,6 +229,7 @@ let package = Package(
         .target(
             name: "PlatformGameCenter",
             dependencies: [
+                "PlatformSprite",
                 .product(name: "PlatformServices", package: "spritekit-android"),
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
@@ -246,6 +248,26 @@ let package = Package(
             name: "PlatformStore",
             dependencies: [
                 .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        // The system's share sheet and pasteboard, the store's review page
+        // and a feedback mail: UIKit's on Apple, the shell's on Android.
+        .target(
+            name: "PlatformShare",
+            dependencies: [
+                "PlatformSprite",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformShareTests",
+            dependencies: [
+                "PlatformShare",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings

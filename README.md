@@ -78,9 +78,11 @@ Platform/            The platform code games share, on Apple platforms and
                      gamepads and the pointer; keyboard and Menu protocols),
                      `PlatformDisplay` (frame-rate and graphics settings
                      with Auto), `PlatformGameCenter` (sign-in,
-                     achievements, leaderboards), `PlatformStore` (in-app
-                     purchases) and `PlatformRigs` (Spine 4.2 skeletons,
-                     posed and drawn). See "Shared platform code".
+                     achievements, leaderboards, Play Games' mark),
+                     `PlatformStore` (in-app purchases), `PlatformShare`
+                     (share sheet, pasteboard, review page, feedback mail)
+                     and `PlatformRigs` (Spine 4.2 skeletons, posed and
+                     drawn). See "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -163,6 +165,30 @@ screen may wait on. `player` (`GamePlayer`: the service's ID, name and
 GameKit's legacy `playerID`) and `signInChanged`/`playerChanged` are for a
 server or a credit; `submitScore(_:context:to:)`, `standing(on:)` and
 `showLeaderboards(_:)` for leaderboards.
+
+Where the service is Play Games, a game's Game Center button wears Google
+Play Games' mark in its own greens (`PlayGamesMark`: the path data and
+colours, and `node(size:manager:isButton:)` drawing it on the button's
+centre). Where Play Games can't run (no Google Play services, a build
+without it) the button hides itself (`hidesButton(for:)`); Game Center's
+button on Apple is never hidden by it. Each game keeps its own button.
+
+### Sharing (`PlatformShare`)
+
+`ShareSheet.present(_:from:)` opens the system's share sheet with strings,
+web links and files, from a node: `UIActivityViewController` on Apple
+platforms, as a popover pointed at the node (its `RestingBounds`) on iPad
+and the Mac; on Android the items are sorted into a `ShareRequest` for the
+shell's `SystemShare.sheet`, an App Store link becoming the game's Google
+Play page in `storePageLanguage()`. `copy(_:)` puts text on the pasteboard,
+`didPresent` is told each time a sheet opens (a recording's marker).
+`StoreReviewPage.open(appStoreID:language:)` opens the App Store's
+write-a-review page, or the game's Play page on Android;
+`FeedbackMail.compose(to:subject:body:over:)` writes a mail in
+`MFMailComposeViewController` where mail is set up, else through its
+`mailto:` link. Links leave the game through `SystemLinks.open`. Apple TV has
+no sheet, pasteboard, review page or mail. Every address, ID and word is the
+game's own.
 
 ### Store (`PlatformStore`)
 
