@@ -1,0 +1,965 @@
+{
+ "skeleton": {
+  "spine": "4.2.40",
+  "referenceScale": 100
+ },
+ "bones": [
+  {
+   "name": "root"
+  },
+  {
+   "name": "move",
+   "parent": "root"
+  },
+  {
+   "name": "hip",
+   "parent": "move",
+   "y": 50
+  },
+  {
+   "name": "spine",
+   "parent": "hip",
+   "length": 40,
+   "rotation": 90,
+   "shearX": 5,
+   "scaleX": 1.1
+  },
+  {
+   "name": "arm",
+   "parent": "spine",
+   "length": 30,
+   "x": 40,
+   "rotation": -30,
+   "inherit": "noScale"
+  },
+  {
+   "name": "hand",
+   "parent": "arm",
+   "length": 20,
+   "x": 30,
+   "inherit": "onlyTranslation"
+  },
+  {
+   "name": "crest",
+   "parent": "spine",
+   "x": 20,
+   "scaleY": -1,
+   "inherit": "noRotationOrReflection"
+  },
+  {
+   "name": "fin",
+   "parent": "arm",
+   "x": 15,
+   "rotation": 20,
+   "length": 12,
+   "inherit": "noScaleOrReflection"
+  },
+  {
+   "name": "legTarget",
+   "parent": "root",
+   "x": 30,
+   "y": 5
+  },
+  {
+   "name": "leg1",
+   "parent": "hip",
+   "length": 30,
+   "rotation": -80
+  },
+  {
+   "name": "leg2",
+   "parent": "leg1",
+   "x": 30,
+   "length": 30,
+   "rotation": 20
+  },
+  {
+   "name": "tail",
+   "parent": "hip",
+   "length": 25,
+   "x": -10,
+   "rotation": 200
+  },
+  {
+   "name": "tail2",
+   "parent": "tail",
+   "x": 25,
+   "length": 20
+  },
+  {
+   "name": "p1",
+   "parent": "root",
+   "length": 10
+  },
+  {
+   "name": "p2",
+   "parent": "p1",
+   "x": 10,
+   "length": 10
+  },
+  {
+   "name": "p3",
+   "parent": "p2",
+   "x": 10,
+   "length": 10
+  },
+  {
+   "name": "follower",
+   "parent": "root",
+   "x": -40,
+   "y": 20
+  },
+  {
+   "name": "lookTarget",
+   "parent": "root",
+   "x": 80,
+   "y": 100
+  }
+ ],
+ "slots": [
+  {
+   "name": "body",
+   "bone": "spine",
+   "attachment": "body"
+  },
+  {
+   "name": "clip",
+   "bone": "hip",
+   "attachment": "clip"
+  },
+  {
+   "name": "head",
+   "bone": "spine",
+   "attachment": "head",
+   "color": "ffe0c0ff"
+  },
+  {
+   "name": "flag",
+   "bone": "hand",
+   "attachment": "flag"
+  },
+  {
+   "name": "trail",
+   "bone": "root",
+   "attachment": "trail"
+  },
+  {
+   "name": "shade",
+   "bone": "crest",
+   "attachment": "shade",
+   "dark": "404040"
+  },
+  {
+   "name": "tip",
+   "bone": "tail2",
+   "attachment": "tip"
+  }
+ ],
+ "ik": [
+  {
+   "name": "legIk",
+   "order": 0,
+   "bones": [
+    "leg1",
+    "leg2"
+   ],
+   "target": "legTarget",
+   "bendPositive": false,
+   "mix": 0.9,
+   "softness": 5
+  },
+  {
+   "name": "finIk",
+   "order": 1,
+   "bones": [
+    "fin"
+   ],
+   "target": "lookTarget",
+   "mix": 0.5,
+   "compress": true,
+   "stretch": true
+  }
+ ],
+ "transform": [
+  {
+   "name": "follow",
+   "order": 2,
+   "bones": [
+    "follower"
+   ],
+   "target": "spine",
+   "rotation": 10,
+   "x": 5,
+   "mixRotate": 0.5,
+   "mixX": 0.5,
+   "mixY": 0.3,
+   "mixScaleX": 0.3,
+   "mixShearY": 0.2
+  },
+  {
+   "name": "followLocal",
+   "order": 3,
+   "bones": [
+    "crest"
+   ],
+   "target": "arm",
+   "local": true,
+   "relative": true,
+   "mixRotate": 0.3,
+   "mixX": 0.2,
+   "mixScaleX": 0.2,
+   "mixShearY": 0.1
+  }
+ ],
+ "path": [
+  {
+   "name": "chain",
+   "order": 4,
+   "bones": [
+    "p1",
+    "p2",
+    "p3"
+   ],
+   "target": "trail",
+   "rotateMode": "chainScale",
+   "spacingMode": "percent",
+   "spacing": 0.2,
+   "position": 0.1,
+   "mixRotate": 0.8,
+   "mixX": 0.9
+  }
+ ],
+ "physics": [
+  {
+   "name": "tailPhysics",
+   "order": 5,
+   "bone": "tail",
+   "rotate": 1,
+   "x": 0.5,
+   "y": 0.3,
+   "inertia": 0.6,
+   "strength": 150,
+   "damping": 0.8,
+   "mass": 1.5,
+   "wind": 2,
+   "gravity": 3,
+   "limit": 2000
+  },
+  {
+   "name": "tail2Physics",
+   "order": 6,
+   "bone": "tail2",
+   "rotate": 0.8,
+   "scaleX": 0.5,
+   "shearX": 0.4,
+   "inertia": 0.5,
+   "strength": 200,
+   "damping": 0.7,
+   "fps": 30
+  }
+ ],
+ "skins": [
+  {
+   "name": "default",
+   "attachments": {
+    "body": {
+     "body": {
+      "type": "mesh",
+      "uvs": [
+       0,
+       1,
+       1,
+       1,
+       1,
+       0,
+       0,
+       0
+      ],
+      "triangles": [
+       0,
+       1,
+       2,
+       2,
+       3,
+       0
+      ],
+      "vertices": [
+       2,
+       2,
+       -15,
+       -5,
+       0.6,
+       3,
+       -5,
+       15,
+       0.4,
+       2,
+       2,
+       15,
+       -5,
+       0.5,
+       3,
+       -5,
+       -15,
+       0.5,
+       2,
+       2,
+       15,
+       40,
+       0.25,
+       3,
+       40,
+       -15,
+       0.75,
+       1,
+       3,
+       40,
+       15,
+       1
+      ],
+      "hull": 4,
+      "width": 40,
+      "height": 60,
+      "color": "f0f0ffff"
+     }
+    },
+    "clip": {
+     "clip": {
+      "type": "clipping",
+      "end": "flag",
+      "vertexCount": 4,
+      "vertices": [
+       -30,
+       -10,
+       30,
+       -10,
+       30,
+       80,
+       -30,
+       80
+      ]
+     }
+    },
+    "head": {
+     "head": {
+      "x": 10,
+      "y": 0,
+      "rotation": -90,
+      "width": 30,
+      "height": 24,
+      "scaleX": 1.2,
+      "color": "ffffffc0"
+     },
+     "head2": {
+      "x": 12,
+      "y": 2,
+      "width": 28,
+      "height": 22
+     }
+    },
+    "flag": {
+     "flag": {
+      "type": "mesh",
+      "uvs": [
+       0,
+       1,
+       1,
+       1,
+       1,
+       0,
+       0,
+       0
+      ],
+      "triangles": [
+       0,
+       1,
+       2,
+       2,
+       3,
+       0
+      ],
+      "vertices": [
+       0,
+       -5,
+       20,
+       -5,
+       20,
+       5,
+       0,
+       5
+      ],
+      "hull": 4,
+      "width": 20,
+      "height": 10
+     }
+    },
+    "trail": {
+     "trail": {
+      "type": "path",
+      "closed": false,
+      "constantSpeed": true,
+      "lengths": [
+       90,
+       180,
+       270
+      ],
+      "vertexCount": 9,
+      "vertices": [
+       -60,
+       0,
+       -50,
+       0,
+       -40,
+       20,
+       0,
+       40,
+       20,
+       50,
+       40,
+       40,
+       60,
+       20,
+       70,
+       10,
+       80,
+       0
+      ]
+     }
+    },
+    "shade": {
+     "shade": {
+      "width": 10,
+      "height": 10
+     }
+    },
+    "tip": {
+     "tip": {
+      "x": 4,
+      "width": 8,
+      "height": 8
+     }
+    }
+   }
+  }
+ ],
+ "animations": {
+  "idle": {
+   "bones": {
+    "move": {
+     "translate": [
+      {
+       "time": 0
+      },
+      {
+       "time": 0.5,
+       "y": 10,
+       "curve": [
+        0.6,
+        0,
+        0.9,
+        0,
+        0.6,
+        10,
+        0.9,
+        0
+       ]
+      },
+      {
+       "time": 1
+      }
+     ]
+    },
+    "spine": {
+     "rotate": [
+      {
+       "value": 0,
+       "curve": [
+        0.25,
+        0,
+        0.25,
+        15
+       ]
+      },
+      {
+       "time": 0.5,
+       "value": 15
+      },
+      {
+       "time": 1,
+       "value": 0
+      }
+     ],
+     "scale": [
+      {
+       "x": 1,
+       "y": 1
+      },
+      {
+       "time": 0.5,
+       "x": 1.1,
+       "y": 0.9,
+       "curve": "stepped"
+      },
+      {
+       "time": 1
+      }
+     ],
+     "shear": [
+      {
+       "time": 0
+      },
+      {
+       "time": 0.5,
+       "x": 5,
+       "y": -3
+      },
+      {
+       "time": 1
+      }
+     ]
+    },
+    "arm": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 0.3,
+       "value": 170
+      },
+      {
+       "time": 0.6,
+       "value": -170
+      },
+      {
+       "time": 1,
+       "value": 0
+      }
+     ]
+    },
+    "hip": {
+     "scalex": [
+      {
+       "value": 1
+      },
+      {
+       "time": 0.5,
+       "value": 0.9
+      },
+      {
+       "time": 1,
+       "value": 1
+      }
+     ],
+     "sheary": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": 4
+      }
+     ]
+    },
+    "legTarget": {
+     "translatex": [
+      {
+       "value": 0
+      },
+      {
+       "time": 0.5,
+       "value": 15
+      },
+      {
+       "time": 1,
+       "value": 0
+      }
+     ]
+    },
+    "lookTarget": {
+     "translatey": [
+      {
+       "value": 0
+      },
+      {
+       "time": 0.5,
+       "value": -30
+      },
+      {
+       "time": 1,
+       "value": 0
+      }
+     ]
+    }
+   },
+   "slots": {
+    "head": {
+     "rgba": [
+      {
+       "time": 0,
+       "color": "ffffffff"
+      },
+      {
+       "time": 0.5,
+       "color": "ff0000c0",
+       "curve": [
+        0.6,
+        1,
+        0.7,
+        1,
+        0.6,
+        0,
+        0.7,
+        0,
+        0.6,
+        0,
+        0.7,
+        0,
+        0.6,
+        0.75,
+        0.7,
+        1
+       ]
+      },
+      {
+       "time": 1,
+       "color": "ffffffff"
+      }
+     ],
+     "attachment": [
+      {
+       "time": 0,
+       "name": "head"
+      },
+      {
+       "time": 0.7,
+       "name": "head2"
+      }
+     ]
+    },
+    "shade": {
+     "rgba2": [
+      {
+       "time": 0,
+       "light": "ffffffff",
+       "dark": "404040"
+      },
+      {
+       "time": 1,
+       "light": "80ff80ff",
+       "dark": "000000"
+      }
+     ]
+    },
+    "tip": {
+     "alpha": [
+      {
+       "time": 0,
+       "value": 1
+      },
+      {
+       "time": 0.5,
+       "value": 0.2
+      },
+      {
+       "time": 1,
+       "value": 1
+      }
+     ]
+    },
+    "body": {
+     "rgb": [
+      {
+       "color": "ffffff"
+      },
+      {
+       "time": 1,
+       "color": "8080ff"
+      }
+     ]
+    }
+   },
+   "attachments": {
+    "default": {
+     "flag": {
+      "flag": {
+       "deform": [
+        {
+         "time": 0
+        },
+        {
+         "time": 0.5,
+         "offset": 2,
+         "vertices": [
+          3,
+          4,
+          0,
+          6
+         ],
+         "curve": [
+          0.6,
+          0,
+          0.9,
+          1
+         ]
+        },
+        {
+         "time": 1
+        }
+       ]
+      }
+     },
+     "body": {
+      "body": {
+       "deform": [
+        {
+         "time": 0
+        },
+        {
+         "time": 0.5,
+         "offset": 0,
+         "vertices": [
+          2,
+          1,
+          0,
+          0,
+          -1,
+          3
+         ]
+        },
+        {
+         "time": 1
+        }
+       ]
+      }
+     }
+    }
+   }
+  },
+  "walk": {
+   "bones": {
+    "spine": {
+     "rotate": [
+      {
+       "value": -10
+      },
+      {
+       "time": 0.4,
+       "value": 10
+      },
+      {
+       "time": 0.8,
+       "value": -10
+      }
+     ]
+    },
+    "move": {
+     "translatey": [
+      {
+       "value": 0
+      },
+      {
+       "time": 0.2,
+       "value": 8
+      },
+      {
+       "time": 0.4,
+       "value": 0
+      },
+      {
+       "time": 0.6,
+       "value": 8
+      },
+      {
+       "time": 0.8,
+       "value": 0
+      }
+     ]
+    },
+    "arm": {
+     "rotate": [
+      {
+       "value": -20
+      },
+      {
+       "time": 0.4,
+       "value": 40
+      },
+      {
+       "time": 0.8,
+       "value": -20
+      }
+     ]
+    },
+    "hip": {
+     "translate": [
+      {
+       "x": 0
+      },
+      {
+       "time": 0.4,
+       "x": 6,
+       "y": -2
+      },
+      {
+       "time": 0.8,
+       "x": 0
+      }
+     ]
+    }
+   },
+   "slots": {
+    "head": {
+     "attachment": [
+      {
+       "name": "head2"
+      },
+      {
+       "time": 0.4,
+       "name": null
+      }
+     ]
+    },
+    "tip": {
+     "rgb": [
+      {
+       "color": "ffffff"
+      },
+      {
+       "time": 0.4,
+       "color": "ff8000"
+      },
+      {
+       "time": 0.8,
+       "color": "ffffff"
+      }
+     ]
+    }
+   }
+  },
+  "wave": {
+   "bones": {
+    "arm": {
+     "rotate": [
+      {
+       "value": 30
+      },
+      {
+       "time": 0.3,
+       "value": -30
+      },
+      {
+       "time": 0.6,
+       "value": 30
+      }
+     ]
+    },
+    "hand": {
+     "scale": [
+      {
+       "x": 1
+      },
+      {
+       "time": 0.3,
+       "x": 1.4,
+       "y": 0.8
+      },
+      {
+       "time": 0.6,
+       "x": 1
+      }
+     ]
+    }
+   }
+  },
+  "jump": {
+   "bones": {
+    "move": {
+     "translatey": [
+      {
+       "value": 0,
+       "curve": [
+        0.1,
+        20,
+        0.2,
+        40
+       ]
+      },
+      {
+       "time": 0.3,
+       "value": 40,
+       "curve": [
+        0.4,
+        40,
+        0.5,
+        20
+       ]
+      },
+      {
+       "time": 0.6,
+       "value": 0
+      }
+     ]
+    },
+    "spine": {
+     "scaley": [
+      {
+       "value": 1
+      },
+      {
+       "time": 0.3,
+       "value": 1.2
+      },
+      {
+       "time": 0.6,
+       "value": 1
+      }
+     ]
+    }
+   }
+  }
+ },
+ "note": "a game's own field",
+ "atlas": {
+  "body": [
+   0,
+   40,
+   40,
+   60
+  ],
+  "head": [
+   0,
+   0,
+   30,
+   24
+  ],
+  "head2": [
+   30,
+   0,
+   28,
+   22
+  ],
+  "flag": [
+   0,
+   30,
+   20,
+   10
+  ],
+  "shade": [
+   60,
+   0,
+   10,
+   10
+  ],
+  "tip": [
+   70,
+   0,
+   8,
+   8
+  ]
+ },
+ "atlasSize": [
+  128,
+  128
+ ]
+}

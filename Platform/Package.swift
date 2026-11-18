@@ -42,6 +42,7 @@ let package = Package(
     products: [
         .library(name: "Macros", targets: ["Macros"]),
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
+        .library(name: "PlatformRigs", targets: ["PlatformRigs"]),
         .library(name: "PlatformAudio", targets: ["PlatformAudio"]),
         .library(name: "PlatformInput", targets: ["PlatformInput"]),
         .library(name: "PlatformDisplay", targets: ["PlatformDisplay"]),
@@ -78,6 +79,18 @@ let package = Package(
             ],
             swiftSettings: settings
         ),
+        // Spine skeletons played and drawn: the runtime (`RigData`,
+        // `RigPose`, spine-core 4.2), their meshes as SpriteKit draws them
+        // (`RigMeshNode`) and the node that plays one (`RigNode`).
+        .target(
+            name: "PlatformRigs",
+            dependencies: [
+                "PlatformCore",
+                "Macros",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
         // Focus for the Apple TV remote, gamepads and the Mac's pointer,
         // moving between a scene's controls; gamepads (GameController on
         // Apple, the shell's `GamepadEvents` on Android); the keyboard's
@@ -98,6 +111,12 @@ let package = Package(
                 "PlatformCore",
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformRigsTests",
+            dependencies: ["PlatformRigs"],
+            resources: [.copy("Fixtures")],
             swiftSettings: settings
         ),
         .testTarget(

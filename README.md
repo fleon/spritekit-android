@@ -78,8 +78,9 @@ Platform/            The platform code games share, on Apple platforms and
                      gamepads and the pointer; keyboard and Menu protocols),
                      `PlatformDisplay` (frame-rate and graphics settings
                      with Auto), `PlatformGameCenter` (sign-in,
-                     achievements, leaderboards) and `PlatformStore`
-                     (in-app purchases). See "Shared platform code".
+                     achievements, leaderboards), `PlatformStore` (in-app
+                     purchases) and `PlatformRigs` (Spine 4.2 skeletons,
+                     posed and drawn). See "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -386,6 +387,68 @@ view's delegate; the game calls `apply()` as each scene change starts,
 display members (`displayChoices`, `observeDisplayChoices`, `isMeasured`,
 `setRunning`, `noteAutoChosen`, `pinnedRenderScale`) from
 `DisplaySettings`, so it needn't write them.
+
+### Spine rigs (`PlatformRigs`)
+
+A port of spine-core 4.2's runtime, played and drawn in SpriteKit. Use of
+the Spine Runtimes is subject to the Spine Runtimes License: a game that
+ships it needs a Spine license.
+
+- `RigData` reads a skeleton Spine 4.2 exported as JSON, its images packed
+  into one texture whose places a top-level `atlas` table gives (`[x, y,
+  width, height]` in pixels, y down, by image name). It reads bones in every
+  inherit mode, shear, slot colours, the default skin's regions, meshes
+  (weighted or not), clips and paths, IK, transform, path and physics
+  constraints, and bone, colour, two-colour (its light colour), attachment
+  and deform keys; a JSON's other top-level fields are kept in `extras`.
+  `RigData.named(_:)` reads a rig once and keeps it; by default it reads
+  `Rig<name>.json` and `.png` from the bundle, and a game that packs rigs
+  its own way sets `RigData.loader`.
+- `RigPose` is AnimationState and Skeleton: tracks played, queued and
+  cleared (`setAnimation`, `addAnimation(delay:)`, `clearTrack`), crossfades
+  (`defaultMix`, `setMix(from:to:duration:)`, an entry's `mixDuration`),
+  listeners (`onStart`, `onInterrupt`, `onEnd`, `onComplete`), `timeScale`,
+  `skeletonColor`, and `play(_:loop:rate:from:until:then:rise:mix:track:)`,
+  which plays at a rate (backwards down to `until`), from a time, then hands
+  over to another animation, and scales how high `riseBone` lifts. `origin`
+  is where the skeleton stands: physics trails behind as it moves, and every
+  position read back (`boneTransform`, `worldVertices`) is relative to it,
+  with weighted vertices taken relative to it before weighting.
+- `RigNode` plays one: each mesh, and each region as its quad, draws as its
+  own triangles (`RigMeshNode`), tinted, in slot order; clips mask what they
+  hold. It ticks itself, trails physics behind its moves through the scene
+  (`feelsMoves`), holds still while hidden, carries nodes on bones
+  (`carry(_:on:)`), and caches its parts as one texture while it stands
+  still (`caching:`, or a subclass's `mayCache`). Subclass it for what a
+  game draws on a rig (`didRender()`).
+- `RigMeshNode`: on Apple platforms, sprites whose shader tests each pixel
+  against a few triangles; on the shim, one sprite carrying its triangles
+  (`SKTriangleMesh`). A game shades meshes its own way (a light, a normal
+  map) with `RigMeshNode.Shading`: GLSL run on each texel and on the
+  result, with its uniforms. Shaders with attributes are primed before they
+  draw (`AttributeShaders`, `RigMeshNode.primePending`, `primingGate`,
+  `forgetShaders(where:)`); `ShaderPrimer` primes a screen's other shaders a
+  few a frame.
+
+```swift
+// At launch, for rigs packed as a deflated skeleton plus a places JSON
+RigData.loader = { name in MyRigs.read(name) }   // returns RigData(json:textureURL:)
+// A rig
+let rig = RigNode(name: "Hero", unit: 0.5, slotZ: 0.001)
+rig?.pose.defaultMix = 0.15
+rig?.pose.riseBone = rig?.data.bone(named: "move")
+rig?.play("jump", loop: false, then: "idle", rise: 40)
+```
+
+`Platform/Tools/Rig/verify-pose.js` checks the runtime against spine-core
+4.2, frame by frame: it plays every animation of a folder of rigs (looping,
+crossfading, travelling) and any schedules given through `RigPose` and
+spine-core alike, and prints the largest differences in bone transforms,
+vertices and colours, and any attachments and listener events that differ
+(`node Platform/Tools/Rig/verify-pose.js --rigs <dir> --spine-core <dir of
+@esotericsoftware/spine-core>`). The tests' synthetic skeleton
+(`Tests/PlatformRigsTests/Fixtures/RigTest.json`) uses every feature, and its
+frames as spine-core posed them are checked in the tests.
 
 Checks: `swift test --package-path Platform` on the host, the Apple builds
 (`xcodebuild -scheme <product> -destination 'generic/platform=iOS
