@@ -37,8 +37,10 @@ open class SKRenderer {
         mainActorUnchecked {
             scene.update(currentTime)
             scene.tickActions(delta)
+            scene.didEvaluateActions()
             scene.applyConstraints()
             scene.didApplyConstraints()
+            scene.didFinishUpdate()
         }
     }
 

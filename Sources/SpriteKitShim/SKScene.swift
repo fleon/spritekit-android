@@ -45,14 +45,26 @@ open class SKScene: SKNode {
         super.init()
     }
 
+    /// A 1 × 1 scene, as SpriteKit's `SKScene()` is (measured on a Mac).
+    /// Designated, as it is there, so a subclass can override it and pass
+    /// its own size up.
+    public override init() {
+        size = CGSize(width: 1, height: 1)
+        super.init()
+    }
+
     /// Called once the scene is in a view.
     open func didMove(to view: SKView) {}
     open func willMove(from view: SKView) {}
 
     /// Called once a frame, before actions are advanced.
     open func update(_ currentTime: TimeInterval) {}
+    /// Called once a frame, after the actions are advanced.
+    open func didEvaluateActions() {}
     /// Called once a frame, after the constraints are applied.
     open func didApplyConstraints() {}
+    /// Called once a frame, last before the scene is drawn.
+    open func didFinishUpdate() {}
     open func didChangeSize(_ oldSize: CGSize) {}
 
     /// The scene's size, placed by its anchor point: a scene anchored at its
