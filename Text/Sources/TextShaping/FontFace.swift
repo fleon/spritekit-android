@@ -167,6 +167,12 @@ final class FaceHandle {
     }
 
     private static func readInstanceNames(_ face: FT_Face) -> [String] {
+        readInstances(face).map(\.name)
+    }
+
+    /// A variable font's named instances: each one's PostScript name, its
+    /// style (subfamily) name and its `wght` value, if it has the axis.
+    private static func readInstances(_ face: FT_Face) -> [(name: String, style: String, wght: Int?)] {
         guard FT_Long(face.pointee.face_flags) & FT_FACE_FLAG_MULTIPLE_MASTERS != 0 else {
             return []
         }
@@ -176,10 +182,44 @@ final class FaceHandle {
 
         let count = Int(master.pointee.num_namedstyles)
         guard count > 0, let styles = master.pointee.namedstyle else { return [] }
+        let axes = master.pointee.axis.map { axis in
+            (0..<Int(master.pointee.num_axis)).map { axis[$0].tag }
+        } ?? []
+        let wghtAxis = axes.firstIndex(of: 0x7767_6874)
         return (0..<count).map { index in
-            sfntName(face, id: styles[index].psid)
-                ?? sfntName(face, id: styles[index].strid)
-                ?? ""
+            let style = sfntName(face, id: styles[index].strid) ?? ""
+            let wght = wghtAxis.flatMap { axis in
+                styles[index].coords.map { Int((Double($0[axis]) / 65536).rounded()) }
+            }
+            return (sfntName(face, id: styles[index].psid) ?? style, style, wght)
+        }
+    }
+
+    /// The file's faces as a font descriptor matches them: each named
+    /// instance, else the face itself, with its family, style, weight
+    /// (an instance's `wght`, else the OS/2 weight class) and slant.
+    var catalogFaces: [CatalogFace] {
+        run {
+            guard let face = ftFace else { return [] }
+            let family = face.pointee.family_name.map { String(cString: $0) } ?? ""
+            let italic = FT_Long(face.pointee.style_flags) & FT_Long(FT_STYLE_FLAG_ITALIC) != 0
+            var weightClass = 400
+            if let os2 = FT_Get_Sfnt_Table(face, FT_SFNT_OS2)?.assumingMemoryBound(to: TT_OS2.self),
+               os2.pointee.version != 0xFFFF {
+                weightClass = Int(os2.pointee.usWeightClass)
+            }
+            let instances = FaceHandle.readInstances(face).filter { !$0.name.isEmpty }
+            guard instances.isEmpty else {
+                return instances.map {
+                    CatalogFace(
+                        name: $0.name, family: family, style: $0.style, weightClass: $0.wght ?? weightClass,
+                        isItalic: italic, isInstance: true
+                    )
+                }
+            }
+            guard let name = FaceHandle.postScriptName(face) else { return [] }
+            let style = face.pointee.style_name.map { String(cString: $0) } ?? ""
+            return [CatalogFace(name: name, family: family, style: style, weightClass: weightClass, isItalic: italic, isInstance: false)]
         }
     }
 

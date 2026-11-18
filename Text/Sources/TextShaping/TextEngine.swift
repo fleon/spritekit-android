@@ -110,6 +110,14 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         library.hasName(name)
     }
 
+    public func face(named name: String) -> CatalogFace? {
+        library.describedFace(named: name)
+    }
+
+    public func faces(inFamily family: String) -> [CatalogFace] {
+        library.describedFaces(inFamily: family)
+    }
+
     /// Registers the device's own face as the system font: Roboto, which
     /// on Android 12 and later is one variable file whose named instances are
     /// its weights, and before that a file a weight. What

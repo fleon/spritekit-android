@@ -58,6 +58,52 @@ public protocol FontCatalog: AnyObject, Sendable {
     /// device's own (Roboto on Android), the way the system font on Apple is
     /// SF.
     var systemFaceNames: [String] { get }
+
+    /// The registered face `name` (a PostScript or instance name, any case,
+    /// as CoreText matches one) stands for. Nil for a family's name or an
+    /// unknown one.
+    func face(named name: String) -> CatalogFace?
+
+    /// The registered faces of `family` (any case), every file's: what a
+    /// descriptor's family resolves among.
+    func faces(inFamily family: String) -> [CatalogFace]
+}
+
+extension FontCatalog {
+    public func face(named name: String) -> CatalogFace? { nil }
+    public func faces(inFamily family: String) -> [CatalogFace] { [] }
+}
+
+/// One registered face as CoreText describes it to a font descriptor.
+public struct CatalogFace: Hashable, Sendable {
+    /// Its PostScript name, the one `UIFont(name:size:)` takes.
+    public var name: String
+    /// The font's family name, as FreeType reads it.
+    public var family: String
+    /// Its style ("Black", "Bold Italic"): a named instance's subfamily
+    /// name, else the face's own.
+    public var style: String
+    /// A named instance's `wght` value, else the OS/2 weight class.
+    public var weightClass: Int
+    public var isItalic: Bool
+    /// One of a variable font's named instances.
+    public var isInstance: Bool
+
+    public init(name: String, family: String, style: String, weightClass: Int, isItalic: Bool, isInstance: Bool) {
+        self.name = name
+        self.family = family
+        self.style = style
+        self.weightClass = weightClass
+        self.isItalic = isItalic
+        self.isInstance = isInstance
+    }
+
+    /// CoreText's weight trait for the face (`SystemFontFaces.faceTrait`).
+    public var weightTrait: CGFloat { SystemFontFaces.faceTrait(forWeightClass: weightClass) }
+
+    /// CoreText marks a face bold from SemiBold up: weight trait 0.3 and
+    /// over (all 515 of a Mac's installed faces).
+    public var isBold: Bool { weightTrait >= SystemFontFaces.faceTrait(forWeightClass: 600) }
 }
 
 /// What registering a font file came to, as CoreText reports it: a second
@@ -103,11 +149,37 @@ public enum SystemFontFaces {
             guard let entry = styleWeights.first(where: { $0.style == style }) else { return nil }
             return (name, entry.weight)
         }
-        return weighted.min { a, b in
-            let da = abs(a.weight - target), db = abs(b.weight - target)
-            if da != db { return da < db }
-            return target >= 400 ? a.weight > b.weight : a.weight < b.weight
+        return nearest(weighted, to: Double(target), weight: { Double($0.weight) }) { a, b in
+            target >= 400 ? a.weight > b.weight : a.weight < b.weight
         }?.name
+    }
+
+    /// CoreText's weight trait for a face of weight class `weightClass`
+    /// (a static face's OS/2 class, a named instance's `wght`), measured on
+    /// a variable font's instances every 25 from 50 to 1000: these at the
+    /// hundreds, straight between them, and 100's and 900's beyond. Stored
+    /// as CoreText stores it, a `Float`.
+    public static func faceTrait(forWeightClass weightClass: Int) -> CGFloat {
+        let traits: [Float] = [-0.6, -0.4, -0.23, 0, 0.2, 0.3, 0.4, 0.6, 0.8]
+        let position = Float(min(900, max(100, weightClass)) - 100) / 100
+        let index = Int(position)
+        let fraction = position - Float(index)
+        guard fraction > 0 else { return CGFloat(traits[index]) }
+        return CGFloat(traits[index] + (traits[index + 1] - traits[index]) * fraction)
+    }
+
+    /// The face of `faces` whose weight is nearest `target`; between two
+    /// equally near, the one `prefer` puts first (else the earlier).
+    static func nearest<Face>(
+        _ faces: [Face],
+        to target: Double,
+        weight: (Face) -> Double,
+        prefer: (Face, Face) -> Bool
+    ) -> Face? {
+        faces.min { a, b in
+            let da = abs(weight(a) - target), db = abs(weight(b) - target)
+            return da != db ? da < db : prefer(a, b)
+        }
     }
 }
 
