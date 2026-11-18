@@ -3,14 +3,26 @@ import Foundation
 /// Buying a game's products, with StoreKit taken out from under its store
 /// code.
 ///
-/// What a game keeps about what's owned is its own. Behind it sits one of
-/// three backends: `PlayBilling` (Google Play, through `PlatformChannel`),
+/// What a game keeps about what's owned is its own (Platform's
+/// `StoreManager` keeps it for a game that uses it). Behind it sits one of
+/// these backends: `StoreKitBilling` on Apple (in Platform's
+/// `PlatformStore`), `PlayBilling` (Google Play, through `PlatformChannel`),
 /// `SimulatedBilling` (a debug build's simulated purchases: granted
 /// locally, no money moves) or `NoBilling` (no store at all, as on a host
 /// test).
+///
+/// A product is owned (a non-consumable) or used up (a consumable): a
+/// consumable bought is never owned, but handed to `deliver` once.
 public protocol BillingBackend: AnyObject {
-    /// The product's price in the player's currency, once it is known.
+    /// The first product's price in the player's currency, once it is
+    /// known: for a game that sells one product.
     var displayPrice: String? { get }
+    /// A product's price in the player's currency, once it is known.
+    func price(of productID: String) -> String?
+    /// Hands the game each consumable bought: the product and how many.
+    /// Until it is set, a consumable bought is held, neither delivered nor
+    /// used up, so nothing is lost before the game can take it.
+    var deliver: ((_ productID: String, _ quantity: Int) -> Void)? { get set }
     /// Products the player owns, as the service reports them.
     var ownedProducts: Set<String> { get }
     /// Products that cost nothing where the player shops.
@@ -27,6 +39,15 @@ public protocol BillingBackend: AnyObject {
 
 public extension BillingBackend {
     var purchaseDates: [String: Date] { [:] }
+
+    /// A backend that sells one product, or keeps one price for all.
+    func price(of productID: String) -> String? { displayPrice }
+
+    /// A backend with no consumables.
+    var deliver: ((_ productID: String, _ quantity: Int) -> Void)? {
+        get { nil }
+        set {}
+    }
 }
 
 public enum BillingResult: Sendable {
@@ -53,7 +74,8 @@ public final class NoBilling: BillingBackend {
 
 /// Grants the purchase on this device at once, without a service, and keeps
 /// it across launches: a game's simulated purchases, as it may offer them on
-/// Apple, with somewhere to put the result.
+/// Apple, with somewhere to put the result. A consumable is delivered, one
+/// at a time, and never kept.
 public final class SimulatedBilling: BillingBackend {
     private enum Key {
         static let simulated = "store.simulatedProducts"
@@ -66,14 +88,24 @@ public final class SimulatedBilling: BillingBackend {
     private let defaults: UserDefaults
     private var changed: (() -> Void)?
     private var granted: Set<String>
+    /// Consumables bought before the game could take them.
+    private var held: [String] = []
+
+    /// Products bought to be used up rather than owned.
+    public let consumables: Set<String>
+    public var deliver: ((_ productID: String, _ quantity: Int) -> Void)? {
+        didSet { deliverHeld() }
+    }
 
     public var displayPrice: String? { Self.previewPrice }
+    public func price(of productID: String) -> String? { Self.previewPrice }
     public var ownedProducts: Set<String> { granted }
     public var freeProducts: Set<String> { [] }
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, consumables: Set<String> = []) {
         self.defaults = defaults
-        granted = Set(defaults.stringArray(forKey: Key.simulated) ?? [])
+        self.consumables = consumables
+        granted = Set(defaults.stringArray(forKey: Key.simulated) ?? []).subtracting(consumables)
     }
 
     public func start(changed: @escaping () -> Void) {
@@ -81,6 +113,11 @@ public final class SimulatedBilling: BillingBackend {
     }
 
     public func purchase(_ productID: String) async -> BillingResult {
+        if consumables.contains(productID) {
+            held.append(productID)
+            deliverHeld()
+            return .purchased
+        }
         guard !granted.contains(productID) else { return .purchased }
         granted.insert(productID)
         defaults.set(granted.sorted(), forKey: Key.simulated)
@@ -99,5 +136,12 @@ public final class SimulatedBilling: BillingBackend {
         granted = []
         defaults.removeObject(forKey: Key.simulated)
         changed?()
+    }
+
+    private func deliverHeld() {
+        guard let deliver else { return }
+        let bought = held
+        held = []
+        for productID in bought { deliver(productID, 1) }
     }
 }

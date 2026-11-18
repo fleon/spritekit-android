@@ -42,6 +42,8 @@ let package = Package(
     products: [
         .library(name: "Macros", targets: ["Macros"]),
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
+        .library(name: "PlatformGameCenter", targets: ["PlatformGameCenter"]),
+        .library(name: "PlatformStore", targets: ["PlatformStore"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -72,6 +74,39 @@ let package = Package(
         .testTarget(
             name: "PlatformCoreTests",
             dependencies: ["PlatformCore"],
+            swiftSettings: settings
+        ),
+        // Game Center: sign-in, achievements reported as they move, scores,
+        // the dashboard. GameKit on Apple; Play Games (PlatformShim) on
+        // Android.
+        .target(
+            name: "PlatformGameCenter",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformGameCenterTests",
+            dependencies: ["PlatformGameCenter"],
+            swiftSettings: settings
+        ),
+        // In-app purchases: what's owned and since when, prices, buying,
+        // consumables. StoreKit 2 on Apple; Play Billing (PlatformShim) on
+        // Android.
+        .target(
+            name: "PlatformStore",
+            dependencies: [
+                .product(name: "PlatformServices", package: "spritekit-android"),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformStoreTests",
+            dependencies: ["PlatformStore"],
             swiftSettings: settings
         ),
         .testTarget(

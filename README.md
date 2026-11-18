@@ -37,9 +37,9 @@ Package.swift        PlatformServices, SpriteKitShim, GLESRenderer,
                      macOS.
 Sources/
   PlatformServices/  Plain Foundation, on every platform: the protocols a
-                     game's audio, achievements, purchases and synced saved
-                     data stand on, the sync engine's merge and the render
-                     scale governor.
+                     game's audio, achievements, leaderboards, purchases and
+                     synced saved data stand on, the sync engine's merge and
+                     the render scale governor.
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
                      camera, SKRenderer, the UIKit / CoreGraphics /
@@ -64,10 +64,12 @@ Shell/               Android-only. The app shell: SDL3, the EGL context, the
                      frame loop and its pacing, input, audio, the GL backend
                      and `GameHost`, the seam a game's controller adopts.
 Platform/            The platform code games share, on Apple platforms and
-                     Android alike: `Macros` (`@NSCodingUnsupported`) and
+                     Android alike: `Macros` (`@NSCodingUnsupported`),
                      `PlatformCore` (geometry shorthands, timing curves and
-                     eased actions, seeded randomness). See "Shared platform
-                     code".
+                     eased actions, seeded randomness),
+                     `PlatformGameCenter` (sign-in, achievements,
+                     leaderboards) and `PlatformStore` (in-app purchases).
+                     See "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -116,6 +118,55 @@ PlatformCore`) in the files that use it.
 What belongs here: code a game's helpers and managers would otherwise copy
 that carries nothing of any one game. What a game configures (its sounds,
 products, achievements, constants) it passes in.
+
+### Game Center (`PlatformGameCenter`)
+
+`GameCenterManager` signs the player in at launch, reports achievements,
+sends scores and opens the dashboard and leaderboards, over
+`AchievementsBackend` and `LeaderboardsBackend`: GameKit on Apple
+(`GameKitAchievements`, `GameKitLeaderboards`), Play Games on Android
+(`usePlayGames(channel:mapping:)`, with `PlayGamesMapping(resource:)` reading
+the mapping the APK carries), `LocalAchievements` and `LocalLeaderboards`
+otherwise. A game configures it with:
+
+- `progress`: each achievement's percentage by its ID, from the game's saved
+  data and the moments recorded so far (`percent(_:of:)` and
+  `percent(when:)` round as the services count);
+- moments (`record(_:)`): firsts saved progress can't tell, kept under
+  `momentsKey`, or saved by the game itself (`saveMoments`,
+  `resetMoments`) when its synced saved data carries them;
+- `banners`: `.whenEarnedHere` (the default: not for what a sign-in catches
+  up or another device earned), `.always` or `.never`;
+- `logSubsystem`, and `resetsOnSignIn` for a debug reset.
+
+At each sign-in it loads what the service holds and sends only what has
+moved past it; a report that doesn't arrive is sent again next time.
+`start(presentSignIn:answered:)` hands GameKit's sheet to the game (or the
+top view controller) and runs `answered` at the first answer, which a launch
+screen may wait on. `player` (`GamePlayer`: the service's ID, name and
+GameKit's legacy `playerID`) and `signInChanged`/`playerChanged` are for a
+server or a credit; `submitScore(_:context:to:)`, `standing(on:)` and
+`showLeaderboards(_:)` for leaderboards.
+
+### Store (`PlatformStore`)
+
+`StoreManager` keeps what's owned, prices and purchase dates over a
+`BillingBackend`: `StoreKitBilling` (StoreKit 2) on Apple,
+`PlayBilling(channel:products:)` on Android, `SimulatedBilling` for a debug
+build's simulated purchases, `NoBilling` with no store. A game lists its
+products (`StoreProduct`: `.nonConsumable` or `.consumable`), with
+`deliver` for consumables, and an optional preview price. What's owned
+(bought, or free where the player shops) is cached, so locks are right
+before the store answers; the earliest purchase date and when the device
+first saw each product owned are kept, so `owned(_:by:)` grants an offer to
+whoever owned a product by a deadline. `StoreManager.didChange` is posted
+whenever anything moves.
+
+`StoreKitBilling` listens to `Transaction.updates`, finishes unfinished
+transactions, buys promoted purchases started on the App Store
+(`PurchaseIntent`), hides a promotion on a device that owns its product
+(`promoted`), and, with `confirm`, lets a server credit each transaction
+before it is finished.
 
 Checks: `swift test --package-path Platform` on the host, the Apple builds
 (`xcodebuild -scheme <product> -destination 'generic/platform=iOS
@@ -558,8 +609,10 @@ TestFlight shows nothing on iOS.
 
 The `GameKit` module answers a game's leaderboard code with Apple's
 signatures, on `GKLeaderboard.backend`: `PlayGamesLeaderboards`
-(`Sources/PlatformShim/Leaderboards.swift`), which a game installs at launch
-beside its achievements, or by default `LocalLeaderboards`, which has none.
+(`Sources/PlatformShim/PlayGamesLeaderboards.swift`), which a game installs
+at launch beside its achievements, or by default `LocalLeaderboards`, which
+has none. `LeaderboardsBackend` itself is in `PlatformServices`, so Apple
+builds share it (`PlatformGameCenter` puts GameKit behind it).
 
 - `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:)`, and the
   instance `submitScore(_:context:player:)`, each with a completion handler

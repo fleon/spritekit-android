@@ -29,9 +29,39 @@ public protocol AchievementsBackend: AnyObject {
     func showDashboard()
     /// The signed-in player's name and photo, for the game to credit them.
     func localPlayer() async -> (name: String, photo: Data?)?
+    /// Who is signed in, by the service's ID for them; nil while nobody is.
+    var player: GamePlayer? { get }
+    /// Called whenever `player` changes.
+    var playerChanged: ((GamePlayer?) -> Void)? { get set }
+}
+
+/// The player signed in to a game service: GameKit's local player, or Play
+/// Games'.
+public struct GamePlayer: Equatable, Sendable {
+    /// The service's ID for the player in this game (GameKit's
+    /// `gamePlayerID`, Play Games' player ID).
+    public var id: String
+    /// The name the service shows for them.
+    public var name: String
+    /// GameKit's older `playerID`, for a server that keyed accounts on it
+    /// before `gamePlayerID` existed; nil elsewhere.
+    public var legacyID: String?
+
+    public init(id: String, name: String, legacyID: String? = nil) {
+        self.id = id
+        self.name = name
+        self.legacyID = legacyID
+    }
 }
 
 public extension AchievementsBackend {
+    /// A service that can't say who is signed in.
+    var player: GamePlayer? { nil }
+    var playerChanged: ((GamePlayer?) -> Void)? {
+        get { nil }
+        set {}
+    }
+
     /// Whether a dashboard button opens the dashboard: when the player is
     /// signed in, or when the dashboard signs them in itself. Otherwise a
     /// game would tell them to sign in from Game Center's settings.

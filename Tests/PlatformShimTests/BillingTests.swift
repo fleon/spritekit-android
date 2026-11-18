@@ -56,6 +56,32 @@ struct BillingBackendTests {
         defaults.removePersistentDomain(forName: name)
     }
 
+    @Test("Every backend answers a price by product")
+    func pricesByProduct() {
+        #expect(NoBilling().price(of: fullGameID) == nil)
+        #expect(SimulatedBilling(defaults: scratchDefaults()).price(of: "any") == SimulatedBilling.previewPrice)
+    }
+
+    @Test("A simulated consumable is delivered, held till the game takes it, and never owned")
+    func simulatedConsumable() async {
+        let name = UUID().uuidString
+        let defaults = scratchDefaults(name)
+        let billing = SimulatedBilling(defaults: defaults, consumables: ["pack"])
+        billing.start {}
+        #expect(await billing.purchase("pack") == .purchased)
+        var delivered: [String] = []
+        billing.deliver = { product, quantity in delivered.append("\(product)×\(quantity)") }
+        #expect(delivered == ["pack×1"])
+        _ = await billing.purchase("pack")
+        #expect(delivered == ["pack×1", "pack×1"])
+        #expect(billing.ownedProducts.isEmpty)
+        // A backend with no consumables takes `deliver` and ignores it.
+        let none: BillingBackend = NoBilling()
+        none.deliver = { _, _ in }
+        #expect(none.deliver == nil)
+        defaults.removePersistentDomain(forName: name)
+    }
+
     @Test("Forgetting a simulated purchase leaves nothing owned")
     func forget() async {
         let name = UUID().uuidString
