@@ -477,7 +477,11 @@ holds:
 
 - **Its sources**, as symlinks into the game's `Source/` at their own paths,
   leaving out the Apple app's entry (`AppDelegate`, `SceneDelegate`, the view
-  controller) and the managers that reach Apple's services.
+  controller) and the managers that reach Apple's services. Link whole
+  folders, not files one by one, so a file the Apple build adds compiles on
+  Android too rather than going missing: what a folder leaves out goes in the
+  target's `exclude:` (or an Apple-only subfolder), and a file is linked on
+  its own only where its folder can't be.
 - **A controller** adopting `GameHost`: the Android counterpart of the game's
   view controller and app delegate (launch work in the Apple order, the
   first scene, layout, Back, keys, links).
