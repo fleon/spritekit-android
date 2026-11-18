@@ -67,6 +67,9 @@ struct ColorTests {
         #expect(UIColor(hex: " 0x336699 ").map(components) == [0x33, 0x66, 0x99, 255])
         #expect(UIColor(hex: "3366zz").map(components) == [0, 0x33, 0x66, 255])
         #expect(UIColor(hex: "zz") == nil)
+        // As `Scanner.scanHexInt64`: a bare `0x` is the 0, and only ASCII digits count.
+        #expect(UIColor(hex: "0x").map(components) == [0, 0, 0, 255])
+        #expect(UIColor(hex: "\u{FF11}\u{FF12}") == nil)
         #expect(components(rgb(1, 2, 3)) == [1, 2, 3, 255])
     }
 

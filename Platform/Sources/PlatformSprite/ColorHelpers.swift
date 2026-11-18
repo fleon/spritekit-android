@@ -51,9 +51,11 @@ extension UIColor {
     }
 
     nonisolated static func hexValue(_ text: String) -> UInt64? {
+        let isDigit = { (c: Character) in c.isASCII && c.isHexDigit }
         var digits = Substring(text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: ""))
-        if digits.lowercased().hasPrefix("0x") { digits = digits.dropFirst(2) }
-        let run = digits.prefix { $0.isHexDigit }
+        // A `0x` with no digits after it reads as the 0 alone.
+        if digits.lowercased().hasPrefix("0x"), digits.dropFirst(2).first.map(isDigit) == true { digits = digits.dropFirst(2) }
+        let run = digits.prefix(while: isDigit)
         guard !run.isEmpty else { return nil }
         // As `scanHexInt64`, an overflowing run reads as the largest value.
         return UInt64(run, radix: 16) ?? .max
