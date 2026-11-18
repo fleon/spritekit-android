@@ -96,10 +96,21 @@ public struct SpriteBatcher {
     /// and thrown away, as the renderer composites what it kept.
     public var rasterIsFresh: ((_ owner: ObjectIdentifier, _ generation: UInt64, _ digest: UInt64) -> Bool)?
 
+    /// Shapes as triangles (`ShapeTessellator`), merged into the colour
+    /// batches around them. Nil, or a shape it can't take, and the shape is
+    /// a pass of its own, drawn through its mask.
+    public var shapeMeshes: ShapeMeshes?
+
     public func passes(for list: DrawList) -> [Pass] {
+        passes(for: list, tessellatingShapes: true)
+    }
+
+    /// `tessellatingShapes` false for a crop's mask: a shape there cuts by
+    /// its coverage alone, which its mask pass keeps.
+    func passes(for list: DrawList, tessellatingShapes: Bool) -> [Pass] {
         var passes: [Pass] = []
         var current: [Batch] = []
-        add(list.commands, through: .identity, to: &passes, current: &current)
+        add(list.commands, through: .identity, tessellating: tessellatingShapes, to: &passes, current: &current)
         if !current.isEmpty { passes.append(.batches(current)) }
         return passes
     }
@@ -120,6 +131,7 @@ public struct SpriteBatcher {
     private func add(
         _ commands: [DrawList.Command],
         through transform: CGAffineTransform,
+        tessellating: Bool,
         to passes: inout [Pass],
         current: inout [Batch]
     ) {
@@ -132,7 +144,7 @@ public struct SpriteBatcher {
         // Moved first, all at once, where they need moving: rebinding each
         // command on the way through copied it for every sprite.
         guard transform.isIdentity else {
-            add(commands.map { Self.moved($0, by: transform) }, through: .identity, to: &passes, current: &current)
+            add(commands.map { Self.moved($0, by: transform) }, through: .identity, tessellating: tessellating, to: &passes, current: &current)
             return
         }
         for command in commands {
@@ -142,11 +154,11 @@ public struct SpriteBatcher {
 
             case let .effect(effect) where Self.passesThrough(effect):
                 // Its contents are in its own space (`DrawList`).
-                add(effect.contents.commands, through: effect.transform, to: &passes, current: &current)
+                add(effect.contents.commands, through: effect.transform, tessellating: tessellating, to: &passes, current: &current)
 
             case let .crop(crop) where crop.mask.commands.isEmpty:
                 // Its contents are in its parent's space already.
-                add(crop.contents.commands, through: .identity, to: &passes, current: &current)
+                add(crop.contents.commands, through: .identity, tessellating: tessellating, to: &passes, current: &current)
 
             case let .effect(effect):
                 flush()
@@ -162,15 +174,15 @@ public struct SpriteBatcher {
                     digest: effect.contentsDigest,
                     contents: effect.shouldRasterize && rasterIsFresh?(effect.owner, effect.rasterGeneration, effect.contentsDigest) == true
                         ? []
-                        : self.passes(for: effect.contents)
+                        : self.passes(for: effect.contents, tessellatingShapes: tessellating)
                 ))
 
             case let .crop(crop):
                 flush()
                 passes.append(.crop(
                     transform: crop.transform,
-                    mask: self.passes(for: crop.mask),
-                    contents: self.passes(for: crop.contents)
+                    mask: self.passes(for: crop.mask, tessellatingShapes: false),
+                    contents: self.passes(for: crop.contents, tessellatingShapes: tessellating)
                 ))
 
             case let .label(label):
@@ -178,8 +190,12 @@ public struct SpriteBatcher {
                 passes.append(.label(label))
 
             case let .shape(shape):
-                flush()
-                passes.append(.shape(shape))
+                if tessellating, let meshes = shapeMeshes?.meshes(for: shape) {
+                    appendShape(shape, meshes, to: &current)
+                } else {
+                    flush()
+                    passes.append(.shape(shape))
+                }
             }
         }
     }

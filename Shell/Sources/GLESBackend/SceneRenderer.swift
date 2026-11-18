@@ -53,6 +53,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private let glyphPages = GlyphPages(atlas: TextEngine.shared.atlas)
     private let glyphSource = EngineGlyphSource(engine: TextEngine.shared)
     private let shapeMasks = ShapeMasks()
+    /// Shapes as triangles in the sprite batches; what it can't take
+    /// (textured, crossing itself, a crop's mask) falls to `shapeMasks`.
+    private let shapeMeshes = ShapeMeshes()
 
     /// Pixels per point, so glyphs are rasterised and masks filled at the
     /// density they are drawn at rather than at one pixel per point.
@@ -500,6 +503,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // context, at the top of each frame.
         MetalExecution.executor = self
 
+        batcher.shapeMeshes = shapeMeshes
         batcher.rasterIsFresh = { [weak self] owner, generation, digest in
             guard let self, rasterContents[owner] != nil,
                   targets.isFresh(.init(owner: owner), generation: generation, contents: digest) else { return false }
@@ -544,6 +548,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         pageDecodes.forgetResident()
         glyphPages.removeAll()
         shapeMasks.removeAll()
+        shapeMeshes.removeAll()
         glyphSource.flush()
         if coverageProgram != 0 { device.deleteProgram(coverageProgram) }
         if texturedCoverageProgram != 0 { device.deleteProgram(texturedCoverageProgram) }
@@ -608,6 +613,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         SceneDump.check(view, at: frame.time)
         noteSceneChange(at: frame.time)
         let ticked = MediaTime.source()
+        // Shapes are tessellated as they're batched, for the density the
+        // scene is drawn at.
+        shapeMeshes.pixelsPerPoint = max(viewport.scale.x, viewport.scale.y)
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
         // the runtime's own cost, with no GL in it. Worth separating, because
@@ -739,7 +747,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     + "\(glyphPages.uploads) glyph uploads (\(glyphPages.uploadedBytes / 1024) KB), "
                     + "\(shapeMasks.rasterised) masks rasterised "
                     + "(\(Int((shapeMasks.rasteriseSeconds * 1000).rounded())) ms, "
-                    + "uploaded in \(Int((shapeMasks.uploadSeconds * 1000).rounded())) ms)"
+                    + "uploaded in \(Int((shapeMasks.uploadSeconds * 1000).rounded())) ms), "
+                    + "\(shapeMeshes.tessellated) shapes tessellated "
+                    + "(\(Int((shapeMeshes.tessellateSeconds * 1000).rounded())) ms)"
             )
         }
     }
@@ -1095,6 +1105,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         deviceScale = max(frame.scale.x, frame.scale.y)
         glyphSource.deviceScale = deviceScale
+        shapeMeshes.pixelsPerPoint = deviceScale
         target = Target(
             framebuffer: handle.framebuffer,
             widthInPixels: width,
