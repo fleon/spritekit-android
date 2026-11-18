@@ -19,7 +19,8 @@ import Foundation
 /// - A key that language's table lacks comes back as `value`, or as the key
 ///   when `value` is empty: Apple doesn't look in another language's table.
 ///
-/// Only `NSLocalizedString` is covered: `Bundle.localizedString(forKey:value:table:)`,
+/// Only `NSLocalizedString` is covered (and `table(atPath:)`, for a game that
+/// reads a language's folder itself): `Bundle.localizedString(forKey:value:table:)`,
 /// `String(localized:)` and `.stringsdict` plurals still answer with the key,
 /// and the `bundle:` argument is taken but not read (only the main bundle's
 /// strings are in the APK). A file that imports only Foundation sees these
@@ -38,6 +39,7 @@ public enum LocalizedStrings {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var tables: [String: [String: String]] = [:]
+    nonisolated(unsafe) private static var files: [String: [String: String]] = [:]
     nonisolated(unsafe) private static var chosen: String??
 
     /// The development language (`AppIdentity.developmentRegion`, Apple's
@@ -88,10 +90,28 @@ public enum LocalizedStrings {
         return parsed
     }
 
+    /// The `.strings` file at `path`, read once: for a game that picks its
+    /// language itself and reads that language's folder
+    /// (`BundleResources.folderProvider`). Empty if there's none.
+    public static func table(atPath path: String) -> [String: String] {
+        lock.lock()
+        if let cached = files[path] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+        let parsed = FileManager.default.contents(atPath: path).map(StringsFile.parse) ?? [:]
+        lock.lock()
+        files[path] = parsed
+        lock.unlock()
+        return parsed
+    }
+
     /// Forgets the tables and the language chosen (tests).
     static func reset() {
         lock.lock()
         tables = [:]
+        files = [:]
         chosen = nil
         lock.unlock()
     }

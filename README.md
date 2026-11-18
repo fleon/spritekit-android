@@ -64,11 +64,14 @@ Shell/               Android-only. The app shell: SDL3, the EGL context, the
                      frame loop and its pacing, input, audio, the GL backend
                      and `GameHost`, the seam a game's controller adopts.
 Platform/            The platform code games share, on Apple platforms and
-                     Android alike: `Macros` (`@NSCodingUnsupported`) and
+                     Android alike: `Macros` (`@NSCodingUnsupported`),
                      `PlatformCore` (geometry shorthands, timing curves and
-                     eased actions, seeded randomness), `PlatformAudio`
-                     (sound effects and the soundtrack). See "Shared
-                     platform code".
+                     eased actions, seeded randomness, the launch-argument
+                     reader), `PlatformAudio` (sound effects and the
+                     soundtrack), `PlatformSprite` (the texture cache and
+                     sprite helpers, colours, text and fonts, SVG paths and
+                     icons, shape sprites, scene loading, localization,
+                     debug markers). See "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -156,6 +159,46 @@ another device's. Android's audio focus arrives through
 `audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
 reports another app's audio itself. Whatever a backend can't do (a voice of
 its own, on a backend without them) falls back to playing the sound once.
+
+### Sprites, text and scenes (`PlatformSprite`)
+
+The SpriteKit infrastructure with no game in it. What each game's content
+decides, it hands in:
+
+- **Sprites** (`txtr`, `sprite`, `tinted`, `sliced`, `textures(in:)`,
+  `forgetTextures(where:)`, `restingFrame(in:)`): a texture cache safe on
+  any thread. `SpriteArt.capInsets` gives `sliced` its caps (a generated
+  slice table), `SpriteArt.scale` sizes art drawn at a scale of its own,
+  and `SpriteArt.whenForgetting` hooks a game's own caches of assets'
+  textures (lit shaders' normal maps) onto `forgetTextures`.
+- **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
+  string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
+- **Text** (`wrappedLines`, CoreText's breaks on both platforms;
+  `capitalsOffset`, `centerCapitals`, `TextBlockNode`): `Typography` holds
+  the game's font and line height, and `Typography.follow(_:base:)` sets
+  them by the current language (`ScriptedLanguage`: a script's own face and
+  line height). `FontRegistry.register(fontFiles:)` registers the game's
+  font files once each.
+- **Icons** (`SVGPath`, `IconDrawing`, `IconPart`): a game's enum of icons
+  lists each one's path data, stroked or filled, on a grid; `node(size:color:)`
+  draws it once a size into `DrawnTexture`'s cache and tints it.
+  `ShapeSprite` draws rings, pills, discs and outlines the same way, never
+  as shape nodes.
+- **Scenes** (`LoadableScene`, `TransitionManager.show`/`present`,
+  `offMainActor`, `BuildGate`): `TransitionManager.sceneSize`, `scaleMode`
+  and `duration` are the game's, and `present` takes the game's loading
+  scene. `SceneLayout` is the safe area, the display's rounded corners
+  (`DisplayCorners`), a camera's occlusion (iOS 27.1's `reservedRegions`)
+  and where round buttons stand in the corners or a rail, by the game's
+  `SceneLayout.Metrics`.
+- **Localization** (`Localizer`): the player's pick, else the device's
+  language among the game's (`LocalizationLanguage`), its strings read from
+  the bundle's `.lproj` with a content table keyed by its text; on Android
+  from the APK's `lproj/`, through the shim's `.strings` parser, so the
+  player's pick holds there too.
+- **Debugging** (`Markers`, `FrameLog`; `LaunchArgumentReader` in
+  `PlatformCore`): the arguments are the game's; the reader answers fixed
+  values in a release build.
 
 Checks: `swift test --package-path Platform` on the host, the Apple builds
 (`xcodebuild -scheme <product> -destination 'generic/platform=iOS
@@ -734,7 +777,9 @@ by `SystemFontFaces`.
   (`LocalizedStringsTests`, measured on a Mac). Only `NSLocalizedString`:
   `Bundle.localizedString(forKey:value:table:)`, `String(localized:)` and
   `.stringsdict` still answer with keys, and `bundle:` isn't read. A file
-  that imports only Foundation needs the shim re-exported in its module.
+  that imports only Foundation needs the shim re-exported in its module. A
+  game that picks its own language reads that folder's tables with
+  `LocalizedStrings.table(atPath:)`, as `PlatformSprite`'s `Localizer` does.
 - **Layout:** a point is a dp. The safe area includes the system bars, the
   cutout and the gesture handle; Back (and Android 16's predictive back)
   arrives as Escape.

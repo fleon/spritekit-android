@@ -122,4 +122,15 @@ struct LocalizedStringsTests {
         #expect(LocalizedStrings.string(forKey: "k", table: "Content", value: "") == "from Content")
         #expect(LocalizedStrings.string(forKey: "k", table: nil, value: "") == "k")
     }
+
+    @Test("A table read by its path, once")
+    func tableAtPath() throws {
+        let root = try install(["fr": #""a" = "A (fr)";"#], preferring: ["fr"])
+        defer { uninstall(root) }
+        let path = root.appendingPathComponent("fr.lproj/Localizable.strings").path
+        #expect(LocalizedStrings.table(atPath: path) == ["a": "A (fr)"])
+        try #""a" = "changed";"#.write(toFile: path, atomically: true, encoding: .utf8)
+        #expect(LocalizedStrings.table(atPath: path) == ["a": "A (fr)"])
+        #expect(LocalizedStrings.table(atPath: root.appendingPathComponent("none.strings").path).isEmpty)
+    }
 }

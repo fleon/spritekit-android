@@ -43,6 +43,7 @@ let package = Package(
         .library(name: "Macros", targets: ["Macros"]),
         .library(name: "PlatformCore", targets: ["PlatformCore"]),
         .library(name: "PlatformAudio", targets: ["PlatformAudio"]),
+        .library(name: "PlatformSprite", targets: ["PlatformSprite"]),
     ],
     dependencies: [
         .package(path: ".."),
@@ -89,6 +90,28 @@ let package = Package(
         .testTarget(
             name: "PlatformAudioTests",
             dependencies: ["PlatformAudio"],
+            swiftSettings: settings
+        ),
+        // The SpriteKit infrastructure no game's content is in: the texture
+        // cache and sprite helpers, colours, text and fonts, SVG paths and
+        // icons drawn from them, shape sprites, scene loading, the
+        // localization mechanism, debug markers and the display's corners.
+        // Every game-specific piece (art scale, slice table, icon table,
+        // languages, fonts) is passed in.
+        .target(
+            name: "PlatformSprite",
+            dependencies: [
+                "PlatformCore",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformSpriteTests",
+            dependencies: [
+                "PlatformSprite",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
             swiftSettings: settings
         ),
         .testTarget(
