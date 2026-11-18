@@ -66,7 +66,8 @@ Shell/               Android-only. The app shell: SDL3, the EGL context, the
 Platform/            The platform code games share, on Apple platforms and
                      Android alike: `Macros` (`@NSCodingUnsupported`) and
                      `PlatformCore` (geometry shorthands, timing curves and
-                     eased actions, seeded randomness), `PlatformDevice`
+                     eased actions, seeded randomness), `PlatformAudio`
+                     (sound effects and the soundtrack), `PlatformDevice`
                      (haptics, rating prompts, play time), `PlatformSync`
                      (synced saved data) and `PlatformAndroid` (Android's
                      Play and device wiring). See "Shared platform code".
@@ -118,6 +119,45 @@ PlatformCore`) in the files that use it.
 What belongs here: code a game's helpers and managers would otherwise copy
 that carries nothing of any one game. What a game configures (its sounds,
 products, achievements, constants) it passes in.
+
+### Audio (`PlatformAudio`)
+
+One `AudioManager` plays a game's sound effects and soundtrack on every
+platform, over `AudioBackend`: on Apple platforms `AppleAudioBackend`
+(pools of `AVAudioPlayer`s for sounds; an `AVAudioEngine` streaming each
+track, its intro once and then its loop section seamlessly, crossfading
+tracks on player nodes of their own, and picking the soundtrack up again
+after an interruption, a route change or the background), on Android the
+shell's, which the game hands over as it opens:
+
+```swift
+// At launch
+AudioManager.configure(AudioConfiguration(
+    sounds: AudioConfiguration.sounds(Sound.self) { sound in
+        sound == .step ? AudioConfiguration.Sound(sound.rawValue, rateVariation: 0.9...1.1) : nil
+    },
+    soundVolume: 0.8, musicVolume: 0.4,
+    crossfadeDuration: 2, musicFadeDuration: 0.25,
+    musicLoops: loops,                        // [track: MusicLoop]
+    settings: .init(write: { cloud.set($0, forKey: $1) })
+))
+// Android only, in the game's shell wiring
+Shell.audioDidOpen = { AudioManager.shared.use($0) }
+```
+
+Then `AudioManager.shared.play(_:)` (a name or a `String` enum; returns the
+sound's duration; `skipIfPlaying`, `variants`), `playEffect(_:repeats:
+variants:onFinish:)` and `stopEffect(_:fadeDuration:)` for sounds on voices
+of their own, `playMusic(_:loop:)` (the track already playing keeps going,
+another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
+`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`;
+`AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
+switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
+unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
+another device's. Android's audio focus arrives through
+`audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
+reports another app's audio itself. Whatever a backend can't do (a voice of
+its own, on a backend without them) falls back to playing the sound once.
 
 ### Haptics, ratings and play time (`PlatformDevice`)
 
@@ -282,8 +322,16 @@ The shim issues no draw calls. `SKView.tick` returns a `DrawList`: a flat,
 ordered list of sprite, shape and label commands with nested effect and crop
 groups. The scene graph, transforms, actions and draw order are therefore
 testable on a Mac with no window, and the renderer is a separate consumer.
-Draw order is by accumulated `zPosition`, sorted stably, so ties fall in tree
-order (SpriteKit leaves ties unspecified; this is never less deterministic).
+Draw order is by accumulated `zPosition`, sorted stably. At the same z,
+keeping sibling order (`ignoresSiblingOrder` false, SpriteKit's default and
+the view's here), nodes draw in tree order; ignoring it, they fall in
+SpriteKit's three classes, each in tree order: colour sprites, shapes, crop
+and effect groups; then textured sprites and labels; then shader sprites
+(`DrawOrderTests`, measured by readback). In the middle class SpriteKit
+keeps each texture's sprites together, and the labels together, each group
+where its first member is: its most frequent answer, which the list gives
+every time. A snapshot (`texture(from:)`) is drawn in tree order whatever
+the view's setting.
 
 ### SpriteKit's behaviour, measured
 
@@ -474,8 +522,11 @@ placed by its combined ink as a one-style line is, so `frame` and every
 alignment mode agree with SpriteKit's (`AttributedLabelRunTests`, against
 Apple's `SKLabelNode` on the same font file). `SKLabelNode.runs` holds the
 runs; `laidOutRuns` is set when the layout placed them, and the draw list
-then emits one label command per run. A wrapped label in several styles
-still draws in its first run's style.
+then emits one label command per run. On several lines (`numberOfLines`
+other than 1, no `preferredMaxLayoutWidth`) the runs break at their
+newlines, and each line takes the largest ascent, descent and leading of the
+runs on it, as SpriteKit sizes the block (`AttributedParagraphParityTests`).
+A wrapped label in several styles still draws in its first run's style.
 
 ### UIKit around the scene
 
