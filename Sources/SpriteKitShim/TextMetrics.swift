@@ -307,9 +307,21 @@ public protocol TextProvider: AnyObject, Sendable {
 
     /// `text` shaped as one line at `font` and rasterised at `scale` pixels
     /// a point, the pen starting `offset` pixels into its first pixel (y
-    /// up), for drawing into a bitmap. A provider that can't rasterise
-    /// gives none (the default, in `TextBlock.swift`).
-    func glyphMasks(_ text: String, font: FontKey, scale: CGFloat, offset: CGPoint) -> [GlyphMask]
+    /// up), each glyph's x floored to a `positionsPerPixel`th of a pixel,
+    /// for drawing into a bitmap. A provider that can't rasterise gives
+    /// none (the default, in `TextBlock.swift`).
+    func glyphMasks(_ text: String, font: FontKey, scale: CGFloat, offset: CGPoint, positionsPerPixel: Int) -> [GlyphMask]
+
+    /// Each character's advance in `text` shaped as one line at `font`
+    /// (kerning and ligatures as they fall in the whole line), so a line
+    /// broken out of a paragraph measures as the paragraph shaped it. The
+    /// default measures each character alone.
+    func characterAdvances(_ text: String, font: FontKey) -> [CGFloat]
+
+    /// `text`'s glyph outlines as one line at `font`, in points from the
+    /// pen's start on the baseline, y up: what text drawn in a stroke mode
+    /// strokes. None by default.
+    func glyphOutline(_ text: String, font: FontKey) -> [PathElement]
 }
 
 #endif

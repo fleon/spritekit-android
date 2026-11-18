@@ -138,7 +138,28 @@ public final class BitmapContext {
         var clip: Clip?
         var shadow: Shadow?
         var interpolation = InterpolationQuality.default
+        var textDrawingMode = TextDrawingMode.fill
     }
+
+    /// CoreGraphics' text drawing modes (`CGTextDrawingMode`): what drawing
+    /// text does with the glyphs. Part of the graphics state, as in
+    /// CoreGraphics.
+    public enum TextDrawingMode: Int32, Sendable {
+        case fill, stroke, fillStroke, invisible, fillClip, strokeClip, fillStrokeClip, clip
+
+        var fills: Bool { self == .fill || self == .fillStroke || self == .fillClip || self == .fillStrokeClip }
+        var strokes: Bool { self == .stroke || self == .fillStroke || self == .strokeClip || self == .fillStrokeClip }
+    }
+
+    /// How text draws (`setTextDrawingMode`). The clip modes draw as their
+    /// fill and stroke parts; clipping to text isn't done here.
+    public var textDrawingMode: TextDrawingMode {
+        get { state.textDrawingMode }
+        set { state.textDrawingMode = newValue }
+    }
+
+    /// The current line width, which text drawn in a stroke mode uses.
+    public var lineWidth: CGFloat { state.lineWidth }
 
     // MARK: Storage
 

@@ -220,7 +220,8 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     /// whole pixels go into its mask's origin and the rest into the outline
     /// before FreeType renders it. Not cached in the atlas: a bitmap a game
     /// draws text into is made once.
-    public func glyphMasks(_ text: String, font: FontKey, scale: CGFloat, offset: CGPoint) -> [GlyphMask] {
+    public func glyphMasks(_ text: String, font: FontKey, scale: CGFloat, offset: CGPoint, positionsPerPixel: Int) -> [GlyphMask] {
+        let steps = CGFloat(max(1, positionsPerPixel))
         guard scale > 0, let runs = shape(text, font: font),
               let face = library.face(FontKey(name: font.name, size: font.size * scale)) else { return [] }
         var masks: [GlyphMask] = []
@@ -230,7 +231,8 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
                 let x = offset.x + (pen + glyph.xOffset) * scale
                 let y = offset.y + glyph.yOffset * scale
                 let whole = CGPoint(x: x.rounded(.down), y: y.rounded(.down))
-                let fraction = CGPoint(x: x - whole.x, y: y - whole.y)
+                // The x within its pixel, floored to the size's step.
+                let fraction = CGPoint(x: ((x - whole.x) * steps).rounded(.down) / steps, y: y - whole.y)
                 let mask = face.renderGlyph(glyph.glyph, offset: fraction) { pixels, width, height, pitch, left, top -> GlyphMask? in
                     guard let pixels, width > 0, height > 0, pitch >= width else { return nil }
                     var coverage = [UInt8](repeating: 0, count: width * height)
@@ -245,6 +247,57 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
             }
         }
         return masks
+    }
+
+    /// Each character's advance in the shaped line: every glyph's advance
+    /// goes to the character its cluster starts at.
+    public func characterAdvances(_ text: String, font: FontKey) -> [CGFloat] {
+        guard let runs = shape(text, font: font) else { return text.map { _ in 0 } }
+        // UTF-8 offset of each character's start.
+        var starts: [Int] = []
+        var offset = 0
+        for character in text {
+            starts.append(offset)
+            offset += character.utf8.count
+        }
+        var advances = [CGFloat](repeating: 0, count: starts.count)
+        for run in runs {
+            for glyph in run.glyphs {
+                // The last character starting at or before the cluster.
+                var low = 0, high = starts.count - 1, found = 0
+                while low <= high {
+                    let mid = (low + high) / 2
+                    if starts[mid] <= glyph.cluster { found = mid; low = mid + 1 } else { high = mid - 1 }
+                }
+                if !advances.isEmpty { advances[found] += glyph.xAdvance }
+            }
+        }
+        return advances
+    }
+
+    /// The line's glyph outlines, shaped as it's measured, each moved to its
+    /// pen position.
+    public func glyphOutline(_ text: String, font: FontKey) -> [PathElement] {
+        guard let runs = shape(text, font: font), let face = library.face(font) else { return [] }
+        var elements: [PathElement] = []
+        var pen: CGFloat = 0
+        for run in runs {
+            for glyph in run.glyphs {
+                let dx = pen + glyph.xOffset, dy = glyph.yOffset
+                func move(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dy) }
+                for element in face.outline(glyph.glyph) {
+                    switch element {
+                    case let .move(p): elements.append(.move(move(p)))
+                    case let .line(p): elements.append(.line(move(p)))
+                    case let .quadCurve(to, control): elements.append(.quadCurve(to: move(to), control: move(control)))
+                    case let .curve(to, c1, c2): elements.append(.curve(to: move(to), control1: move(c1), control2: move(c2)))
+                    case .close, .arc: elements.append(element)
+                    }
+                }
+                pen += glyph.xAdvance
+            }
+        }
+        return elements
     }
 
     /// Drops the measurement cache. The atlas and the faces stay.
