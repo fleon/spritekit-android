@@ -304,6 +304,12 @@ public protocol TextProvider: AnyObject, Sendable {
     /// ascending. `Typesetting` works in those because CoreText does, and
     /// because the game slices the result with `NSString.substring(with:)`.
     func breakOffsets(in text: String) -> [Int]
+
+    /// `text` shaped as one line at `font` and rasterised at `scale` pixels
+    /// a point, the pen starting `offset` pixels into its first pixel (y
+    /// up), for drawing into a bitmap. A provider that can't rasterise
+    /// gives none (the default, in `TextBlock.swift`).
+    func glyphMasks(_ text: String, font: FontKey, scale: CGFloat, offset: CGPoint) -> [GlyphMask]
 }
 
 #endif

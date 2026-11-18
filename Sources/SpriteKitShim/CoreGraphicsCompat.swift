@@ -161,6 +161,22 @@ public extension BitmapContext {
     /// everywhere it draws.
     func setAllowsAntialiasing(_ allows: Bool) {}
     func setShouldAntialias(_ should: Bool) {}
+
+    /// Glyph placement switches, accepted and ignored: text is always drawn
+    /// at its exact (sub-pixel) pen positions (`TextBlock`), which is what
+    /// turning quantization off asks for.
+    func setShouldSubpixelQuantizeFonts(_ should: Bool) {}
+    func setAllowsFontSubpixelQuantization(_ allows: Bool) {}
+    func setShouldSubpixelPositionFonts(_ should: Bool) {}
+    func setAllowsFontSubpixelPositioning(_ allows: Bool) {}
+
+    /// Accepted: text is always filled, CoreGraphics' default.
+    func setTextDrawingMode(_ mode: CGTextDrawingMode) {}
+}
+
+/// CoreGraphics' text drawing modes. Only `.fill` is drawn here.
+public enum CGTextDrawingMode: Int32, Sendable {
+    case fill, stroke, fillStroke, invisible, fillClip, strokeClip, fillStrokeClip, clip
 }
 
 // MARK: - Paths

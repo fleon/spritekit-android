@@ -215,6 +215,38 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         LineBreak.opportunities(in: text).map { $0.utf16Offset(in: text) }
     }
 
+    /// Shaped at `font`'s size and rasterised at `scale` times it, as the
+    /// renderer draws labels, each glyph at its exact pen position: the
+    /// whole pixels go into its mask's origin and the rest into the outline
+    /// before FreeType renders it. Not cached in the atlas: a bitmap a game
+    /// draws text into is made once.
+    public func glyphMasks(_ text: String, font: FontKey, scale: CGFloat, offset: CGPoint) -> [GlyphMask] {
+        guard scale > 0, let runs = shape(text, font: font),
+              let face = library.face(FontKey(name: font.name, size: font.size * scale)) else { return [] }
+        var masks: [GlyphMask] = []
+        var pen: CGFloat = 0
+        for run in runs {
+            for glyph in run.glyphs {
+                let x = offset.x + (pen + glyph.xOffset) * scale
+                let y = offset.y + glyph.yOffset * scale
+                let whole = CGPoint(x: x.rounded(.down), y: y.rounded(.down))
+                let fraction = CGPoint(x: x - whole.x, y: y - whole.y)
+                let mask = face.renderGlyph(glyph.glyph, offset: fraction) { pixels, width, height, pitch, left, top -> GlyphMask? in
+                    guard let pixels, width > 0, height > 0, pitch >= width else { return nil }
+                    var coverage = [UInt8](repeating: 0, count: width * height)
+                    for row in 0 ..< height {
+                        for column in 0 ..< width { coverage[row * width + column] = pixels[row * pitch + column] }
+                    }
+                    return GlyphMask(origin: CGPoint(x: whole.x + CGFloat(left), y: whole.y + CGFloat(top)),
+                                     width: width, height: height, coverage: coverage)
+                }
+                if let mask = mask ?? nil { masks.append(mask) }
+                pen += glyph.xAdvance
+            }
+        }
+        return masks
+    }
+
     /// Drops the measurement cache. The atlas and the faces stay.
     public func flush() {
         lock.withLock { measured.removeAll() }

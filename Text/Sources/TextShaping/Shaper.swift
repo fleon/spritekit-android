@@ -167,8 +167,12 @@ extension FaceHandle {
     /// the pen, and the rows to copy. The buffer belongs to FreeType's glyph
     /// slot and is only valid inside `body`, which is why this is a closure
     /// and not a return value.
+    /// `offset` moves an outline glyph by a fraction of a pixel (y up)
+    /// before it's rendered, so a glyph drawn at a sub-pixel pen position
+    /// keeps its shape there rather than snapping to the grid.
     func renderGlyph<T>(
         _ glyph: UInt32,
+        offset: CGPoint = .zero,
         _ body: (_ pixels: UnsafePointer<UInt8>?, _ width: Int, _ height: Int,
                  _ pitch: Int, _ left: Int, _ top: Int) -> T
     ) -> T? {
@@ -176,6 +180,9 @@ extension FaceHandle {
             guard let ftFace,
                   FT_Load_Glyph(ftFace, glyph, FaceHandle.loadFlags) == FT_Err_Ok,
                   let slot = ftFace.pointee.glyph else { return nil }
+            if offset != .zero, slot.pointee.format == FT_GLYPH_FORMAT_OUTLINE {
+                FT_Outline_Translate(&slot.pointee.outline, FT_Pos((offset.x * 64).rounded()), FT_Pos((offset.y * 64).rounded()))
+            }
             if slot.pointee.format != FT_GLYPH_FORMAT_BITMAP,
                FT_Render_Glyph(slot, FT_RENDER_MODE_NORMAL) != FT_Err_Ok {
                 return nil
