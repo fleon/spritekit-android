@@ -71,19 +71,15 @@ Platform/            The platform code games share, on Apple platforms and
                      soundtrack), `PlatformSprite` (the texture cache and
                      sprite helpers, colours, text and fonts, SVG paths and
                      icons, shape sprites, scene loading, localization,
-                     debug markers). See "Shared platform code".
-                     eased actions, seeded randomness), `PlatformAudio`
-                     (sound effects and the soundtrack), `PlatformDevice`
-                     (haptics, rating prompts, play time), `PlatformSync`
-                     (synced saved data) and `PlatformAndroid` (Android's
-                     Play and device wiring). See "Shared platform code".
-                     (sound effects and the soundtrack), `PlatformInput`
-                     (focus for the remote, gamepads and the pointer;
-                     keyboard and Menu protocols), `PlatformDisplay`
-                     (frame-rate and graphics settings with Auto),
-                     `PlatformGameCenter` (sign-in, achievements,
-                     leaderboards) and `PlatformStore` (in-app purchases).
-                     See "Shared platform code".
+                     debug markers), `PlatformDevice` (haptics, rating
+                     prompts, play time), `PlatformSync` (synced saved
+                     data), `PlatformAndroid` (Android's Play and device
+                     wiring), `PlatformInput` (focus for the remote,
+                     gamepads and the pointer; keyboard and Menu protocols),
+                     `PlatformDisplay` (frame-rate and graphics settings
+                     with Auto), `PlatformGameCenter` (sign-in,
+                     achievements, leaderboards) and `PlatformStore`
+                     (in-app purchases). See "Shared platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
