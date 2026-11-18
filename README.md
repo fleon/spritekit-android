@@ -66,8 +66,9 @@ Shell/               Android-only. The app shell: SDL3, the EGL context, the
 Platform/            The platform code games share, on Apple platforms and
                      Android alike: `Macros` (`@NSCodingUnsupported`) and
                      `PlatformCore` (geometry shorthands, timing curves and
-                     eased actions, seeded randomness). See "Shared platform
-                     code".
+                     eased actions, seeded randomness), `PlatformAudio`
+                     (sound effects and the soundtrack). See "Shared
+                     platform code".
 Text/                HarfBuzz shaping, FreeType metrics and rasterising, the
                      glyph atlas.
 Vendor/              Scripts that fetch and build FreeType, HarfBuzz and SDL.
@@ -116,6 +117,45 @@ PlatformCore`) in the files that use it.
 What belongs here: code a game's helpers and managers would otherwise copy
 that carries nothing of any one game. What a game configures (its sounds,
 products, achievements, constants) it passes in.
+
+### Audio (`PlatformAudio`)
+
+One `AudioManager` plays a game's sound effects and soundtrack on every
+platform, over `AudioBackend`: on Apple platforms `AppleAudioBackend`
+(pools of `AVAudioPlayer`s for sounds; an `AVAudioEngine` streaming each
+track, its intro once and then its loop section seamlessly, crossfading
+tracks on player nodes of their own, and picking the soundtrack up again
+after an interruption, a route change or the background), on Android the
+shell's, which the game hands over as it opens:
+
+```swift
+// At launch
+AudioManager.configure(AudioConfiguration(
+    sounds: AudioConfiguration.sounds(Sound.self) { sound in
+        sound == .step ? AudioConfiguration.Sound(sound.rawValue, rateVariation: 0.9...1.1) : nil
+    },
+    soundVolume: 0.8, musicVolume: 0.4,
+    crossfadeDuration: 2, musicFadeDuration: 0.25,
+    musicLoops: loops,                        // [track: MusicLoop]
+    settings: .init(write: { cloud.set($0, forKey: $1) })
+))
+// Android only, in the game's shell wiring
+Shell.audioDidOpen = { AudioManager.shared.use($0) }
+```
+
+Then `AudioManager.shared.play(_:)` (a name or a `String` enum; returns the
+sound's duration; `skipIfPlaying`, `variants`), `playEffect(_:repeats:
+variants:onFinish:)` and `stopEffect(_:fadeDuration:)` for sounds on voices
+of their own, `playMusic(_:loop:)` (the track already playing keeps going,
+another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
+`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`;
+`AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
+switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
+unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
+another device's. Android's audio focus arrives through
+`audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
+reports another app's audio itself. Whatever a backend can't do (a voice of
+its own, on a backend without them) falls back to playing the sound once.
 
 Checks: `swift test --package-path Platform` on the host, the Apple builds
 (`xcodebuild -scheme <product> -destination 'generic/platform=iOS
