@@ -163,7 +163,10 @@ public final class StoreKitBilling: BillingBackend {
     /// (offline) leaves the next call to try again.
     private func loadProducts() async {
         if let productLoad { return await productLoad.value }
-        let load = Task { [weak self] in await self?.fetchProducts() }
+        let load = Task { [weak self] in
+            guard let self else { return }
+            await self.fetchProducts()
+        }
         productLoad = load
         await load.value
         productLoad = nil
