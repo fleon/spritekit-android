@@ -1184,7 +1184,11 @@ keystore file (`keystore`), its password (`password`), alias (`alias`) and
 certificate SHA-1 (`sha1`, what Google's consoles ask for).
 `Scripts/signing.sh` reads and writes them through the 1Password CLI, which
 signs in through the 1Password app (Settings → Developer → Integrate with
-1Password CLI):
+1Password CLI). So that builds never stop for Touch ID, reads go through a
+service account that can only read that vault, when there is one: its token
+in `OP_SERVICE_ACCOUNT_TOKEN`, or in the macOS Keychain under the service
+`op-service-account-game-signing` (`SIGNING_TOKEN_SERVICE` names another).
+`store` always signs in through the app, as it writes:
 
 ```bash
 Scripts/signing.sh store "<Game> Android Upload Key" upload.jks   # password from SIGNING_PASSWORD, or asked
