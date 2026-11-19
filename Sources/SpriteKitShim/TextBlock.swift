@@ -33,6 +33,9 @@ public extension TextProvider {
     }
     /// No outlines where the provider has none: stroked text draws nothing.
     func glyphOutline(_ text: String, font: FontKey) -> [PathElement] { [] }
+    func glyphOutlines(_ text: String, font: FontKey) -> [GlyphOutline] {
+        [GlyphOutline(origin: .zero, elements: glyphOutline(text, font: font))]
+    }
 }
 
 /// Text laid out as UIKit's string drawing lays it out
@@ -420,8 +423,14 @@ public struct TextBlock {
                         draw(text, run: run, at: CGPoint(x: x, y: baseline), mode: mode, upright: upright,
                              scale: scale, ctm: ctm, provider: provider, context: context)
                     } else {
-                        outline(text, run: run, at: CGPoint(x: x, y: baseline), fill: mode.fills, stroke: mode.strokes,
-                                provider: provider, context: context)
+                        if mode.fills {
+                            snappedOutline(text, run: run, at: CGPoint(x: x, y: baseline), scale: scale, ctm: ctm,
+                                           provider: provider, context: context)
+                        }
+                        if mode.strokes {
+                            outline(text, run: run, at: CGPoint(x: x, y: baseline), fill: false, stroke: true,
+                                    provider: provider, context: context)
+                        }
                     }
                 }
             }
@@ -487,6 +496,40 @@ public struct TextBlock {
             // the glyphs it fills (measured on Catalyst).
             outline(text, run: run, at: point, fill: false, stroke: true, provider: provider, context: context)
         }
+    }
+
+    /// Filled glyphs through a rotation, shear or mirror: each glyph's
+    /// outline with its own pen snapped in device space as UIKit snaps it
+    /// there too (measured on Catalyst), x floored to the step its pixel
+    /// size takes (`positionsPerPixel`), the baseline down to the next row.
+    private func snappedOutline(
+        _ text: String, run: Run, at point: CGPoint, scale: CGFloat, ctm: CGAffineTransform,
+        provider: TextProvider, context: BitmapContext
+    ) {
+        let glyphs = provider.glyphOutlines(text, font: run.font)
+        guard !glyphs.isEmpty else { return }
+        let steps = CGFloat(Self.positionsPerPixel(forPixelSize: run.font.size * scale))
+        let inverse = ctm.inverted()
+        context.saveGState()
+        context.setFill(run.colour)
+        context.beginPath()
+        for glyph in glyphs {
+            let device = CGPoint(x: point.x + glyph.origin.x, y: point.y - glyph.origin.y).applying(ctm)
+            let pen = CGPoint(x: (device.x * steps).rounded(.down) / steps, y: (device.y - 0.0001).rounded(.up)).applying(inverse)
+            func place(_ p: CGPoint) -> CGPoint { CGPoint(x: pen.x + p.x, y: pen.y - p.y) }
+            for element in glyph.elements {
+                switch element {
+                case let .move(p): context.move(to: place(p))
+                case let .line(p): context.addLine(to: place(p))
+                case let .quadCurve(to, control): context.addQuadCurve(to: place(to), control: place(control))
+                case let .curve(to, c1, c2): context.addCurve(to: place(to), control1: place(c1), control2: place(c2))
+                case .close: context.closePath()
+                case .arc: break
+                }
+            }
+        }
+        context.fillPath()
+        context.restoreGState()
     }
 
     /// The glyphs' outlines with the pen at `point` (user space), filled
