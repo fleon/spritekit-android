@@ -394,14 +394,7 @@ import Testing
         Case("Geneva", 12.0, 3, .justified, .characters, 4.0, .lfo, x: 0.000000, y: 0.000000, w: 160.000000, h: 34.000000),
     ]
 
-    /// Justified, UIKit's `boundingRect` tightens a line to take one more
-    /// word (KoHo 20's "eakable word here", 1% over the width, on one line),
-    /// where its layout manager and this don't; the rule isn't pinned yet.
-    static func isTightened(_ item: Case) -> Bool {
-        item.font == "KoHo-Bold" && item.text == 3 && item.alignment == .justified
-    }
-
-    @Test("Bounding rects match UIKit's", arguments: cases.filter { !isTightened($0) })
+    @Test("Bounding rects match UIKit's", arguments: cases)
     func boundingRect(_ item: Case) {
         _ = Fonts.engine
         let style = TextBlock.Style(alignment: item.alignment, wrapping: item.wrapping, lineSpacing: item.spacing)
@@ -435,6 +428,34 @@ import Testing
             let rect = TextBlock.boundingRect(of: [TextBlock.Run(text, font: FontKey(name: font, size: size))],
                                               size: CGSize(width: 160, height: 10_000), usesLineFragmentOrigin: false, usesFontLeading: true)
             #expect(abs(rect.minY - y) < 1e-4 && abs(rect.width - w) < 1e-4 && abs(rect.height - h) < 1e-4, "\(font) \(size) \(text): \(rect)")
+        }
+    }
+
+    /// Justified, UIKit lets a line take one more word if it fits giving up
+    /// a fifth of each space's width: the narrowest width (Catalyst) at
+    /// which each text still lays out on one line, justified; left-aligned
+    /// it needs its whole width.
+    static let squeezes: [(String, CGFloat, String, natural: CGFloat, oneLineFrom: CGFloat)] = [
+        ("Montserrat-Black", 15, "ab cd", 44.310, 43.410),
+        ("Montserrat-Black", 15, "ab cd ef gh ij", 105.090, 101.490),
+        ("Montserrat-Black", 15, "Find a player near you and play together now", 371.460, 364.260),
+        ("Montserrat-Black", 15, "Unbelievablyunbreakable", 208.560, 208.559),
+        ("KoHo-Bold", 20, "ab cd ef", 71.000, 68.760),
+        ("KoHo-Bold", 20, "abcdefghij klmnopqrst", 199.740, 198.620),
+        ("Geneva", 11, "ab cd ef gh ij", 69.464, 66.530),
+        ("Geneva", 11, "Find a player near you and play together now", 240.598, 234.729),
+        ("Montserrat-Black", 30, "ab cd ef", 129.990, 126.390),
+    ]
+
+    @Test("Justified lines squeeze their spaces by a fifth to take one more word, as UIKit's do")
+    func justifiedSqueeze() throws {
+        _ = Fonts.engine
+        for (font, size, text, natural, from) in Self.squeezes {
+            func lines(_ width: CGFloat, _ alignment: TextBlock.Alignment) -> Int {
+                TextBlock(text, font: FontKey(name: font, size: size), maxWidth: width, style: TextBlock.Style(alignment: alignment))?.lines.count ?? 0
+            }
+            #expect(lines(from + 0.002, .justified) == 1 && lines(from - 0.002, .justified) == 2, "\(font) \(size) \(text) at \(from)")
+            #expect(lines(natural - 0.01, .left) == 2, "\(font) \(size) \(text) left")
         }
     }
 

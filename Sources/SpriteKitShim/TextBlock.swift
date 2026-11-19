@@ -51,6 +51,8 @@ public extension TextProvider {
 ///     its width without trailing spaces; a justified line but a
 ///     paragraph's last spans the width), the block as wide as all the
 ///     placed lines, trailing spaces included, but no wider than the width.
+///     Justified, a line takes one more word if giving up a fifth of each
+///     of its spaces makes it fit, and is drawn with its spaces squeezed.
 ///   - **Drawing**: only the lines that fit wholly in the rect; each
 ///     baseline down to the next whole device pixel, each glyph's x floored
 ///     to the sub-pixel step its size allows (`positionsPerPixel`), as
@@ -209,8 +211,14 @@ public struct TextBlock {
         }
     }
 
-    static func justifies(_ line: Line) -> Bool {
-        line.style.alignment == .justified && !line.endsParagraph && line.spaces > 0
+    /// The share of each space a justified line may give up to fit.
+    static let justifiedSqueeze: CGFloat = 0.2
+
+    /// Whether a line's spaces are stretched (or squeezed) to the width: a
+    /// justified line's but its paragraph's last, and any justified line
+    /// that was squeezed to fit.
+    static func justifies(_ line: Line, in width: CGFloat) -> Bool {
+        line.style.alignment == .justified && line.spaces > 0 && (!line.endsParagraph || line.visibleWidth > width)
     }
 
     // MARK: Laying out
@@ -267,6 +275,13 @@ public struct TextBlock {
             guard a < b else { return 0 }
             return advances[a ..< b].reduce(0, +)
         }
+        // How much a justified line may tighten to take one more word: a
+        // fifth of each space's width, under word wrapping only (measured
+        // on Catalyst).
+        func squeeze(_ a: Int, _ b: Int) -> CGFloat {
+            guard style.alignment == .justified, style.wrapping == .words, a < b else { return 0 }
+            return (a ..< b).reduce(CGFloat(0)) { $0 + (characters[$1] == " " ? advances[$1] * Self.justifiedSqueeze : 0) }
+        }
         func visibleEnd(_ a: Int, _ b: Int) -> Int {
             var end = b
             while end > a, characters[end - 1].isWhitespace { end -= 1 }
@@ -298,7 +313,8 @@ public struct TextBlock {
             }
             var end: Int?
             for candidate in starts.filter({ $0 > start }) + [characters.count] {
-                if width(start, visibleEnd(start, candidate)) <= maxWidth { end = candidate } else { break }
+                let visible = visibleEnd(start, candidate)
+                if width(start, visible) - squeeze(start, visible) <= maxWidth { end = candidate } else { break }
             }
             if end == nil {
                 // Wider than the line on its own: as many characters as fit, one at least.
@@ -372,12 +388,12 @@ public struct TextBlock {
             guard top + line.height <= rect.maxY + 0.0001 else { break }
             defer { top += line.height + line.style.lineSpacing }
             let start = rect.minX + Self.offset(of: line, in: rect.width)
-            let stretch = Self.justifies(line) ? (rect.width - line.visibleWidth) / CGFloat(line.spaces) : 0
+            let stretch = Self.justifies(line, in: rect.width) ? (rect.width - line.visibleWidth) / CGFloat(line.spaces) : 0
             var spacesBefore = 0
             for piece in line.pieces {
                 let run = runs[piece.run]
                 // Justified text widens its spaces; letter spacing places each character.
-                let parts: [(String, CGFloat)] = if stretch > 0 || run.kern != 0 {
+                let parts: [(String, CGFloat)] = if stretch != 0 || run.kern != 0 {
                     Self.split(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
                 } else {
                     [(piece.text, 0)]
