@@ -40,6 +40,22 @@ open class SKLabelNode: SKNode {
     open var fontName: String? { didSet { invalidateLayout() } }
     open var fontSize: CGFloat = 32 { didSet { invalidateLayout() } }
     open var fontColor: SKColor? = .white
+    /// The colour the text is tinted toward, by `colorBlendFactor`, as a
+    /// sprite's texture is: the font colour multiplied by it, mixed in from
+    /// white (`tinted`).
+    open var color: SKColor?
+    open var colorBlendFactor: CGFloat = 0
+
+    /// `colour` as the label draws it: tinted toward `color` by
+    /// `colorBlendFactor`, its alpha with the tint's mixed in likewise, as
+    /// SpriteKit tints a label (Tools/TintProbe).
+    func tinted(_ colour: SKColor) -> SKColor {
+        let factor = min(1, max(0, colorBlendFactor))
+        guard factor > 0, let color else { return colour }
+        func mixed(_ channel: CGFloat) -> CGFloat { 1 + (channel - 1) * factor }
+        return SKColor(red: colour.red * mixed(color.red), green: colour.green * mixed(color.green),
+                       blue: colour.blue * mixed(color.blue), alpha: colour.alpha * mixed(color.alpha))
+    }
     open var horizontalAlignmentMode: SKLabelHorizontalAlignmentMode = .center {
         didSet { invalidateLayout() }
     }

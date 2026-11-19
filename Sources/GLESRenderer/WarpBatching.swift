@@ -37,7 +37,7 @@ extension SpriteBatcher {
         let u0 = Float(uv.minX), v0 = Float(uv.minY), du = Float(uv.width), dv = Float(uv.height)
         let colour = sprite.color
         let red = Float(colour.red), green = Float(colour.green), blue = Float(colour.blue)
-        let alpha = Float(sprite.alpha), blend = Float(sprite.colorBlendFactor)
+        let alpha = SpriteBatcher.tintAlpha(sprite), blend = Float(sprite.colorBlendFactor)
 
         let first = UInt16(batch.vertices.count / Self.floatsPerVertex)
         batch.vertices.reserveCapacity(batch.vertices.count + across * down * Self.floatsPerVertex)

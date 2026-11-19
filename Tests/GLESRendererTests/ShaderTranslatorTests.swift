@@ -55,16 +55,14 @@ struct PreambleTests {
 
     @Test("SKDefaultShading tints and fades as an unshaded sprite draws")
     func defaultShadingTintsAndFades() {
-        // A Mac's SpriteKit: a white sprite tinted red (colorBlendFactor 1)
-        // draws red through SKDefaultShading, and at alpha 0.5 half as bright,
-        // nothing multiplied after the shader. A tinted sprite drawn through
-        // a lit shader, or one fading out, depends on it.
+        // SpriteKit: the texel multiplied by v_color_mix, the tint the
+        // vertex shader makes (premultiplied, the fade in its alpha), nothing
+        // multiplied after the shader (`TintTests` checks the numbers).
         let out = ShaderTranslator.fragmentShader(from: "void main() { gl_FragColor = SKDefaultShading(); }")
-        #expect(out.contains("in float v_blend;"))
-        #expect(out.contains("mediump vec4 tint = v_color_mix;"))
-        #expect(out.contains("mediump float blend = v_blend;"))
-        #expect(out.contains("mix(texel.rgb, tint.rgb * texel.a, blend)"))
-        #expect(out.contains("* tint.a;"))
+        #expect(out.contains("return texture(u_texture, v_tex_coord) * v_color_mix;"))
+        #expect(ShaderTranslator.defaultFragmentShader.contains("texture(u_texture, v_tex_coord) * v_color_mix;"))
+        #expect(ShaderTranslator.spriteVertexShader().contains(
+            "v_color_mix = vec4(mix(vec3(1.0), a_color_mix.rgb, a_blend) * a_color_mix.a, a_color_mix.a);"))
         let declared = ShaderTranslator.fragmentShader(from: "varying float v_blend; void main() { gl_FragColor = SKDefaultShading() * v_blend; }")
         #expect(declared.components(separatedBy: "float v_blend;").count - 1 == 1)
     }
