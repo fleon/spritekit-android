@@ -403,10 +403,9 @@ import Testing
                                           usesLineFragmentOrigin: item.options != .none, usesFontLeading: item.options == .lfoLeading)
         #expect(abs(rect.minX - item.expected.minX) < 1e-4 && abs(rect.minY - item.expected.minY) < 1e-4)
         #expect(abs(rect.height - item.expected.height) < 1e-4, "height \(rect.height) against \(item.expected.height)")
-        // A variable font's instances (Montserrat-SemiBold) keep FreeType's
-        // rounded advance deltas, which Core Text keeps fractional: a few
-        // hundredths of a point a line, to be fixed in the engine's metrics.
-        let tolerance = item.font == "Montserrat-SemiBold" ? 0.002 * item.expected.width : 1e-4
+        // A variable instance (Montserrat-SemiBold) within a hundredth of a
+        // point: kerning's variation deltas, which HarfBuzz rounds.
+        let tolerance = item.font == "Montserrat-SemiBold" ? 0.01 : 1e-4
         #expect(abs(rect.width - item.expected.width) <= tolerance, "width \(rect.width) against \(item.expected.width)")
     }
 
@@ -589,6 +588,30 @@ import Testing
             let tolerance = 0.12 * item.scale
             #expect(abs(fill.y - item.fill.y) < tolerance && abs(fill.x - item.fill.x) < 2 * tolerance, "fill \(fill) against \(item.fill) at \(item.origin) \(item.scale)x")
             #expect(abs(stroke.y - item.stroke.y) < tolerance && abs(stroke.x - item.stroke.x) < 2 * tolerance, "stroke \(stroke) against \(item.stroke) at \(item.origin) \(item.scale)x")
+        }
+    }
+
+    /// UIKit drawing "Level" (Montserrat-Black 31.5) through rotated,
+    /// sheared and mirrored transforms at 1x (Catalyst, smoothing off): the
+    /// ink's centroid and total coverage.
+    static let transformed: [(String, CGAffineTransform, centroid: CGPoint, ink: Int)] = [
+        ("rotate30", CGAffineTransform(a: 0.8660254037844387, b: 0.49999999999999994, c: -0.49999999999999994, d: 0.8660254037844387, tx: 60.0, ty: 20.0), CGPoint(x: 89.259, y: 60.989), 277606),
+        ("rotate90", CGAffineTransform(a: 6.123233995736766e-17, b: 1.0, c: -1.0, d: 6.123233995736766e-17, tx: 150.0, ty: 10.0), CGPoint(x: 128.844, y: 56.466), 277096),
+        ("shear", CGAffineTransform(a: 1.0, b: 0.0, c: 0.4, d: 1.0, tx: 10.0, ty: 10.0), CGPoint(x: 64.163, y: 30.170), 277547),
+        ("mirror", CGAffineTransform(a: -1.0, b: 0.0, c: 0.0, d: 1.0, tx: 200.0, ty: 20.0), CGPoint(x: 152.722, y: 40.156), 277101),
+    ]
+
+    @Test("Rotated, sheared and mirrored text draws where UIKit draws it")
+    func transformedText() throws {
+        _ = Fonts.engine
+        for (name, transform, centroid, ink) in Self.transformed {
+            let context = BitmapContext(width: 250, height: 200)
+            context.concatenate(transform)
+            let block = try #require(TextBlock(runs: [TextBlock.Run("Level", font: FontKey(name: "Montserrat-Black", size: 31.5), colour: .white)], maxWidth: 200))
+            block.draw(in: CGRect(x: 0, y: 0, width: 200, height: 60), context: context)
+            let ours = Self.centroid(context), total = Self.ink(context)
+            #expect(hypot(ours.x - centroid.x, ours.y - centroid.y) < 0.5, "\(name): centroid \(ours) against \(centroid)")
+            #expect(abs(Double(total) / Double(ink) - 1) < 0.03, "\(name): ink \(total) against \(ink)")
         }
     }
 

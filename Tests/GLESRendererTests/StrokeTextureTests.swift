@@ -168,21 +168,40 @@ final class StrokeTextureTests: XCTestCase {
         XCTAssertLessThanOrEqual(batch.vertices[7], 0.5)
     }
 
-    func testAStrokeTextureCutFromAnotherKeepsItsMask() {
+    /// A texture cut from another: SpriteKit ignores the cut but for its
+    /// aspect. Measured with a 400x80 image, the coordinate texture on its
+    /// left half and blue on its right, stroked with its left half
+    /// (`SKTexture(rect: (0, 0, 0.5, 1), in:)`, 200x80) at a width of 20:
+    /// the stroke runs through the blue half too, the whole image every 50
+    /// points (20 x 200/80), v across the whole image's height. Its top-left
+    /// quarter (200x40) repeats every 100. A fill of the left half maps its
+    /// box onto the whole image as well, which the mask already does
+    /// (`ResourceCache.imageName` binds the root).
+    func testAStrokeTextureCutFromAnotherRunsOverTheWholeImage() throws {
         var batcher = SpriteBatcher()
         batcher.shapeMeshes = ShapeMeshes()
         let path = CGMutablePath()
-        line(CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0), into: path)
-        let sheet = SKTexture(color: .white, size: CGSize(width: 64, height: 64))
+        line(CGPoint(x: -150, y: 0), CGPoint(x: 150, y: 0), into: path)
+        let sheet = SKTexture(color: .white, size: CGSize(width: 400, height: 80))
+        let half = SKTexture(rect: CGRect(x: 0, y: 0, width: 0.5, height: 1), in: sheet)
         var shape = DrawList.Shape(
             transform: .identity, path: path, fillColor: .clear, strokeColor: .white,
-            lineWidth: 4, lineCap: .butt, lineJoin: .miter, alpha: 1
+            lineWidth: 20, lineCap: .butt, lineJoin: .miter, alpha: 1
         )
-        shape.strokeTexture = SKTexture(rect: CGRect(x: 0, y: 0, width: 0.5, height: 0.5), in: sheet)
+        shape.strokeTexture = half
         var list = DrawList()
         list.commands = [.shape(shape)]
-        guard case .shape? = batcher.passes(for: list).first else {
-            return XCTFail("a part of another texture can't repeat alone: the mask draws it")
+        guard case let .batches(batches)? = batcher.passes(for: list).first, let batch = batches.first else {
+            return XCTFail("expected the stroke as a batch, not its mask")
         }
+        XCTAssertTrue(batch.texture === sheet, "the whole image it was cut from")
+        XCTAssertTrue(batch.repeatsAlong)
+        let stride = SpriteBatcher.floatsPerVertex
+        let us = Swift.stride(from: 2, to: batch.vertices.count, by: stride).map { batch.vertices[$0] }
+        let vs = Swift.stride(from: 3, to: batch.vertices.count, by: stride).map { batch.vertices[$0] }
+        // 300 points at a repeat of 20 x 200/80 = 50: six of the whole image.
+        XCTAssertEqual(us.max() ?? 0, 6, accuracy: 0.02, "the end's feathered rim runs half a point on")
+        XCTAssertLessThanOrEqual(vs.max() ?? 2, 1.05)
+        XCTAssertGreaterThanOrEqual(vs.min() ?? -1, -0.05)
     }
 }
