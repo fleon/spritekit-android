@@ -43,6 +43,42 @@ final class SpriteKitShapeEdgesTests: XCTestCase {
         }
     }
 
+    /// `glowWidth`, measured on the iPhone 17 Pro simulator (3x): a white
+    /// 2-unit line, from the pixel holding its centre outward. The edge's
+    /// foot moves out by the glow; full coverage stays where it was.
+    func testAGlowWidensTheStrokesEdgeByItsWidth() throws {
+        let measured: [(glow: CGFloat, nodeScale: CGFloat, profile: [Double])] = [
+            (1, 1, [1.00, 1.00, 0.97, 0.76, 0.55, 0.34, 0.12, 0]),
+            (2, 1, [1.00, 1.00, 0.98, 0.85, 0.73, 0.60, 0.47, 0.33, 0.20, 0.07, 0]),
+            (5, 1, [1.00, 1.00, 0.99, 0.93, 0.87, 0.81, 0.75, 0.69, 0.64, 0.57, 0.51, 0.45, 0.39, 0.33, 0.27, 0.22, 0.15, 0.09, 0.04, 0]),
+            (5, 2, [1.00, 1.00, 1.00, 1.00, 0.99, 0.96, 0.93, 0.90, 0.87, 0.84, 0.81, 0.78, 0.75, 0.72, 0.69, 0.66, 0.64, 0.60, 0.57, 0.55,
+                    0.51, 0.48, 0.45, 0.42, 0.39, 0.36, 0.33, 0.31, 0.27, 0.24, 0.22, 0.18, 0.15, 0.13, 0.09, 0.06, 0.04, 0]),
+        ]
+        for (glow, nodeScale, profile) in measured {
+            let drawn = try strokeProfile(width: 2, scale: 3, nodeScale: nodeScale, count: profile.count, glow: glow)
+            for (d, (got, want)) in zip(drawn, profile).enumerated() {
+                XCTAssertEqual(got, want, accuracy: 0.12, "glow \(glow), node scale \(nodeScale), \(d) px out")
+            }
+        }
+    }
+
+    /// `isAntialiased = false`, measured at 3x: a hard band the stroke's own
+    /// width, each pixel in when its centre is.
+    func testAnUnantialiasedStrokeIsAHardBandItsOwnWidth() throws {
+        let measured: [(width: CGFloat, profile: [Double])] = [
+            (0.5, [1, 0]),
+            (1, [1, 1, 0]),
+            (2, [1, 1, 1, 0]),
+            (2.5, [1, 1, 1, 1, 0]),
+        ]
+        for (width, profile) in measured {
+            let drawn = try strokeProfile(width: width, scale: 3, nodeScale: 1, count: profile.count, antialiased: false)
+            for (d, (got, want)) in zip(drawn, profile).enumerated() {
+                XCTAssertEqual(got, want, accuracy: 1e-3, "width \(width), \(d) px out")
+            }
+        }
+    }
+
     // MARK: Fills
 
     /// SpriteKit doesn't antialias a fill: a pixel is in when its centre is.
@@ -66,14 +102,17 @@ final class SpriteKitShapeEdgesTests: XCTestCase {
     // MARK: Helpers
 
     /// A vertical line's coverage, from the pixel holding its centre outward.
-    private func strokeProfile(width: CGFloat, scale: CGFloat, nodeScale: CGFloat, count: Int, centredOnPixel: Bool = true) throws -> [Double] {
+    private func strokeProfile(
+        width: CGFloat, scale: CGFloat, nodeScale: CGFloat, count: Int, centredOnPixel: Bool = true,
+        glow: CGFloat = 0, antialiased: Bool = true
+    ) throws -> [Double] {
         // In the node's own units; the line at x = 0.
         let path = CGMutablePath()
         path.move(to: CGPoint(x: 0, y: -20))
         path.addLine(to: CGPoint(x: 0, y: 20))
         let mesh = try XCTUnwrap(ShapeTessellator.stroke(
             PathRasteriser.flatten(path, scale: scale * nodeScale), width: width, cap: .butt, join: .miter,
-            scale: scale * nodeScale, edges: .spriteKit, edgePixels: scale
+            scale: scale * nodeScale, edges: .spriteKit, edgePixels: scale, glow: glow, antialiased: antialiased
         ))
         // Pixels across the middle row, their centres `k` pixels out from the
         // line (or `k + 0.5` with the line on a boundary).

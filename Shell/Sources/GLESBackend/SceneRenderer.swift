@@ -1167,9 +1167,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             case let .batches(batches):
                 for batch in batches { draw(batch, projection: projection, time: time, overrideProgram: maskProgram) }
             case let .coverage(staged):
-                draw(staged, projection: projection)
+                draw(staged, projection: projection, asCoverage: true)
             case let .shape(shape):
-                draw(shape, projection: projection)
+                draw(shape, projection: projection, asCoverage: true)
             case let .label(label):
                 draw(label, projection: projection)
             case .effect, .crop:
@@ -1913,7 +1913,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// density it will be drawn at, then drawn as one quad through the
     /// node's transform — so a rotated or animated shape costs one mask, not
     /// one per angle.
-    private func draw(_ shape: DrawList.Shape, projection: [Float], program: GLuint? = nil) {
+    /// `asCoverage`: drawn into a composited crop's mask, where only its
+    /// coverage counts and it blends as alpha whatever its node's mode.
+    private func draw(_ shape: DrawList.Shape, projection: [Float], program: GLuint? = nil, asCoverage: Bool = false) {
         let program = program ?? coverageProgram
         guard program != 0, let path = shape.path else { return }
 
@@ -1936,7 +1938,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 texture: mask.name,
                 projection: projection,
                 program: program,
-                fill: textured(shape.fillTexture).map { ($0, CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)) }
+                fill: textured(shape.fillTexture).map { ($0, CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)) },
+                blendMode: asCoverage ? .alpha : shape.blendMode
             )
         }
 
@@ -1944,7 +1947,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
            let mask = shapeMasks.stroke(
                path, width: shape.lineWidth,
                cap: shape.lineCap, join: shape.lineJoin, scale: scale,
-               edgePixels: shapeMeshes.screenPixelsPerPoint, owner: shape.owner
+               edgePixels: shapeMeshes.screenPixelsPerPoint,
+               glow: shape.glowWidth, antialiased: shape.isAntialiased, owner: shape.owner
            ) {
             drawCoverage(
                 CoverageGeometry.run(
@@ -1954,7 +1958,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 texture: mask.name,
                 projection: projection,
                 program: program,
-                fill: textured(shape.strokeTexture).map { ($0, CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)) }
+                fill: textured(shape.strokeTexture).map { ($0, CoverageGeometry.fillMap(mask: mask.bounds, path: path.boundingBox)) },
+                blendMode: asCoverage ? .alpha : shape.blendMode
             )
         }
     }
@@ -1995,7 +2000,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         program: GLuint? = nil,
         streamFirstIndex: Int = -1,
         streamFirstVertex: Int = 0,
-        fill: (texture: SKTexture, map: SIMD4<Float>)? = nil
+        fill: (texture: SKTexture, map: SIMD4<Float>)? = nil,
+        blendMode: SKBlendMode = .alpha
     ) {
         guard !run.indices.isEmpty else { return }
 
@@ -2018,7 +2024,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             let map = uniformLocation(program, "u_fill_map")
             if map >= 0 { glUniform4f(map, fill.map.x, fill.map.y, fill.map.z, fill.map.w) }
         }
-        setBlend(.alpha)
+        setBlend(blendMode)
 
         if streamFirstIndex >= 0 {
             bindVertexArray(vao)
@@ -2033,11 +2039,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// A label or shape staged with the frame; `mask` as a crop's mask,
     /// where only shapes draw.
-    private func draw(_ staged: CoverageGeometry.Staged, projection: [Float], mask: Bool = false) {
+    private func draw(_ staged: CoverageGeometry.Staged, projection: [Float], mask: Bool = false, asCoverage: Bool = false) {
         guard staged.isStaged else {
             switch staged.origin {
             case let .label(label): draw(label, projection: projection, program: mask ? shapeMaskProgram : nil)
-            case let .shape(shape): draw(shape, projection: projection, program: mask ? shapeMaskProgram : nil)
+            case let .shape(shape): draw(shape, projection: projection, program: mask ? shapeMaskProgram : nil, asCoverage: asCoverage)
             }
             return
         }
@@ -2053,9 +2059,13 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             }
             guard name != 0 else { continue }
             let fill = mask || texturedCoverageProgram == 0 ? nil : part.texture.map { ($0, part.textureMap) }
+            // A shape blends as its node says, as a sprite does.
+            var blendMode = SKBlendMode.alpha
+            if !mask, !asCoverage, case let .shape(shape) = staged.origin { blendMode = shape.blendMode }
             drawCoverage(
                 part.run, texture: name, projection: projection, program: partProgram,
-                streamFirstIndex: part.streamFirstIndex, streamFirstVertex: part.streamFirstVertex, fill: fill
+                streamFirstIndex: part.streamFirstIndex, streamFirstVertex: part.streamFirstVertex, fill: fill,
+                blendMode: blendMode
             )
         }
     }
@@ -2181,7 +2191,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
            let mask = shapeMasks.stroke(
                path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
-               edgePixels: shapeMeshes.screenPixelsPerPoint, owner: shape.owner
+               edgePixels: shapeMeshes.screenPixelsPerPoint,
+               glow: shape.glowWidth, antialiased: shape.isAntialiased, owner: shape.owner
            ) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),

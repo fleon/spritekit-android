@@ -219,6 +219,41 @@ final class ShapeTessellatorTests: XCTestCase {
         }
     }
 
+    /// Measured on the iPhone 17 Pro simulator: SpriteKit mitres every
+    /// `.miter` join whatever `miterLimit` says (a 175° turn, 23 half-widths
+    /// to its tip, mitred at a limit of 10), where CoreGraphics would bevel.
+    func testAShapeNodesJoinsAreMitredWhateverTheLimit() throws {
+        let meshes = ShapeMeshes()
+        meshes.pixelsPerPoint = 3
+        meshes.screenPixelsPerPoint = 3
+        let turn = 175 * CGFloat.pi / 180
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -25, y: 0))
+        path.addLine(to: .zero)
+        path.addLine(to: CGPoint(x: 25 * cos(turn), y: 25 * sin(turn)))
+        var node = shape(path)
+        node.fillColor = .clear
+        node.lineWidth = 6
+        node.lineJoin = .miter
+        let mesh = try XCTUnwrap(meshes.meshes(for: node)?.stroke)
+        let reach = mesh.positions.map { CGFloat($0.x) }.max() ?? 0
+        // The tip: 3 / sin(2.5°) ≈ 68.8 past the vertex, along the outside.
+        XCTAssertGreaterThan(reach, 65)
+    }
+
+    func testAShapeBlendsAsItsNodeSays() {
+        var batcher = SpriteBatcher()
+        let meshes = ShapeMeshes()
+        meshes.pixelsPerPoint = 2
+        batcher.shapeMeshes = meshes
+        var added = shape(CGPath(rect: CGRect(x: 0, y: 0, width: 10, height: 10), transform: nil))
+        added.blendMode = .add
+        var list = DrawList()
+        list.commands = [.sprite(colourSprite()), .shape(added), .shape(shape(CGPath(ellipseIn: CGRect(x: 0, y: 0, width: 8, height: 8), transform: nil)))]
+        guard case let .batches(batches)? = batcher.passes(for: list).first else { return XCTFail("expected batches") }
+        XCTAssertEqual(batches.map(\.blendMode), [.alpha, .add, .alpha])
+    }
+
     func testTexturedShapesAndCropMasksKeepTheirMasks() {
         var batcher = SpriteBatcher()
         batcher.shapeMeshes = ShapeMeshes()

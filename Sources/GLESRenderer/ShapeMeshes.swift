@@ -40,6 +40,8 @@ public final class ShapeMeshes {
         var join: Int
         var scale: Int              // twentieths of a pixel per point
         var edge: Int = 0           // twentieths of a screen pixel per point
+        var glow: Int = 0           // hundredths of a point
+        var aliased = false
     }
 
     private struct Cached {
@@ -110,7 +112,8 @@ public final class ShapeMeshes {
             let key = Key(
                 digest: digest, kind: textured ? 2 : 1, width: Int((shape.lineWidth * 100).rounded()),
                 cap: Int(shape.lineCap.rawValue), join: Int(shape.lineJoin.rawValue), scale: quantised,
-                edge: Int((screenPixelsPerPoint * 20).rounded())
+                edge: Int((screenPixelsPerPoint * 20).rounded()),
+                glow: Int((max(0, shape.glowWidth) * 100).rounded()), aliased: !shape.isAntialiased
             )
             keys.stroke = key
             keys.signature = keys.signature &* 31 &+ key.hashValue
@@ -153,8 +156,11 @@ public final class ShapeMeshes {
             let textured = keys.textured
             guard let mesh = mesh(for: key, make: {
                 ShapeTessellator.stroke(
-                    flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
-                    alongTexture: textured, edges: .spriteKit, edgePixels: CGFloat(key.edge) / 20
+                    flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin,
+                    // SpriteKit mitres whatever the node's `miterLimit` (measured).
+                    miterLimit: .greatestFiniteMagnitude,
+                    scale: scale, alongTexture: textured, edges: .spriteKit, edgePixels: CGFloat(key.edge) / 20,
+                    glow: CGFloat(key.glow) / 100, antialiased: !key.aliased
                 )
             }) else { return nil }
             result.stroke = mesh

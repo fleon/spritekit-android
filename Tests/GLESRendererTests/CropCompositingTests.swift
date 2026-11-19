@@ -158,4 +158,19 @@ final class CropCompositingTests: XCTestCase {
         let again = try XCTUnwrap(findCrop(passes()), "the mask set again clips again")
         XCTAssertTrue(CropCompositing.composites(again.mask, mode: .composited))
     }
+
+    @MainActor
+    func testTheDrawListCarriesAShapeNodesGlowAliasingAndBlendMode() throws {
+        let node = SKShapeNode(circleOfRadius: 5)
+        node.glowWidth = 3
+        node.isAntialiased = false
+        node.blendMode = .screen
+        node.miterLimit = 4
+        let drawn = list { $0.addChild(node) }
+        guard case let .shape(shape)? = drawn.commands.first else { return XCTFail("expected a shape") }
+        XCTAssertEqual(shape.glowWidth, 3)
+        XCTAssertFalse(shape.isAntialiased)
+        XCTAssertEqual(shape.blendMode, .screen)
+        XCTAssertEqual(node.miterLimit, 4, "kept on the node, as SpriteKit keeps it")
+    }
 }

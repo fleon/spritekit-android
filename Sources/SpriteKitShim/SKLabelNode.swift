@@ -625,9 +625,17 @@ open class SKShapeNode: SKNode {
     open var fillColor: SKColor = .clear
     open var strokeColor: SKColor = .white
     open var lineWidth: CGFloat = 1
+    /// Widens the stroke's soft edge outward by this many of the node's
+    /// units, in the stroke's colour; a shape with no stroke has none.
     open var glowWidth: CGFloat = 0
+    /// False: the stroke's edge is hard, a pixel in when its centre is, as
+    /// its fill always is.
     open var isAntialiased: Bool = true
     open var blendMode: SKBlendMode = .alpha
+    /// Kept as SpriteKit keeps it, and not applied: measured on the iPhone
+    /// 17 Pro simulator, SpriteKit mitres every `.miter` join whatever the
+    /// limit (a join 23 times the half-width long at a limit of 10).
+    open var miterLimit: CGFloat = 10
     open var fillTexture: SKTexture?
     /// Stretched over the path's bounds and tinted by `strokeColor`, as
     /// `fillTexture` is for the fill.

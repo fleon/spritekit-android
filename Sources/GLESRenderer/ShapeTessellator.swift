@@ -125,7 +125,9 @@ public enum ShapeTessellator {
         scale: CGFloat,
         alongTexture: Bool = false,
         edges: Edges = .exact,
-        edgePixels: CGFloat = 1
+        edgePixels: CGFloat = 1,
+        glow: CGFloat = 0,
+        antialiased: Bool = true
     ) -> Mesh? {
         guard scale > 0, scale.isFinite, width.isFinite else { return nil }
         guard width > 0 else { return Mesh() }
@@ -140,7 +142,9 @@ public enum ShapeTessellator {
             join: join,
             miterLimit: miterLimit,
             edges: edges,
-            edgePixels: max(edgePixels, 0.01)
+            edgePixels: max(edgePixels, 0.01),
+            glow: max(0, glow),
+            antialiased: antialiased
         )
 
         var builder = Builder()
@@ -399,6 +403,13 @@ public enum ShapeTessellator {
         /// The screen's pixels per node unit SpriteKit's edge is measured
         /// in (`Edges.spriteKit`): the scene's density, not the node's scale.
         var edgePixels: CGFloat = 1
+        /// `SKShapeNode.glowWidth`: SpriteKit's edge reaches this much further
+        /// out, its full coverage where it was (measured at 3x, at node
+        /// scales 1 and 2: the ramp's foot moves out by exactly the glow).
+        var glow: CGFloat = 0
+        /// `SKShapeNode.isAntialiased`: false, SpriteKit's stroke is a hard
+        /// band its own width, each pixel in when its centre is (measured).
+        var antialiased = true
         /// Where full coverage ends and where the feather reaches nothing.
         ///
         /// Across the stroke its exact coverage is a trapezoid: the width
@@ -412,10 +423,12 @@ public enum ShapeTessellator {
         /// edge (but at least 0.2 either side of the middle), none from 0.58
         /// outside it (and not before 1.5 from the middle).
         var core: CGFloat {
-            edges == .spriteKit ? max(0.2, drawnHalf * edgePixels - 1.12) / edgePixels : abs(width - fringe) / 2
+            guard edges == .spriteKit else { return abs(width - fringe) / 2 }
+            return antialiased ? max(0.2, drawnHalf * edgePixels - 1.12) / edgePixels : drawnHalf
         }
         var outer: CGFloat {
-            edges == .spriteKit ? max(drawnHalf * edgePixels + 0.58, 1.5) / edgePixels : (width + fringe) / 2
+            guard edges == .spriteKit else { return (width + fringe) / 2 }
+            return (antialiased ? max(drawnHalf * edgePixels + 0.58, 1.5) / edgePixels : drawnHalf) + glow
         }
         var coverage: Float {
             edges == .spriteKit ? 1 : Float(min(1, width / fringe))
