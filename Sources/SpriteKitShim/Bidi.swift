@@ -120,12 +120,33 @@ public enum Bidi {
         resolve(scalars.map(bidiClass), base: direction.level)
     }
 
+    /// Whether `scalar` is an explicit embedding, override or isolate, or
+    /// what ends one.
+    public static func isExplicitControl(_ scalar: Unicode.Scalar) -> Bool {
+        (0x202A ... 0x202E).contains(scalar.value) || (0x2066 ... 0x2069).contains(scalar.value)
+    }
+
+    /// `text` forced to read in one direction: its explicit controls taken
+    /// out and the rest wrapped in an override of that direction, led by
+    /// that direction's mark (an override doesn't set the paragraph's, so
+    /// spaces it ends on would otherwise go to the other end), so laid out
+    /// alone it comes out as the line it was cut from had it.
+    public static func overridden(_ text: String, rightToLeft: Bool) -> String {
+        let body = String(String.UnicodeScalarView(text.unicodeScalars.filter { !isExplicitControl($0) }))
+        return (rightToLeft ? "\u{200F}\u{202E}" : "\u{200E}\u{202D}") + body + "\u{202C}"
+    }
+
     /// A stretch of one piece of a line at one level.
     public struct Segment: Equatable, Sendable {
         /// Which piece, and which of its characters (offsets into it).
         public var piece: Int
         public var characters: Range<Int>
         public var level: UInt8
+        /// Whether, led by its mark and laid out alone, some of it would
+        /// read the other way: an override, embedding or isolate opened in an
+        /// earlier piece sets its level, as Core Text carries one across
+        /// attribute runs. Drawn `overridden` to its direction.
+        public var overridden = false
         /// Whether it reads right to left (an odd level).
         public var rightToLeft: Bool { level % 2 == 1 }
     }
@@ -153,6 +174,20 @@ public enum Bidi {
                 segments[segments.count - 1].characters = last.characters.lowerBound ..< character.offset + 1
             } else {
                 segments.append(Segment(piece: character.piece, characters: character.offset ..< character.offset + 1, level: level))
+            }
+        }
+        // Only explicit controls set a level the stretch's own characters
+        // wouldn't give it alone.
+        if scalars.contains(where: isExplicitControl) {
+            for index in segments.indices {
+                let segment = segments[index]
+                let text = String(Array(pieces[segment.piece])[segment.characters])
+                let own = Self.levels(Array(marked(text, in: segment.rightToLeft ? .rightToLeft : .leftToRight).unicodeScalars)).levels
+                // The mark, if any, comes first; controls, and what X9
+                // removes, read no way.
+                segments[index].overridden = zip(own.suffix(text.unicodeScalars.count), text.unicodeScalars).contains { level, scalar in
+                    !isExplicitControl(scalar) && !isRemoved(bidiClass(scalar)) && level % 2 != segment.level % 2
+                }
             }
         }
         return visualOrder(segments.map(\.level)).map { segments[$0] }

@@ -434,13 +434,15 @@ open class SKLabelNode: SKNode {
                 let run = currentText[segment.piece].run
                 let characters = visible[segment.piece][segment.characters]
                 guard segment.rightToLeft else {
-                    place(run, Bidi.marked(String(characters), in: .leftToRight))
+                    let text = String(characters)
+                    place(run, segment.overridden ? Bidi.overridden(text, rightToLeft: false) : Bidi.marked(text, in: .leftToRight))
                     continue
                 }
                 var body = characters.endIndex
                 while body > characters.startIndex, characters[body - 1].isWhitespace { body -= 1 }
                 place(run, String(characters[body...]))
-                place(run, Bidi.marked(String(characters[..<body]), in: .rightToLeft))
+                let text = String(characters[..<body])
+                place(run, segment.overridden ? Bidi.overridden(text, rightToLeft: true) : Bidi.marked(text, in: .rightToLeft))
             }
             for (index, spaces) in trailing { place(currentText[index].run, String(spaces)) }
             current.pieces = pieces

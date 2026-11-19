@@ -14,6 +14,8 @@ import Testing
 ///   game asks for by instance name.
 /// - KoHo Bold: Thai, the script where FreeType alone is wrong (marks,
 ///   SARA AM, descenders) and HarfBuzz has to be right.
+/// - Noto Naskh Arabic UI Bold: the Arabic face Android falls back to, which
+///   has no AAT justification table of its own (Apple's Arabic faces do).
 /// - Hiragino Sans GB: Han and kana; Apple SD Gothic Neo: Hangul.
 enum Fonts {
     static let directory: String = {
@@ -34,7 +36,7 @@ enum Fonts {
     static let engine: TextEngine = {
         let library = FontLibrary()
         let engine = TextEngine(library: library, atlas: GlyphAtlas(library: library))
-        for file in ["Montserrat", "KoHo-Bold"] {
+        for file in ["Montserrat", "KoHo-Bold", "NotoNaskhArabicUI-Bold"] {
             _ = try? library.register(path: directory + "/" + file + ".ttf")
         }
         // Geneva too, a face with a line gap, which the fixtures lack.

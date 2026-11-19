@@ -194,6 +194,189 @@ struct BidiStringDrawingParityTests {
         }
     }
 
+    /// Justified Arabic, each line's words as ink spans across (gaps over
+    /// three points split them), from UIKit's `NSAttributedString.draw(in:)`
+    /// on Catalyst at 4x (macOS 27.2), the lines 20 points apart so no ink
+    /// joins them: a line with initial letters widens by kashida after each,
+    /// its spaces as they are; one without (only right-joining letters)
+    /// widens its spaces (`Kashida`). In Montserrat, the Arabic falling back
+    /// to Geeza Pro, whose kashida glyph is its own; and in Noto Naskh Arabic,
+    /// Android's, a tatweel.
+    static let kashida: [(String, noto: Bool, [[(CGFloat, CGFloat)]])] = [
+        ("سلام عليكم ورحمة الله وبركاته يا أصدقائي الأعزاء", false, [
+            [(0.5, 15), (19.75, 68.5), (73, 116), (120.5, 160)],
+            [(0.25, 37), (42, 96.75), (103.25, 112.75), (117, 160)],
+        ]),
+        ("مرحبا بكم في هذه اللعبة الجميلة جدا اليوم وغدا", false, [
+            [(0, 35.75), (41.25, 65.75), (70.25, 90.25), (94.75, 116.5), (122.5, 159.75)],
+            [(2, 26.5), (31, 60.5), (67.75, 88.25), (92.25, 137.5)],
+        ]),
+        ("دار ورد زاد راد دار ورد زاد راد دار ورد", false, [
+            [(1, 16.5), (23.5, 42.25), (47.5, 66), (72.75, 88), (95, 110.75), (117.75, 136.5), (141.75, 160)],
+            [(1, 19.75), (23.25, 41.75), (47, 62)],
+        ]),
+        ("كتب الطالب الدرس في المدرسة الكبيرة", false, [
+            [(0, 23.5), (27.75, 69.25), (74.5, 125), (130, 160)],
+            [(0.25, 40), (44.75, 86)],
+        ]),
+        ("سلام عليكم ورحمة الله وبركاته يا أصدقائي الأعزاء", true, [
+            [(1, 18), (23.5, 69.5), (74.5, 117.25), (121.5, 159.25)],
+            [(1, 36.25), (41.25, 88.5), (93.5, 101.5), (106.5, 145)],
+        ]),
+        ("مرحبا بكم في هذه اللعبة الجميلة جدا اليوم وغدا", true, [
+            [(1.5, 33.5), (38.75, 63), (68, 87.75), (92.75, 115.25), (120.25, 159.25)],
+            [(1, 26), (30.75, 57), (62, 81.75), (87, 125)],
+        ]),
+        ("كتب الطالب الدرس في المدرسة الكبيرة", true, [
+            [(1, 23), (28, 69.5), (74.5, 124.5), (129.75, 159.75)],
+            [(1.5, 36.75), (42.25, 84.75)],
+        ]),
+    ]
+
+    @Test("Justified Arabic widens with kashida where UIKit puts them")
+    func kashida() throws {
+        for (text, noto, expected) in Self.kashida {
+            let font = noto ? FontKey(name: "NotoNaskhArabicUI-Bold", size: 15) : Fonts.display(15)
+            let style = TextBlock.Style(alignment: .justified, lineSpacing: 20)
+            let block = try #require(TextBlock(runs: [TextBlock.Run(text, font: font, colour: .white, style: style)],
+                                               maxWidth: 160, usesFontLeading: false))
+            let context = BitmapContext(width: 640, height: 1200, scale: 4)
+            block.draw(in: CGRect(x: 0, y: 0, width: 160, height: 300), context: context)
+            let data = try #require(context.data?.assumingMemoryBound(to: UInt8.self))
+            // Lines: rows with ink, between rows without.
+            var lines: [[Bool]] = []
+            var current: [Bool]?
+            for y in 0 ..< 1200 {
+                let row = (0 ..< 640).map { data[(y * 640 + $0) * 4 + 3] > 60 }
+                if row.contains(true) {
+                    current = current.map { zip($0, row).map { $0 || $1 } } ?? row
+                } else if let line = current {
+                    lines.append(line)
+                    current = nil
+                }
+            }
+            #expect(lines.count == expected.count, "'\(text)' \(font.name): \(lines.count) lines")
+            for (number, (columns, line)) in zip(lines, expected).enumerated() {
+                var spans: [(CGFloat, CGFloat)] = []
+                var start = -1, gap = 0
+                for x in 0 ..< 640 {
+                    if columns[x] {
+                        if start < 0 { start = x }
+                        gap = 0
+                    } else if start >= 0 {
+                        gap += 1
+                        if gap > 12 { spans.append((CGFloat(start) / 4, CGFloat(x - gap + 1) / 4)); start = -1; gap = 0 }
+                    }
+                }
+                if start >= 0 { spans.append((CGFloat(start) / 4, CGFloat(640 - gap) / 4)) }
+                #expect(spans.count == line.count, "'\(text)' \(font.name) line \(number): \(spans)")
+                for (ours, theirs) in zip(spans, line) {
+                    #expect(abs(ours.0 - theirs.0) <= 0.75 && abs(ours.1 - theirs.1) <= 0.75,
+                            "'\(text)' \(font.name) line \(number): \(ours) against \(theirs)")
+                }
+            }
+        }
+    }
+
+    /// Explicit overrides, embeddings and isolates opened in one attribute
+    /// run and closed in a later one (Montserrat Black 15 and SemiBold 20,
+    /// each run its own colour), against Core Text drawing the same runs on
+    /// one line: what one opens governs the runs after it. Lopsided words
+    /// (Wim, Wll, ממו) put a run's ink elsewhere when it reads the other way.
+    static let spanning: [[(String, Bool)]] = [
+        [("ab \u{202E}Wim", false), ("Wll", true), (" xy\u{202C} end", false)],
+        [("שלום \u{202D}עולם ", false), ("ממו", true), ("\u{202C} סוף", false)],
+        [("abc \u{2067}שלום ", false), ("Wim Wll", true), ("\u{2069} end", false)],
+        [("abc \u{202B}Wim ", false), ("Wll", true), ("\u{202C} end", false)],
+        [("שלום \u{2066}Wim ", false), ("Wll", true), (" mW\u{2069} סוף", false)],
+    ]
+
+    /// Each colour's words (ink apart by 3¾ points or more), left to
+    /// right, in an RGBA bitmap 4 pixels a point: each one's extent across
+    /// and its centre, each pixel weighted by its coverage.
+    static func words(_ data: UnsafePointer<UInt8>, width: Int, height: Int) -> [Int: [(left: CGFloat, right: CGFloat, centre: CGFloat)]] {
+        var mass: [Int: [CGFloat]] = [:]
+        for y in 0 ..< height {
+            for x in 0 ..< width {
+                let pixel = (y * width + x) * 4
+                let channels = [data[pixel], data[pixel + 1], data[pixel + 2]]
+                // Its colour the channel well above the others.
+                guard let colour = channels.indices.max(by: { channels[$0] < channels[$1] }), channels[colour] > 60,
+                      channels.indices.allSatisfy({ $0 == colour || Int(channels[$0]) * 2 < Int(channels[colour]) }) else { continue }
+                mass[colour, default: [CGFloat](repeating: 0, count: width)][x] += CGFloat(channels[colour])
+            }
+        }
+        return mass.mapValues { columns in
+            var words: [(left: CGFloat, right: CGFloat, centre: CGFloat)] = []
+            var start = -1, end = -1, total: CGFloat = 0, moment: CGFloat = 0
+            func close() {
+                guard start >= 0 else { return }
+                words.append((CGFloat(start) / 4, CGFloat(end + 1) / 4, moment / total / 4))
+                start = -1
+                total = 0
+                moment = 0
+            }
+            for x in 0 ..< width where columns[x] > 0 {
+                if start >= 0, x - end > 15 { close() }
+                if start < 0 { start = x }
+                end = x
+                total += columns[x]
+                moment += columns[x] * (CGFloat(x) + 0.5)
+            }
+            close()
+            return words
+        }
+    }
+
+    @Test("Explicit controls govern the runs after the one that opens them, as in Core Text")
+    func spanningRuns() throws {
+        _ = Fonts.engine
+        _ = CoreTextFallback.registered
+        // Device RGB, so Core Text draws them unconverted.
+        let device = CGColorSpaceCreateDeviceRGB()
+        let colours: [(SKColor, CGColor)] = try [(SKColor.red, [1, 0, 0, 1]), (.green, [0, 1, 0, 1]), (.blue, [0, 0, 1, 1])].map {
+            ($0.0, try #require(CGColor(colorSpace: device, components: $0.1)))
+        }
+        for runs in Self.spanning {
+            let name = runs.map(\.0).joined()
+            // Core Text's line, drawn from the left at 4x.
+            let attributed = NSMutableAttributedString()
+            for (index, (text, large)) in runs.enumerated() {
+                attributed.append(NSAttributedString(string: text, attributes: [
+                    .font: CTFontCreateWithName((large ? "Montserrat-SemiBold" : "Montserrat-Black") as CFString, large ? 20 : 15, nil),
+                    NSAttributedString.Key(kCTForegroundColorAttributeName as String): colours[index].1,
+                ]))
+            }
+            let line = CTLineCreateWithAttributedString(attributed)
+            var pixels = [UInt8](repeating: 0, count: 1200 * 160 * 4)
+            let theirs = try pixels.withUnsafeMutableBytes { buffer -> [Int: [(left: CGFloat, right: CGFloat, centre: CGFloat)]] in
+                let context = try #require(CGContext(data: buffer.baseAddress, width: 1200, height: 160, bitsPerComponent: 8, bytesPerRow: 1200 * 4,
+                                                     space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.scaleBy(x: 4, y: 4)
+                context.textPosition = CGPoint(x: 0, y: 12)
+                CTLineDraw(line, context)
+                return Self.words(buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), width: 1200, height: 160)
+            }
+            // Ours: the same runs, one line from the left.
+            let block = try #require(TextBlock(runs: runs.enumerated().map { index, run in
+                TextBlock.Run(run.0, font: run.1 ? FontKey(name: "Montserrat-SemiBold", size: 20) : Fonts.display(15), colour: colours[index].0)
+            }, maxWidth: 300, usesFontLeading: false))
+            #expect(block.lines.count == 1, "'\(name)'")
+            let context = BitmapContext(width: 1200, height: 160, scale: 4)
+            block.draw(in: CGRect(x: 0, y: 0, width: 300, height: 40), context: context)
+            let ours = Self.words(try #require(context.data?.assumingMemoryBound(to: UInt8.self)), width: 1200, height: 160)
+            #expect(theirs.count == runs.count, "'\(name)'")
+            for (colour, apple) in theirs {
+                let mine = ours[colour] ?? []
+                #expect(mine.count == apple.count, "'\(name)' run \(colour): \(mine) against \(apple)")
+                for (word, theirs) in zip(mine, apple) {
+                    #expect(abs(word.left - theirs.left) <= 0.75 && abs(word.right - theirs.right) <= 0.75 && abs(word.centre - theirs.centre) <= 0.5,
+                            "'\(name)' run \(colour): \(word) against \(theirs)")
+                }
+            }
+        }
+    }
+
     /// Each line's ink across, from UIKit's `NSAttributedString.draw(in:)` on
     /// Catalyst at 4x (macOS 27.2), a left-to-right interface: naturally
     /// aligned, a right-to-left paragraph starts at the left, as it does
