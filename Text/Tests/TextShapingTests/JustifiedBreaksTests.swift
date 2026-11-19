@@ -52,12 +52,13 @@ struct JustifiedBreaksTests {
         }
         print("JUSTIFIED exact \(exact) counts \(counts) of \(total); with a word wider than the line \(longExact) of \(longTotal); the 3,420 sweep's counts \(sweepCounts)")
         // Where every word fits a line, 98% break exactly as TextKit 2's
-        // (breaking line by line, 78%); a word wider than the line is broken
-        // by character as before, which matches TextKit 2 in 55% of those.
+        // (breaking line by line, 78%); with a word wider than the line,
+        // breaking words where TextKit 2 would, 88% (line by line, 55%).
         let wordsFit = total - longTotal, wordsFitExact = exact - longExact
         #expect(Double(wordsFitExact) >= 0.97 * Double(wordsFit), "\(wordsFitExact) of \(wordsFit) break exactly as TextKit 2's: \(misses)")
-        #expect(Double(exact) >= 0.945 * Double(total), "\(exact) of \(total) layouts break exactly as TextKit 2's")
-        #expect(Double(counts) >= 0.97 * Double(total), "\(counts) of \(total) have TextKit 2's line count")
+        #expect(Double(longExact) >= 0.87 * Double(longTotal), "\(longExact) of \(longTotal) with a word wider than the line break exactly as TextKit 2's")
+        #expect(Double(exact) >= 0.97 * Double(total), "\(exact) of \(total) layouts break exactly as TextKit 2's")
+        #expect(Double(counts) >= 0.99 * Double(total), "\(counts) of \(total) have TextKit 2's line count")
     }
 }
 #endif
