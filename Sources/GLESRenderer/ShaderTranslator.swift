@@ -279,6 +279,26 @@ public enum ShaderTranslator {
     }
     """
 
+    /// Colour glyphs (emoji) off an RGBA page: premultiplied, drawn as
+    /// they are, at the label's opacity (the vertex colour's alpha).
+    public static let colourGlyphFragmentShader = """
+    #version 300 es
+
+    precision mediump float;
+
+    in vec2 v_tex_coord;
+    in vec4 v_color_mix;
+    in float v_blend;
+
+    uniform sampler2D u_texture;
+
+    out vec4 \(fragColor);
+
+    void main() {
+        \(fragColor) = texture(u_texture, v_tex_coord) * v_color_mix.a;
+    }
+    """
+
     /// What an `SKCropNode`'s mask is drawn with while the stencil is being
     /// written.
     ///

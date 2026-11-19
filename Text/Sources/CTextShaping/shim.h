@@ -18,5 +18,7 @@
 
 #include <hb.h>
 #include <hb-ft.h>
+#include <hb-ot.h>
+#include <hb-raster.h>
 
 #endif

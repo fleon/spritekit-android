@@ -58,6 +58,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var shapeMaskProgram: GLuint = 0
 
     private let glyphPages = GlyphPages(atlas: TextEngine.shared.atlas)
+    /// The atlas's colour pages (emoji), RGBA.
+    private let colourPages = GlyphPages(atlas: TextEngine.shared.atlas, colour: true)
+    private var colourGlyphProgram: GLuint = 0
     private let glyphSource = EngineGlyphSource(engine: TextEngine.shared)
     private let shapeMasks = ShapeMasks()
     /// Shapes as triangles in the sprite batches; what it can't take
@@ -442,6 +445,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         if coverageProgram == 0 { Log.error("the coverage program did not link") }
 
+        colourGlyphProgram = device.createProgram(
+            vertex: ShaderTranslator.spriteVertexShader(),
+            fragment: ShaderTranslator.colourGlyphFragmentShader
+        )
+        if colourGlyphProgram == 0 { Log.error("the colour glyph program did not link") }
+
         texturedCoverageProgram = device.createProgram(
             vertex: ShaderTranslator.spriteVertexShader(),
             fragment: ShaderTranslator.texturedCoverageFragmentShader
@@ -567,10 +576,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         cache.removeAll()
         pageDecodes.forgetResident()
         glyphPages.removeAll()
+        colourPages.removeAll()
         shapeMasks.removeAll()
         shapeMeshes.removeAll()
         glyphSource.flush()
         if coverageProgram != 0 { device.deleteProgram(coverageProgram) }
+        if colourGlyphProgram != 0 { device.deleteProgram(colourGlyphProgram) }
         if texturedCoverageProgram != 0 { device.deleteProgram(texturedCoverageProgram) }
         if maskProgram != 0 { device.deleteProgram(maskProgram) }
         if cropCompositeProgram != 0 { device.deleteProgram(cropCompositeProgram) }
@@ -1844,12 +1855,25 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let runs = CoverageGeometry.runs(for: label, source: glyphSource)
         guard !runs.isEmpty else { return }
         glyphPages.sync()
+        colourPages.sync()
 
         for run in runs {
-            let name = glyphPages.name(of: run.page)
-            guard name != 0 else { continue }
-            drawCoverage(run, texture: name, projection: projection, program: program)
+            guard let (name, runProgram) = textureAndProgram(of: run, coverage: program) else { continue }
+            drawCoverage(run, texture: name, projection: projection, program: runProgram)
         }
+    }
+
+    /// A glyph run's page texture and program: a colour run's off its RGBA
+    /// page with the colour glyph program, which a crop's mask doesn't
+    /// draw (it stencils by coverage).
+    private func textureAndProgram(of run: CoverageGeometry.Run, coverage program: GLuint) -> (GLuint, GLuint)? {
+        guard run.isColour else {
+            let name = glyphPages.name(of: run.page)
+            return name == 0 ? nil : (name, program)
+        }
+        let name = colourPages.name(of: run.page)
+        guard name != 0, colourGlyphProgram != 0, program != shapeMaskProgram else { return nil }
+        return (name, colourGlyphProgram)
     }
 
     // MARK: Shapes
@@ -1989,11 +2013,17 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let program = mask ? shapeMaskProgram : coverageProgram
         guard program != 0 else { return }
         for part in staged.parts {
-            let name = part.mask != 0 ? part.mask : glyphPages.name(of: part.run.page)
+            var name = part.mask
+            var partProgram = program
+            if name == 0 {
+                guard let (page, runProgram) = textureAndProgram(of: part.run, coverage: program) else { continue }
+                name = page
+                partProgram = runProgram
+            }
             guard name != 0 else { continue }
             let fill = mask || texturedCoverageProgram == 0 ? nil : part.texture.map { ($0, part.textureMap) }
             drawCoverage(
-                part.run, texture: name, projection: projection, program: program,
+                part.run, texture: name, projection: projection, program: partProgram,
                 streamFirstIndex: part.streamFirstIndex, streamFirstVertex: part.streamFirstVertex, fill: fill
             )
         }
@@ -2027,6 +2057,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let passes = resolveCoverage(passes)
         // Every glyph the frame shaped is on its page before any is drawn.
         glyphPages.sync()
+        colourPages.sync()
         var vertexBytes = 0
         var indexCount = 0
         measure(passes, vertexBytes: &vertexBytes, indexCount: &indexCount)

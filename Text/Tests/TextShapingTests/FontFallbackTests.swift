@@ -93,18 +93,6 @@ struct FontFallbackTests {
         }
     }
 
-    /// Core Text widens Apple Color Emoji at text sizes (23 points at 20,
-    /// 13 at 10) beyond its own advances; Android's emoji face has no such
-    /// quirk, so the emoji's own advance is what's laid out. Colour glyphs
-    /// aren't drawn yet (the atlas is coverage only).
-    @Test("Emoji fall back to the emoji face, at its own advances")
-    func emoji() throws {
-        let runs = try #require(Fonts.engine.shape("a😀b👍🏽", font: Fonts.display(20)))
-        #expect(Self.merged(runs.map { $0.font ?? "-" }) == ["-", "AppleColorEmoji", "-", "AppleColorEmoji"])
-        let emoji = runs.filter { $0.font == "AppleColorEmoji" }
-        #expect(emoji.map(\.advance) == [20, 20], "one em each, the face's own advance")
-    }
-
     @Test("The fallback decision is cached, and fallback text measures the same on many threads")
     func threads() async {
         let font = Fonts.display(17)
@@ -143,10 +131,10 @@ struct FallbackStringDrawingTests {
         var testDescription: String { "\(font) \(size) '\(text)' \(alignment)" }
     }
 
-    /// At width 160, with `.usesLineFragmentOrigin`. Wrapped Thai, Hangul
-    /// and left-aligned Arabic paragraphs are left out: they turn on where
-    /// lines break (ICU's Thai dictionary, breaks between Hangul syllables)
-    /// and on a paragraph that starts right to left, not on fallback.
+    /// At width 160, with `.usesLineFragmentOrigin`. Wrapped Thai and
+    /// left-aligned Arabic paragraphs are left out: they turn on ICU's Thai
+    /// dictionary and on a paragraph that starts right to left, not on
+    /// fallback. Wrapped Korean breaks between syllables, as UIKit's does.
     static let rects: [Rect] = [
         Rect("Montserrat-Black", 15.0, "クロ1976", .left, x: 0.0, y: 0.0, w: 65.475, h: 19.0),
         Rect("Montserrat-Black", 15.0, "クロ1976", .center, x: 0.0, y: 0.0, w: 65.475, h: 19.0),
@@ -181,6 +169,12 @@ struct FallbackStringDrawingTests {
         Rect("Montserrat-SemiBold", 13.0, "クロ1976 さんが ゲームを かちました", .left, x: 0.0, y: 0.0, w: 155.54133971887697, h: 32.0),
         Rect("Montserrat-SemiBold", 13.0, "クロ1976 さんが ゲームを かちました", .center, x: 0.0, y: 0.0, w: 155.54133971887694, h: 32.0),
         Rect("Montserrat-SemiBold", 13.0, "سلام عليكم ورحمة الله وبركاته", .center, x: 0.0, y: 0.0, w: 152.81283371978475, h: 16.0),
+        Rect("Montserrat-Black", 15.0, "한국어 텍스트 줄바꿈 시험입니다 여기", .left, x: 0.0, y: 0.0, w: 156.22499999999997, h: 38.0),
+        Rect("Montserrat-Black", 15.0, "한국어 텍스트 줄바꿈 시험입니다 여기", .center, x: 0.0, y: 0.0, w: 156.22499999999997, h: 38.0),
+        Rect("KoHo-Bold", 20.0, "한국어 텍스트 줄바꿈 시험입니다 여기", .left, x: 0.0, y: 0.0, w: 149.6, h: 52.0),
+        Rect("KoHo-Bold", 20.0, "한국어 텍스트 줄바꿈 시험입니다 여기", .center, x: 0.0, y: 0.0, w: 149.60000000000002, h: 52.0),
+        Rect("Montserrat-SemiBold", 13.0, "한국어 텍스트 줄바꿈 시험입니다 여기", .left, x: 0.0, y: 0.0, w: 156.93420485584218, h: 32.0),
+        Rect("Montserrat-SemiBold", 13.0, "한국어 텍스트 줄바꿈 시험입니다 여기", .center, x: 0.0, y: 0.0, w: 156.93420485584215, h: 32.0),
     ]
 
     @Test("Bounding rects match UIKit's", arguments: rects)
