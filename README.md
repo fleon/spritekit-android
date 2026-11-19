@@ -688,10 +688,12 @@ A change to the shim's behaviour comes with a test of this kind.
   own space, cached by what they draw and the density they're drawn at, and
   batched with the colour sprites either side, so a shape that moves, turns
   or fades costs no rasterising and no draw call of its own. Edges are
-  SpriteKit's, measured through `SKRenderer` at 1x, 2x and 3x: a fill isn't
-  antialiased (a pixel is in when its centre is), and a stroke is softened
-  over 1.19 of the node's own units whatever the density, narrower and
-  softer than CoreGraphics' (`SpriteKitShapeEdgesTests`). Strokes take
+  SpriteKit's, measured in an `SKView` on the iPhone 17 Pro (3x) and iPad
+  Air (2x) simulators: a fill isn't antialiased (a pixel is in when its
+  centre is), and a stroke is softened over about 1.7 of the screen's
+  pixels at any density, narrower than CoreGraphics', twice as soft in a
+  node scaled 2x (`SpriteKitShapeEdgesTests`). A windowless `SKRenderer`
+  on a Mac draws strokes softer than any device does: measure on one. Strokes take
   CoreGraphics' joins and caps; a path that changes is tessellated again on
   the frame thread in microseconds. The tessellator can also feather edges
   across a device pixel, held to the masks pixel by pixel

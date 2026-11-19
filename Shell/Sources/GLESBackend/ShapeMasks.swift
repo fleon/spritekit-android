@@ -35,6 +35,7 @@ final class ShapeMasks {
         var cap: Int
         var join: Int
         var scale: Int              // hundredths of a pixel per point
+        var edge: Int = 0           // twentieths of a screen pixel per point
     }
 
     private struct Cached {
@@ -82,15 +83,18 @@ final class ShapeMasks {
         cap: CGLineCap,
         join: CGLineJoin,
         scale: CGFloat,
+        edgePixels: CGFloat,
         owner: ObjectIdentifier? = nil
     ) -> Entry? {
+        let edge = quantised(edgePixels)
         let key = Key(
             digest: digest(of: path), kind: 1, rule: 0,
             width: Int((width * 100).rounded()), cap: cap.rawValue, join: join.rawValue,
-            scale: quantised(scale)
+            scale: quantised(scale), edge: edge
         )
         return entry(for: key, owner: owner.map { OwnerKey(node: $0, kind: 1) }) {
-            SpriteKitMasks.stroke(path, width: width, cap: cap, join: join, scale: scale)
+            // SpriteKit's edge, in the screen's pixels (`Edges.spriteKit`).
+            SpriteKitMasks.stroke(path, width: width, cap: cap, join: join, scale: scale, edgePixels: CGFloat(edge) / 20)
         }
     }
 
