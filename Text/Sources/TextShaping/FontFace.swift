@@ -88,6 +88,10 @@ final class FaceHandle {
     /// Points per unit of `exactFont`.
     private(set) var pointsPerUnit: CGFloat = 0
     static let subunits: Int32 = 64
+    /// A variable instance's advance deltas, for the fractions HarfBuzz
+    /// rounds away (`AdvanceVariations`); nil for a static face or the
+    /// default instance.
+    private(set) var advanceVariations: AdvanceVariations?
     private(set) var instanceNames: [String] = []
 
     /// Holds the face while `body` uses it. Every call into FreeType or
@@ -150,8 +154,25 @@ final class FaceHandle {
                 }
                 exactFont = exact
                 pointsPerUnit = units > 0 ? size / CGFloat(units) : 0
+                var length: UInt32 = 0
+                if let coordinates = hb_font_get_var_coords_normalized(exact, &length), length > 0,
+                   let blob = hb_face_reference_table(hbFace, FaceHandle.tag("HVAR")) {
+                    defer { hb_blob_destroy(blob) }
+                    var size: UInt32 = 0
+                    if let data = hb_blob_get_data(blob, &size), size > 0 {
+                        let table = [UInt8](UnsafeRawBufferPointer(start: data, count: Int(size)))
+                        advanceVariations = AdvanceVariations(
+                            hvar: table, normalizedCoordinates: Array(UnsafeBufferPointer(start: coordinates, count: Int(length)))
+                        )
+                    }
+                }
             }
         }
+    }
+
+    /// An OpenType table tag.
+    static func tag(_ name: String) -> hb_tag_t {
+        name.utf8.prefix(4).reduce(0) { $0 << 8 | hb_tag_t($1) }
     }
 
     deinit {

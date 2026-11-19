@@ -107,9 +107,11 @@ than FreeType's 1/64 point a glyph, and a glyph's ink is the box round its
 outline's points, on the curve and off, rounded out to whole font units, as
 Core Text bounds glyphs in a line (its image bounds and its glyph-path
 bounds alike). `CoreTextParityTests` holds both to Core Text's on the same
-files; what's left is a variable instance's advance deltas, which Core Text
-keeps fractional and HarfBuzz rounds to whole font units (a hundredth of a
-point a glyph). FreeType still rasterises, with hinting off
+files. A variable instance's advance deltas, which HarfBuzz rounds to whole
+font units, get their fractions back from the font's `HVAR` table
+(`AdvanceVariations`), so its lines measure as Core Text's to a few
+thousandths of a point at 100 pt; what's left is kerning's variation
+deltas, which HarfBuzz rounds too. FreeType still rasterises, with hinting off
 (`FT_LOAD_NO_HINTING`), which also keeps it proportional across sizes.
 
 ### Thai, which is the point of all this
@@ -179,8 +181,8 @@ middle, `.top` and `.bottom` its edges. So a descender lifts a centred label
 (a game undoes it with a line's glyph-path bounds to centre capitals), and
 every frame is a point or two wider and taller than the ink, which a game's
 pills and buttons are sized by. Every Black frame matches SpriteKit's to the
-point; in the lighter instances 2% come out a point narrower, where a long
-line's fractional advance deltas (above) tip its ink over a whole point.
+point, and so do the lighter instances' since their advances keep the
+deltas' fractions (above).
 A label of more than one line (`numberOfLines` other than 1) is framed by
 its typographic block, as SpriteKit frames it: the widest line without its
 trailing whitespace, rounded up and padded by a point a side, from a point

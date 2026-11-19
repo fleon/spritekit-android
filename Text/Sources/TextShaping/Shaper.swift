@@ -46,7 +46,9 @@ extension FaceHandle {
             glyphs.append(ShapedGlyph(
                 glyph: infos[index].codepoint,
                 cluster: byteOffset + Int(infos[index].cluster),
-                xAdvance: CGFloat(positions[index].x_advance) * pointsPerUnit,
+                // Plus the advance delta's fraction HarfBuzz rounded away (variable instances).
+                xAdvance: CGFloat(positions[index].x_advance) * pointsPerUnit
+                    + CGFloat(advanceVariations?.fraction(of: infos[index].codepoint) ?? 0) * pointsPerUnit * CGFloat(FaceHandle.subunits),
                 yAdvance: CGFloat(positions[index].y_advance) * pointsPerUnit,
                 xOffset: CGFloat(positions[index].x_offset) * pointsPerUnit,
                 yOffset: CGFloat(positions[index].y_offset) * pointsPerUnit
