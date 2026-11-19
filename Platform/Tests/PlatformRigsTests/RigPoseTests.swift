@@ -338,6 +338,69 @@ struct RigPhysicsTests {
         #expect(abs(slow - fast) < max(slow, fast) * 0.35, "30 fps gave \(slow), 120 fps gave \(fast)")
     }
 
+    /// The fixture's tail swaying as a hanging pot on chains does: rotation and a
+    /// little give along y, slow to settle.
+    private func swaying() throws -> RigData {
+        var json = RigFixture.json
+        var physics = try #require(json["physics"] as? [[String: Any]])
+        physics = physics.filter { $0["bone"] as? String == "tail" }.map { entry in
+            ["name": entry["name"] ?? "sway", "order": entry["order"] ?? 5, "bone": "tail",
+             "rotate": 1, "y": 0.25, "inertia": 0.4, "strength": 70, "damping": 0.97]
+        }
+        json["physics"] = physics
+        return try #require(RigData(json: json, textureURL: URL(fileURLWithPath: "/dev/null")))
+    }
+
+    @Test("After a long jump in one frame, a swaying part comes back to rest", arguments: [40.0, 400.0, 4000.0, 40000.0])
+    func longJumpSettles(distance: CGFloat) throws {
+        let rig = try swaying()
+        let pose = settled(rig)
+        let rest = pose.at("tail"), restAngle = pose.angle("tail")
+        pose.origin = CGPoint(x: pose.origin.x - distance * 0.6, y: pose.origin.y - distance)
+        pose.advance(frame)
+        for _ in 0..<1800 { pose.advance(frame) }
+        let at = pose.at("tail")
+        #expect(hypot(at.x - rest.x, at.y - rest.y) < 0.5, "\(distance): the tail stayed \(at.x - rest.x), \(at.y - rest.y) from rest")
+        #expect(abs(pose.angle("tail") - restAngle) < 1e-3, "\(distance): turned \(pose.angle("tail") - restAngle) rad from rest")
+    }
+
+    /// A panel zooming into place out of a small start, as a phone recorded
+    /// it: each tick's move on screen and the rig's size there (points per
+    /// point), which grows from 0.42 to 1.57 and eases back to 1.43.
+    static let zoom: [(dx: CGFloat, dy: CGFloat, size: CGFloat)] = [(-28.5752, -16.1468, 0.41846), (-9.8104, -5.5435, 0.55722), (-11.3358, -6.4054, 0.71756), (-10.132, -5.7252, 0.86087), (-8.8124, -4.9796, 0.98551), (-7.9397, -4.4864, 1.09782), (-6.9214, -3.911, 1.19571), (-5.962, -3.3689, 1.28004), (-32.7737, -7.3967, 1.35166), (-9.8912, -4.6967, 1.46011), (-2.9759, -1.413, 1.49275), (-2.819, -1.3386, 1.52367), (-2.0354, -0.9665, 1.54597), (-1.3294, -0.6313, 1.56056), (-0.7011, -0.3329, 1.56824), (-0.1506, -0.0715, 1.5699), (0.3223, 0.153, 1.56636), (0.7175, 0.3407, 1.55849), (1.0349, 0.4914, 1.54715), (1.2747, 0.6053, 1.53317), (1.4368, 0.6822, 1.51741), (1.5211, 0.7223, 1.50073), (1.5278, 0.7254, 1.48398), (1.4567, 0.6917, 1.46802), (1.308, 0.6211, 1.45367), (1.0816, 0.5136, 1.4418), (0.7775, 0.3692, 1.43329), (0.3956, 0.1879, 1.42894)]
+
+    @Test("A rig zooming into place doesn't swing; the same moves at a steady size do, and settle")
+    @MainActor
+    func zoomIsNotTravel() throws {
+        let rig = try swaying()
+        let unit: CGFloat = 0.13335
+        func carried(steady: Bool) -> (swung: CGFloat, after: CGFloat) {
+            let pose = settled(rig)
+            let rest = pose.at("tail")
+            var at = CGPoint.zero
+            var before: (at: CGPoint, size: CGFloat)? = (at, steady ? 1.43 : 0.3)
+            var swung: CGFloat = 0
+            for move in Self.zoom {
+                at = CGPoint(x: at.x + move.dx, y: at.y + move.dy)
+                let now = (at: at, size: steady ? 1.43 : move.size)
+                if let moved = RigNode.travel(from: before, to: now, unit: unit) {
+                    pose.origin = CGPoint(x: pose.origin.x + moved.x, y: pose.origin.y + moved.y)
+                }
+                before = now
+                pose.advance(frame)
+                let t = pose.at("tail")
+                swung = max(swung, hypot(t.x - rest.x, t.y - rest.y))
+            }
+            for _ in 0..<1800 { pose.advance(frame) }
+            let t = pose.at("tail")
+            return (swung, hypot(t.x - rest.x, t.y - rest.y))
+        }
+        let zoomed = carried(steady: false), slid = carried(steady: true)
+        #expect(zoomed.swung < 1, "zooming swung the tail \(zoomed.swung) units")
+        #expect(slid.swung > 10, "sliding at a steady size didn't swing it (\(slid.swung))")
+        #expect(slid.after < 0.5 && zoomed.after < 0.5)
+    }
+
     @Test("Resetting physics puts every trailing part back at once")
     func reset() throws {
         let rig = try #require(RigFixture.data)
