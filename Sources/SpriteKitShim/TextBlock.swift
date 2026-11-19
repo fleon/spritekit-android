@@ -135,8 +135,8 @@ public struct TextBlock {
         /// The spaces before its last visible character, which justifying
         /// widens.
         public var spaces: Int
-        /// In a right-to-left paragraph: its pieces placed right to left,
-        /// the spaces it ends on hanging past its left edge (`Bidi`).
+        /// In a right-to-left paragraph: the spaces it ends on hang past its
+        /// left edge (`Bidi`).
         public var rightToLeft = false
 
         public var height: CGFloat { ascent + descent + leading }
@@ -363,9 +363,10 @@ public struct TextBlock {
         }
         if ranges.isEmpty { ranges = [0 ..< 0] }
 
-        // A paragraph with right-to-left text in it: each line in its
-        // direction (`Bidi.marked`), a right-to-left one's pieces placed
-        // from its right edge.
+        // A paragraph with right-to-left text in it: each line's visible
+        // characters in the order drawn (`Bidi.segments`), a piece per run
+        // and level, each in its own direction; then the spaces it ends on,
+        // at its right end, where they draw nothing.
         let direction: Bidi.Direction? = Bidi.needsReordering(text) ? Bidi.direction(of: text) : nil
         return ranges.enumerated().map { index, range in
             let visible = visibleEnd(range.lowerBound, range.upperBound)
@@ -374,11 +375,30 @@ public struct TextBlock {
                       width: width(piece.lowerBound, piece.upperBound))
             }
             if let direction {
-                for (offset, (_, piece)) in groups(range.lowerBound, range.upperBound).enumerated() {
-                    pieces[offset].text = Bidi.marked(pieces[offset].text, in: direction)
-                    guard direction == .rightToLeft else { continue }
-                    let shown = width(piece.lowerBound, min(piece.upperBound, max(piece.lowerBound, visible)))
-                    pieces[offset].x = width(range.lowerBound, visible) - pieces[offset].x - shown
+                let shown = groups(range.lowerBound, visible)
+                var x: CGFloat = 0
+                pieces = []
+                func place(_ run: Int, _ a: Int, _ b: Int, _ text: String) {
+                    guard a < b else { return }
+                    pieces.append(Piece(run: run, text: text, x: x, width: width(a, b)))
+                    x += width(a, b)
+                }
+                for segment in Bidi.segments(of: shown.map { String(characters[$0.1]) }, in: direction) {
+                    let (run, piece) = shown[segment.piece]
+                    let a = piece.lowerBound + segment.characters.lowerBound, b = piece.lowerBound + segment.characters.upperBound
+                    guard segment.rightToLeft else {
+                        place(run, a, b, Bidi.marked(String(characters[a ..< b]), in: .leftToRight))
+                        continue
+                    }
+                    // Right to left, the spaces a stretch ends on are on its left.
+                    let body = visibleEnd(a, b)
+                    place(run, body, b, String(characters[body ..< b]))
+                    // Always led by its mark, which draws nothing, so drawing
+                    // knows to place its words right to left.
+                    place(run, a, body, "\u{200F}" + String(characters[a ..< body]))
+                }
+                for (run, piece) in groups(visible, range.upperBound) {
+                    place(run, piece.lowerBound, piece.upperBound, String(characters[piece]))
                 }
             }
             let present = pieces.isEmpty ? [paragraph.empty] : Array(Set(pieces.map(\.run))).sorted()
@@ -403,6 +423,11 @@ public struct TextBlock {
         }
     }
 
+    /// What breaking a word between two characters costs a justified
+    /// paragraph where it isn't forced (fitted to TextKit 2's breaks: the
+    /// same from 4,000 to 6,000).
+    private static let voluntaryBreakCost: CGFloat = 5_000
+
     /// A justified paragraph's lines as UIKit's text system breaks them
     /// (TextKit 2, which UIKit's string drawing is), chosen for the whole
     /// paragraph rather than line by line: the breaks that make the
@@ -413,17 +438,35 @@ public struct TextBlock {
     /// over 6,500 layouts where every word fits (four faces, five sizes,
     /// nine sentences, six of them not seen while fitting, widths from 90
     /// to 300 points), it matches 98% of them exactly, where breaking line
-    /// by line matched 78%. Nil where a word is wider than the line, which is
-    /// broken by character as before.
+    /// by line matched 78%.
+    ///
+    /// Where a word is wider than the line, any word in the paragraph may
+    /// also break between two characters, the line then taking as many as
+    /// fit: free where the word is too wide and starts the line, otherwise
+    /// at a cost (`voluntaryBreakCost`), which TextKit 2 pays to spare a line
+    /// holding only the last letters of a broken word ("y unbreakab|le").
+    /// Over 520 such layouts it matches 88% of TextKit 2's lines exactly,
+    /// where breaking line by line matched 55%. Nil if a single character
+    /// is wider than the line.
     private static func balancedBreaks(
         starts: [Int], count: Int, maxWidth: CGFloat,
         width: (Int, Int) -> CGFloat, squeeze: (Int, Int) -> CGFloat,
         visibleEnd: (Int, Int) -> Int, isSpace: (Int) -> Bool
     ) -> [Range<Int>]? {
-        let points = [0] + starts.filter { $0 > 0 && $0 < count } + [count]
-        // Every piece between two break opportunities has to fit on its own.
-        for (a, b) in zip(points, points.dropFirst()) where width(a, visibleEnd(a, b)) > maxWidth + 0.0001 {
-            return nil
+        let words = [0] + starts.filter { $0 > 0 && $0 < count } + [count]
+        let tooWide = Set(zip(words, words.dropFirst()).filter { width($0, visibleEnd($0, $1)) > maxWidth + 0.0001 }.map(\.0))
+        // With a word too wide for the line, breaks inside words too, each
+        // with the start of its word.
+        var points = [0]
+        var wordOf: [Int: Int] = [:]
+        for (a, b) in zip(words, words.dropFirst()) {
+            if !tooWide.isEmpty {
+                for inside in a + 1 ..< max(a + 1, visibleEnd(a, b)) {
+                    points.append(inside)
+                    wordOf[inside] = a
+                }
+            }
+            points.append(b)
         }
         var best = [CGFloat](repeating: .infinity, count: points.count)
         var previous = [Int](repeating: -1, count: points.count)
@@ -435,14 +478,21 @@ public struct TextBlock {
                 let spaceWidth = squeeze(a, visible) / justifiedSqueeze
                 // Further back only adds width: stop once a line can't fit.
                 if natural - squeeze(a, visible) > maxWidth + 0.0001 { break }
+                var breaking: CGFloat = 0
+                if let word = wordOf[b] {
+                    // Inside a word: no squeezing, and as many characters as fit.
+                    if natural > maxWidth + 0.0001 || width(a, b + 1) <= maxWidth { continue }
+                    if word > a || !tooWide.contains(word) { breaking = Self.voluntaryBreakCost }
+                }
                 let slack = abs(maxWidth - natural)
-                let cost: CGFloat = if b == count {
+                let fit: CGFloat = if b == count {
                     0
                 } else if spaceWidth > 0 {
                     pow(slack / spaceWidth, 3)
                 } else {
                     30_000 * pow(slack / maxWidth, 7)
                 }
+                let cost = fit + breaking
                 if best[i] + cost < best[j] {
                     best[j] = best[i] + cost
                     previous[j] = i
@@ -502,13 +552,18 @@ public struct TextBlock {
                 let run = runs[piece.run]
                 // Justified text widens its spaces; letter spacing places each character.
                 let parts: [(String, CGFloat)] = if stretch != 0 || run.kern != 0 {
-                    Self.split(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
+                    piece.text.first == "\u{200F}"
+                        ? Self.splitRightToLeft(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
+                        : Self.split(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
                 } else {
                     [(piece.text, 0)]
                 }
                 for (text, offset) in parts {
+                    // A right-to-left word's spaces are before it, to its left.
+                    let leading = text.first == "\u{200F}" ? 0 : text.prefix(while: { $0 == " " }).count
+                    spacesBefore += leading
                     let x = start + piece.x + offset + stretch * CGFloat(spacesBefore)
-                    spacesBefore += text.filter { $0 == " " }.count
+                    spacesBefore += text.filter { $0 == " " }.count - leading
                     guard !text.allSatisfy(\.isWhitespace) else { continue }
                     let baseline = top + line.ascent - run.baselineOffset
                     if axisAligned {
@@ -545,6 +600,37 @@ public struct TextBlock {
             defer { x += provider.measure(part, font: run.font).advance + run.kern * CGFloat(part.count) }
             return (part, x)
         }
+    }
+
+    /// A right-to-left piece (led by its mark) split as `split` splits one,
+    /// its words placed right to left: each word after the spaces that
+    /// follow it in the text, which are on its left.
+    private static func splitRightToLeft(_ text: String, run: Run, byCharacter: Bool, provider: TextProvider) -> [(String, CGFloat)] {
+        var parts: [String] = []
+        for character in text.dropFirst() {
+            if byCharacter || parts.isEmpty || parts[parts.count - 1].last == " " {
+                parts.append(String(character))
+            } else {
+                parts[parts.count - 1].append(character)
+            }
+        }
+        func advance(_ text: String) -> CGFloat {
+            text.isEmpty ? 0 : provider.measure(text, font: run.font).advance + run.kern * CGFloat(text.count)
+        }
+        var x: CGFloat = 0
+        var placed: [(String, CGFloat)] = []
+        for part in parts.reversed() {
+            var word = Substring(part)
+            while word.last == " " { word = word.dropLast() }
+            let spaces = String(repeating: " ", count: part.count - word.count)
+            if !spaces.isEmpty {
+                placed.append((spaces, x))
+                x += advance(spaces)
+            }
+            placed.append(("\u{200F}" + word, x))
+            x += advance(String(word))
+        }
+        return placed
     }
 
     private func draw(
@@ -607,7 +693,8 @@ public struct TextBlock {
         context.beginPath()
         for glyph in glyphs {
             let device = CGPoint(x: point.x + glyph.origin.x, y: point.y - glyph.origin.y).applying(ctm)
-            let pen = CGPoint(x: (device.x * steps).rounded(.down) / steps, y: (device.y - 0.0001).rounded(.up)).applying(inverse)
+            // Within a ten-thousandth of a pixel counts as on it, both ways.
+            let pen = CGPoint(x: (device.x * steps + 0.0001).rounded(.down) / steps, y: (device.y - 0.0001).rounded(.up)).applying(inverse)
             func place(_ p: CGPoint) -> CGPoint { CGPoint(x: pen.x + p.x, y: pen.y - p.y) }
             for element in glyph.elements {
                 switch element {

@@ -15,6 +15,11 @@ struct BidiParityTests {
         "(abc) שלום", "שלום (abc)", "123 שלום 456", "שלום 12.5% עולם", "!שלום", "שלום!", "؟مرحبا",
         "مرحبا 2026", "Hello עולם and مرحبا", "مرحبا Hello world", "سلام ٣٤٥ عليكم", "שלום עולם ",
         "\u{200F}Hello מרחב", "\u{200E}שלום world",
+        // Explicit embeddings, overrides and isolates (X1 to X10).
+        "\u{202B}abc def\u{202C} xyz", "\u{202E}abc\u{202C} def", "\u{202D}שלום\u{202C} עולם",
+        "abc \u{2067}def ghi\u{2069} jkl", "שלום \u{2066}abc 123\u{2069} עולם", "abc \u{2068}שלום\u{2069}!",
+        "\u{2067}abc\u{2069} שלום", "שלום \u{202A}abc, def\u{202C}!", "abc \u{2067}שלום \u{2066}12 x\u{2069} עולם\u{2069} end",
+        "\u{202E}שלום abc\u{202C}", "\u{2068}abc\u{2069} \u{2067}", "\u{202B}\u{202B}nested\u{202C} שלום\u{202C}",
     ]
 
     static func coreTextLine(_ text: String, _ size: CGFloat) -> CTLine {
@@ -67,7 +72,15 @@ struct BidiParityTests {
             // neither draws or moves anything visible (`shapeBidi`).
             let trailing = text.reversed().prefix(while: \.isWhitespace).count
             let trailingSpaces = Set(text.utf16.count - trailing ..< text.utf16.count)
-            let drawn = Set(ours).subtracting(trailingSpaces)
+            // Explicit embeddings, overrides and isolates draw nothing, and
+            // UAX #9 leaves where they go open.
+            var utf16 = 0
+            var controls = Set<Int>()
+            for scalar in text.unicodeScalars {
+                if (0x202A ... 0x202E).contains(scalar.value) || (0x2066 ... 0x2069).contains(scalar.value) { controls.insert(utf16) }
+                utf16 += scalar.utf16.count
+            }
+            let drawn = Set(ours).subtracting(trailingSpaces).subtracting(controls)
             #expect(apple.filter(drawn.contains) == ours.filter(drawn.contains), "'\(text)'")
         }
     }

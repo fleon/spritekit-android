@@ -64,4 +64,34 @@ struct BidiTests {
         for text in ["Hello", "クロ1976", "ไทย", "Привет", "12.5%", "€5"] { #expect(!Bidi.needsReordering(text), "\(text)") }
         for text in ["שלום", "مرحبا", "٣", "a\u{200F}"] { #expect(Bidi.needsReordering(text), "\(text)") }
     }
+
+    /// `text`'s visible characters in the order drawn: explicit controls,
+    /// which draw nothing and whose place UAX #9 leaves open, left out.
+    static func visibleOrder(_ text: String) -> String {
+        visual(text).filter { !$0.unicodeScalars.allSatisfy { (0x202A ... 0x202E).contains($0.value) || (0x2066 ... 0x2069).contains($0.value) } }
+    }
+
+    @Test("Embeddings, overrides and isolates set levels as Core Text's do")
+    func explicit() {
+        // Overrides: the letters inside take the override's direction.
+        #expect(Self.visibleOrder("\u{202E}abc\u{202C} def") == "cba def")
+        #expect(Self.visibleOrder("\u{202D}שלום\u{202C} עולם") == "םלוע שלום")
+        // Embeddings: the text inside resolved at a higher level.
+        #expect(Self.visibleOrder("שלום \u{202A}abc, def\u{202C}!") == "!abc, def םולש")
+        // Isolates: neither direction leaks in or out, and P2 skips them.
+        #expect(Self.visibleOrder("שלום \u{2066}abc 123\u{2069} עולם") == "םלוע abc 123 םולש")
+        #expect(Self.visibleOrder("\u{2067}abc\u{2069} שלום") == "םולש abc")
+        #expect(Self.visibleOrder("abc \u{2068}שלום\u{2069}!") == "abc םולש!")
+        #expect(Bidi.direction(of: "\u{2066}abc\u{2069} שלום") == .rightToLeft)
+    }
+
+    @Test("A line's pieces are cut where the level changes and drawn in L2's order")
+    func segments() {
+        let segments = Bidi.segments(of: ["שלום ", "world", " עולם"], in: .rightToLeft)
+        #expect(segments.map(\.piece) == [2, 1, 0])
+        #expect(segments.map(\.level) == [1, 2, 1])
+        let mixed = Bidi.segments(of: ["Hello ", "שלום", " עולם", " end"], in: .leftToRight)
+        #expect(mixed.map(\.piece) == [0, 2, 1, 3])
+        #expect(mixed.map(\.rightToLeft) == [false, true, true, false])
+    }
 }
