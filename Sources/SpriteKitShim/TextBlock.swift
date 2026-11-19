@@ -421,6 +421,11 @@ public struct TextBlock {
         }
     }
 
+    /// What breaking a word between two characters costs a justified
+    /// paragraph where it isn't forced (fitted to TextKit 2's breaks: the
+    /// same from 4,000 to 6,000).
+    private static let voluntaryBreakCost: CGFloat = 5_000
+
     /// A justified paragraph's lines as UIKit's text system breaks them
     /// (TextKit 2, which UIKit's string drawing is), chosen for the whole
     /// paragraph rather than line by line: the breaks that make the
@@ -431,17 +436,35 @@ public struct TextBlock {
     /// over 6,500 layouts where every word fits (four faces, five sizes,
     /// nine sentences, six of them not seen while fitting, widths from 90
     /// to 300 points), it matches 98% of them exactly, where breaking line
-    /// by line matched 78%. Nil where a word is wider than the line, which is
-    /// broken by character as before.
+    /// by line matched 78%.
+    ///
+    /// Where a word is wider than the line, any word in the paragraph may
+    /// also break between two characters, the line then taking as many as
+    /// fit: free where the word is too wide and starts the line, otherwise
+    /// at a cost (`voluntaryBreakCost`), which TextKit 2 pays to spare a line
+    /// holding only the last letters of a broken word ("y unbreakab|le").
+    /// Over 520 such layouts it matches 88% of TextKit 2's lines exactly,
+    /// where breaking line by line matched 55%. Nil if a single character
+    /// is wider than the line.
     private static func balancedBreaks(
         starts: [Int], count: Int, maxWidth: CGFloat,
         width: (Int, Int) -> CGFloat, squeeze: (Int, Int) -> CGFloat,
         visibleEnd: (Int, Int) -> Int, isSpace: (Int) -> Bool
     ) -> [Range<Int>]? {
-        let points = [0] + starts.filter { $0 > 0 && $0 < count } + [count]
-        // Every piece between two break opportunities has to fit on its own.
-        for (a, b) in zip(points, points.dropFirst()) where width(a, visibleEnd(a, b)) > maxWidth + 0.0001 {
-            return nil
+        let words = [0] + starts.filter { $0 > 0 && $0 < count } + [count]
+        let tooWide = Set(zip(words, words.dropFirst()).filter { width($0, visibleEnd($0, $1)) > maxWidth + 0.0001 }.map(\.0))
+        // With a word too wide for the line, breaks inside words too, each
+        // with the start of its word.
+        var points = [0]
+        var wordOf: [Int: Int] = [:]
+        for (a, b) in zip(words, words.dropFirst()) {
+            if !tooWide.isEmpty {
+                for inside in a + 1 ..< max(a + 1, visibleEnd(a, b)) {
+                    points.append(inside)
+                    wordOf[inside] = a
+                }
+            }
+            points.append(b)
         }
         var best = [CGFloat](repeating: .infinity, count: points.count)
         var previous = [Int](repeating: -1, count: points.count)
@@ -453,14 +476,21 @@ public struct TextBlock {
                 let spaceWidth = squeeze(a, visible) / justifiedSqueeze
                 // Further back only adds width: stop once a line can't fit.
                 if natural - squeeze(a, visible) > maxWidth + 0.0001 { break }
+                var breaking: CGFloat = 0
+                if let word = wordOf[b] {
+                    // Inside a word: no squeezing, and as many characters as fit.
+                    if natural > maxWidth + 0.0001 || width(a, b + 1) <= maxWidth { continue }
+                    if word > a || !tooWide.contains(word) { breaking = Self.voluntaryBreakCost }
+                }
                 let slack = abs(maxWidth - natural)
-                let cost: CGFloat = if b == count {
+                let fit: CGFloat = if b == count {
                     0
                 } else if spaceWidth > 0 {
                     pow(slack / spaceWidth, 3)
                 } else {
                     30_000 * pow(slack / maxWidth, 7)
                 }
+                let cost = fit + breaking
                 if best[i] + cost < best[j] {
                     best[j] = best[i] + cost
                     previous[j] = i
