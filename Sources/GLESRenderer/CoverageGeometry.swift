@@ -36,6 +36,8 @@ public enum CoverageGeometry {
             public var mask: UInt32
             /// Where its indices start in the frame's stream; -1 until written.
             public var streamFirstIndex: Int = -1
+            /// Where its vertices start in that stream, in vertices.
+            public var streamFirstVertex: Int = 0
             /// A shape's fill or stroke texture, and where it is sampled
             /// from the mask's coordinates (`fillMap`).
             public var texture: SKTexture?
