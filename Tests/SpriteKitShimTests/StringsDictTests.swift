@@ -54,7 +54,7 @@ struct StringsDictTests {
         }
     }
 
-    /// Phantom Words' entries and the edge cases, with what Foundation
+    /// A word game's entries and the edge cases, with what Foundation
     /// formatted on a Mac (`String(format:locale:)`, en_US).
     private static let entries: [String: StringsDict.Entry] = {
         func rule(_ type: String, _ forms: [String: String]) -> StringsDict.Variable { .init(valueType: type, forms: forms) }
