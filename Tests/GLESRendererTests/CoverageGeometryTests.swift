@@ -117,6 +117,13 @@ final class CoverageGeometryTests: XCTestCase {
         XCTAssertEqual(colour.vertices[2], 10.0 / 40, accuracy: 1e-6)
         XCTAssertEqual(Array(colour.vertices[4 ..< 9]), [1, 1, 1, 0.5, 0])
         XCTAssertEqual(corner(colour, quad: 0, 0), CGPoint(x: 12, y: 0))
+        // The font colour's alpha doesn't fade them; a clear one hides them.
+        let faint = CoverageGeometry.runs(for: label("😀", lines: [("😀", .zero)], colour: SKColor(red: 1, green: 0, blue: 0, alpha: 0.5)),
+                                          source: source)
+        XCTAssertEqual(faint.first?.vertices[7], 1)
+        let clear = CoverageGeometry.runs(for: label("😀", lines: [("😀", .zero)], colour: SKColor(red: 1, green: 0, blue: 0, alpha: 0)),
+                                          source: source)
+        XCTAssertEqual(clear.first?.vertices[7], 0)
     }
 
     func testLetterSpacingMovesEachCharacterOnByTheSpacingBeforeIt() throws {

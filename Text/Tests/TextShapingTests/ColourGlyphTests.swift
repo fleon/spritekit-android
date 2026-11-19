@@ -28,10 +28,13 @@ struct ColourGlyphTests {
             let apple = Self.appleEmoji(size)
             if EmojiMetrics.advance(size) != apple.advance { misses.append(size) }
             let box = EmojiMetrics.box(size)
-            #expect(abs(box.width - apple.box.width) < 1e-3 && abs(box.height - apple.box.height) < 1e-3, "side at \(size)")
-            #expect(abs(box.minY - apple.box.minY) < 1e-3, "bottom at \(size)")
-            // Its inset from the pen, within a twentieth of a point.
-            #expect(abs(box.minX - apple.box.minX) < 0.05, "left at \(size): \(box.minX) against \(apple.box.minX)")
+            #expect(abs(box.width - apple.box.width) < 1e-5 && abs(box.height - apple.box.height) < 1e-5, "side at \(size)")
+            #expect(abs(box.minY - apple.box.minY) < 1e-5, "bottom at \(size)")
+            // The inset, or a tracking unit off it where the interpolated
+            // tracking lands on a whole unit and the floor tips either way.
+            let unit = 0.4 * EmojiMetrics.imageSize(size) / 800
+            let dx = abs(box.minX - apple.box.minX)
+            #expect(dx < 1e-5 || abs(dx - unit) < 1e-5, "left at \(size): \(box.minX) against \(apple.box.minX)")
         }
         // Every advance but a size or two landing exactly on a step, which
         // Core Text's own arithmetic tips either way (19 points is one).
@@ -54,6 +57,23 @@ struct ColourGlyphTests {
         // A family, a flag and a toned thumb are each one emoji glyph.
         let runs = Fonts.engine.shape("👨‍👩‍👧🇯🇵👍🏽", font: Fonts.display(20)) ?? []
         #expect(runs.flatMap(\.glyphs).count == 3 && runs.allSatisfy { $0.font == "AppleColorEmoji" })
+    }
+
+    @Test("Label frames with emoji match SpriteKit's at every size from 6 to 40 points")
+    @MainActor
+    func labelSizes() {
+        _ = CoreTextFallback.registered
+        var misses: [String] = []
+        for size in stride(from: 6.0, through: 40.0, by: 0.5) as StrideThrough<CGFloat> {
+            for (name, text) in [("Montserrat-Black", "😀"), ("Montserrat-Black", "a😀"), ("KoHo-Bold", "Lv 😀👍🏽")] {
+                let apple = SpriteKit.SKLabelNode(attributedText: NSAttributedString(string: text, attributes: [.font: NSFont(name: name, size: size)!]))
+                let ours = SpriteKitShim.SKLabelNode(fontNamed: name)
+                ours.fontSize = size
+                ours.text = text
+                if apple.frame != ours.contentFrame { misses.append("\(name) \(size) '\(text)': \(apple.frame) against \(ours.contentFrame)") }
+            }
+        }
+        #expect(misses.isEmpty, "\(misses.count) frames differ: \(misses.prefix(12))")
     }
 
     @Test("Label frames with emoji match SpriteKit's")
@@ -190,7 +210,7 @@ struct ColourGlyphTests {
         #expect(abs(colour - item.colour) <= max(4, item.colour / 10), "coloured pixels \(colour) against \(item.colour)")
     }
 
-    @Test("Emoji keep their colours whatever the text's colour, and take its opacity")
+    @Test("Emoji keep their colours whatever the text's colour and its alpha, unless it's clear")
     func untinted() throws {
         _ = Fonts.engine
         func draw(_ colour: SpriteKitShim.SKColor) throws -> [UInt8] {
@@ -199,10 +219,11 @@ struct ColourGlyphTests {
             block.draw(in: CGRect(x: 2, y: 2, width: 36, height: 36), context: context)
             return Array(UnsafeBufferPointer(start: try #require(context.data).assumingMemoryBound(to: UInt8.self), count: 40 * 40 * 4))
         }
-        let white = try draw(.white), black = try draw(.black), faint = try draw(SpriteKitShim.SKColor(white: 0, alpha: 0.5))
-        #expect(white == black)
-        let alpha = { (pixels: [UInt8]) in stride(from: 3, to: pixels.count, by: 4).reduce(0) { $0 + Int(pixels[$1]) } }
-        #expect(abs(Double(alpha(faint)) / Double(alpha(white)) - 0.5) < 0.01)
+        // As UIKit draws them (red at half alpha is pixel for pixel white).
+        let white = try draw(.white), black = try draw(.black), faint = try draw(SpriteKitShim.SKColor(red: 1, green: 0, blue: 0, alpha: 0.5))
+        #expect(white == black && white == faint)
+        let clear = try draw(SpriteKitShim.SKColor(white: 1, alpha: 0))
+        #expect(clear.allSatisfy { $0 == 0 })
     }
 }
 #endif

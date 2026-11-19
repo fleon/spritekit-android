@@ -19,7 +19,7 @@ public enum CoverageGeometry {
         public var vertices: [Float]
         public var indices: [UInt16]
         /// Colour glyphs (emoji) off a colour page: RGBA drawn as it is,
-        /// the vertex colour's alpha its opacity.
+        /// at the label's opacity.
         public var isColour = false
 
         public var quadCount: Int { indices.count / 6 }
@@ -147,8 +147,10 @@ public enum CoverageGeometry {
                     quad: frame,
                     uv: textureRect(of: glyph.rect, on: page),
                     transform: label.transform,
-                    // Emoji keep their own colours, at the text's opacity.
-                    colour: glyph.isColour ? [1, 1, 1, colour[3], 0] : colour
+                    // Emoji keep their own colours and take none of the
+                    // font colour's alpha unless it's clear, only the
+                    // label's, as SpriteKit draws them.
+                    colour: glyph.isColour ? [1, 1, 1, label.color.alpha > 0 ? Float(label.alpha) : 0, 0] : colour
                 )
             }
         }

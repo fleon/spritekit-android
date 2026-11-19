@@ -78,6 +78,9 @@ public enum PNGDecoder {
 
         guard sawHeader else { throw Failure.corrupt("no IHDR") }
         guard width > 0, height > 0 else { throw Failure.corrupt("\(width)x\(height)") }
+        // A header's word only: a font's or a server's image can claim any
+        // size, so none past what a texture can be.
+        guard width <= maxSide, height <= maxSide else { throw Failure.unsupported("\(width)x\(height)") }
         guard depth == 8 else { throw Failure.unsupported("\(depth)-bit") }
         guard interlace == 0 else { throw Failure.unsupported("interlaced") }
         guard !compressed.isEmpty else { throw Failure.corrupt("no IDAT") }
@@ -93,9 +96,13 @@ public enum PNGDecoder {
         }
         if colour == 3, palette.count < 3 { throw Failure.corrupt("palette image with no PLTE") }
 
-        let stride = width * channels
-        let raw = try inflate(compressed, expecting: (stride + 1) * height)
-        guard raw.count >= (stride + 1) * height else { throw Failure.corrupt("truncated pixel data") }
+        let (stride, wide) = width.multipliedReportingOverflow(by: channels)
+        let (expected, big) = (stride + 1).multipliedReportingOverflow(by: height)
+        guard !wide, !big, !(width * height).multipliedReportingOverflow(by: 4).overflow else {
+            throw Failure.unsupported("\(width)x\(height)")
+        }
+        let raw = try inflate(compressed, expecting: expected)
+        guard raw.count >= expected else { throw Failure.corrupt("truncated pixel data") }
 
         var lines = [UInt8](repeating: 0, count: stride * height)
         try unfilter(raw, into: &lines, stride: stride, height: height, channels: channels)
@@ -115,9 +122,15 @@ public enum PNGDecoder {
             | (UInt32(bytes[at + 2]) << 8) | UInt32(bytes[at + 3])
     }
 
-    /// zlib's one-shot inflate, grown if the first guess was short.
+    /// The widest or tallest image decoded.
+    static let maxSide = 16384
+
+    /// zlib's one-shot inflate into `expecting` bytes, the buffer first no
+    /// bigger than DEFLATE can expand the data to (1032 to 1), so a header
+    /// claiming a vast image costs what its data can fill.
     private static func inflate(_ data: Data, expecting: Int) throws -> [UInt8] {
-        var capacity = max(expecting, 1024)
+        let reach = data.count.multipliedReportingOverflow(by: 1032)
+        var capacity = max(1024, min(expecting, reach.overflow ? expecting : reach.partialValue + 1024))
         for _ in 0 ..< 8 {
             var out = [UInt8](repeating: 0, count: capacity)
             var produced = uLongf(capacity)
@@ -135,7 +148,9 @@ public enum PNGDecoder {
                 out.removeLast(capacity - Int(produced))
                 return out
             case Z_BUF_ERROR:
-                capacity *= 2
+                // More than the image holds is a corrupt stream, not a bigger buffer.
+                guard capacity < expecting else { throw Failure.corrupt("more pixel data than the image holds") }
+                capacity = min(expecting, capacity * 2)
             default:
                 throw Failure.corrupt("inflate returned \(status)")
             }

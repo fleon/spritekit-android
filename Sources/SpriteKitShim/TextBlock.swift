@@ -468,7 +468,9 @@ public struct TextBlock {
                 if let colour = mask.colour {
                     context.fillImage(
                         colour, width: mask.width, height: mask.height,
-                        atDeviceX: left, y: upright ? -top : top - 1, rowsDown: upright, alpha: run.colour.alpha
+                        // Emoji take none of the text colour, its alpha
+                        // neither, unless it's clear (as UIKit draws them).
+                        atDeviceX: left, y: upright ? -top : top - 1, rowsDown: upright, alpha: run.colour.alpha > 0 ? 1 : 0
                     )
                     continue
                 }

@@ -13,9 +13,12 @@ import SpriteKitShim
 /// sits a little below the baseline, and spaces it by that image plus the
 /// face's tracking at the size, to whole points.
 enum EmojiMetrics {
-    /// The image's side at point size `size`.
+    /// The image's side at point size `size`: up to 16 points a quarter
+    /// larger, worked out as Core Text works it, the size over 20 times 25,
+    /// to the last bit (11 points' is a hair over 13.75, which tips a frame
+    /// rounded out to whole points).
     static func imageSize(_ size: CGFloat) -> CGFloat {
-        size <= 16 ? size * 1.25 : size < 24 ? 12 + size / 2 : size
+        size <= 16 ? size / 20 * 25 : size < 24 ? 12 + size / 2 : size
     }
 
     /// Its bottom edge, up from the baseline.
@@ -41,10 +44,14 @@ enum EmojiMetrics {
         return (image + tracking(size) * image / 800).rounded()
     }
 
-    /// The image's box from the pen on the baseline, y up.
+    /// The image's box from the pen on the baseline, y up, as Core Text
+    /// bounds it: in from the pen by two fifths of the tracking, and from 24
+    /// points a ten-thousandth of a point larger than the image, which tips
+    /// a frame rounded out to whole points.
     static func box(_ size: CGFloat) -> CGRect {
         let image = imageSize(size)
-        return CGRect(x: 0.4 * tracking(size) * image / 800, y: bottom(size), width: image, height: image)
+        let side = size >= 24 ? image + 0.0001 : image
+        return CGRect(x: 0.4 * tracking(size) * image / 800, y: bottom(size), width: side, height: side)
     }
 }
 

@@ -1019,7 +1019,7 @@ public final class BitmapContext {
     }
 
     /// Lays a colour glyph's premultiplied RGBA pixels down source-over at
-    /// `alpha`, placed as `fillMask` places a mask (`y` its top row in
+    /// `alpha` (and the context's), placed as `fillMask` places a mask (`y` its top row in
     /// memory when `rowsDown`, else its bottom).
     public func fillImage(
         _ image: [UInt8], width imageWidth: Int, height imageHeight: Int,
