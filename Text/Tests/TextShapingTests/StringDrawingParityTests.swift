@@ -468,6 +468,45 @@ import Testing
         #expect(stroke > 0 && stroke < fill && both > fill, "fill \(fill) stroke \(stroke) both \(both)")
     }
 
+    /// UIKit's ink centroids for "Level" in Montserrat-Black 31.5, filled
+    /// and stroked at line width 1, at three origins (Catalyst, smoothing
+    /// off): the fill moves in whole pixels, the stroke with the origin.
+    static let strokes: [(scale: CGFloat, origin: CGPoint, fill: CGPoint, stroke: CGPoint)] = [
+        (1, CGPoint(x: 4.0, y: 4.0), CGPoint(x: 49.8799, y: 24.1563), CGPoint(x: 51.0488, y: 24.2404)),
+        (1, CGPoint(x: 4.3, y: 3.6), CGPoint(x: 49.9909, y: 24.1563), CGPoint(x: 51.2936, y: 23.8372)),
+        (1, CGPoint(x: 2.25, y: 5.1), CGPoint(x: 47.9909, y: 26.1563), CGPoint(x: 49.1685, y: 25.3465)),
+        (3, CGPoint(x: 4.0, y: 4.0), CGPoint(x: 150.8686, y: 73.5203), CGPoint(x: 154.1870, y: 73.7525)),
+        (3, CGPoint(x: 4.3, y: 3.6), CGPoint(x: 151.4696, y: 72.5203), CGPoint(x: 155.0892, y: 72.5509)),
+        (3, CGPoint(x: 2.25, y: 5.1), CGPoint(x: 145.3168, y: 77.5203), CGPoint(x: 148.9409, y: 77.0503)),
+    ]
+
+    private static func centroid(_ context: BitmapContext) -> CGPoint {
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return .zero }
+        var sx = 0.0, sy = 0.0, sum = 0.0
+        for y in 0 ..< context.height {
+            for x in 0 ..< context.width {
+                let a = Double(data[(y * context.width + x) * 4 + 3])
+                sx += a * Double(x); sy += a * Double(y); sum += a
+            }
+        }
+        return sum > 0 ? CGPoint(x: sx / sum, y: sy / sum) : .zero
+    }
+
+    @Test("Stroked text sits where UIKit strokes it, filled text where it fills it")
+    func strokePosition() {
+        _ = Fonts.engine
+        let font = FontKey(name: "Montserrat-Black", size: 31.5)
+        for item in Self.strokes {
+            let rect = CGRect(origin: item.origin, size: CGSize(width: 240, height: 60))
+            let fill = Self.centroid(Self.draw("Level", font: font, scale: item.scale, rect: rect))
+            let stroke = Self.centroid(Self.draw("Level", font: font, mode: .stroke, scale: item.scale, rect: rect))
+            // A tenth of a pixel a scale: FreeType's and CoreGraphics' rasterisers.
+            let tolerance = 0.12 * item.scale
+            #expect(abs(fill.y - item.fill.y) < tolerance && abs(fill.x - item.fill.x) < 2 * tolerance, "fill \(fill) against \(item.fill) at \(item.origin) \(item.scale)x")
+            #expect(abs(stroke.y - item.stroke.y) < tolerance && abs(stroke.x - item.stroke.x) < 2 * tolerance, "stroke \(stroke) against \(item.stroke) at \(item.origin) \(item.scale)x")
+        }
+    }
+
     @Test("Only the lines that fit wholly in the rect are drawn")
     func overflow() {
         _ = Fonts.engine
