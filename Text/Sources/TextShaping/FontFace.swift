@@ -70,6 +70,11 @@ final class FaceHandle {
         var library: FT_Library?
         return FT_Init_FreeType(&library) == FT_Err_Ok ? library : nil
     }()
+    /// FreeType's library keeps a list of every face opened on it, which
+    /// `FT_New_Memory_Face` and `FT_Done_Face` edit without a lock of their
+    /// own; faces are made and closed on many threads (and closed wherever
+    /// their last user lets go), so both go through this.
+    private static let libraryLock = NSLock()
 
     let file: FontFile
     let size: CGFloat
@@ -118,8 +123,10 @@ final class FaceHandle {
         self.size = size
 
         var face: FT_Face?
-        let error = file.bytes.withUnsafeBufferPointer { buffer in
-            FT_New_Memory_Face(library, buffer.baseAddress, FT_Long(buffer.count), 0, &face)
+        let error = FaceHandle.libraryLock.withLock {
+            file.bytes.withUnsafeBufferPointer { buffer in
+                FT_New_Memory_Face(library, buffer.baseAddress, FT_Long(buffer.count), 0, &face)
+            }
         }
         guard error == FT_Err_Ok, let face else {
             throw FontError.faceUnreadable(file.path, error)
@@ -176,9 +183,12 @@ final class FaceHandle {
     }
 
     deinit {
-        if let exactFont { hb_font_destroy(exactFont) }
-        if let hbFont { hb_font_destroy(hbFont) }
-        if let ftFace { FT_Done_Face(ftFace) }
+        // HarfBuzz's FreeType font lets go of its reference with FT_Done_Face too.
+        FaceHandle.libraryLock.withLock {
+            if let exactFont { hb_font_destroy(exactFont) }
+            if let hbFont { hb_font_destroy(hbFont) }
+            if let ftFace { FT_Done_Face(ftFace) }
+        }
     }
 
     /// The face's own PostScript name (a variable font's default instance).
