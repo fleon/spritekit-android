@@ -67,8 +67,8 @@ public final class ShapeMeshes {
         if wantsFill, shape.fillTexture != nil { return nil }
         // A stroke's texture runs along it (`StrokeTextureTests`), which the
         // mask can't carry: the stroke is triangles with places along it. A
-        // texture cut from another (`SKTexture(rect:in:)`) can't repeat
-        // alone, so it keeps the mask.
+        // texture cut from another (`SKTexture(rect:in:)`) does too, over the
+        // whole image it was cut from, as SpriteKit draws one.
         let textured = wantsStroke && shape.strokeTexture != nil
         if textured, !Self.runsAlong(shape.strokeTexture) { return nil }
 
@@ -88,7 +88,14 @@ public final class ShapeMeshes {
 
         if wantsFill {
             let key = Key(digest: digest, kind: 0, width: 0, cap: 0, join: 0, scale: quantised)
-            guard let mesh = mesh(for: key, make: { ShapeTessellator.fill(flattened(), scale: scale) }) else { return nil }
+            guard let mesh = mesh(for: key, make: {
+                // Flattened four times as fine as the stroke: with no feather a
+                // fill's rim is its chords, each cutting inside the curve,
+                // and SpriteKit's circle covers within a pixel or so of the
+                // exact area (`SpriteKitShapeEdgesTests`). A fill is one
+                // vertex a point, so this still costs less than its feather did.
+                ShapeTessellator.fill(PathRasteriser.flatten(path, scale: scale * 4), scale: scale, edges: .spriteKit)
+            }) else { return nil }
             result.fill = mesh
             result.signature = key.hashValue
         }
@@ -100,7 +107,7 @@ public final class ShapeMeshes {
             guard let mesh = mesh(for: key, make: {
                 ShapeTessellator.stroke(
                     flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
-                    alongTexture: textured
+                    alongTexture: textured, edges: .spriteKit
                 )
             }) else { return nil }
             result.stroke = mesh
@@ -214,11 +221,10 @@ public final class ShapeMeshes {
     }
 
     /// The fill's rgb and alpha, the stroke's, each alpha times the node's.
-    /// Whether a stroke's texture can run along it as triangles: an image
-    /// of its own (or a packed one, cut out of its page), not a part of
-    /// another, with a height to take its aspect from.
+    /// Whether a stroke's texture can run along it as triangles: one with a
+    /// height to take its aspect from.
     static func runsAlong(_ texture: SKTexture?) -> Bool {
-        guard let texture, texture === texture.root else { return false }
+        guard let texture else { return false }
         let size = texture.size()
         return size.width > 0 && size.height > 0
     }

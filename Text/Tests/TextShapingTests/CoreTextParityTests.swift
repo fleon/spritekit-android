@@ -31,8 +31,9 @@ import Testing
         for text in ["Español (México)", "A1 / B1", "Français", "Bahasa Indonesia", "Level Select", "Lightning"] {
             let ours = Fonts.engine.measure(text, font: FontKey(name: font, size: 15)).advance
             let theirs = Self.coreText(text, font: font, size: 15)
-            // A tenth of a percent: the instances' fractional advance deltas.
-            #expect(abs(ours - theirs) < 0.001 * theirs, "\(font) \(text): \(ours) against \(theirs)")
+            // Advance deltas now fractional as Core Text keeps them; what's
+            // left is kerning's variation deltas, rounded by HarfBuzz.
+            #expect(abs(ours - theirs) < 0.00005 * theirs, "\(font) \(text): \(ours) against \(theirs)")
         }
     }
     @Test("Glyph-path and image bounds match Core Text's", arguments: ["Montserrat-Black", "Montserrat-ExtraBold", "Montserrat-SemiBold"])

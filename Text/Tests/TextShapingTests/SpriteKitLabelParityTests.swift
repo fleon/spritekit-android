@@ -47,11 +47,9 @@ struct SpriteKitLabelParityTests {
                 }
             }
         }
-        // Core Text keeps a variable instance's advance deltas fractional,
-        // where HarfBuzz rounds them to whole font units: a hundredth of a
-        // point a glyph, which across a long line can tip its ink over a
-        // whole point.
-        let share = font == "Montserrat-Black" ? 1.0 : 0.98
+        // Every one, the lighter instances too: their advances keep the
+        // instance deltas' fractions, as Core Text's do (`AdvanceVariations`).
+        let share = 1.0
         #expect(Double(matched) >= Double(checked) * share, "\(matched) of \(checked) frames match")
     }
 
@@ -216,13 +214,11 @@ struct SpriteKitLabelParityTests {
         #expect(matched == checked, "\(matched) of \(checked) frames match")
     }
 
-    // Montserrat's lighter instances leave out: their advances come out a
-    // hair off Core Text's (HarfBuzz rounds the instance deltas), and a
-    // wrapped line within a thousandth of a whole point rounds the frame the
-    // other way.
+    // Montserrat's lighter instances are in too, now that their advances
+    // keep the instance deltas' fractions (`AdvanceVariations`).
     // Geneva has a line gap, which decides at some sizes whether a wrapped
     // paragraph keeps n or n + 1 lines.
-    @Test("numberOfLines fits lines into SpriteKit's frame of (n + 1) times the text's own height", arguments: ["Montserrat-Black", "KoHo-Bold", "Geneva"])
+    @Test("numberOfLines fits lines into SpriteKit's frame of (n + 1) times the text's own height", arguments: ["Montserrat-Black", "KoHo-Bold", "Geneva", "Montserrat-SemiBold", "Montserrat-Regular"])
     func lineLimits(font: String) {
         _ = Self.registered
         _ = Fonts.engine

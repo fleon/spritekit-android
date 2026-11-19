@@ -40,9 +40,11 @@ public extension TextProvider {
 ///     spacing and baseline offset; a paragraph takes its style (alignment,
 ///     wrapping, line spacing) from its first run.
 ///   - **Breaking**: each paragraph broken to the width, at the places the
-///     text allows; a word wider than a line, by character; with
-///     `.characters` wrapping, at any character. Spaces a line ends on hang
-///     past its edge.
+///     text allows, the spaces a line ends on hanging past its edge; a word
+///     wider than a line, by character. With `.characters` wrapping, as many
+///     characters as fit, spaces counted like the rest: one that doesn't fit
+///     starts the next line (CoreText's framesetter, which `boundingRect`
+///     agrees with where UIKit's layout manager doesn't).
 ///   - **Lines**: as tall as the largest rounded ascent (raised by a run's
 ///     baseline offset) plus the largest rounded descent of their runs, and
 ///     the largest leading, unrounded, with `.usesFontLeading`; the
@@ -51,6 +53,8 @@ public extension TextProvider {
 ///     its width without trailing spaces; a justified line but a
 ///     paragraph's last spans the width), the block as wide as all the
 ///     placed lines, trailing spaces included, but no wider than the width.
+///     Justified, a line takes one more word if giving up a fifth of each
+///     of its spaces makes it fit, and is drawn with its spaces squeezed.
 ///   - **Drawing**: only the lines that fit wholly in the rect; each
 ///     baseline down to the next whole device pixel, each glyph's x floored
 ///     to the sub-pixel step its size allows (`positionsPerPixel`), as
@@ -160,10 +164,7 @@ public struct TextBlock {
         for line in lines {
             let x = Self.offset(of: line, in: width)
                 // A justified line but its paragraph's last spans the width.
-            // Under character wrapping the spaces a line ends on count only
-            // while the whole line fits the width.
-            let used = line.style.wrapping == .characters && line.width > width ? line.visibleWidth : line.width
-            let end = line.style.alignment == .justified && !line.endsParagraph ? width : x + used
+            let end = line.style.alignment == .justified && !line.endsParagraph ? width : x + line.width
             minX = min(minX, x)
             maxX = max(maxX, end)
         }
@@ -209,8 +210,14 @@ public struct TextBlock {
         }
     }
 
-    static func justifies(_ line: Line) -> Bool {
-        line.style.alignment == .justified && !line.endsParagraph && line.spaces > 0
+    /// The share of each space a justified line may give up to fit.
+    static let justifiedSqueeze: CGFloat = 0.2
+
+    /// Whether a line's spaces are stretched (or squeezed) to the width: a
+    /// justified line's but its paragraph's last, and any justified line
+    /// that was squeezed to fit.
+    static func justifies(_ line: Line, in width: CGFloat) -> Bool {
+        line.style.alignment == .justified && line.spaces > 0 && (!line.endsParagraph || line.visibleWidth > width)
     }
 
     // MARK: Laying out
@@ -267,6 +274,13 @@ public struct TextBlock {
             guard a < b else { return 0 }
             return advances[a ..< b].reduce(0, +)
         }
+        // How much a justified line may tighten to take one more word: a
+        // fifth of each space's width, under word wrapping only (measured
+        // on Catalyst).
+        func squeeze(_ a: Int, _ b: Int) -> CGFloat {
+            guard style.alignment == .justified, style.wrapping == .words, a < b else { return 0 }
+            return (a ..< b).reduce(CGFloat(0)) { $0 + (characters[$1] == " " ? advances[$1] * Self.justifiedSqueeze : 0) }
+        }
         func visibleEnd(_ a: Int, _ b: Int) -> Int {
             var end = b
             while end > a, characters[end - 1].isWhitespace { end -= 1 }
@@ -296,9 +310,19 @@ public struct TextBlock {
                 ranges.append(start ..< characters.count)
                 break
             }
+            if style.wrapping == .characters {
+                // As many characters as fit, spaces included (they don't hang:
+                // one that doesn't fit starts the next line), one at least.
+                var end = start + 1
+                while end < characters.count, width(start, end + 1) <= maxWidth { end += 1 }
+                ranges.append(start ..< end)
+                start = end
+                continue
+            }
             var end: Int?
             for candidate in starts.filter({ $0 > start }) + [characters.count] {
-                if width(start, visibleEnd(start, candidate)) <= maxWidth { end = candidate } else { break }
+                let visible = visibleEnd(start, candidate)
+                if width(start, visible) - squeeze(start, visible) <= maxWidth { end = candidate } else { break }
             }
             if end == nil {
                 // Wider than the line on its own: as many characters as fit, one at least.
@@ -360,9 +384,10 @@ public struct TextBlock {
         let mode = context.textDrawingMode
         guard mode.fills || mode.strokes else { return }
         let ctm = context.ctm
-        // Axis-aligned only, as text is drawn here: no rotation or shear.
-        guard ctm.b == 0, ctm.c == 0, ctm.a > 0, ctm.d != 0 else { return }
-        let scale = ctm.a
+        // Rotated, sheared or mirrored, glyphs are drawn as their outlines
+        // through the transform; axis-aligned, as masks at the device's scale.
+        let axisAligned = ctm.b == 0 && ctm.c == 0 && ctm.a > 0 && ctm.d != 0
+        let scale = axisAligned ? ctm.a : sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
         // Whether up on the page (toward the ascent, -y in UIKit's space) is
         // up in memory too (toward row 0). In a context that isn't flipped
         // for UIKit, text comes out upside down, as UIKit draws it there.
@@ -372,12 +397,12 @@ public struct TextBlock {
             guard top + line.height <= rect.maxY + 0.0001 else { break }
             defer { top += line.height + line.style.lineSpacing }
             let start = rect.minX + Self.offset(of: line, in: rect.width)
-            let stretch = Self.justifies(line) ? (rect.width - line.visibleWidth) / CGFloat(line.spaces) : 0
+            let stretch = Self.justifies(line, in: rect.width) ? (rect.width - line.visibleWidth) / CGFloat(line.spaces) : 0
             var spacesBefore = 0
             for piece in line.pieces {
                 let run = runs[piece.run]
                 // Justified text widens its spaces; letter spacing places each character.
-                let parts: [(String, CGFloat)] = if stretch > 0 || run.kern != 0 {
+                let parts: [(String, CGFloat)] = if stretch != 0 || run.kern != 0 {
                     Self.split(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
                 } else {
                     [(piece.text, 0)]
@@ -387,8 +412,13 @@ public struct TextBlock {
                     spacesBefore += text.filter { $0 == " " }.count
                     guard !text.allSatisfy(\.isWhitespace) else { continue }
                     let baseline = top + line.ascent - run.baselineOffset
-                    draw(text, run: run, at: CGPoint(x: x, y: baseline), mode: mode, upright: upright,
-                         scale: scale, ctm: ctm, provider: provider, context: context)
+                    if axisAligned {
+                        draw(text, run: run, at: CGPoint(x: x, y: baseline), mode: mode, upright: upright,
+                             scale: scale, ctm: ctm, provider: provider, context: context)
+                    } else {
+                        outline(text, run: run, at: CGPoint(x: x, y: baseline), fill: mode.fills, stroke: mode.strokes,
+                                provider: provider, context: context)
+                    }
                 }
             }
         }
@@ -417,8 +447,9 @@ public struct TextBlock {
         scale: CGFloat, ctm: CGAffineTransform, provider: TextProvider, context: BitmapContext
     ) {
         let device = point.applying(ctm)
-        // The baseline down the page to the next whole pixel.
-        let baseline = upright ? (device.y - 0.0001).rounded(.up) : (device.y + 0.0001).rounded(.down)
+        // The baseline to the next whole device row, counting rows from the
+        // top of memory, flipped context or not (measured on Catalyst).
+        let baseline = (device.y - 0.0001).rounded(.up)
         if mode.fills {
             let column = device.x.rounded(.down)
             // The pen in glyph space (y up, in pixels).
@@ -439,16 +470,24 @@ public struct TextBlock {
             }
         }
         if mode.strokes {
-            let outline = provider.glyphOutline(text, font: run.font)
-            guard !outline.isEmpty else { return }
             // Outlines stroke where the pen is, unsnapped: UIKit snaps only
             // the glyphs it fills (measured on Catalyst).
-            let origin = point
-            func place(_ p: CGPoint) -> CGPoint { CGPoint(x: origin.x + p.x, y: origin.y - p.y) }
-            context.saveGState()
-            context.setStroke(run.colour)
+            outline(text, run: run, at: point, fill: false, stroke: true, provider: provider, context: context)
+        }
+    }
+
+    /// The glyphs' outlines with the pen at `point` (user space), filled
+    /// and or stroked in the run's colour, through the context's transform.
+    private func outline(
+        _ text: String, run: Run, at point: CGPoint, fill: Bool, stroke: Bool, provider: TextProvider, context: BitmapContext
+    ) {
+        guard fill || stroke else { return }
+        let elements = provider.glyphOutline(text, font: run.font)
+        guard !elements.isEmpty else { return }
+        func place(_ p: CGPoint) -> CGPoint { CGPoint(x: point.x + p.x, y: point.y - p.y) }
+        func trace() {
             context.beginPath()
-            for element in outline {
+            for element in elements {
                 switch element {
                 case let .move(p): context.move(to: place(p))
                 case let .line(p): context.addLine(to: place(p))
@@ -458,9 +497,19 @@ public struct TextBlock {
                 case .arc: break
                 }
             }
-            context.strokePath()
-            context.restoreGState()
         }
+        context.saveGState()
+        if fill {
+            context.setFill(run.colour)
+            trace()
+            context.fillPath()
+        }
+        if stroke {
+            context.setStroke(run.colour)
+            trace()
+            context.strokePath()
+        }
+        context.restoreGState()
     }
 }
 #endif
