@@ -40,9 +40,11 @@ public extension TextProvider {
 ///     spacing and baseline offset; a paragraph takes its style (alignment,
 ///     wrapping, line spacing) from its first run.
 ///   - **Breaking**: each paragraph broken to the width, at the places the
-///     text allows; a word wider than a line, by character; with
-///     `.characters` wrapping, at any character. Spaces a line ends on hang
-///     past its edge.
+///     text allows, the spaces a line ends on hanging past its edge; a word
+///     wider than a line, by character. With `.characters` wrapping, as many
+///     characters as fit, spaces counted like the rest: one that doesn't fit
+///     starts the next line (CoreText's framesetter, which `boundingRect`
+///     agrees with where UIKit's layout manager doesn't).
 ///   - **Lines**: as tall as the largest rounded ascent (raised by a run's
 ///     baseline offset) plus the largest rounded descent of their runs, and
 ///     the largest leading, unrounded, with `.usesFontLeading`; the
@@ -160,10 +162,7 @@ public struct TextBlock {
         for line in lines {
             let x = Self.offset(of: line, in: width)
                 // A justified line but its paragraph's last spans the width.
-            // Under character wrapping the spaces a line ends on count only
-            // while the whole line fits the width.
-            let used = line.style.wrapping == .characters && line.width > width ? line.visibleWidth : line.width
-            let end = line.style.alignment == .justified && !line.endsParagraph ? width : x + used
+            let end = line.style.alignment == .justified && !line.endsParagraph ? width : x + line.width
             minX = min(minX, x)
             maxX = max(maxX, end)
         }
@@ -295,6 +294,15 @@ public struct TextBlock {
             guard let maxWidth else {
                 ranges.append(start ..< characters.count)
                 break
+            }
+            if style.wrapping == .characters {
+                // As many characters as fit, spaces included (they don't hang:
+                // one that doesn't fit starts the next line), one at least.
+                var end = start + 1
+                while end < characters.count, width(start, end + 1) <= maxWidth { end += 1 }
+                ranges.append(start ..< end)
+                start = end
+                continue
             }
             var end: Int?
             for candidate in starts.filter({ $0 > start }) + [characters.count] {
