@@ -1,3 +1,4 @@
+import CPixelRows
 import Foundation
 
 /// Straight RGBA8, as a PNG holds it, turned into premultiplied, as
@@ -9,21 +10,13 @@ import Foundation
 /// it: a light halo round every sprite, and a dimmed sprite whose edges were
 /// brightened past the dimming.
 public enum Premultiply {
+    /// In C (`pixel_rows_premultiply`), as `PNGRows` is: a debug build's
+    /// unoptimised Swift took most of a second for a large image.
     public static func rgba(_ pixels: Data) -> Data {
         var out = pixels
         out.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
             guard let bytes = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            var at = 0
-            let count = raw.count - raw.count % 4
-            while at < count {
-                let alpha = UInt32(bytes[at + 3])
-                if alpha < 255 {
-                    bytes[at] = UInt8((UInt32(bytes[at]) * alpha + 127) / 255)
-                    bytes[at + 1] = UInt8((UInt32(bytes[at + 1]) * alpha + 127) / 255)
-                    bytes[at + 2] = UInt8((UInt32(bytes[at + 2]) * alpha + 127) / 255)
-                }
-                at += 4
-            }
+            pixel_rows_premultiply(bytes, raw.count - raw.count % 4)
         }
         return out
     }
@@ -41,25 +34,7 @@ public enum Premultiply {
             out.withUnsafeMutableBytes { (destination: UnsafeMutableRawBufferPointer) in
                 guard let from = source.baseAddress?.assumingMemoryBound(to: UInt8.self),
                       let to = destination.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-                for row in 0 ..< height {
-                    let input = from + row * stride
-                    let output = to + (height - 1 - row) * stride
-                    var at = 0
-                    while at < stride {
-                        let alpha = UInt32(input[at + 3])
-                        if alpha == 255 {
-                            output[at] = input[at]
-                            output[at + 1] = input[at + 1]
-                            output[at + 2] = input[at + 2]
-                        } else {
-                            output[at] = UInt8((UInt32(input[at]) * alpha + 127) / 255)
-                            output[at + 1] = UInt8((UInt32(input[at + 1]) * alpha + 127) / 255)
-                            output[at + 2] = UInt8((UInt32(input[at + 2]) * alpha + 127) / 255)
-                        }
-                        output[at + 3] = UInt8(alpha)
-                        at += 4
-                    }
-                }
+                pixel_rows_premultiply_flipped(from, to, width, height)
             }
         }
         return out
