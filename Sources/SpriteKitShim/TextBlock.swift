@@ -441,8 +441,9 @@ public struct TextBlock {
         if mode.strokes {
             let outline = provider.glyphOutline(text, font: run.font)
             guard !outline.isEmpty else { return }
-            // Back into user space, on the snapped baseline.
-            let origin = CGPoint(x: point.x, y: (baseline - ctm.ty) / ctm.d)
+            // Outlines stroke where the pen is, unsnapped: UIKit snaps only
+            // the glyphs it fills (measured on Catalyst).
+            let origin = point
             func place(_ p: CGPoint) -> CGPoint { CGPoint(x: origin.x + p.x, y: origin.y - p.y) }
             context.saveGState()
             context.setStroke(run.colour)
