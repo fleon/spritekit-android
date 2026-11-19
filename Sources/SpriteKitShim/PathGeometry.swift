@@ -26,6 +26,20 @@ public enum PathGeometry {
         return pen
     }
 
+    /// What `addArc(center:…)` records: the arc, after a move to its first
+    /// point when the path has no pen yet. CoreGraphics records that move
+    /// itself, so an arc that begins a path begins a subpath of its own, and
+    /// a path made of one and added to another (`addPath`) stays apart from
+    /// what's there rather than joined to it with a line.
+    public static func arc(
+        center: CGPoint, radius: CGFloat, start: CGFloat, end: CGFloat, clockwise: Bool,
+        hasPen: Bool
+    ) -> [PathElement] {
+        let arc = PathElement.arc(center: center, radius: radius, start: start, end: end, clockwise: clockwise)
+        guard !hasPen else { return [arc] }
+        return [.move(CGPoint(x: center.x + cos(start) * radius, y: center.y + sin(start) * radius)), arc]
+    }
+
     /// `addArc(tangent1End:tangent2End:radius:)`: a line from `pen` toward
     /// `corner`, then the arc of `radius` tangent to both `pen`→`corner` and
     /// `corner`→`end`. Degenerate cases draw a line to `corner`, as
@@ -162,19 +176,23 @@ public extension PathGeometry {
     static func curvesOnly(_ elements: [PathElement]) -> [PathElement] {
         var out: [PathElement] = []
         var hasPen = false
+        var pen = CGPoint.zero
         for element in elements {
             switch element {
             case let .arc(center, radius, start, end, rising):
                 let first = CGPoint(x: center.x + cos(start) * radius, y: center.y + sin(start) * radius)
-                out.append(hasPen ? .line(first) : .move(first))
+                if !hasPen { out.append(.move(first)) }
+                else if first != pen { out.append(.line(first)) }
                 out += curves(center: center, radius: radius, start: start, end: end, rising: rising)
                 hasPen = true
+                pen = CGPoint(x: center.x + cos(end) * radius, y: center.y + sin(end) * radius)
             case .close:
                 out.append(element)
                 hasPen = false
-            default:
+            case let .move(p), let .line(p), let .quadCurve(p, _), let .curve(p, _, _):
                 out.append(element)
                 hasPen = true
+                pen = p
             }
         }
         return out

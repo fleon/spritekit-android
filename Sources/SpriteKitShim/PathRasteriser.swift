@@ -66,6 +66,21 @@ public enum PathRasteriser {
         case nonZero, evenOdd
     }
 
+    /// The longest side a mask may have, in pixels.
+    public static let maximumSide = 8192
+
+    /// The scale to rasterise a path spanning `reach` points at: `scale`,
+    /// unless its mask would then be longer than `maximumSide` or
+    /// `textureSide` pixels, whichever is less; then the largest scale whose
+    /// mask fits, counting the pixel of margin each side and the pixel the
+    /// size rounds up by. A strip as tall as a long scrolling list is
+    /// tens of thousands of points, and it still draws, stretched.
+    public static func scale(_ scale: CGFloat, fitting reach: CGFloat, textureSide: Int) -> CGFloat {
+        let pixels = CGFloat(min(maximumSide, textureSide) - 3)
+        guard reach > 0, pixels > 0, reach * scale > pixels else { return scale }
+        return pixels / reach
+    }
+
     /// Fills `path` at `scale` pixels per point.
     ///
     /// Nil when the path encloses nothing — an empty path, or one so small
@@ -254,17 +269,29 @@ public enum PathRasteriser {
         }
     }
 
-    /// Segments for a curve, from the length of its control polygon in
-    /// device pixels. Crude next to adaptive subdivision, and enough: the
-    /// error of a uniform split falls as the square of the count, so a
-    /// 60-pixel curve in eight pieces is already under a quarter of a pixel.
+    /// Segments for a curve: Wang's formula, the fewest equal steps in t
+    /// that keep every chord within `flatness` device pixels of the curve.
+    /// It bounds the curve's second derivative by its control points', so it
+    /// is a guarantee rather than an estimate, and for a rounded corner it
+    /// asks for less than half what the control polygon's length did: a
+    /// shape drawn as triangles carries every one of these points.
     private static func curveSteps(_ control: [CGPoint], scale: CGFloat) -> Int {
-        var length: CGFloat = 0
-        for i in 1 ..< control.count {
-            length += hypot(control[i].x - control[i - 1].x, control[i].y - control[i - 1].y)
+        let tolerance = flatness / max(scale, 0.0001)
+        func secondDifference(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> CGFloat {
+            hypot(a.x - 2 * b.x + c.x, a.y - 2 * b.y + c.y)
         }
-        let pixels = length * max(scale, 0.0001)
-        return max(2, min(128, Int((sqrt(pixels / max(flatness, 0.01)) * 1.2).rounded(.up))))
+        let steps: CGFloat
+        if control.count == 3 {
+            steps = (0.25 * secondDifference(control[0], control[1], control[2]) / tolerance).squareRoot()
+        } else {
+            let m = max(
+                secondDifference(control[0], control[1], control[2]),
+                secondDifference(control[1], control[2], control[3])
+            )
+            steps = (0.75 * m / tolerance).squareRoot()
+        }
+        guard steps.isFinite else { return 2 }
+        return max(2, min(128, Int(steps.rounded(.up))))
     }
 
     // MARK: - Stroking
@@ -512,7 +539,7 @@ public enum PathRasteriser {
         let grain: CGFloat = 1e-6
         let width = max(1, Int((bounds.width * scale - grain).rounded(.up)))
         let height = max(1, Int((bounds.height * scale - grain).rounded(.up)))
-        guard width <= 8192, height <= 8192 else { return nil }
+        guard width <= maximumSide, height <= maximumSide else { return nil }
 
         // Into device pixels, row 0 at the top: y grows down the mask while
         // it grows up the path.

@@ -38,7 +38,10 @@ import java.util.Map;
  * consumable is consumed once the game has granted it ({@code consume},
  * answered by {@code consumed {code, token}}), and each purchase reports its
  * {@code quantity}: the runtime README's "Consumables: what the app's Java
- * answers".
+ * answers". Nothing is acknowledged or consumed but on Swift's request, which
+ * waits for a server's confirmation where the game has one; each purchase
+ * carries its {@code orderId}, {@code originalJson} and {@code signature}
+ * for that server.
  *
  * <p>The decisions — what is owned, when, whether a purchase finished — are
  * Swift's ({@code PlayBilling} in PlatformShim, tested on the Mac). This
@@ -272,7 +275,11 @@ public final class PlayBilling implements PlatformService {
                 "token", purchase.getPurchaseToken(),
                 "time", purchase.getPurchaseTime(),
                 "acknowledged", purchase.isAcknowledged(),
-                "quantity", purchase.getQuantity()));
+                "quantity", purchase.getQuantity(),
+                // For a game whose server checks the purchase (PlayBilling.confirm).
+                "orderId", purchase.getOrderId() == null ? "" : purchase.getOrderId(),
+                "originalJson", purchase.getOriginalJson(),
+                "signature", purchase.getSignature()));
         }
         return list;
     }

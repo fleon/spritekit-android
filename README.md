@@ -678,12 +678,22 @@ A change to the shim's behaviour comes with a test of this kind.
   unsynchronised writes land over draws still pending).
 - **Meshes:** `SKTriangleMesh` and warped sprites batch as geometry with the
   sprites of their texture.
-- **Shapes** are rasterised on the CPU into coverage masks, cached by what
-  they draw. A shape whose path changes every frame (marching ants, a ring
-  drawing itself round) draws its last mask while the next is made on a
-  thread of the lowest priority (`MaskLag`), a frame or two behind; one
-  appearing gets its mask at once, and a fixed frame step makes every mask
-  at once. The frame report logs what masks have cost.
+- **Shapes** are triangles (`ShapeTessellator`), as a game engine's draw
+  node makes them (axmol's `DrawNode`, MIT): tessellated once in the node's
+  own space, cached by what they draw and the density they're drawn at, and
+  batched with the colour sprites either side, so a shape that moves, turns
+  or fades costs no rasterising and no draw call of its own. Edges are
+  feathered across a device pixel in the geometry, and strokes take
+  CoreGraphics' joins and caps; a path that changes is tessellated again on
+  the frame thread in microseconds. Held to the masks pixel by pixel
+  (`ShapeTessellatorTests`).
+- **Shapes it can't take** (a textured fill or stroke, a fill that crosses
+  itself or holds another subpath, a crop's mask) are rasterised on the CPU
+  into coverage masks, cached by what they draw. One whose path changes
+  every frame draws its last mask while the next is made on a thread of the
+  lowest priority (`MaskLag`), a frame or two behind; one appearing gets
+  its mask at once, and a fixed frame step makes every mask at once. The
+  frame report logs what masks and meshes have cost.
 - **Render scale:** fill rate decides frame time on mid-range GPUs, so the
   scene can draw at a share of the screen's size, the display scaling it up
   (`ANativeWindow_setBuffersGeometry`). `RenderScaleGovernor` picks the scale
@@ -692,7 +702,7 @@ A change to the shim's behaviour comes with a test of this kind.
   step moves the scene a whole number of refreshes.
 - **Programs** are kept as driver binaries between launches, keyed by source
   and driver, so an app update doesn't relink what didn't change.
-- **Shapes** are rasterised on the CPU into coverage masks at the density
+- **Shape masks** are rasterised at the density
   they're drawn at, except that no mask is made larger than the GPU's
   biggest texture: a very long shape is rasterised coarser instead, its
   edges a little softer.

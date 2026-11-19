@@ -161,7 +161,21 @@ public extension BitmapContext {
     /// everywhere it draws.
     func setAllowsAntialiasing(_ allows: Bool) {}
     func setShouldAntialias(_ should: Bool) {}
+
+    /// Glyph placement switches, accepted and ignored, as UIKit's string
+    /// drawing ignores them: it places glyphs as `TextBlock` does (baselines
+    /// on whole pixels, glyphs at the sub-pixel steps their size allows)
+    /// whichever way they're set.
+    func setShouldSubpixelQuantizeFonts(_ should: Bool) {}
+    func setAllowsFontSubpixelQuantization(_ allows: Bool) {}
+    func setShouldSubpixelPositionFonts(_ should: Bool) {}
+    func setAllowsFontSubpixelPositioning(_ allows: Bool) {}
+
+    /// Fills, strokes (at the line width), both, or nothing (`.invisible`).
+    func setTextDrawingMode(_ mode: CGTextDrawingMode) { textDrawingMode = mode }
 }
+
+public typealias CGTextDrawingMode = BitmapContext.TextDrawingMode
 
 // MARK: - Paths
 
@@ -268,12 +282,13 @@ public extension CGPath {
         transform: CGAffineTransform = .identity
     ) {
         let scale = sqrt(abs(transform.a * transform.d - transform.b * transform.c))
-        append(.arc(
+        append(portable: PathGeometry.arc(
             center: center.applying(transform),
             radius: radius * (scale > 0 ? scale : 1),
             start: startAngle,
             end: endAngle,
-            clockwise: !clockwise
+            clockwise: !clockwise,
+            hasPen: hasPen
         ))
     }
 

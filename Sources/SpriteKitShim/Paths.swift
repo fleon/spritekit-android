@@ -20,7 +20,13 @@ public final class CGPath: @unchecked Sendable {
         case close
     }
 
-    public private(set) var elements: [Element] = []
+    public private(set) var elements: [Element] = [] {
+        didSet { version &+= 1 }
+    }
+
+    /// Counts changes to the recording, so a renderer holding this path can
+    /// tell it is unchanged without reading it again.
+    public private(set) var version = 0
 
     public init() {}
 
@@ -29,6 +35,13 @@ public final class CGPath: @unchecked Sendable {
     }
 
     func append(_ element: Element) { elements.append(element) }
+
+    /// Whether the path has a pen to carry on from: anything but closes, as
+    /// `PathGeometry.currentPoint` reads it. Stops at the first element that
+    /// isn't a close, so it's cheap however long the path.
+    var hasPen: Bool {
+        elements.contains { if case .close = $0 { return false } else { return true } }
+    }
     func append(contentsOf others: [Element]) { elements.append(contentsOf: others) }
 
     /// Replaces the recording with `pathElements` (portable segments, as
@@ -195,8 +208,10 @@ public final class UIBezierPath: @unchecked Sendable {
         endAngle: CGFloat,
         clockwise: Bool
     ) {
-        storage.append(.arc(center: centre, radius: radius,
-                            start: startAngle, end: endAngle, clockwise: clockwise))
+        storage.append(portable: PathGeometry.arc(
+            center: centre, radius: radius, start: startAngle, end: endAngle, clockwise: clockwise,
+            hasPen: storage.hasPen
+        ))
     }
 
     public func append(_ other: UIBezierPath) {
