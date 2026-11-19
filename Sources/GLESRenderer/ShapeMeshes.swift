@@ -88,7 +88,14 @@ public final class ShapeMeshes {
 
         if wantsFill {
             let key = Key(digest: digest, kind: 0, width: 0, cap: 0, join: 0, scale: quantised)
-            guard let mesh = mesh(for: key, make: { ShapeTessellator.fill(flattened(), scale: scale) }) else { return nil }
+            guard let mesh = mesh(for: key, make: {
+                // Flattened four times as fine as the stroke: with no feather a
+                // fill's rim is its chords, each cutting inside the curve,
+                // and SpriteKit's circle covers within a pixel or so of the
+                // exact area (`SpriteKitShapeEdgesTests`). A fill is one
+                // vertex a point, so this still costs less than its feather did.
+                ShapeTessellator.fill(PathRasteriser.flatten(path, scale: scale * 4), scale: scale, edges: .spriteKit)
+            }) else { return nil }
             result.fill = mesh
             result.signature = key.hashValue
         }
@@ -100,7 +107,7 @@ public final class ShapeMeshes {
             guard let mesh = mesh(for: key, make: {
                 ShapeTessellator.stroke(
                     flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
-                    alongTexture: textured
+                    alongTexture: textured, edges: .spriteKit
                 )
             }) else { return nil }
             result.stroke = mesh

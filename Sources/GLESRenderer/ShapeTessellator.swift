@@ -15,10 +15,13 @@ import SpriteKitShim
 ///
 /// `DrawNode` itself leaves edges aliased (its fragment shader `step`s),
 /// draws strokes as quads with round ends overlapping at every vertex, and
-/// has no joins. Here every edge is feathered across one device pixel in
-/// the geometry (a vertex at the rim carries coverage 0, one a pixel in
-/// carries 1), centred on the true edge so that a pixel's alpha follows
-/// how much of it the shape covers, as `PathRasteriser`'s does. Strokes
+/// has no joins. Here the edges are drawn as `Edges` says: as SpriteKit
+/// draws a shape node's (a fill's not antialiased, a stroke's softened over
+/// a fixed width of the node's own units), or feathered across one device
+/// pixel, centred on the true edge so that a pixel's alpha follows how much
+/// of it the shape covers, as `PathRasteriser`'s does. Either way the
+/// feather is in the geometry: a vertex at the rim carries coverage 0, one
+/// inside it 1. Strokes
 /// are one strip a subpath with CoreGraphics' joins and caps, built the
 /// way NanoVG expands a stroke: the inner side of a turn meets at one
 /// point, the outer side is mitred, bevelled or rounded.
@@ -53,9 +56,24 @@ public enum ShapeTessellator {
     /// more is left to the mask. A rounded panel is a few dozen points.
     public static let maximumFillPoints = 768
 
+    /// How a mesh's edges are drawn.
+    public enum Edges: Sendable {
+        /// Each edge's coverage as CoreGraphics' exact area gives it:
+        /// feathered across one device pixel (`PathRasteriser`'s masks).
+        case exact
+        /// As SpriteKit draws an `SKShapeNode`, measured through `SKRenderer`
+        /// on a Mac at 1x, 2x and 3x: a fill's edge not antialiased at all
+        /// (a pixel is in when its centre is), a stroke's softened over
+        /// 1.19 of the node's own units whatever the density, from full
+        /// coverage `0.785` inside its edge to none `0.405` outside it
+        /// (narrower and softer than CoreGraphics'), its middle always at
+        /// full coverage and no narrower than half a unit.
+        case spriteKit
+    }
+
     /// Fills `subpaths` (from `PathRasteriser.flatten` at `scale`), each
     /// closed implicitly. Nil when it isn't a fill this can make.
-    public static func fill(_ subpaths: [PathRasteriser.Subpath], scale: CGFloat) -> Mesh? {
+    public static func fill(_ subpaths: [PathRasteriser.Subpath], scale: CGFloat, edges: Edges = .exact) -> Mesh? {
         guard scale > 0, scale.isFinite else { return nil }
         var polygons: [[CGPoint]] = []
         var total = 0
@@ -90,7 +108,7 @@ public enum ShapeTessellator {
 
         var builder = Builder()
         for polygon in polygons {
-            guard appendFill(polygon, fringe: 1 / scale, coverage: 1, into: &builder) else { return nil }
+            guard appendFill(polygon, fringe: edges == .spriteKit ? 0 : 1 / scale, coverage: 1, into: &builder) else { return nil }
         }
         return builder.mesh()
     }
@@ -103,7 +121,8 @@ public enum ShapeTessellator {
         join: CGLineJoin,
         miterLimit: CGFloat = 10,
         scale: CGFloat,
-        alongTexture: Bool = false
+        alongTexture: Bool = false,
+        edges: Edges = .exact
     ) -> Mesh? {
         guard scale > 0, scale.isFinite, width.isFinite else { return nil }
         guard width > 0 else { return Mesh() }
@@ -116,7 +135,8 @@ public enum ShapeTessellator {
             fringe: fringe,
             scale: scale,
             join: join,
-            miterLimit: miterLimit
+            miterLimit: miterLimit,
+            edges: edges
         )
 
         var builder = Builder()
@@ -154,20 +174,20 @@ public enum ShapeTessellator {
                     let disc = (0 ..< max(steps, 8)).map {
                         point(on: only, radius: pen.half, angle: CGFloat($0) / CGFloat(max(steps, 8)) * 2 * .pi)
                     }
-                    guard appendFill(disc, fringe: fringe, coverage: pen.coverage, into: &builder) else { return nil }
+                    guard appendFill(disc, fringe: edges == .spriteKit ? 0 : fringe, coverage: pen.coverage, into: &builder) else { return nil }
                 case .square:
                     let h = pen.half
                     let square = [
                         CGPoint(x: only.x - h, y: only.y - h), CGPoint(x: only.x + h, y: only.y - h),
                         CGPoint(x: only.x + h, y: only.y + h), CGPoint(x: only.x - h, y: only.y + h),
                     ]
-                    guard appendFill(square, fringe: fringe, coverage: pen.coverage, into: &builder) else { return nil }
+                    guard appendFill(square, fringe: edges == .spriteKit ? 0 : fringe, coverage: pen.coverage, into: &builder) else { return nil }
                 default:
                     break
                 }
                 continue
             }
-            appendStroke(points, closed: closed, cap: cap, pen: pen, trueHalf: width / 2, into: &builder)
+            appendStroke(points, closed: closed, cap: cap, pen: pen, trueHalf: pen.drawnHalf, into: &builder)
         }
         return builder.mesh()
     }
@@ -184,6 +204,12 @@ public enum ShapeTessellator {
     private static func appendFill(_ polygon: [CGPoint], fringe: CGFloat, coverage: Float, into builder: inout Builder) -> Bool {
         guard let triangles = triangulate(polygon) else { return false }
         let n = polygon.count
+        // No feather: the rim as it is, each pixel in or out by its centre.
+        if fringe <= 0 {
+            let rim = polygon.map { builder.add($0, coverage) }
+            for (a, b, c) in triangles { builder.triangle(rim[a], rim[b], rim[c]) }
+            return true
+        }
         var normals: [CGPoint] = []
         var halves: [CGFloat] = []
         normals.reserveCapacity(n)
@@ -365,6 +391,7 @@ public enum ShapeTessellator {
         var scale: CGFloat
         var join: CGLineJoin
         var miterLimit: CGFloat
+        var edges: Edges = .exact
         /// Where full coverage ends and where the feather reaches nothing.
         ///
         /// Across the stroke its exact coverage is a trapezoid: the width
@@ -372,14 +399,33 @@ public enum ShapeTessellator {
         /// fringe) / 2` out, its top `|width - fringe| / 2`, at full
         /// coverage unless the stroke is thinner than the span: then at
         /// `width / fringe`, a hairline drawn fainter rather than wider.
-        var core: CGFloat { abs(width - fringe) / 2 }
-        var outer: CGFloat { (width + fringe) / 2 }
-        var coverage: Float { Float(min(1, width / fringe)) }
+        ///
+        /// SpriteKit's (`Edges.spriteKit`) is in the node's own units: full
+        /// out to `0.785` inside the edge, none from `0.405` outside it, its
+        /// middle full however thin, as measured.
+        var core: CGFloat {
+            edges == .spriteKit ? max(0.1, drawnHalf - 0.785) : abs(width - fringe) / 2
+        }
+        var outer: CGFloat {
+            edges == .spriteKit ? max(drawnHalf + 0.405, 0.75) : (width + fringe) / 2
+        }
+        var coverage: Float {
+            edges == .spriteKit ? 1 : Float(min(1, width / fringe))
+        }
+        /// Half the width drawn: SpriteKit draws nothing thinner than half a
+        /// unit (0.25 and 0.5 measure the same).
+        var drawnHalf: CGFloat { edges == .spriteKit ? max(width / 2, 0.25) : half }
+        /// How far an open end's feather reaches past it, and how far in
+        /// full coverage starts: across a pixel centred on it, or SpriteKit's
+        /// edge, as its sides have.
+        var endOut: CGFloat { edges == .spriteKit ? outer - drawnHalf : fringe / 2 }
+        var endIn: CGFloat { edges == .spriteKit ? drawnHalf - core : fringe / 2 }
 
         /// The pen where the stroke runs along `direction`, its feather as
         /// `feather` says for that direction.
         func feathered(across direction: CGPoint) -> Pen {
             var pen = self
+            guard edges == .exact else { return pen }
             pen.fringe *= ShapeTessellator.feather(CGPoint(x: -direction.y, y: direction.x))
             return pen
         }
@@ -645,9 +691,9 @@ public enum ShapeTessellator {
             // The end itself feathers across a pixel centred on it; a square
             // cap's end is half the width further out.
             let end = cap == .square ? CGPoint(x: p.x + away.x * trueHalf, y: p.y + away.y * trueHalf) : p
-            let f = pen.fringe / 2
-            let rim = section(at: CGPoint(x: end.x + away.x * f, y: end.y + away.y * f), normal: n, pen: pen, coverage: 0, into: &builder)
-            let body = section(at: CGPoint(x: end.x - away.x * f, y: end.y - away.y * f), normal: n, pen: pen, coverage: pen.coverage, into: &builder)
+            let out = pen.endOut, inward = pen.endIn
+            let rim = section(at: CGPoint(x: end.x + away.x * out, y: end.y + away.y * out), normal: n, pen: pen, coverage: 0, into: &builder)
+            let body = section(at: CGPoint(x: end.x - away.x * inward, y: end.y - away.y * inward), normal: n, pen: pen, coverage: pen.coverage, into: &builder)
             bridge(rim, body, into: &builder)
             return body
 
