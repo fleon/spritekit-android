@@ -196,14 +196,16 @@ public final class RenderTargetPool {
         self.device = device
     }
 
-    private static func sizeKey(_ width: Int, _ height: Int) -> Int {
-        width << 16 | (height & 0xFFFF)
+    /// A free target is lent again only at its size and with its stencil
+    /// or without: a crop drawn offscreen needs one for crops inside it.
+    private static func sizeKey(_ width: Int, _ height: Int, stencil: Bool = false) -> Int {
+        width << 17 | (height & 0xFFFF) << 1 | (stencil ? 1 : 0)
     }
 
     /// A target for a node that redraws every frame. Returned to the pool by
     /// `endFrame()`.
     public func transient(width: Int, height: Int, stencil: Bool) -> RenderTargetHandle? {
-        let key = Self.sizeKey(width, height)
+        let key = Self.sizeKey(width, height, stencil: stencil)
         if var bucket = free[key], let kept = bucket.popLast() {
             free[key] = bucket.isEmpty ? nil : bucket
             lent.append(kept.target)
@@ -274,7 +276,7 @@ public final class RenderTargetPool {
     public func endFrame() {
         frame += 1
         for target in lent {
-            free[Self.sizeKey(target.width, target.height), default: []].append((target, frame))
+            free[Self.sizeKey(target.width, target.height, stencil: target.stencil != 0), default: []].append((target, frame))
         }
         lent.removeAll(keepingCapacity: true)
         bindsThisFrame = 0

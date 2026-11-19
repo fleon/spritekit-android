@@ -41,6 +41,9 @@ public enum PNGDecoder {
         var width = 0, height = 0, depth = 0, colour = 0, interlace = 0
         var compressed = Data()
         var palette: [UInt8] = []
+        // Transparency (tRNS): a palette's alphas, or the one grey or rgb
+        // value that is clear (a colour emoji's strike has them).
+        var transparency: [UInt8] = []
         var sawHeader = false
 
         var i = 8
@@ -61,6 +64,8 @@ public enum PNGDecoder {
                 sawHeader = true
             case "PLTE":
                 palette = Array(bytes[start ..< start + length])
+            case "tRNS":
+                transparency = Array(bytes[start ..< start + length])
             case "IDAT":
                 compressed.append(contentsOf: bytes[start ..< start + length])
             case "IEND":
@@ -73,6 +78,9 @@ public enum PNGDecoder {
 
         guard sawHeader else { throw Failure.corrupt("no IHDR") }
         guard width > 0, height > 0 else { throw Failure.corrupt("\(width)x\(height)") }
+        // A header's word only: a font's or a server's image can claim any
+        // size, so none past what a texture can be.
+        guard width <= maxSide, height <= maxSide else { throw Failure.unsupported("\(width)x\(height)") }
         guard depth == 8 else { throw Failure.unsupported("\(depth)-bit") }
         guard interlace == 0 else { throw Failure.unsupported("interlaced") }
         guard !compressed.isEmpty else { throw Failure.corrupt("no IDAT") }
@@ -88,9 +96,13 @@ public enum PNGDecoder {
         }
         if colour == 3, palette.count < 3 { throw Failure.corrupt("palette image with no PLTE") }
 
-        let stride = width * channels
-        let raw = try inflate(compressed, expecting: (stride + 1) * height)
-        guard raw.count >= (stride + 1) * height else { throw Failure.corrupt("truncated pixel data") }
+        let (stride, wide) = width.multipliedReportingOverflow(by: channels)
+        let (expected, big) = (stride + 1).multipliedReportingOverflow(by: height)
+        guard !wide, !big, !(width * height).multipliedReportingOverflow(by: 4).overflow else {
+            throw Failure.unsupported("\(width)x\(height)")
+        }
+        let raw = try inflate(compressed, expecting: expected)
+        guard raw.count >= expected else { throw Failure.corrupt("truncated pixel data") }
 
         var lines = [UInt8](repeating: 0, count: stride * height)
         try unfilter(raw, into: &lines, stride: stride, height: height, channels: channels)
@@ -98,7 +110,8 @@ public enum PNGDecoder {
         return Image(
             width: width,
             height: height,
-            pixels: expand(lines, width: width, height: height, colour: colour, channels: channels, palette: palette)
+            pixels: expand(lines, width: width, height: height, colour: colour, channels: channels, palette: palette,
+                           transparency: transparency)
         )
     }
 
@@ -109,9 +122,15 @@ public enum PNGDecoder {
             | (UInt32(bytes[at + 2]) << 8) | UInt32(bytes[at + 3])
     }
 
-    /// zlib's one-shot inflate, grown if the first guess was short.
+    /// The widest or tallest image decoded.
+    static let maxSide = 16384
+
+    /// zlib's one-shot inflate into `expecting` bytes, the buffer first no
+    /// bigger than DEFLATE can expand the data to (1032 to 1), so a header
+    /// claiming a vast image costs what its data can fill.
     private static func inflate(_ data: Data, expecting: Int) throws -> [UInt8] {
-        var capacity = max(expecting, 1024)
+        let reach = data.count.multipliedReportingOverflow(by: 1032)
+        var capacity = max(1024, min(expecting, reach.overflow ? expecting : reach.partialValue + 1024))
         for _ in 0 ..< 8 {
             var out = [UInt8](repeating: 0, count: capacity)
             var produced = uLongf(capacity)
@@ -129,7 +148,9 @@ public enum PNGDecoder {
                 out.removeLast(capacity - Int(produced))
                 return out
             case Z_BUF_ERROR:
-                capacity *= 2
+                // More than the image holds is a corrupt stream, not a bigger buffer.
+                guard capacity < expecting else { throw Failure.corrupt("more pixel data than the image holds") }
+                capacity = min(expecting, capacity * 2)
             default:
                 throw Failure.corrupt("inflate returned \(status)")
             }
@@ -191,9 +212,15 @@ public enum PNGDecoder {
 
     private static func expand(
         _ lines: [UInt8], width: Int, height: Int,
-        colour: Int, channels: Int, palette: [UInt8]
+        colour: Int, channels: Int, palette: [UInt8], transparency: [UInt8] = []
     ) -> Data {
         if colour == 6 { return Data(lines) }
+        // A grey or rgb key: 16-bit samples, of which an 8-bit image uses the low byte.
+        let key: [UInt8]? = switch colour {
+        case 0 where transparency.count >= 2: [transparency[1]]
+        case 2 where transparency.count >= 6: [transparency[1], transparency[3], transparency[5]]
+        default: nil
+        }
 
         var out = [UInt8](repeating: 255, count: width * height * 4)
         for i in 0 ..< (width * height) {
@@ -203,17 +230,22 @@ public enum PNGDecoder {
             case 0:
                 let g = lines[source]
                 out[destination] = g; out[destination + 1] = g; out[destination + 2] = g
+                if let key, g == key[0] { out[destination + 3] = 0 }
             case 2:
                 out[destination] = lines[source]
                 out[destination + 1] = lines[source + 1]
                 out[destination + 2] = lines[source + 2]
+                if let key, lines[source] == key[0], lines[source + 1] == key[1], lines[source + 2] == key[2] {
+                    out[destination + 3] = 0
+                }
             case 3:
-                let index = Int(lines[source]) * 3
+                let entry = Int(lines[source]), index = entry * 3
                 if index + 2 < palette.count {
                     out[destination] = palette[index]
                     out[destination + 1] = palette[index + 1]
                     out[destination + 2] = palette[index + 2]
                 }
+                if entry < transparency.count { out[destination + 3] = transparency[entry] }
             case 4:
                 let g = lines[source]
                 out[destination] = g; out[destination + 1] = g; out[destination + 2] = g

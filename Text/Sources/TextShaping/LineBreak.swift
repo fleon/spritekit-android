@@ -12,7 +12,8 @@ import SpriteKitShim
 ///   no-break space (U+00A0) holds its neighbours together, as UAX #14's
 ///   glue does: a game can join "Quiet Harbour · Level 1" with them so a
 ///   line breaks before the place, never in it.
-/// - Chinese and Japanese break between almost any two characters, held off
+/// - Chinese, Japanese and Korean break between almost any two characters
+///   (Korean between syllables, its spaces as well), held off
 ///   only by the small kinsoku set below — no closing bracket or full stop
 ///   starts a line, and no opening bracket ends one.
 /// - Thai writes without spaces and is broken with a dictionary. There's
@@ -49,7 +50,11 @@ enum LineBreak {
                     places.append(next)
                 }
             } else if isIdeographic(here) || isIdeographic(after) {
-                if !noStart(after), !noEnd(here), after != " " { places.append(next) }
+                // Never either side of a straight quote (UAX #14's LB19),
+                // which could open or close.
+                if !noStart(after), !noEnd(here), after != " ", here != "\"", after != "\"", here != "'", after != "'" {
+                    places.append(next)
+                }
             }
             index = next
         }
@@ -76,7 +81,9 @@ enum LineBreak {
     private static func isIdeographic(_ character: Character) -> Bool {
         guard let scalar = character.unicodeScalars.first else { return false }
         switch TextScript.of(scalar) {
-        case .han, .hiragana, .katakana: return true
+        // Hangul breaks between its syllables too (UAX #14's default, as
+        // Core Text breaks Korean), not only at its spaces.
+        case .han, .hiragana, .katakana, .hangul: return true
         default:
             // CJK punctuation, which breaks with the characters around it.
             return (0x3000...0x303F).contains(Int(scalar.value))

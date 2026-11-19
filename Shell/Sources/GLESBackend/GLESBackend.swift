@@ -145,6 +145,12 @@ public enum GLESBackend {
             let choices = host.displayChoices
             renderer?.configure(rate: choices.rate, scales: choices.scales, governs: choices.governs, decided: choices.decided, fromCurrent: true)
         }
+        // How crops with a shape mask draw (`CropCompositing`): `stencil`,
+        // `hybrid` or `composited`, to measure one against another.
+        if let mode = DebugProperty.string("crops").flatMap(CropCompositing.Mode.init(rawValue:)) {
+            CropCompositing.mode = mode
+            Log.info("crops with shape masks: \(mode.rawValue)")
+        }
         if let slowdown = DebugProperty.string("slowdown").flatMap(Double.init), slowdown > 1 {
             renderer.slowdown = slowdown
             Log.info("everything \(slowdown)x slower")

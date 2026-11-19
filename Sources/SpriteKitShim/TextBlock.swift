@@ -12,12 +12,16 @@ public struct GlyphMask: Equatable, Sendable {
     public var width: Int
     public var height: Int
     public var coverage: [UInt8]
+    /// A colour glyph's own pixels (emoji), premultiplied RGBA, drawn as
+    /// they are rather than in the text's colour; nil for a plain glyph.
+    public var colour: [UInt8]?
 
-    public init(origin: CGPoint, width: Int, height: Int, coverage: [UInt8]) {
+    public init(origin: CGPoint, width: Int, height: Int, coverage: [UInt8], colour: [UInt8]? = nil) {
         self.origin = origin
         self.width = width
         self.height = height
         self.coverage = coverage
+        self.colour = colour
     }
 }
 
@@ -461,6 +465,15 @@ public struct TextBlock {
             for mask in masks {
                 let left = Int(column) + Int(mask.origin.x)
                 let top = Int(row) + Int(mask.origin.y)
+                if let colour = mask.colour {
+                    context.fillImage(
+                        colour, width: mask.width, height: mask.height,
+                        // Emoji take none of the text colour, its alpha
+                        // neither, unless it's clear (as UIKit draws them).
+                        atDeviceX: left, y: upright ? -top : top - 1, rowsDown: upright, alpha: run.colour.alpha > 0 ? 1 : 0
+                    )
+                    continue
+                }
                 context.fillMask(
                     mask.coverage, width: mask.width, height: mask.height,
                     // Row 0 of the mask is its top: `top - 1` up in glyph space.

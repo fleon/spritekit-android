@@ -20,6 +20,8 @@ import TextShaping
 /// go up — usually one glyph's worth.
 final class GlyphPages {
     private let atlas: GlyphAtlas
+    /// The colour pages (RGBA) rather than the coverage ones.
+    private let colour: Bool
     private var names: [Int: GLuint] = [:]
     private var generations: [Int: Int] = [:]
     private var sizes: [Int: CGSize] = [:]
@@ -29,15 +31,18 @@ final class GlyphPages {
     private(set) var uploads = 0
     private(set) var uploadedBytes = 0
 
-    init(atlas: GlyphAtlas) {
+    init(atlas: GlyphAtlas, colour: Bool = false) {
         self.atlas = atlas
+        self.colour = colour
     }
+
+    private var pages: [AtlasPage] { colour ? atlas.colourPages : atlas.pages }
 
     /// Brings every page's texture up to date. Called once a frame, before
     /// the labels are drawn, so a glyph rasterised while laying this frame
     /// out is on the GPU by the time its quad is.
     func sync() {
-        for (index, page) in atlas.pages.enumerated() {
+        for (index, page) in pages.enumerated() {
             sizes[index] = CGSize(width: page.width, height: page.height)
 
             guard let name = names[index] else {
@@ -90,12 +95,13 @@ final class GlyphPages {
         glPixelStorei(GLenum(GL_UNPACK_ALIGNMENT), 1)
 
         // R8 rather than the old GL_ALPHA: ES 3.0 has sized single-channel
-        // formats, and the coverage shader reads `.r`.
+        // formats, and the coverage shader reads `.r`. Colour pages are RGBA.
+        let rgba = page.bytesPerPixel == 4
         page.pixels.withUnsafeBufferPointer { bytes in
             glTexImage2D(
-                GLenum(GL_TEXTURE_2D), 0, GL_R8,
+                GLenum(GL_TEXTURE_2D), 0, rgba ? GL_RGBA8 : GL_R8,
                 GLsizei(page.width), GLsizei(page.height), 0,
-                GLenum(GL_RED), GLenum(GL_UNSIGNED_BYTE), bytes.baseAddress
+                GLenum(rgba ? GL_RGBA : GL_RED), GLenum(GL_UNSIGNED_BYTE), bytes.baseAddress
             )
         }
         glBindTexture(GLenum(GL_TEXTURE_2D), 0)
@@ -103,9 +109,9 @@ final class GlyphPages {
         names[index] = name
         generations[index] = page.generation
         uploads += 1
-        uploadedBytes += page.width * page.height
+        uploadedBytes += page.width * page.height * page.bytesPerPixel
         page.clearDirty()
-        Log.info("glyph page \(index): \(page.width)x\(page.height) R8 uploaded whole")
+        Log.info("glyph page \(index): \(page.width)x\(page.height) \(rgba ? "RGBA8" : "R8") uploaded whole")
     }
 
     private func upload(_ dirty: CGRect, of page: AtlasPage, to name: GLuint) {
@@ -120,14 +126,15 @@ final class GlyphPages {
         // for ES 3.0 contexts and a stale value would corrupt every later
         // upload, so the rows are copied out instead. A dirty rect is one
         // glyph wide in the common case; this is bytes, not kilobytes.
-        var patch = [UInt8](repeating: 0, count: width * height)
+        let bpp = page.bytesPerPixel
+        var patch = [UInt8](repeating: 0, count: width * height * bpp)
         page.pixels.withUnsafeBufferPointer { source in
             patch.withUnsafeMutableBufferPointer { destination in
                 for row in 0 ..< height {
-                    let from = (y + row) * page.width + x
-                    let to = row * width
+                    let from = ((y + row) * page.width + x) * bpp
+                    let to = row * width * bpp
                     destination.baseAddress!.advanced(by: to)
-                        .update(from: source.baseAddress!.advanced(by: from), count: width)
+                        .update(from: source.baseAddress!.advanced(by: from), count: width * bpp)
                 }
             }
         }
@@ -138,13 +145,13 @@ final class GlyphPages {
             glTexSubImage2D(
                 GLenum(GL_TEXTURE_2D), 0,
                 GLint(x), GLint(y), GLsizei(width), GLsizei(height),
-                GLenum(GL_RED), GLenum(GL_UNSIGNED_BYTE), bytes.baseAddress
+                GLenum(bpp == 4 ? GL_RGBA : GL_RED), GLenum(GL_UNSIGNED_BYTE), bytes.baseAddress
             )
         }
         glBindTexture(GLenum(GL_TEXTURE_2D), 0)
 
         uploads += 1
-        uploadedBytes += width * height
+        uploadedBytes += width * height * bpp
     }
 }
 
@@ -165,6 +172,7 @@ final class GlyphPages {
 final class EngineGlyphSource: CoverageGeometry.GlyphSource {
     private let engine: TextEngine
     private var lines: [Key: [CoverageGeometry.Glyph]] = [:]
+    private var colourEpoch = 0
     private var pageSizes: [CGSize] = []
 
     /// Pixels per point, set by the renderer whenever the drawable changes.
@@ -191,7 +199,19 @@ final class EngineGlyphSource: CoverageGeometry.GlyphSource {
             size: Int((font.size * 64).rounded()),
             density: Int((deviceScale * 64).rounded())
         )
-        if let cached = lines[key] { return cached }
+        // A colour page emptied since: the remembered rects may show other glyphs now.
+        let epoch = engine.atlas.colourEpoch
+        if epoch != colourEpoch {
+            lines.removeAll(keepingCapacity: true)
+            colourEpoch = epoch
+        }
+        if let cached = lines[key] {
+            // Drawn from again this frame: not to be emptied under it.
+            if cached.contains(where: \.isColour) {
+                engine.atlas.touchColourPages(cached.lazy.filter(\.isColour).map(\.page))
+            }
+            return cached
+        }
 
         guard font.size > 0, let runs = engine.shape(line, font: font) else { return [] }
 
@@ -207,6 +227,21 @@ final class EngineGlyphSource: CoverageGeometry.GlyphSource {
         for run in runs {
             // A fallback run's glyphs come from its own face.
             let raster = FontKey(name: run.face(in: font).name, size: rasterSize)
+            if let box = engine.colourBox(of: run, font: font) {
+                // Colour glyphs (emoji): their image in its box, at the screen's density.
+                let pixels = Int((box.width * deviceScale).rounded())
+                for glyph in run.glyphs {
+                    if let entry = engine.atlas.colourGlyph(glyph.glyph, font: raster, pixels: pixels), !entry.isEmpty {
+                        made.append(CoverageGeometry.Glyph(
+                            page: entry.page, rect: entry.rect,
+                            frame: box.offsetBy(dx: pen + glyph.xOffset, dy: glyph.yOffset),
+                            cluster: glyph.cluster, isColour: true
+                        ))
+                    }
+                    pen += glyph.xAdvance
+                }
+                continue
+            }
             for glyph in run.glyphs {
                 let entry = engine.atlas.glyph(
                     GlyphAtlas.Key(font: raster.name, size: raster.size, glyph: glyph.glyph),
@@ -247,6 +282,16 @@ final class EngineGlyphSource: CoverageGeometry.GlyphSource {
 
     private func refreshPageSizes() {
         pageSizes = engine.atlas.pages.map { CGSize(width: $0.width, height: $0.height) }
+    }
+
+    private var colourPageSizes: [CGSize] = []
+
+    func colourPageSize(_ page: Int) -> CGSize? {
+        if page < 0 { return nil }
+        if page >= colourPageSizes.count {
+            colourPageSizes = engine.atlas.colourPages.map { CGSize(width: $0.width, height: $0.height) }
+        }
+        return page < colourPageSizes.count ? colourPageSizes[page] : nil
     }
 
     func flush() {

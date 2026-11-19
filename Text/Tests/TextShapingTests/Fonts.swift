@@ -42,6 +42,8 @@ enum Fonts {
             _ = try? library.register(path: path)
         }
         #if canImport(CoreText)
+        // Strikes' PNGs (emoji) decode as the shell's decoder decodes them.
+        UIImage.decoder = { ImageIODecoder.decode($0) }
         // Characters the test faces lack fall back as Core Text's do.
         _ = CoreTextFallback.registered
         engine.fallback = CoreTextFallback(library: library)
@@ -95,6 +97,23 @@ enum Fonts {
 
 #if canImport(CoreText)
 import CoreText
+import ImageIO
+
+/// PNG to premultiplied RGBA, top row first, as `UIImage.decoder` hands
+/// images over on a device.
+enum ImageIODecoder {
+    static func decode(_ data: Data) -> RasterImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return RasterImage(width: width, height: height, pixels: pixels)
+    }
+}
 
 /// Core Text's own fallback (`CTFontCreateForString`) as the provider, so
 /// the tests compare fallback text with Apple's on the same faces: the
@@ -124,7 +143,11 @@ final class CoreTextFallback: FontFallbackProvider, @unchecked Sendable {
         let string = String(character) as CFString
         // Japanese, so Han falls back to Hiragino: FreeType can't read the
         // Mac's PingFang (a private format).
-        let picked = CTFontCreateForStringWithLanguage(primary, string, CFRange(location: 0, length: CFStringGetLength(string)), "ja" as CFString)
+        // A character drawn as an emoji goes to the emoji face, as a Core Text
+        // line sends it (CTFontCreateForString alone may not).
+        let picked = EmojiPresentation(character) == .emoji
+            ? CTFontCreateWithName("AppleColorEmoji" as CFString, font.size, nil)
+            : CTFontCreateForStringWithLanguage(primary, string, CFRange(location: 0, length: CFStringGetLength(string)), "ja" as CFString)
         let name = CTFontCopyPostScriptName(picked) as String
         guard name != CTFontCopyPostScriptName(primary) as String,
               let url = CTFontCopyAttribute(picked, kCTFontURLAttribute) as? URL else { return nil }

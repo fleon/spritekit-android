@@ -27,6 +27,28 @@ public protocol FontFallbackProvider: AnyObject, Sendable {
     func face(for character: Character, font: FontKey, weight: Int) -> FallbackFace?
 }
 
+/// How a character asks to be drawn (UTS #51): as an emoji, as text, or
+/// as its default, which for most is text.
+public enum EmojiPresentation: Sendable {
+    case emoji, text, textByDefault
+
+    /// FE0E asks for text; FE0F, a keycap, a skin tone, a flag or a joined
+    /// sequence for an emoji; else a character whose default is emoji
+    /// (⌚, ⭐, 😀) is one.
+    public init(_ character: Character) {
+        let scalars = character.unicodeScalars
+        if scalars.contains("\u{FE0E}") {
+            self = .text
+        } else if scalars.contains(where: { [0xFE0F, 0x20E3, 0x200D].contains($0.value)
+            || (0x1F3FB...0x1F3FF).contains($0.value) || (0x1F1E6...0x1F1FF).contains($0.value) })
+            || scalars.first?.properties.isEmojiPresentation == true {
+            self = .emoji
+        } else {
+            self = .textByDefault
+        }
+    }
+}
+
 extension Unicode.Scalar {
     /// Drawn as nothing by any face, so never a reason to fall back:
     /// controls, joiners, variation selectors and the like.
@@ -48,7 +70,9 @@ extension Unicode.Scalar {
 /// (sans-serif) comes first, then every unnamed family in the file's
 /// order; a character goes to the first family that has it, unless a later
 /// one is for a language the user reads (Minikin's locale match), and
-/// within a family to the font nearest the text's weight. Families for
+/// within a family to the font nearest the text's weight. A character to be
+/// drawn as an emoji (`EmojiPresentation`) goes to the emoji family first,
+/// one to be drawn as text never does. Families for
 /// the taller "elegant" variant are skipped, as TextView skips them.
 public final class SystemFontFallback: FontFallbackProvider, @unchecked Sendable {
     public struct Family: Equatable, Sendable {
@@ -118,12 +142,22 @@ public final class SystemFontFallback: FontFallbackProvider, @unchecked Sendable
     public func face(for character: Character, font: FontKey, weight: Int) -> FallbackFace? {
         let scalars = Array(character.unicodeScalars.filter { !$0.isIgnorableForFallback })
         guard !scalars.isEmpty else { return nil }
+        let presentation = EmojiPresentation(character)
         let family = lock.withLock { () -> Int? in
             if let known = chosen[character] { return known }
-            // A family for a language the user reads first (Minikin's
-            // locale match), else the first in the chain that has it.
+            // An emoji's family first when it's to be drawn as one, never
+            // when it's to be drawn as text (Minikin's emoji and variation-
+            // selector matching); then a family for a language the user
+            // reads (its locale match), else the first that has it.
             let covers = { (index: Int) in self.probe(index)?.covers(scalars) == true }
-            let found = preferred.first(where: covers) ?? families.indices.first(where: covers)
+            let emoji = families.indices.filter { families[$0].languages.contains("und-Zsye") }
+            if presentation == .emoji, let found = emoji.first(where: covers) {
+                chosen[character] = found
+                return found
+            }
+            let allowed = { (index: Int) in presentation != .text || !emoji.contains(index) }
+            let found = preferred.first(where: { allowed($0) && covers($0) })
+                ?? families.indices.first(where: { allowed($0) && covers($0) })
             chosen[character] = found
             return found
         }
