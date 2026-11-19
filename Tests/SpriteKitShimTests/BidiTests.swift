@@ -123,4 +123,31 @@ struct BidiTests {
         #expect(Bidi.overridden("de\u{202C}f", rightToLeft: true) == "\u{200F}\u{202E}def\u{202C}")
         #expect(Bidi.overridden("עולם ", rightToLeft: false) == "\u{200E}\u{202D}עולם \u{202C}")
     }
+
+    @Test("Kashida go after initial and medial letters, never into a ligature")
+    func kashidaPlaces() {
+        let ones = { (text: String) in [CGFloat](repeating: 1, count: text.count) }
+        // عليكم: ain initial, then lam, yeh and kaf medial.
+        #expect(Kashida.opportunities(in: Array("عليكم"), advances: ones("عليكم")) == [0])
+        #expect(Kashida.medials(in: Array("عليكم"), advances: ones("عليكم")) == [1, 2, 3])
+        // سلام: the lam drawn in a ligature with the alef (no advance of its own).
+        #expect(Kashida.medials(in: Array("سلام"), advances: [1, 1, 0, 1]).isEmpty)
+    }
+
+    @Test("A justified line's slack: initial places to 0.8 em, then medial places and spaces, as Core Text shares it")
+    func kashidaShares() {
+        // No medial place: the initial places take it all.
+        let alone = Kashida.Shares(slack: 40, initials: [15, 15], medials: [], spaces: [15])
+        #expect(alone.initials == [20, 20] && alone.spaces == [0])
+        // "Go عليكم and more" at 160 (CTLineCreateJustifiedLine): 12 after
+        // the ain, the other 7.32 four ways.
+        let shared = Kashida.Shares(slack: 19.32, initials: [15], medials: [15, 15, 15], spaces: [15])
+        #expect(shared.initials == [12])
+        #expect(shared.medials.allSatisfy { abs($0 - 1.83) < 0.01 } && abs(shared.spaces[0] - 1.83) < 0.01)
+        // Spaces full at half an em; the medial places take the rest.
+        let full = Kashida.Shares(slack: 60, initials: [15], medials: [15, 15, 15], spaces: [15, 15])
+        #expect(full.spaces == [7.5, 7.5] && full.medials.allSatisfy { abs($0 - 11) < 0.001 })
+        // As few kashida as fill a place at the tatweel's advance, each narrower.
+        #expect(Kashida.glyphs(filling: 12, tatweel: 3.149).count == 4)
+    }
 }

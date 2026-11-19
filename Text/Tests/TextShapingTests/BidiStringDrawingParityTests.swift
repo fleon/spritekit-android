@@ -422,5 +422,96 @@ struct BidiStringDrawingParityTests {
             }
         }
     }
+
+    /// Justified lines mixing Latin with Arabic: runs split at "|", the
+    /// Latin in Montserrat Black 15, the Arabic in Noto Naskh Arabic 15
+    /// (Android's), each line's words as ink spans across (gaps over three
+    /// points split them), from UIKit's `NSAttributedString.draw(in:)` on
+    /// Catalyst at 4x (macOS 27.2), the lines 20 points apart. The initial
+    /// places fill to 0.8 em; then the medial places and the spaces left of
+    /// the Arabic share the rest (`Kashida.Shares`). (Lines of Latin alone
+    /// are left out: past half an em UIKit widens their letters too, which
+    /// left-to-right text here doesn't.)
+    static let mixed: [(String, [[(CGFloat, CGFloat)]])] = [
+        ("Hello world |مرحبا بكم| again and more words here", [
+            [(0.75, 41.5), (48.25, 94.75), (103.25, 159.25)],
+            [(1, 27), (32.5, 77), (82.25, 112.25), (118, 159.5)],
+            [(0, 50), (55.25, 91.5)],
+        ]),
+        ("Hello world |عليكم| and more", [
+            [(0.75, 41.5), (49.5, 96.25), (105.75, 159.75)],
+            [(0.25, 30.25), (35.75, 77.5)],
+        ]),
+        ("Big |مرحبا بكم| again and more", [
+            [(0.75, 26.25), (32.5, 58.5), (63.5, 109.5), (114.75, 159.25)],
+            [(0.25, 30.25), (35.75, 77.5)],
+        ]),
+        ("Hello world |مرحبا| again and more", [
+            [(0.75, 41.5), (48.25, 94.75), (103.25, 159.25)],
+            [(0.25, 44.75), (50, 80), (85.5, 127.25)],
+        ]),
+        ("Go |عليكم| and more words here", [
+            [(0.25, 21.5), (29, 77.25), (82.25, 112.25), (118, 159.5)],
+            [(0, 50), (55.25, 91.5)],
+        ]),
+        ("aa bb |عليكم| cc dd ee ff gg", [
+            [(0.25, 18.5), (24, 44.25), (50, 87), (92, 110.25), (115, 135.25), (140.5, 159.5)],
+            [(0, 13.5), (17.75, 38)],
+        ]),
+        ("|شكرا لك| Hello world and more here", [
+            [(0.75, 41.5), (46, 92.5), (98.5, 119.75), (124.75, 159.25)],
+            [(0.25, 30.25), (35.75, 77.5), (82.75, 119)],
+        ]),
+        ("|عليكم بكم| and more words", [
+            [(0.25, 30.25), (35.75, 77.5), (83.25, 112.5), (117.5, 159.75)],
+            [(0, 50)],
+        ]),
+    ]
+
+    @Test("Justified lines mixing Latin with Arabic widen as UIKit widens them")
+    func mixedKashida() throws {
+        let latin = Fonts.display(15), arabic = FontKey(name: "NotoNaskhArabicUI-Bold", size: 15)
+        for (text, expected) in Self.mixed {
+            let style = TextBlock.Style(alignment: .justified, lineSpacing: 20)
+            let runs = text.split(separator: "|", omittingEmptySubsequences: false).enumerated().compactMap { index, part in
+                part.isEmpty ? nil : TextBlock.Run(String(part), font: index % 2 == 1 ? arabic : latin, colour: .white, style: style)
+            }
+            let block = try #require(TextBlock(runs: runs, maxWidth: 160, usesFontLeading: false))
+            let context = BitmapContext(width: 640, height: 1200, scale: 4)
+            block.draw(in: CGRect(x: 0, y: 0, width: 160, height: 300), context: context)
+            let data = try #require(context.data?.assumingMemoryBound(to: UInt8.self))
+            var lines: [[Bool]] = []
+            var current: [Bool]?
+            for y in 0 ..< 1200 {
+                let row = (0 ..< 640).map { data[(y * 640 + $0) * 4 + 3] > 60 }
+                if row.contains(true) {
+                    current = current.map { zip($0, row).map { $0 || $1 } } ?? row
+                } else if let line = current {
+                    lines.append(line)
+                    current = nil
+                }
+            }
+            #expect(lines.count == expected.count, "'\(text)': \(lines.count) lines")
+            for (number, (columns, line)) in zip(lines, expected).enumerated() {
+                var spans: [(CGFloat, CGFloat)] = []
+                var start = -1, gap = 0
+                for x in 0 ..< 640 {
+                    if columns[x] {
+                        if start < 0 { start = x }
+                        gap = 0
+                    } else if start >= 0 {
+                        gap += 1
+                        if gap > 12 { spans.append((CGFloat(start) / 4, CGFloat(x - gap + 1) / 4)); start = -1; gap = 0 }
+                    }
+                }
+                if start >= 0 { spans.append((CGFloat(start) / 4, CGFloat(640 - gap) / 4)) }
+                #expect(spans.count == line.count, "'\(text)' line \(number): \(spans)")
+                for (ours, theirs) in zip(spans, line) {
+                    #expect(abs(ours.0 - theirs.0) <= 0.75 && abs(ours.1 - theirs.1) <= 0.75,
+                            "'\(text)' line \(number): \(ours) against \(theirs)")
+                }
+            }
+        }
+    }
 }
 #endif
