@@ -9,11 +9,14 @@ extension FaceHandle {
     /// Clusters come back as UTF-8 byte offsets into `text`, which is what
     /// HarfBuzz works in, shifted by `byteOffset` so a run's clusters read
     /// against the whole string.
-    func shape(_ text: String, script: TextScript, byteOffset: Int = 0) -> ShapedRun {
-        run { unsafeShape(text, script: script, byteOffset: byteOffset) }
+    ///
+    /// `rightToLeft` is the direction its bidi level gives it
+    /// (`TextEngine.shapeBidi`); nil, the script's.
+    func shape(_ text: String, script: TextScript, byteOffset: Int = 0, rightToLeft: Bool? = nil) -> ShapedRun {
+        run { unsafeShape(text, script: script, byteOffset: byteOffset, rightToLeft: rightToLeft) }
     }
 
-    private func unsafeShape(_ text: String, script: TextScript, byteOffset: Int) -> ShapedRun {
+    private func unsafeShape(_ text: String, script: TextScript, byteOffset: Int, rightToLeft: Bool?) -> ShapedRun {
         guard let exactFont, let buffer = hb_buffer_create(), !text.isEmpty else {
             return ShapedRun(glyphs: [], script: script, byteOffset: byteOffset)
         }
@@ -25,7 +28,7 @@ extension FaceHandle {
                 hb_buffer_add_utf8(buffer, chars, Int32(bytes.count), 0, Int32(bytes.count))
             }
         }
-        hb_buffer_set_direction(buffer, script.isRightToLeft ? HB_DIRECTION_RTL : HB_DIRECTION_LTR)
+        hb_buffer_set_direction(buffer, (rightToLeft ?? script.isRightToLeft) ? HB_DIRECTION_RTL : HB_DIRECTION_LTR)
         hb_buffer_set_script(buffer, script.hbScript)
         hb_buffer_set_language(buffer, hb_language_from_string(script.language, -1))
         // Keep clusters as plain byte offsets rather than merged runs, so a
@@ -66,11 +69,11 @@ extension FaceHandle {
     }
 
     /// Shapes a whole string, one run per script.
-    func shapeRuns(_ text: String) -> [ShapedRun] {
+    func shapeRuns(_ text: String, rightToLeft: Bool? = nil) -> [ShapedRun] {
         run {
         itemise(text).map { item in
             let offset = text.utf8.distance(from: text.startIndex, to: item.range.lowerBound)
-            return shape(String(text[item.range]), script: item.script, byteOffset: offset)
+            return shape(String(text[item.range]), script: item.script, byteOffset: offset, rightToLeft: rightToLeft)
         }
         }
     }

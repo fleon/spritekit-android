@@ -7,17 +7,22 @@
 #
 #   Tools/ShapeProbe/run.sh                      # iPhone 17 Pro, 3x
 #   Tools/ShapeProbe/run.sh "iPad Air 11-inch (M4)"  # 2x
+#   Tools/ShapeProbe/run.sh "iPhone 17 Pro" node-properties.swift
+#       # glowWidth, isAntialiased and blendMode
+#   Tools/ShapeProbe/run.sh "iPhone 17 Pro" miter-joins.swift
+#       # how far a .miter join reaches at each miterLimit
 #
 # A windowless SKRenderer on a Mac draws strokes softer than any device:
 # measure shape edges here.
 set -eu
 device="${1:-iPhone 17 Pro}"
 here="$(cd "$(dirname "$0")" && pwd)"
+source="$here/${2:-main.swift}"
 work="$(mktemp -d)"
 mkdir -p "$work/App.app"
 cp "$here/Info.plist" "$work/App.app/Info.plist"
 xcrun -sdk iphonesimulator swiftc -parse-as-library -module-name App \
-    -target arm64-apple-ios18.0-simulator -O "$here/main.swift" -o "$work/App.app/App"
+    -target arm64-apple-ios18.0-simulator -O "$source" -o "$work/App.app/App"
 udid="$(xcrun simctl create "shape-probe-$$" "$device")"
 trap 'xcrun simctl shutdown "$udid" >/dev/null 2>&1; xcrun simctl delete "$udid" >/dev/null 2>&1; rm -rf "$work"' EXIT
 xcrun simctl boot "$udid"

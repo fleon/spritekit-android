@@ -174,14 +174,71 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     /// Shapes a string, one run per script and face. Nil when the face is
     /// unknown.
     public func shape(_ text: String, font: FontKey) -> [ShapedRun]? {
-        library.face(font).map { shapeRuns(text, font: font, face: $0) }
+        library.face(font).map { lineRuns(text, font: font, face: $0) }
+    }
+
+    /// A line's runs in the order drawn: through the bidirectional
+    /// algorithm when it has right-to-left text in it, else as it always was.
+    private func lineRuns(_ text: String, font: FontKey, face: FaceHandle) -> [ShapedRun] {
+        Bidi.needsReordering(text) ? shapeBidi(text, font: font, face: face) : shapeRuns(text, font: font, face: face)
+    }
+
+    /// A line with right-to-left text in it, laid out by the bidirectional
+    /// algorithm (`Bidi`): its stretches of one level each shaped in that
+    /// level's direction, then drawn in the order L2 puts them in. A
+    /// right-to-left line's trailing spaces go last, at its right: Core Text
+    /// hangs them left of the line's origin, and either way the visible
+    /// glyphs start at the origin and nothing drawn moves.
+    private func shapeBidi(_ text: String, font: FontKey, face: FaceHandle) -> [ShapedRun] {
+        let (levels, line) = Bidi.levels(Array(text.unicodeScalars))
+        var body = text.endIndex
+        if line % 2 == 1 {
+            while body > text.startIndex,
+                  text[text.index(before: body)].unicodeScalars.allSatisfy(Bidi.isWhitespace) {
+                body = text.index(before: body)
+            }
+        }
+        // Each character at its first scalar's level.
+        var stretches: [(range: Range<String.Index>, level: UInt8)] = []
+        var scalar = 0
+        var index = text.startIndex
+        while index < body {
+            let next = text.index(after: index)
+            let level = levels[scalar]
+            scalar += text[index].unicodeScalars.count
+            if let last = stretches.last, last.level == level {
+                stretches[stretches.count - 1].range = last.range.lowerBound ..< next
+            } else {
+                stretches.append((index ..< next, level))
+            }
+            index = next
+        }
+        func shaped(_ range: Range<String.Index>, rightToLeft: Bool) -> [ShapedRun] {
+            let start = text.utf8.distance(from: text.startIndex, to: range.lowerBound)
+            return shapeRuns(String(text[range]), font: font, face: face, rightToLeft: rightToLeft).map { run in
+                var run = run
+                run.byteOffset += start
+                run.glyphs = run.glyphs.map { var glyph = $0; glyph.cluster += start; return glyph }
+                return run
+            }
+        }
+        var units: [(run: ShapedRun, level: UInt8)] = []
+        for stretch in stretches {
+            for run in shaped(stretch.range, rightToLeft: stretch.level % 2 == 1) { units.append((run, stretch.level)) }
+        }
+        var runs = Bidi.visualOrder(units.map(\.level)).map { units[$0].run }
+        if body < text.endIndex { runs += shaped(body ..< text.endIndex, rightToLeft: true) }
+        return runs
     }
 
     /// Characters `face` has every glyph of stay in it, as Core Text keeps
     /// them (spaces and digits among fallback text too); the rest go to the
     /// fallback face that has them, the last one used first, each stretch
     /// shaped in its own face at the line's size.
-    private func shapeRuns(_ text: String, font: FontKey, face: FaceHandle) -> [ShapedRun] {
+    /// `rightToLeft` shapes every run in that direction and leaves them in
+    /// logical order, for `shapeBidi` to order; nil, each run in its
+    /// script's, ordered here.
+    private func shapeRuns(_ text: String, font: FontKey, face: FaceHandle, rightToLeft: Bool? = nil) -> [ShapedRun] {
         // An emoji (FE0F, a keycap, a flag...) comes from an emoji face even
         // where the line's face has the character, as Core Text draws it.
         let emoji = { (character: Character) in
@@ -191,7 +248,7 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
               !text.unicodeScalars.allSatisfy({ $0.isIgnorableForFallback || face.covers($0) })
                 // (Every emoji has a scalar from U+2190 up: a cheap look first.)
                 || text.unicodeScalars.contains(where: { $0.value >= 0x2190 }) && text.contains(where: emoji) else {
-            return face.shapeRuns(text)
+            return face.shapeRuns(text, rightToLeft: rightToLeft)
         }
         var stretches: [(range: Range<String.Index>, font: String?)] = []
         var last: (name: String, face: FaceHandle)?
@@ -221,7 +278,7 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         let runs = stretches.flatMap { stretch -> [ShapedRun] in
             let shaper = stretch.font.flatMap { library.face(FontKey(name: $0, size: font.size)) } ?? face
             let start = text.utf8.distance(from: text.startIndex, to: stretch.range.lowerBound)
-            return shaper.shapeRuns(String(text[stretch.range])).map { run in
+            return shaper.shapeRuns(String(text[stretch.range]), rightToLeft: rightToLeft).map { run in
                 var run = run
                 run.byteOffset += start
                 run.glyphs = run.glyphs.map { var glyph = $0; glyph.cluster += start; return glyph }
@@ -229,7 +286,7 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
                 return run
             }
         }
-        return Self.visualOrder(runs)
+        return rightToLeft == nil ? Self.visualOrder(runs) : runs
     }
 
     /// Right-to-left runs, with the spaces and punctuation between them, in
@@ -325,7 +382,7 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         guard let face = library.face(font) else {
             return TextLine(text: text, advance: 0, inkBounds: .zero)
         }
-        let runs = shapeRuns(text, font: font, face: face)
+        let runs = lineRuns(text, font: font, face: face)
         let line = TextLine(
             text: text,
             advance: runs.reduce(0) { $0 + $1.advance },
@@ -341,7 +398,7 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         return LineBreak.wrap(text, maxWidth: maxWidth) { piece in
             let key = String(piece)
             if let known = widths[key] { return known }
-            let width = self.shapeRuns(key, font: font, face: face).reduce(0) { $0 + $1.advance }
+            let width = self.lineRuns(key, font: font, face: face).reduce(0) { $0 + $1.advance }
             widths[key] = width
             return width
         }
@@ -441,8 +498,24 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     /// The line's glyph outlines, shaped as it's measured, each moved to its
     /// pen position.
     public func glyphOutline(_ text: String, font: FontKey) -> [PathElement] {
+        glyphOutlines(text, font: font).flatMap { glyph -> [PathElement] in
+            func move(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + glyph.origin.x, y: p.y + glyph.origin.y) }
+            return glyph.elements.map { element in
+                switch element {
+                case let .move(p): .move(move(p))
+                case let .line(p): .line(move(p))
+                case let .quadCurve(to, control): .quadCurve(to: move(to), control: move(control))
+                case let .curve(to, c1, c2): .curve(to: move(to), control1: move(c1), control2: move(c2))
+                case .close, .arc: element
+                }
+            }
+        }
+    }
+
+    /// Each glyph's outline, from its own pen position on the line.
+    public func glyphOutlines(_ text: String, font: FontKey) -> [GlyphOutline] {
         guard let runs = shape(text, font: font) else { return [] }
-        var elements: [PathElement] = []
+        var glyphs: [GlyphOutline] = []
         var pen: CGFloat = 0
         for run in runs {
             guard let face = library.face(run.face(in: font)) else {
@@ -450,21 +523,14 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
                 continue
             }
             for glyph in run.glyphs {
-                let dx = pen + glyph.xOffset, dy = glyph.yOffset
-                func move(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dy) }
-                for element in face.outline(glyph.glyph) {
-                    switch element {
-                    case let .move(p): elements.append(.move(move(p)))
-                    case let .line(p): elements.append(.line(move(p)))
-                    case let .quadCurve(to, control): elements.append(.quadCurve(to: move(to), control: move(control)))
-                    case let .curve(to, c1, c2): elements.append(.curve(to: move(to), control1: move(c1), control2: move(c2)))
-                    case .close, .arc: elements.append(element)
-                    }
+                let elements = face.outline(glyph.glyph)
+                if !elements.isEmpty {
+                    glyphs.append(GlyphOutline(origin: CGPoint(x: pen + glyph.xOffset, y: glyph.yOffset), elements: elements))
                 }
                 pen += glyph.xAdvance
             }
         }
-        return elements
+        return glyphs
     }
 
     /// Drops the measurement cache. The atlas and the faces stay.

@@ -610,7 +610,7 @@ import Testing
             let block = try #require(TextBlock(runs: [TextBlock.Run("Level", font: FontKey(name: "Montserrat-Black", size: 31.5), colour: .white)], maxWidth: 200))
             block.draw(in: CGRect(x: 0, y: 0, width: 200, height: 60), context: context)
             let ours = Self.centroid(context), total = Self.ink(context)
-            #expect(hypot(ours.x - centroid.x, ours.y - centroid.y) < 0.5, "\(name): centroid \(ours) against \(centroid)")
+            #expect(hypot(ours.x - centroid.x, ours.y - centroid.y) < 0.2, "\(name): centroid \(ours) against \(centroid)")
             #expect(abs(Double(total) / Double(ink) - 1) < 0.03, "\(name): ink \(total) against \(ink)")
         }
     }

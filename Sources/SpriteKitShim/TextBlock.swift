@@ -33,6 +33,9 @@ public extension TextProvider {
     }
     /// No outlines where the provider has none: stroked text draws nothing.
     func glyphOutline(_ text: String, font: FontKey) -> [PathElement] { [] }
+    func glyphOutlines(_ text: String, font: FontKey) -> [GlyphOutline] {
+        [GlyphOutline(origin: .zero, elements: glyphOutline(text, font: font))]
+    }
 }
 
 /// Text laid out as UIKit's string drawing lays it out
@@ -65,7 +68,9 @@ public extension TextProvider {
 ///     UIKit places them whatever `setShouldSubpixelQuantizeFonts` says.
 public struct TextBlock {
     public enum Alignment: Sendable {
-        case left, center, right, justified
+        /// `natural`: the paragraph's direction's, right for a right-to-left
+        /// paragraph (`Bidi`), else left.
+        case left, center, right, justified, natural
     }
 
     public enum Wrapping: Sendable {
@@ -128,6 +133,10 @@ public struct TextBlock {
         /// The spaces before its last visible character, which justifying
         /// widens.
         public var spaces: Int
+        /// In a right-to-left paragraph: its pieces placed right to left,
+        /// natural alignment its right edge, the spaces it ends on hanging
+        /// past its left (`Bidi`).
+        public var rightToLeft = false
 
         public var height: CGFloat { ascent + descent + leading }
     }
@@ -167,7 +176,16 @@ public struct TextBlock {
         var minX = CGFloat.greatestFiniteMagnitude, maxX = -CGFloat.greatestFiniteMagnitude
         for line in lines {
             let x = Self.offset(of: line, in: width)
-                // A justified line but its paragraph's last spans the width.
+            if line.rightToLeft {
+                // A right-to-left line's spaces hang past its left edge, no
+                // further than the rect's, and naturally aligned it leaves
+                // them out (measured on Catalyst).
+                let hang = line.style.alignment == .natural ? 0 : line.width - line.visibleWidth
+                minX = min(minX, max(0, x - hang))
+                maxX = max(maxX, x + line.visibleWidth)
+                continue
+            }
+            // A justified line but its paragraph's last spans the width.
             let end = line.style.alignment == .justified && !line.endsParagraph ? width : x + line.width
             minX = min(minX, x)
             maxX = max(maxX, end)
@@ -209,6 +227,7 @@ public struct TextBlock {
         switch line.style.alignment {
         case .left: 0
         case .justified: 0
+        case .natural: line.rightToLeft ? width - line.visibleWidth : 0
         case .center: (width - line.visibleWidth) / 2
         case .right: width - line.visibleWidth
         }
@@ -345,11 +364,23 @@ public struct TextBlock {
         }
         if ranges.isEmpty { ranges = [0 ..< 0] }
 
+        // A paragraph with right-to-left text in it: each line in its
+        // direction (`Bidi.marked`), a right-to-left one's pieces placed
+        // from its right edge.
+        let direction: Bidi.Direction? = Bidi.needsReordering(text) ? Bidi.direction(of: text) : nil
         return ranges.enumerated().map { index, range in
             let visible = visibleEnd(range.lowerBound, range.upperBound)
-            let pieces = groups(range.lowerBound, range.upperBound).map { run, piece in
+            var pieces = groups(range.lowerBound, range.upperBound).map { run, piece in
                 Piece(run: run, text: String(characters[piece]), x: width(range.lowerBound, piece.lowerBound),
                       width: width(piece.lowerBound, piece.upperBound))
+            }
+            if let direction {
+                for (offset, (_, piece)) in groups(range.lowerBound, range.upperBound).enumerated() {
+                    pieces[offset].text = Bidi.marked(pieces[offset].text, in: direction)
+                    guard direction == .rightToLeft else { continue }
+                    let shown = width(piece.lowerBound, min(piece.upperBound, max(piece.lowerBound, visible)))
+                    pieces[offset].x = width(range.lowerBound, visible) - pieces[offset].x - shown
+                }
             }
             let present = pieces.isEmpty ? [paragraph.empty] : Array(Set(pieces.map(\.run))).sorted()
             var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
@@ -367,7 +398,8 @@ public struct TextBlock {
                 ascent: ascent, descent: descent, leading: leading,
                 style: style,
                 endsParagraph: index == ranges.count - 1,
-                spaces: characters[range.lowerBound ..< visible].filter { $0 == " " }.count
+                spaces: characters[range.lowerBound ..< visible].filter { $0 == " " }.count,
+                rightToLeft: direction == .rightToLeft
             )
         }
     }
@@ -483,8 +515,14 @@ public struct TextBlock {
                         draw(text, run: run, at: CGPoint(x: x, y: baseline), mode: mode, upright: upright,
                              scale: scale, ctm: ctm, provider: provider, context: context)
                     } else {
-                        outline(text, run: run, at: CGPoint(x: x, y: baseline), fill: mode.fills, stroke: mode.strokes,
-                                provider: provider, context: context)
+                        if mode.fills {
+                            snappedOutline(text, run: run, at: CGPoint(x: x, y: baseline), scale: scale, ctm: ctm,
+                                           provider: provider, context: context)
+                        }
+                        if mode.strokes {
+                            outline(text, run: run, at: CGPoint(x: x, y: baseline), fill: false, stroke: true,
+                                    provider: provider, context: context)
+                        }
                     }
                 }
             }
@@ -550,6 +588,40 @@ public struct TextBlock {
             // the glyphs it fills (measured on Catalyst).
             outline(text, run: run, at: point, fill: false, stroke: true, provider: provider, context: context)
         }
+    }
+
+    /// Filled glyphs through a rotation, shear or mirror: each glyph's
+    /// outline with its own pen snapped in device space as UIKit snaps it
+    /// there too (measured on Catalyst), x floored to the step its pixel
+    /// size takes (`positionsPerPixel`), the baseline down to the next row.
+    private func snappedOutline(
+        _ text: String, run: Run, at point: CGPoint, scale: CGFloat, ctm: CGAffineTransform,
+        provider: TextProvider, context: BitmapContext
+    ) {
+        let glyphs = provider.glyphOutlines(text, font: run.font)
+        guard !glyphs.isEmpty else { return }
+        let steps = CGFloat(Self.positionsPerPixel(forPixelSize: run.font.size * scale))
+        let inverse = ctm.inverted()
+        context.saveGState()
+        context.setFill(run.colour)
+        context.beginPath()
+        for glyph in glyphs {
+            let device = CGPoint(x: point.x + glyph.origin.x, y: point.y - glyph.origin.y).applying(ctm)
+            let pen = CGPoint(x: (device.x * steps).rounded(.down) / steps, y: (device.y - 0.0001).rounded(.up)).applying(inverse)
+            func place(_ p: CGPoint) -> CGPoint { CGPoint(x: pen.x + p.x, y: pen.y - p.y) }
+            for element in glyph.elements {
+                switch element {
+                case let .move(p): context.move(to: place(p))
+                case let .line(p): context.addLine(to: place(p))
+                case let .quadCurve(to, control): context.addQuadCurve(to: place(to), control: place(control))
+                case let .curve(to, c1, c2): context.addCurve(to: place(to), control1: place(c1), control2: place(c2))
+                case .close: context.closePath()
+                case .arc: break
+                }
+            }
+        }
+        context.fillPath()
+        context.restoreGState()
     }
 
     /// The glyphs' outlines with the pen at `point` (user space), filled
