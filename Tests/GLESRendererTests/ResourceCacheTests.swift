@@ -181,6 +181,63 @@ struct PackedPageTests {
         #expect(device.uploads.count == 2)
     }
 
+    @Test("A page still decoding is left out of the frame, not waited for, and drawn once it's in")
+    func deferredPage() throws {
+        let index = try AssetIndex(json: Data("""
+        {
+          "version": 2, "scale": 3,
+          "pages": [{"file": "p.png", "width": 8, "height": 8}],
+          "assets": {"Brick": {"page": 0, "rect": [0, 0, 4, 4], "size": [4, 4]},
+                     "Stone": {"page": 0, "rect": [4, 0, 4, 4], "size": [4, 4]}}
+        }
+        """.utf8))
+        AssetIndex.shared = index
+        defer { AssetIndex.shared = nil }
+
+        let device = RecordingDevice()
+        let cache = ResourceCache(device: device)
+        var decoded = false
+        var asked: [Int] = []
+        var loads = 0
+        cache.pageSource = { _ in loads += 1; return PageImage(width: 8, height: 8, pixels: Data(count: 8 * 8 * 4)) }
+        cache.pageIsReady = { _ in decoded }
+        cache.pageWanted = { asked.append($0) }
+        cache.defersPages = true
+
+        // Decoding: nothing drawn with it, nothing waited for, its decode asked for.
+        #expect(cache.name(for: SKTexture(imageNamed: "Brick")) == 0)
+        #expect(cache.imageName(for: SKTexture(imageNamed: "Stone")) == 0, "a shaded sprite's cut-out waits for it too")
+        #expect(loads == 0)
+        #expect(asked == [0, 0])
+        #expect(cache.deferredPages >= 2)
+        #expect(device.uploads.isEmpty)
+
+        // Decoded: uploaded, and remembered.
+        decoded = true
+        let name = cache.name(for: SKTexture(imageNamed: "Brick"))
+        #expect(name != 0)
+        #expect(loads == 1)
+        decoded = false
+        #expect(cache.name(for: SKTexture(imageNamed: "Brick")) == name, "an uploaded page isn't asked about again")
+    }
+
+    @Test("A snapshot or film, kept as drawn, waits for its pages")
+    func pageNotDeferred() throws {
+        let index = try AssetIndex(json: Data("""
+        {"version": 2, "scale": 3, "pages": [{"file": "p.png", "width": 8, "height": 8}],
+         "assets": {"Brick": {"page": 0, "rect": [0, 0, 4, 4], "size": [4, 4]}}}
+        """.utf8))
+        AssetIndex.shared = index
+        defer { AssetIndex.shared = nil }
+
+        let cache = ResourceCache(device: RecordingDevice())
+        cache.pageSource = { _ in PageImage(width: 8, height: 8, pixels: Data(count: 8 * 8 * 4)) }
+        cache.pageIsReady = { _ in false }
+        cache.pageWanted = { _ in Issue.record("not deferring: nothing to ask for") }
+        cache.defersPages = false
+        #expect(cache.name(for: SKTexture(imageNamed: "Brick")) != 0)
+    }
+
     @Test("A shaded sprite's image is cut out of its page once, clamped; a uniform's wraps")
     func ownImage() throws {
         let index = try AssetIndex(json: Data("""

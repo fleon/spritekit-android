@@ -61,6 +61,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Shapes as triangles in the sprite batches; what it can't take
     /// (textured, crossing itself, a crop's mask) falls to `shapeMasks`.
     private let shapeMeshes = ShapeMeshes()
+    /// Whether the frame on screen draws without a page still decoding
+    /// rather than waiting for it: where pages decode in software.
+    private var defersPagesOnScreen = false
 
     /// Pixels per point, so glyphs are rasterised and masks filled at the
     /// density they are drawn at rather than at one pixel per point.
@@ -345,6 +348,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         pageDecodes = decodes
         cache.pageRowsBottomFirst = true
         cache.pageAhead = { decodes.takeNextReady() }
+        // Decoded in software (no ASTC on the GPU), a page takes seconds on
+        // an emulator: the frame on screen draws without it meanwhile.
+        defersPagesOnScreen = !astc
+        cache.pageIsReady = { decodes.isWaiting($0) }
+        cache.pageWanted = { decodes.prefetch($0) }
         let launchPages = LaunchPages()
         self.launchPages = launchPages
         let launched = MediaTime.source()
@@ -616,6 +624,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public var holdsClock: Bool { clockHold() }
 
     public func drawFrame(_ frame: Frame) {
+        // A page still decoding is left out of this frame, not waited for
+        // (`ResourceCache.defersPages`); what's kept as drawn waits.
+        cache.defersPages = defersPagesOnScreen
+        defer { cache.defersPages = false }
         // The scene first: a transition, or a scene presenting another, can
         // change which scene the view shows, and the projection is that
         // scene's.
@@ -936,7 +948,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             RenderPoison.fillTarget()
             glClearColor(0, 0, 0, 0)
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+            let deferredBefore = cache.deferredPages
             draw(contents, projection: texture.projection, time: time)
+            // A page left out while it decodes: the kept pixels lack it, so
+            // they are drawn again rather than kept.
+            if rasterize, cache.deferredPages != deferredBefore { targets.markStale(.init(owner: owner)) }
 
             target = outer
             cropDepth = outerDepth
@@ -1202,6 +1218,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         cropDepth = 0
 
         state.forgetTextures()
+        // A film's frames are kept: every page they show is waited for.
+        let defers = cache.defersPages
+        cache.defersPages = false
+        defer { cache.defersPages = defers }
         draw(stage(batcher.passes(for: pass.list)), projection: frame.projection, time: Float(pass.time))
         stagedComposites.removeAll(keepingCapacity: true)
         bindVertexArray(0)
@@ -1237,6 +1257,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     private func bakeNow(_ node: SKNode, crop: CGRect?) -> SKTexture? {
+        // A snapshot is kept as drawn: every page it shows is waited for.
+        let defers = cache.defersPages
+        cache.defersPages = false
+        defer { cache.defersPages = defers }
         // The subtree draws with the node's own transform (a crop is given
         // in that space too: a root scaled by some factor, cropped to the
         // scaled rect), so its frame is measured there, as SpriteKit's is: a
@@ -1841,6 +1865,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         var fillName: GLuint = 0
         if let fill {
             fillName = cache.imageName(for: fill.texture)
+            // Its page still decoding: left out of this frame.
+            if fillName == 0, cache.defersPages { return }
             if fillName != 0 { program = texturedCoverageProgram }
         }
         useProgram(program)
@@ -2192,6 +2218,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             name = override
         } else if let texture = batch.texture {
             name = batch.ownImage ? cache.imageName(for: texture) : cache.drawnName(for: texture)
+            // Its page still decoding: left out of this frame.
+            if name == 0, cache.defersPages { return }
         } else {
             name = cache.name(for: SceneRenderer.white)
         }
