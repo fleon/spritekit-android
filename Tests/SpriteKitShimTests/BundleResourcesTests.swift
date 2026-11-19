@@ -26,6 +26,23 @@ struct BundleResourcesTests {
         #expect(url?.path == "/rigs/RigHero.json")
     }
 
+    /// A game names a file with its extension and leaves the extension nil
+    /// (a particle plist's texture, "star.png"), as Apple's Bundle allows.
+    @Test("A nil extension reaches the provider with the name's own extension")
+    func nilExtension() {
+        var asked: [String] = []
+        BundleResources.provider = { name, ext in
+            asked.append("\(name)|\(ext)")
+            return URL(fileURLWithPath: "/resources/\(name)\(ext.isEmpty ? "" : "." + ext)")
+        }
+        defer { BundleResources.provider = nil }
+
+        #expect(Bundle.main.url(forResource: "star.png", withExtension: nil)?.path == "/resources/star.png")
+        #expect(Bundle.main.url(forResource: "LICENSE", withExtension: nil)?.path == "/resources/LICENSE")
+        #expect(Bundle.main.url(forResource: "glow", withExtension: "plist")?.path == "/resources/glow.plist")
+        #expect(asked == ["star|png", "LICENSE|", "glow|plist"])
+    }
+
     @Test("With no provider, it answers as Foundation would")
     func fallsThrough() {
         BundleResources.provider = nil
