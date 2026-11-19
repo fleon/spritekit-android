@@ -26,7 +26,12 @@
 # the keystore it fetched; nothing secret stays on disk or in the build's
 # logs. `op` signs in through the 1Password app (Settings → Developer →
 # Integrate with 1Password CLI), so the first read in a while asks for
-# Touch ID.
+# Touch ID, unless a service account reads instead: everything but `store`
+# reads with OP_SERVICE_ACCOUNT_TOKEN when it's set, else with the token kept
+# in the macOS Keychain under the service SIGNING_TOKEN_SERVICE
+# ("op-service-account-game-signing" by default), so builds never prompt.
+# Give that account read access to the vault alone. `store` writes, so it
+# always signs in through the 1Password app.
 
 set -euo pipefail
 
@@ -37,6 +42,14 @@ DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
 die() { echo "signing.sh: $*" >&2; exit 1; }
 
 command -v op >/dev/null || die "the 1Password CLI isn't installed (brew install --cask 1password-cli)"
+
+# Reads go through the service account when there is one.
+if [ "${1:-}" != store ] && [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && command -v security >/dev/null; then
+    token="$(security find-generic-password -s "${SIGNING_TOKEN_SERVICE:-op-service-account-game-signing}" -w 2>/dev/null || true)"
+    [ -n "$token" ] && export OP_SERVICE_ACCOUNT_TOKEN="$token"
+    unset token
+fi
+[ "${1:-}" = store ] && unset OP_SERVICE_ACCOUNT_TOKEN
 
 field() { op read --no-newline "op://$VAULT/$1/$2"; }
 
