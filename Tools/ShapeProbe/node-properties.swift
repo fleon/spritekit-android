@@ -98,32 +98,7 @@ final class Probe {
             report(String(format: "PROBE blend %@: fill (%.3f %.3f %.3f) sprite (%.3f %.3f %.3f) stroke (%.3f %.3f %.3f)", name, pf.0, pf.1, pf.2, ps.0, ps.1, ps.2, pk.0, pk.1, pk.2))
         }
 
-        // Miter limit: a join turning by `turn`, stroked 6 wide; coverage at
-        // points out along the outer bisector beyond where a bevel ends.
-        for (turnDeg, limit) in [(120.0, 10.0), (120.0, 1.5), (140.0, 2.1), (140.0, 3.0), (160.0, 5.0), (160.0, 6.0), (170.0, 10.0), (170.0, 12.0), (175.0, 10.0), (175.0, 24.0)] as [(Double, CGFloat)] {
-            let turn = turnDeg * .pi / 180
-            let path = CGMutablePath()
-            let v = CGPoint(x: 20, y: 50)
-            path.move(to: CGPoint(x: v.x - 25, y: v.y))
-            path.addLine(to: v)
-            path.addLine(to: CGPoint(x: v.x + 25 * cos(turn), y: v.y + 25 * sin(turn)))
-            let node = SKShapeNode(path: path)
-            node.strokeColor = .white; node.lineWidth = 6; node.lineJoin = .miter; node.miterLimit = limit
-            let r = rows(node)
-            // Outer bisector points away from the turn: direction of -(d0 + d1).
-            let d0 = CGPoint(x: 1, y: 0), d1 = CGPoint(x: cos(turn), y: sin(turn))
-            var bx = d0.x - d1.x, by = d0.y - d1.y
-            let n = hypot(bx, by); bx /= n; by /= n
-            let ratio = 1 / sin((Double.pi - turn) / 2)
-            var samples: [String] = []
-            for k in [2.0, 4.0, 6.0, 10.0, 16.0, 24.0, 34.0, 50.0, 80.0] {
-                let p = CGPoint(x: v.x + bx * k, y: v.y + by * k)
-                let px = Int(p.x * s), py = Int((100 - p.y) * s)
-                guard py >= 0, py < r.count, px >= 0, px < r[0].count else { continue }
-                samples.append(String(format: "%.0f:%.2f", k, r[py][px].0))
-            }
-            report(String(format: "PROBE miter turn=%.0f ratio=%.2f limit=%.1f along bisector (pt:cov): ", turnDeg, ratio, limit) + samples.joined(separator: " "))
-        }
+        // Miter joins: see miter-joins.swift.
 
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("probe.txt")
         try? probeOut.write(to: url, atomically: true, encoding: .utf8)

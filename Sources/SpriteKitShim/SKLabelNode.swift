@@ -632,10 +632,13 @@ open class SKShapeNode: SKNode {
     /// its fill always is.
     open var isAntialiased: Bool = true
     open var blendMode: SKBlendMode = .alpha
-    /// Kept as SpriteKit keeps it, and not applied: measured on the iPhone
-    /// 17 Pro simulator, SpriteKit mitres every `.miter` join whatever the
-    /// limit (a join 23 times the half-width long at a limit of 10).
-    open var miterLimit: CGFloat = 10
+    /// How far a `.miter` join may reach, in line widths from its vertex:
+    /// past it, SpriteKit cuts the join straight across rather than
+    /// bevelling it as CoreGraphics does (measured on the iPhone 17 Pro
+    /// simulator: a 6-point line's join reaches 3, 6, 12 and 60 points at
+    /// limits 0.5, 1, 2 and 10, at any turn sharper than that). SpriteKit's
+    /// default is 0.5, so a default corner is cut half a width out.
+    open var miterLimit: CGFloat = 0.5
     open var fillTexture: SKTexture?
     /// Stretched over the path's bounds and tinted by `strokeColor`, as
     /// `fillTexture` is for the fill.

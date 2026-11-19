@@ -42,6 +42,7 @@ public final class ShapeMeshes {
         var edge: Int = 0           // twentieths of a screen pixel per point
         var glow: Int = 0           // hundredths of a point
         var aliased = false
+        var miterClip: Int = 0      // hundredths of a point
     }
 
     private struct Cached {
@@ -113,12 +114,22 @@ public final class ShapeMeshes {
                 digest: digest, kind: textured ? 2 : 1, width: Int((shape.lineWidth * 100).rounded()),
                 cap: Int(shape.lineCap.rawValue), join: Int(shape.lineJoin.rawValue), scale: quantised,
                 edge: Int((screenPixelsPerPoint * 20).rounded()),
-                glow: Int((max(0, shape.glowWidth) * 100).rounded()), aliased: !shape.isAntialiased
+                glow: Int((max(0, shape.glowWidth) * 100).rounded()), aliased: !shape.isAntialiased,
+                miterClip: Int((Self.miterClip(limit: shape.miterLimit, width: shape.lineWidth) * 100).rounded())
             )
             keys.stroke = key
             keys.signature = keys.signature &* 31 &+ key.hashValue
         }
         return .meshes(keys)
+    }
+
+    /// How far a shape node's `.miter` join reaches from its vertex:
+    /// `miterLimit` widths, as SpriteKit cuts it, and never past 64 widths,
+    /// a sliver beyond any screen, so a turn straight back (whose miter is
+    /// thousands of widths long) can't make a runaway mesh or mask.
+    public static func miterClip(limit: CGFloat, width: CGFloat) -> CGFloat {
+        guard limit.isFinite, width.isFinite else { return 0 }
+        return max(0, min(limit, 64)) * max(0, width)
     }
 
     public func meshes(for shape: DrawList.Shape) -> Meshes? {
@@ -157,10 +168,11 @@ public final class ShapeMeshes {
             guard let mesh = mesh(for: key, make: {
                 ShapeTessellator.stroke(
                     flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin,
-                    // SpriteKit mitres whatever the node's `miterLimit` (measured).
+                    // SpriteKit cuts a long join across rather than bevelling it.
                     miterLimit: .greatestFiniteMagnitude,
                     scale: scale, alongTexture: textured, edges: .spriteKit, edgePixels: CGFloat(key.edge) / 20,
-                    glow: CGFloat(key.glow) / 100, antialiased: !key.aliased
+                    glow: CGFloat(key.glow) / 100, antialiased: !key.aliased,
+                    miterClip: CGFloat(key.miterClip) / 100
                 )
             }) else { return nil }
             result.stroke = mesh

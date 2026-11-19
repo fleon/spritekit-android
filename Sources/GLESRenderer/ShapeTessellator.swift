@@ -127,7 +127,8 @@ public enum ShapeTessellator {
         edges: Edges = .exact,
         edgePixels: CGFloat = 1,
         glow: CGFloat = 0,
-        antialiased: Bool = true
+        antialiased: Bool = true,
+        miterClip: CGFloat? = nil
     ) -> Mesh? {
         guard scale > 0, scale.isFinite, width.isFinite else { return nil }
         guard width > 0 else { return Mesh() }
@@ -144,7 +145,8 @@ public enum ShapeTessellator {
             edges: edges,
             edgePixels: max(edgePixels, 0.01),
             glow: max(0, glow),
-            antialiased: antialiased
+            antialiased: antialiased,
+            miterClip: miterClip.map { max(0, $0) }
         )
 
         var builder = Builder()
@@ -410,6 +412,11 @@ public enum ShapeTessellator {
         /// `SKShapeNode.isAntialiased`: false, SpriteKit's stroke is a hard
         /// band its own width, each pixel in when its centre is (measured).
         var antialiased = true
+        /// How far from its vertex a `.miter` join reaches at most, its tip
+        /// cut straight across there (SpriteKit's: `miterLimit` times the
+        /// line's width, measured); nil, a join past `miterLimit` is bevelled
+        /// as CoreGraphics does.
+        var miterClip: CGFloat? = nil
         /// Where full coverage ends and where the feather reaches nothing.
         ///
         /// Across the stroke its exact coverage is a trapezoid: the width
@@ -586,7 +593,9 @@ public enum ShapeTessellator {
         let reach = denominator > 1e-9 ? pen.outer * abs(turn) / denominator : .infinity
         let insideMeets = miter != nil && reach <= min(length0, length1) / 2
 
-        if pen.join == .miter, let miter, miterLength <= pen.miterLimit, insideMeets {
+        // Whether a mitred join reaches past its clip and is cut across.
+        let clipped = pen.miterClip.map { pen.drawnHalf * miterLength > $0 } ?? false
+        if pen.join == .miter, let miter, miterLength <= pen.miterLimit, insideMeets, !clipped {
             let s = mitred(at: v, miter, pen: pen, into: &builder)
             return (s, s)
         }
@@ -641,7 +650,27 @@ public enum ShapeTessellator {
         case .miter:
             if let miter, miterLength <= pen.miterLimit {
                 let tip = CGPoint(x: miter.x * outside, y: miter.y * outside)
-                chain.append((builder.add(at(v, tip, pen.outer), 0), builder.add(at(v, tip, pen.core), k)))
+                if clipped, let clip = pen.miterClip {
+                    // Cut straight across `clip` out along the outside
+                    // bisector: where each side's edge meets that line, for
+                    // full coverage and for the feather's foot alike.
+                    let b = CGPoint(x: tip.x / miterLength, y: tip.y / miterLength)
+                    let coreClip = clip - (pen.drawnHalf - pen.core)
+                    let outerClip = clip + (pen.outer - pen.drawnHalf)
+                    func cut(_ normal: CGPoint, _ along: CGPoint, _ r: CGFloat, _ distance: CGFloat) -> CGPoint {
+                        let corner = at(v, normal, r)
+                        let towards = along.x * b.x + along.y * b.y
+                        let short = distance - r * (normal.x * b.x + normal.y * b.y)
+                        // The line behind the side's own corner: the corner.
+                        guard towards > 1e-9, short > 0 else { return corner }
+                        return at(corner, along, short / towards)
+                    }
+                    let back = CGPoint(x: -d1.x, y: -d1.y)
+                    chain.append((builder.add(cut(outA, d0, pen.outer, outerClip), 0), builder.add(cut(outA, d0, pen.core, coreClip), k)))
+                    chain.append((builder.add(cut(outB, back, pen.outer, outerClip), 0), builder.add(cut(outB, back, pen.core, coreClip), k)))
+                } else {
+                    chain.append((builder.add(at(v, tip, pen.outer), 0), builder.add(at(v, tip, pen.core), k)))
+                }
             }
         default:
             break                       // bevel: straight across

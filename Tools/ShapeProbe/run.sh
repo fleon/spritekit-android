@@ -8,7 +8,9 @@
 #   Tools/ShapeProbe/run.sh                      # iPhone 17 Pro, 3x
 #   Tools/ShapeProbe/run.sh "iPad Air 11-inch (M4)"  # 2x
 #   Tools/ShapeProbe/run.sh "iPhone 17 Pro" node-properties.swift
-#       # glowWidth, isAntialiased, blendMode and miterLimit
+#       # glowWidth, isAntialiased and blendMode
+#   Tools/ShapeProbe/run.sh "iPhone 17 Pro" miter-joins.swift
+#       # how far a .miter join reaches at each miterLimit
 #
 # A windowless SKRenderer on a Mac draws strokes softer than any device:
 # measure shape edges here.

@@ -79,6 +79,85 @@ final class SpriteKitShapeEdgesTests: XCTestCase {
         }
     }
 
+    // MARK: Joins
+
+    /// A 6-unit line turning by `degrees` at the origin, its `.miter` join
+    /// cut at `limit` widths as `ShapeMeshes` makes it.
+    private func join(turning degrees: CGFloat, limit: CGFloat) throws -> ShapeTessellator.Mesh {
+        let turn = degrees * .pi / 180
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -10, y: 0))
+        path.addLine(to: .zero)
+        path.addLine(to: CGPoint(x: 10 * cos(turn), y: 10 * sin(turn)))
+        return try XCTUnwrap(ShapeTessellator.stroke(
+            PathRasteriser.flatten(path, scale: 3), width: 6, cap: .butt, join: .miter, miterLimit: .greatestFiniteMagnitude,
+            scale: 3, edges: .spriteKit, edgePixels: 3,
+            miterClip: ShapeMeshes.miterClip(limit: limit, width: 6)
+        ))
+    }
+
+    /// How far out along the outside bisector the join is drawn, as it was
+    /// measured: the last point with coverage above 0.2.
+    private func reach(_ mesh: ShapeTessellator.Mesh, turning degrees: CGFloat) -> CGFloat {
+        let turn = degrees * .pi / 180
+        var bx = 1 - cos(turn), by = -sin(turn)
+        let n = hypot(bx, by)
+        bx /= n; by /= n
+        var last: CGFloat = 0
+        for step in 0 ..< 1600 {
+            let k = CGFloat(step) * 0.25
+            if coverage(of: mesh, at: SIMD2(Float(bx * k), Float(by * k))) > 0.2 { last = k }
+        }
+        return last
+    }
+
+    /// Measured on the iPhone 17 Pro simulator: past `miterLimit` widths
+    /// from its vertex, SpriteKit cuts a `.miter` join straight across
+    /// (CoreGraphics bevels it); a 6-point line's join reaches 3.25, 6.25,
+    /// 12.25 and 60.25 points at limits 0.5 (SpriteKit's default), 1, 2 and
+    /// 10, however sharp the turn, and a shorter join keeps its whole tip.
+    func testAMitredJoinIsCutAcrossAtItsLimit() throws {
+        for degrees: CGFloat in [178, 179.9] {
+            for (limit, measured) in [(0.5, 3.25), (1, 6.25), (2, 12.25), (10, 60.25)] as [(CGFloat, CGFloat)] {
+                let drawn = reach(try join(turning: degrees, limit: limit), turning: degrees)
+                XCTAssertEqual(drawn, measured, accuracy: 0.75, "\(degrees)° at limit \(limit)")
+            }
+        }
+        // 170°: the tip, 34.4 out, is short of 60, so it isn't cut. Where
+        // the needle fades under the threshold differs (29.75 measured,
+        // ~35 here, the feather holding up a sub-pixel point longer); the
+        // join itself is whole.
+        let whole = reach(try join(turning: 170, limit: 10), turning: 170)
+        XCTAssertGreaterThan(whole, 28)
+        XCTAssertLessThan(whole, 36)
+    }
+
+    func testATurnStraightBackHasNoJoinAndNoNaN() throws {
+        let mesh = try join(turning: 180, limit: 10)
+        XCTAssertTrue(mesh.positions.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+        // Measured: nothing past the vertex.
+        XCTAssertLessThanOrEqual(reach(mesh, turning: 180), 0.5)
+    }
+
+    /// A join's mask is sized by the join: never by a miter thousands of
+    /// widths long, whatever the limit.
+    func testAJoinsMaskStaysBounded() throws {
+        for degrees: CGFloat in [179.9, 180] {
+            let turn = degrees * .pi / 180
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: -10, y: 0))
+            path.addLine(to: .zero)
+            path.addLine(to: CGPoint(x: 10 * cos(turn), y: 10 * sin(turn)))
+            let mask = try XCTUnwrap(SpriteKitMasks.stroke(
+                path, width: 6, cap: .butt, join: .miter, scale: 3, edgePixels: 3,
+                miterClip: ShapeMeshes.miterClip(limit: 1000, width: 6)
+            ))
+            XCTAssertTrue(mask.bounds.width.isFinite && mask.bounds.height.isFinite)
+            // 64 widths at most: 384 points, under 1,200 pixels at 3x.
+            XCTAssertLessThan(max(mask.width, mask.height), 1200, "\(degrees)°")
+        }
+    }
+
     // MARK: Fills
 
     /// SpriteKit doesn't antialias a fill: a pixel is in when its centre is.

@@ -1948,7 +1948,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                path, width: shape.lineWidth,
                cap: shape.lineCap, join: shape.lineJoin, scale: scale,
                edgePixels: shapeMeshes.screenPixelsPerPoint,
-               glow: shape.glowWidth, antialiased: shape.isAntialiased, owner: shape.owner
+               glow: shape.glowWidth, antialiased: shape.isAntialiased, miterLimit: shape.miterLimit,
+               owner: shape.owner
            ) {
             drawCoverage(
                 CoverageGeometry.run(
@@ -2192,7 +2193,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
            let mask = shapeMasks.stroke(
                path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
                edgePixels: shapeMeshes.screenPixelsPerPoint,
-               glow: shape.glowWidth, antialiased: shape.isAntialiased, owner: shape.owner
+               glow: shape.glowWidth, antialiased: shape.isAntialiased, miterLimit: shape.miterLimit,
+               owner: shape.owner
            ) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),

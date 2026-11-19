@@ -87,6 +87,8 @@ public struct DrawList {
         public var glowWidth: CGFloat = 0
         public var isAntialiased: Bool = true
         public var blendMode: SKBlendMode = .alpha
+        /// `SKShapeNode.miterLimit`, SpriteKit's default.
+        public var miterLimit: CGFloat = 0.5
     }
 
     public struct Label {
@@ -435,7 +437,8 @@ public struct DrawList {
                 owner: ObjectIdentifier(shape),
                 glowWidth: shape.glowWidth,
                 isAntialiased: shape.isAntialiased,
-                blendMode: shape.blendMode
+                blendMode: shape.blendMode,
+                miterLimit: shape.miterLimit
             ))))
         } else if let label = node as? SKLabelNode, let layout = label.layout, let runs = label.laidOutRuns,
                   layout.lines.count == runs.count {
