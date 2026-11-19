@@ -683,9 +683,13 @@ A change to the shim's behaviour comes with a test of this kind.
   own space, cached by what they draw and the density they're drawn at, and
   batched with the colour sprites either side, so a shape that moves, turns
   or fades costs no rasterising and no draw call of its own. Edges are
-  feathered across a device pixel in the geometry, and strokes take
+  SpriteKit's, measured through `SKRenderer` at 1x, 2x and 3x: a fill isn't
+  antialiased (a pixel is in when its centre is), and a stroke is softened
+  over 1.19 of the node's own units whatever the density, narrower and
+  softer than CoreGraphics' (`SpriteKitShapeEdgesTests`). Strokes take
   CoreGraphics' joins and caps; a path that changes is tessellated again on
-  the frame thread in microseconds. Held to the masks pixel by pixel
+  the frame thread in microseconds. The tessellator can also feather edges
+  across a device pixel, held to the masks pixel by pixel
   (`ShapeTessellatorTests`).
 - **Shapes it can't take** (a textured fill or stroke, a fill that crosses
   itself or holds another subpath, a crop's mask) are rasterised on the CPU
