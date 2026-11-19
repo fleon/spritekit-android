@@ -219,6 +219,19 @@ final class ShapeTessellatorTests: XCTestCase {
         }
     }
 
+    func testAShapeBlendsAsItsNodeSays() {
+        var batcher = SpriteBatcher()
+        let meshes = ShapeMeshes()
+        meshes.pixelsPerPoint = 2
+        batcher.shapeMeshes = meshes
+        var added = shape(CGPath(rect: CGRect(x: 0, y: 0, width: 10, height: 10), transform: nil))
+        added.blendMode = .add
+        var list = DrawList()
+        list.commands = [.sprite(colourSprite()), .shape(added), .shape(shape(CGPath(ellipseIn: CGRect(x: 0, y: 0, width: 8, height: 8), transform: nil)))]
+        guard case let .batches(batches)? = batcher.passes(for: list).first else { return XCTFail("expected batches") }
+        XCTAssertEqual(batches.map(\.blendMode), [.alpha, .add, .alpha])
+    }
+
     func testTexturedShapesAndCropMasksKeepTheirMasks() {
         var batcher = SpriteBatcher()
         batcher.shapeMeshes = ShapeMeshes()

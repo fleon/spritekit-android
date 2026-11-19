@@ -49,7 +49,7 @@ extension SpriteBatcher {
         guard let entry = shapeMeshes.kept(for: shape, keys, colours: colours) else { return false }
         let count = entry.vertices.count / Self.floatsPerVertex
         guard count > 0 else { return true }
-        let index = colourBatch(for: count, in: &batches)
+        let index = colourBatch(for: count, blendMode: shape.blendMode, in: &batches)
         let first = batches[index].vertices.count / Self.floatsPerVertex
         let kept = shapeMeshes.keep(entry, first: first)
         append(kept.vertices, kept.indices, to: &batches[index])
@@ -57,14 +57,14 @@ extension SpriteBatcher {
     }
 
     /// The open colour batch if `count` more vertices fit in it, else a new one.
-    private func colourBatch(for count: Int, in batches: inout [Batch]) -> Int {
+    private func colourBatch(for count: Int, blendMode: SKBlendMode, in batches: inout [Batch]) -> Int {
         if let last = batches.indices.last,
            batches[last].texture == nil, batches[last].shader == nil,
-           batches[last].attributeValues.isEmpty, batches[last].blendMode == .alpha,
+           batches[last].attributeValues.isEmpty, batches[last].blendMode == blendMode,
            batches[last].vertices.count / Self.floatsPerVertex + count <= Int(UInt16.max) + 1 {
             return last
         }
-        batches.append(Batch(blendMode: .alpha))
+        batches.append(Batch(blendMode: blendMode))
         return batches.count - 1
     }
 
@@ -123,7 +123,7 @@ extension SpriteBatcher {
         to batches: inout [Batch]
     ) {
         let count = (fill?.vertexCount ?? 0) + (stroke?.vertexCount ?? 0)
-        let index = colourBatch(for: count, in: &batches)
+        let index = colourBatch(for: count, blendMode: shape.blendMode, in: &batches)
         let first = batches[index].vertices.count / Self.floatsPerVertex
 
         // Both parts written after whatever `vertices` holds, indices
@@ -196,11 +196,11 @@ extension SpriteBatcher {
         guard repeatLength > 0, repeatLength.isFinite else { return }
         let index: Int
         if let last = batches.indices.last,
-           batches[last].repeatsAlong, batches[last].texture === image,
+           batches[last].repeatsAlong, batches[last].texture === image, batches[last].blendMode == shape.blendMode,
            batches[last].vertices.count / Self.floatsPerVertex + mesh.vertexCount <= Int(UInt16.max) + 1 {
             index = last
         } else {
-            var batch = Batch(texture: image, shader: Self.strokeTextureShader, blendMode: .alpha)
+            var batch = Batch(texture: image, shader: Self.strokeTextureShader, blendMode: shape.blendMode)
             batch.repeatsAlong = true
             batches.append(batch)
             index = batches.count - 1

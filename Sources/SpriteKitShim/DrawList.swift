@@ -83,6 +83,12 @@ public struct DrawList {
         /// Which node this is, so a shape whose path changes every frame can
         /// draw its last mask while the new one is made (`MaskLag`).
         public var owner: ObjectIdentifier? = nil
+        /// `SKShapeNode.glowWidth`, `isAntialiased` and `blendMode`.
+        public var glowWidth: CGFloat = 0
+        public var isAntialiased: Bool = true
+        public var blendMode: SKBlendMode = .alpha
+        /// `SKShapeNode.miterLimit`, SpriteKit's default.
+        public var miterLimit: CGFloat = 0.5
     }
 
     public struct Label {
@@ -428,7 +434,11 @@ public struct DrawList {
                 alpha: alpha,
                 fillTexture: shape.fillTexture,
                 strokeTexture: shape.strokeTexture,
-                owner: ObjectIdentifier(shape)
+                owner: ObjectIdentifier(shape),
+                glowWidth: shape.glowWidth,
+                isAntialiased: shape.isAntialiased,
+                blendMode: shape.blendMode,
+                miterLimit: shape.miterLimit
             ))))
         } else if let label = node as? SKLabelNode, let layout = label.layout, let runs = label.laidOutRuns,
                   layout.lines.count == runs.count {
