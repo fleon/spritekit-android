@@ -2,27 +2,30 @@
 import Foundation
 
 /// Justified Arabic as Apple's text system justifies it (measured with
-/// UIKit's string drawing on Catalyst, macOS 27.2): a line with somewhere
-/// to put a kashida (tatweel, U+0640) is widened by kashida alone, its
-/// spaces left as they are; one without widens its spaces.
+/// UIKit's string drawing on Catalyst, macOS 27.2, which justifies a line
+/// as `CTLineCreateJustifiedLine` does): kashida (tatweel, U+0640) widen it
+/// where they can, and spaces beside Latin only once they can't.
 ///
-/// - A kashida goes after each letter drawn in its initial form: one that
-///   joins the letter after it but not the one before (`opportunities`).
-///   None goes into a ligature (lam-alef, the lam-lam-heh of الله).
-/// - Each place takes the same number of kashida, as few as fill the
-///   line at the face's tatweel advance or under, and each is drawn that
-///   much narrower so they fill it exactly (`Plan`).
+/// - A kashida goes after a letter that joins the letter after it, unless
+///   the two are drawn as one ligature (lam-alef, the lam-lam-heh of الله):
+///   after a letter in its initial form (`opportunities`), or in its medial
+///   form (`medials`).
+/// - A line with no medial place gives everything to its initial places, in
+///   equal shares, its spaces as they are.
+/// - Otherwise its initial places fill first, to 0.8 em each (`Shares`);
+///   then its medial places and its spaces share the rest, each by its em,
+///   a space up to half an em more; then the medial places take the rest.
+///   Only spaces left of the line's first stretch with a place widen, and
+///   of those not one between two Arabic letters (nor a line's last).
+/// - Each place takes as few kashida as fill it at the face's tatweel
+///   advance or under, each drawn that much narrower so they fill it
+///   exactly (`glyphs`).
 ///
-/// Apple's own Arabic faces carry an AAT `just` table naming a kashida
-/// glyph of their own; a face without one (Android's Noto Naskh Arabic)
-/// gets its tatweel, as here. Spread over the same places, the words end up
-/// as wide either way.
-///
-/// On a line mixing Latin runs with Arabic, UIKit's string drawing widens
-/// the Latin runs' spaces a little as well (some 2 points each, measured),
-/// where TextKit and `CTLineCreateJustifiedLine` give it all to kashida, as
-/// this does. (Core Text's framesetter alone widens spaces, and uses kashida
-/// only with a face whose table asks for them.)
+/// Apple's own Arabic faces carry an AAT `just` table that says otherwise
+/// (a kashida glyph of their own, its own limits); a face without one
+/// (Android's Noto Naskh Arabic) is justified as here. (Core Text's
+/// framesetter alone widens spaces, and uses kashida only with a face whose
+/// table asks for them.)
 enum Kashida {
     /// How a character joins its neighbours (Unicode's Joining_Type).
     enum Joining: Sendable {
@@ -80,22 +83,73 @@ enum Kashida {
         return found
     }
 
-    /// A line's kashida: how many go in each place and how wide each is.
-    struct Plan: Equatable {
-        /// Kashida in each place.
-        var count: Int
-        /// Each one's width.
-        var width: CGFloat
-        /// What each place adds to the line.
-        var extra: CGFloat { width * CGFloat(count) }
-
-        /// `slack` spread over `places`, at most `tatweel` a kashida: nil
-        /// when there's nothing to fill or nowhere to put it.
-        init?(slack: CGFloat, places: Int, tatweel: CGFloat) {
-            guard slack > 0, places > 0, tatweel > 0 else { return nil }
-            count = Int((slack / (CGFloat(places) * tatweel)).rounded(.up))
-            width = slack / CGFloat(places * count)
+    /// The indices of the characters drawn in their medial form a kashida
+    /// may follow: each letter joined to the one before it and to the next,
+    /// unless the next is drawn in a ligature with it (it has no advance of
+    /// its own in `advances`), or it is itself in one with the one before.
+    static func medials(in characters: [Character], advances: [CGFloat]) -> [Int] {
+        guard characters.count > 2, advances.count == characters.count else { return [] }
+        var found: [Int] = []
+        for index in 1 ..< characters.count - 1 {
+            let character = characters[index]
+            guard let base = character.unicodeScalars.first, joining(base) == .dual, advances[index] > 0,
+                  joinsNext(characters[index - 1]), joinsPrevious(character),
+                  joinsNext(character), joinsPrevious(characters[index + 1]), advances[index + 1] > 0 else { continue }
+            found.append(index)
         }
+        return found
+    }
+
+    /// What a justified line's slack adds to each initial place, each
+    /// medial place and each space that can widen, given each one's em.
+    struct Shares: Equatable {
+        var initials: [CGFloat]
+        var medials: [CGFloat]
+        var spaces: [CGFloat]
+
+        /// An initial place's most before the rest share, in ems.
+        static let initialLimit: CGFloat = 0.8
+        /// A space's most, in ems.
+        static let spaceLimit: CGFloat = 0.5
+
+        init(slack: CGFloat, initials: [CGFloat], medials: [CGFloat], spaces: [CGFloat]) {
+            let initialEms = initials.reduce(0, +)
+            guard slack > 0, initialEms > 0 || !medials.isEmpty else {
+                self.initials = initials.map { _ in 0 }
+                self.medials = medials.map { _ in 0 }
+                self.spaces = spaces.map { _ in 0 }
+                return
+            }
+            let cap = initialEms * Self.initialLimit
+            // Nowhere else at the kashida's turn: the initial places take it all.
+            if medials.isEmpty || slack <= cap {
+                self.initials = initials.map { slack * $0 / initialEms }
+                self.medials = medials.map { _ in 0 }
+                self.spaces = spaces.map { _ in 0 }
+                return
+            }
+            self.initials = initials.map { $0 * Self.initialLimit }
+            let rest = slack - cap
+            let medialEms = medials.reduce(0, +), spaceEms = spaces.reduce(0, +)
+            // Each takes the same share of its em, a space up to its limit.
+            let share = rest / (medialEms + spaceEms)
+            if share <= Self.spaceLimit {
+                self.medials = medials.map { $0 * share }
+                self.spaces = spaces.map { $0 * share }
+            } else {
+                self.spaces = spaces.map { $0 * Self.spaceLimit }
+                let left = rest - spaceEms * Self.spaceLimit
+                self.medials = medials.map { left * $0 / medialEms }
+            }
+        }
+    }
+
+    /// The kashida that fill `extra`: as few as do at `tatweel` each or
+    /// under, each that much narrower.
+    static func glyphs(filling extra: CGFloat, tatweel: CGFloat) -> (count: Int, width: CGFloat) {
+        guard extra > 0, tatweel > 0 else { return (0, 0) }
+        let count = Int((extra / tatweel).rounded(.up))
+        return (count, extra / CGFloat(count))
     }
 }
 #endif

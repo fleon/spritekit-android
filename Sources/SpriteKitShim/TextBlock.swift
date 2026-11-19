@@ -121,6 +121,11 @@ public struct TextBlock {
         /// From the line's start, in points.
         public var x: CGFloat
         public var width: CGFloat
+        /// Its spaces that may widen beside a justified line's kashida, as
+        /// character offsets into `text`: in a line with right-to-left text,
+        /// those in a left-to-right stretch or between stretches that aren't
+        /// between two Arabic letters (`Kashida`).
+        public var stretchable: [Int] = []
     }
 
     public struct Line: Equatable, Sendable {
@@ -380,9 +385,27 @@ public struct TextBlock {
                 let shown = groups(range.lowerBound, visible)
                 var x: CGFloat = 0
                 pieces = []
-                func place(_ run: Int, _ a: Int, _ b: Int, _ text: String) {
+                func place(_ run: Int, _ a: Int, _ b: Int, _ text: String, stretchable: Bool = false) {
                     guard a < b else { return }
-                    pieces.append(Piece(run: run, text: text, x: x, width: width(a, b)))
+                    var piece = Piece(run: run, text: text, x: x, width: width(a, b))
+                    if stretchable {
+                        // A space widens unless Arabic letters are either side
+                        // of it (measured: CTLineCreateJustifiedLine), and the
+                        // line's last spaces never do.
+                        func arabic(_ index: Int) -> Bool {
+                            index >= range.lowerBound && index < visible
+                                && characters[index].unicodeScalars.first.map { Bidi.bidiClass($0) == .al } == true
+                        }
+                        let shift = text.count - (b - a)
+                        piece.stretchable = (a ..< min(b, visible)).filter { index in
+                            guard characters[index] == " " else { return false }
+                            var before = index - 1, after = index + 1
+                            while before >= range.lowerBound, characters[before] == " " { before -= 1 }
+                            while after < visible, characters[after] == " " { after += 1 }
+                            return !(arabic(before) && arabic(after))
+                        }.map { $0 - a + shift }
+                    }
+                    pieces.append(piece)
                     x += width(a, b)
                 }
                 for segment in Bidi.segments(of: shown.map { String(characters[$0.1]) }, in: direction) {
@@ -390,12 +413,13 @@ public struct TextBlock {
                     let a = piece.lowerBound + segment.characters.lowerBound, b = piece.lowerBound + segment.characters.upperBound
                     guard segment.rightToLeft else {
                         let text = String(characters[a ..< b])
-                        place(run, a, b, segment.overridden ? Bidi.overridden(text, rightToLeft: false) : Bidi.marked(text, in: .leftToRight))
+                        place(run, a, b, segment.overridden ? Bidi.overridden(text, rightToLeft: false) : Bidi.marked(text, in: .leftToRight),
+                              stretchable: !segment.overridden)
                         continue
                     }
                     // Right to left, the spaces a stretch ends on are on its left.
                     let body = visibleEnd(a, b)
-                    place(run, body, b, String(characters[body ..< b]))
+                    place(run, body, b, String(characters[body ..< b]), stretchable: true)
                     // Always led by its mark, which draws nothing, so drawing
                     // knows to place its words right to left.
                     let text = String(characters[a ..< body])
@@ -599,49 +623,86 @@ public struct TextBlock {
     /// A justified line's Arabic widened with kashida (`Kashida`), when it
     /// has somewhere to put one: each right-to-left piece with a place for
     /// one cut there, its stretches drawn right to left from its widened
-    /// right edge, each cut's kashida between them, each by itself; and what
-    /// each such piece adds to the line. Nil leaves its spaces to widen.
+    /// right edge, each cut's kashida between them, each by itself; the
+    /// words of a piece whose spaces widen too moved by those before them;
+    /// and what each such piece adds to the line. Nil leaves its spaces to
+    /// widen.
     private func kashida(_ line: Line, in width: CGFloat, provider: TextProvider)
         -> [Int: (parts: [(String, CGFloat)], extra: CGFloat)]? {
         guard line.style.alignment == .justified, !line.endsParagraph, line.visibleWidth < width,
               line.pieces.contains(where: { $0.text.first == "\u{200F}" }) else { return nil }
-        var places: [Int: (characters: [Character], advances: [CGFloat], after: [Int])] = [:]
+        var places: [Int: (characters: [Character], advances: [CGFloat], cuts: [(after: Int, initial: Bool)])] = [:]
         for (index, piece) in line.pieces.enumerated() where piece.text.first == "\u{200F}" && runs[piece.run].kern == 0 {
             let body = String(piece.text.dropFirst())
             // An overridden stretch is drawn in the order it's forced to.
             guard !body.unicodeScalars.contains(where: Bidi.isExplicitControl) else { continue }
             let characters = Array(body)
             let advances = provider.characterAdvances(body, font: runs[piece.run].font)
-            let after = Kashida.opportunities(in: characters, advances: advances)
-            if !after.isEmpty { places[index] = (characters, advances, after) }
+            let cuts = (Kashida.opportunities(in: characters, advances: advances).map { (after: $0, initial: true) }
+                + Kashida.medials(in: characters, advances: advances).map { (after: $0, initial: false) }).sorted { $0.after < $1.after }
+            if !cuts.isEmpty { places[index] = (characters, advances, cuts) }
         }
-        guard let first = places.keys.min(),
-              let plan = Kashida.Plan(slack: width - line.visibleWidth, places: places.values.reduce(0) { $0 + $1.after.count },
-                                      tatweel: provider.measure("\u{0640}", font: runs[line.pieces[first].run].font).advance)
-        else { return nil }
+        guard let first = places.keys.min() else { return nil }
+        let tatweel = provider.measure("\u{0640}", font: runs[line.pieces[first].run].font).advance
+        guard tatweel > 0 else { return nil }
+        // Every place, and every space that may widen (only those left of
+        // the first stretch with a place, measured), each with its em.
+        let placed = places.keys.sorted()
+        let spacious = line.pieces.indices.filter {
+            $0 < first && line.pieces[$0].text.first != "\u{200F}" && !line.pieces[$0].stretchable.isEmpty
+        }
+        func ems(_ initial: Bool) -> [CGFloat] {
+            placed.flatMap { index in places[index]!.cuts.filter { $0.initial == initial }.map { _ in runs[line.pieces[index].run].font.size } }
+        }
+        let shares = Kashida.Shares(
+            slack: width - line.visibleWidth, initials: ems(true), medials: ems(false),
+            spaces: spacious.flatMap { index in line.pieces[index].stretchable.map { _ in runs[line.pieces[index].run].font.size } }
+        )
         var stretched: [Int: (parts: [(String, CGFloat)], extra: CGFloat)] = [:]
-        for (index, place) in places {
+        var initials = shares.initials.makeIterator(), medials = shares.medials.makeIterator()
+        for index in placed {
+            let place = places[index]!
             let font = runs[line.pieces[index].run].font
-            let extra = plan.extra * CGFloat(place.after.count)
+            let extras = place.cuts.map { ($0.initial ? initials.next() : medials.next()) ?? 0 }
+            let extra = extras.reduce(0, +)
             var parts: [(String, CGFloat)] = []
             var right = line.pieces[index].width + extra
             var start = 0
-            for end in place.after.map({ $0 + 1 }) + [place.characters.count] {
+            for (number, end) in (place.cuts.map { $0.after + 1 } + [place.characters.count]).enumerated() {
                 let cut = end < place.characters.count
                 // The letters either side of a cut kept in the forms they join
                 // in by a tatweel joined to each, among the kashida. (A
                 // zero-width joiner would be taken for an emoji's.)
                 let text = "\u{200F}" + (start > 0 ? "\u{0640}" : "") + String(place.characters[start ..< end]) + (cut ? "\u{0640}" : "")
-                let tatweel = start > 0 ? provider.measure("\u{0640}", font: font).advance : 0
-                parts.append((text, right + tatweel - provider.measure(text, font: font).advance))
+                let joiner = start > 0 ? provider.measure("\u{0640}", font: font).advance : 0
+                parts.append((text, right + joiner - provider.measure(text, font: font).advance))
                 right -= place.advances[start ..< end].reduce(0, +)
                 if cut {
-                    for number in 1 ... plan.count {
-                        parts.append(("\u{0640}", right - plan.width * CGFloat(number)))
+                    let glyphs = Kashida.glyphs(filling: extras[number], tatweel: tatweel)
+                    for glyph in stride(from: 1, through: glyphs.count, by: 1) {
+                        parts.append(("\u{0640}", right - glyphs.width * CGFloat(glyph)))
                     }
-                    right -= plan.extra
+                    right -= extras[number]
                 }
                 start = end
+            }
+            stretched[index] = (parts, extra)
+        }
+        // Spaces beside Latin, once the medial places share the slack: each
+        // word after them moved on by what they add.
+        var spaces = shares.spaces.makeIterator()
+        for index in spacious {
+            let piece = line.pieces[index]
+            let extras = piece.stretchable.map { _ in spaces.next() ?? 0 }
+            let extra = extras.reduce(0, +)
+            guard extra > 0 else { continue }
+            var parts: [(String, CGFloat)] = [(piece.text, 0)]
+            if !piece.text.allSatisfy(\.isWhitespace) {
+                var offset = 0
+                parts = Self.split(piece.text, run: runs[piece.run], byCharacter: false, provider: provider).map { text, x in
+                    defer { offset += text.count }
+                    return (text, x + zip(piece.stretchable, extras).reduce(0) { $0 + ($1.0 < offset ? $1.1 : 0) })
+                }
             }
             stretched[index] = (parts, extra)
         }
