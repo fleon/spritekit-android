@@ -13,6 +13,9 @@ struct StreamWriter {
     private let mappedIndices: Bool
     private var vertexOffset = 0
     private var indexCount = 0
+    /// Where the last draw added starts, in vertices: with its vertex count,
+    /// the range `glDrawRangeElements` is given (`SceneRenderer.drawElements`).
+    private(set) var lastFirstVertex = 0
 
     init(vertices: UnsafeMutableRawPointer?, indices: UnsafeMutableRawPointer?, vertexBytes: Int, indexCount: Int) {
         mappedVertices = vertices != nil
@@ -35,6 +38,7 @@ struct StreamWriter {
         }
         if let indices { Self.rebase(indexData, by: base, into: indices + indexCount * 4) }
         let first = indexCount
+        lastFirstVertex = Int(base)
         vertexOffset += bytes
         indexCount += indexData.count
         return first

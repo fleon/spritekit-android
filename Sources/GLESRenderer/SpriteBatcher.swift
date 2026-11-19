@@ -39,6 +39,8 @@ public struct SpriteBatcher {
         /// renderer has written it there with the rest of the frame
         /// (`SceneRenderer.stage`), in indices; -1 until then.
         public var streamFirstIndex: Int = -1
+        /// Where its vertices start in that stream, in vertices.
+        public var streamFirstVertex: Int = 0
 
         public var quadCount: Int { indices.count / 6 }
 
@@ -194,11 +196,26 @@ public struct SpriteBatcher {
                 passes.append(.label(label))
 
             case let .shape(shape):
-                if tessellating, let meshes = shapeMeshes?.meshes(for: shape) {
-                    appendShape(shape, meshes, to: &current)
-                } else {
+                guard tessellating, let shapeMeshes else {
                     flush()
                     passes.append(.shape(shape))
+                    continue
+                }
+                switch shapeMeshes.plan(for: shape) {
+                case .mask:
+                    flush()
+                    passes.append(.shape(shape))
+                case .nothing:
+                    break
+                case let .meshes(keys):
+                    // A node that holds still: its kept vertices, copied in.
+                    if appendKeptShape(shape, keys, shapeMeshes, to: &current) { continue }
+                    if let meshes = shapeMeshes.meshes(for: shape, keys) {
+                        appendShape(shape, meshes, to: &current)
+                    } else {
+                        flush()
+                        passes.append(.shape(shape))
+                    }
                 }
             }
         }
