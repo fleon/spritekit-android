@@ -65,7 +65,9 @@ public extension TextProvider {
 ///     UIKit places them whatever `setShouldSubpixelQuantizeFonts` says.
 public struct TextBlock {
     public enum Alignment: Sendable {
-        case left, center, right, justified
+        /// `natural`: the paragraph's direction's, right for a right-to-left
+        /// paragraph (`Bidi`), else left.
+        case left, center, right, justified, natural
     }
 
     public enum Wrapping: Sendable {
@@ -128,6 +130,10 @@ public struct TextBlock {
         /// The spaces before its last visible character, which justifying
         /// widens.
         public var spaces: Int
+        /// In a right-to-left paragraph: its pieces placed right to left,
+        /// natural alignment its right edge, the spaces it ends on hanging
+        /// past its left (`Bidi`).
+        public var rightToLeft = false
 
         public var height: CGFloat { ascent + descent + leading }
     }
@@ -167,7 +173,16 @@ public struct TextBlock {
         var minX = CGFloat.greatestFiniteMagnitude, maxX = -CGFloat.greatestFiniteMagnitude
         for line in lines {
             let x = Self.offset(of: line, in: width)
-                // A justified line but its paragraph's last spans the width.
+            if line.rightToLeft {
+                // A right-to-left line's spaces hang past its left edge, no
+                // further than the rect's, and naturally aligned it leaves
+                // them out (measured on Catalyst).
+                let hang = line.style.alignment == .natural ? 0 : line.width - line.visibleWidth
+                minX = min(minX, max(0, x - hang))
+                maxX = max(maxX, x + line.visibleWidth)
+                continue
+            }
+            // A justified line but its paragraph's last spans the width.
             let end = line.style.alignment == .justified && !line.endsParagraph ? width : x + line.width
             minX = min(minX, x)
             maxX = max(maxX, end)
@@ -209,6 +224,7 @@ public struct TextBlock {
         switch line.style.alignment {
         case .left: 0
         case .justified: 0
+        case .natural: line.rightToLeft ? width - line.visibleWidth : 0
         case .center: (width - line.visibleWidth) / 2
         case .right: width - line.visibleWidth
         }
@@ -338,11 +354,23 @@ public struct TextBlock {
         }
         if ranges.isEmpty { ranges = [0 ..< 0] }
 
+        // A paragraph with right-to-left text in it: each line in its
+        // direction (`Bidi.marked`), a right-to-left one's pieces placed
+        // from its right edge.
+        let direction: Bidi.Direction? = Bidi.needsReordering(text) ? Bidi.direction(of: text) : nil
         return ranges.enumerated().map { index, range in
             let visible = visibleEnd(range.lowerBound, range.upperBound)
-            let pieces = groups(range.lowerBound, range.upperBound).map { run, piece in
+            var pieces = groups(range.lowerBound, range.upperBound).map { run, piece in
                 Piece(run: run, text: String(characters[piece]), x: width(range.lowerBound, piece.lowerBound),
                       width: width(piece.lowerBound, piece.upperBound))
+            }
+            if let direction {
+                for (offset, (_, piece)) in groups(range.lowerBound, range.upperBound).enumerated() {
+                    pieces[offset].text = Bidi.marked(pieces[offset].text, in: direction)
+                    guard direction == .rightToLeft else { continue }
+                    let shown = width(piece.lowerBound, min(piece.upperBound, max(piece.lowerBound, visible)))
+                    pieces[offset].x = width(range.lowerBound, visible) - pieces[offset].x - shown
+                }
             }
             let present = pieces.isEmpty ? [paragraph.empty] : Array(Set(pieces.map(\.run))).sorted()
             var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
@@ -360,7 +388,8 @@ public struct TextBlock {
                 ascent: ascent, descent: descent, leading: leading,
                 style: style,
                 endsParagraph: index == ranges.count - 1,
-                spaces: characters[range.lowerBound ..< visible].filter { $0 == " " }.count
+                spaces: characters[range.lowerBound ..< visible].filter { $0 == " " }.count,
+                rightToLeft: direction == .rightToLeft
             )
         }
     }

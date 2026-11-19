@@ -80,7 +80,8 @@ extension NSAttributedString {
         case .center: .center
         case .right: .right
         case .justified: .justified
-        case .left, .natural: .left
+        case .left: .left
+        case .natural: .natural
         }
         return TextBlock.Style(
             alignment: alignment,

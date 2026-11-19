@@ -94,6 +94,12 @@ open class SKLabelNode: SKNode {
     /// the block (measured on a Mac).
     public private(set) var alignsLinesRight = false { didSet { invalidateLayout() } }
 
+    /// Whether the lines follow their paragraph's direction: with no
+    /// paragraph style, or a natural one, a right-to-left paragraph's lines
+    /// end on the block's right edge in a label of several lines, as
+    /// SpriteKit lays them out (`BidiLabelParityTests`).
+    public private(set) var alignsLinesByDirection = true { didSet { invalidateLayout() } }
+
     /// One stretch of attributed text in a style of its own: its font,
     /// colour, letter spacing and how far it sits above the baseline
     /// (`.baselineOffset`).
@@ -133,16 +139,20 @@ open class SKLabelNode: SKNode {
         guard let attributedText else {
             kern = 0
             alignsLinesRight = false
+            alignsLinesByDirection = true
             return
         }
         text = attributedText.string
         guard attributedText.length > 0 else {
             kern = 0
             alignsLinesRight = false
+            alignsLinesByDirection = true
             return
         }
         let attributes = attributedText.attributes(at: 0, effectiveRange: nil)
-        alignsLinesRight = Self.alignment(of: attributes[NSAttributedString.Key("NSParagraphStyle")]) == Self.rightAlignment
+        let alignment = Self.alignment(of: attributes[NSAttributedString.Key("NSParagraphStyle")])
+        alignsLinesRight = alignment == Self.rightAlignment
+        alignsLinesByDirection = alignment == nil || alignment == Self.naturalAlignment
         if let font = attributes[NSAttributedString.Key("NSFont")] as? LabelFont {
             fontName = font.fontName
             fontSize = font.pointSize
@@ -160,6 +170,8 @@ open class SKLabelNode: SKNode {
 
     /// NSTextAlignment.right's raw value, on Apple's platforms and the shim's.
     static let rightAlignment = 2
+    /// NSTextAlignment.natural's.
+    static let naturalAlignment = 4
 
     /// A paragraph style's alignment, as its raw value.
     static func alignment(of style: Any?) -> Int? {
@@ -215,6 +227,7 @@ open class SKLabelNode: SKNode {
         var numberOfLines: Int
         var maxWidth: CGFloat
         var alignsLinesRight: Bool
+        var alignsLinesByDirection: Bool
     }
 
     private var cachedLayout: TextLayout?
@@ -265,7 +278,8 @@ open class SKLabelNode: SKNode {
             vertical: verticalAlignmentMode,
             numberOfLines: numberOfLines,
             maxWidth: preferredMaxLayoutWidth,
-            alignsLinesRight: alignsLinesRight
+            alignsLinesRight: alignsLinesRight,
+            alignsLinesByDirection: alignsLinesByDirection
         )
     }
 
@@ -309,10 +323,12 @@ open class SKLabelNode: SKNode {
             ParagraphLine(
                 pieces: [(measure(text, font: font, provider: provider), 0, 0)],
                 width: measure(Self.trimmingTrailingWhitespace(text), font: font, provider: provider).advance,
-                metrics: metrics
+                metrics: metrics,
+                rightToLeft: Bidi.needsReordering(text) && Bidi.firstStrongDirection(text) == .rightToLeft
             )
         }
-        return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode, alignsLinesRight: alignsLinesRight)
+        return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode,
+                                       alignsLinesRight: alignsLinesRight, alignsLinesByDirection: alignsLinesByDirection)
     }
 
     /// A frame with nothing in it: SpriteKit's 2 × 2 of padding, placed by
@@ -344,6 +360,8 @@ open class SKLabelNode: SKNode {
         var pieces: [(line: TextLine, x: CGFloat, rise: CGFloat)]
         var width: CGFloat
         var metrics: FontMetrics
+        /// In a right-to-left paragraph: led by its direction (`Bidi.marked`).
+        var rightToLeft = false
     }
 
     /// Styled runs as paragraph lines, broken at their newlines (wrapping is
@@ -455,7 +473,8 @@ open class SKLabelNode: SKNode {
         _ lines: [ParagraphLine],
         horizontal: SKLabelHorizontalAlignmentMode,
         vertical: SKLabelVerticalAlignmentMode,
-        alignsLinesRight: Bool = false
+        alignsLinesRight: Bool = false,
+        alignsLinesByDirection: Bool = false
     ) -> TextLayout {
         // Each baseline below the block's top: the first line's ascent, then
         // a line's descent and leading and the next one's ascent, each
@@ -490,7 +509,8 @@ open class SKLabelNode: SKNode {
         let top = y + height - 1
         var placed: [TextLayout.Placed] = []
         for (index, line) in lines.enumerated() {
-            let indent = alignsLinesRight ? widest - line.width : 0
+            let endsRight = alignsLinesRight || (alignsLinesByDirection && line.rightToLeft)
+            let indent = endsRight ? widest - line.width : 0
             for piece in line.pieces {
                 placed.append(TextLayout.Placed(line: piece.line, origin: CGPoint(x: x + 1 + indent + piece.x, y: top - baselines[index] + piece.rise)))
             }
@@ -589,15 +609,17 @@ open class SKLabelNode: SKNode {
         if paragraphs.count > 1, paragraphs.last == "" { paragraphs.removeLast() }
         var lines: [String] = []
         for paragraph in paragraphs {
-            if preferredMaxLayoutWidth > 0 {
-                lines.append(contentsOf: provider.breakLines(
-                    paragraph,
-                    font: font,
-                    maxWidth: preferredMaxLayoutWidth
-                ))
-            } else {
-                lines.append(paragraph)
+            let broken = preferredMaxLayoutWidth > 0
+                ? provider.breakLines(paragraph, font: font, maxWidth: preferredMaxLayoutWidth)
+                : [paragraph]
+            // Each line of a paragraph with right-to-left text in it laid
+            // out in the paragraph's direction (`Bidi.marked`).
+            guard Bidi.needsReordering(paragraph) else {
+                lines.append(contentsOf: broken)
+                continue
             }
+            let direction = Bidi.direction(of: paragraph)
+            lines.append(contentsOf: broken.map { Bidi.marked($0, in: direction) })
         }
 
         if numberOfLines > 1 {
