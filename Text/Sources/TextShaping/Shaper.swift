@@ -25,7 +25,7 @@ extension FaceHandle {
                 hb_buffer_add_utf8(buffer, chars, Int32(bytes.count), 0, Int32(bytes.count))
             }
         }
-        hb_buffer_set_direction(buffer, HB_DIRECTION_LTR)
+        hb_buffer_set_direction(buffer, script.isRightToLeft ? HB_DIRECTION_RTL : HB_DIRECTION_LTR)
         hb_buffer_set_script(buffer, script.hbScript)
         hb_buffer_set_language(buffer, hb_language_from_string(script.language, -1))
         // Keep clusters as plain byte offsets rather than merged runs, so a
@@ -118,6 +118,13 @@ extension FaceHandle {
         guard let exactFont, let funcs = FaceHandle.inkFuncs else { return nil }
         var box = InkBox()
         hb_font_draw_glyph(exactFont, glyph, funcs, &box)
+        if box.minX > box.maxX {
+            // No outline: a colour bitmap's own box (emoji), where it has one.
+            var extents = hb_glyph_extents_t()
+            guard hb_font_get_glyph_extents(exactFont, glyph, &extents) != 0, extents.width != 0, extents.height != 0 else { return nil }
+            box.add(Double(extents.x_bearing), Double(extents.y_bearing))
+            box.add(Double(extents.x_bearing + extents.width), Double(extents.y_bearing + extents.height))
+        }
         guard box.minX <= box.maxX, box.minY <= box.maxY else { return nil }
         let unit = Double(FaceHandle.subunits)
         let scale = Double(pointsPerUnit) * unit

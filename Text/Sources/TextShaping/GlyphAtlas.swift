@@ -136,8 +136,9 @@ public final class GlyphAtlas: @unchecked Sendable {
     /// Every glyph of a shaped line, in drawing order.
     public func glyphs(of runs: [ShapedRun], font: FontKey) -> [AtlasGlyph] {
         runs.flatMap { run in
-            run.glyphs.compactMap {
-                glyph(Key(font: font.name, size: font.size, glyph: $0.glyph), font: font)
+            let runFont = run.face(in: font)
+            return run.glyphs.compactMap {
+                glyph(Key(font: runFont.name, size: runFont.size, glyph: $0.glyph), font: runFont)
             }
         }
     }

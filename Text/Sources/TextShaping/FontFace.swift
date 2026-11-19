@@ -24,23 +24,65 @@ public enum FontError: Error, CustomStringConvertible {
 }
 
 /// A font file read once and kept, so the many sizes a screen uses cost one
-/// face each rather than one read each. A large variable font can be tens
-/// of megabytes.
-public final class FontFile {
-    let bytes: [UInt8]
+/// face each rather than one read each. A file on disk is mapped rather than
+/// read: a system collection (Noto CJK) is tens of megabytes, of which a
+/// line touches a few pages.
+public final class FontFile: @unchecked Sendable {
+    /// Never changed, so its bytes stay where FreeType and HarfBuzz were
+    /// told they are for as long as the file lives (every face keeps it).
+    let data: Data
     public let path: String
+    private let lock = NSLock()
+    /// HarfBuzz's face of each index, over `data` itself (no table copies),
+    /// shared by every size.
+    private var hbFaces: [Int: OpaquePointer] = [:]
 
     public init(path: String) throws {
-        guard let data = FileManager.default.contents(atPath: path) else {
+        guard let data = MappedFile.map(path) else {
             throw FontError.fileUnreadable(path)
         }
         self.path = path
-        bytes = [UInt8](data)
+        self.data = data
     }
 
     public init(data: Data, name: String) {
         path = name
-        bytes = [UInt8](data)
+        self.data = data
+    }
+
+    deinit {
+        for face in hbFaces.values { hb_face_destroy(face) }
+    }
+
+    /// How many faces the file holds: one, or a collection's count.
+    var faceCount: Int {
+        data.withUnsafeBytes { bytes -> Int in
+            guard let base = bytes.baseAddress,
+                  let blob = hb_blob_create(base.assumingMemoryBound(to: CChar.self), UInt32(bytes.count),
+                                            HB_MEMORY_MODE_READONLY, nil, nil) else { return 0 }
+            defer { hb_blob_destroy(blob) }
+            return Int(hb_face_count(blob))
+        }
+    }
+
+    /// The face at `index` as HarfBuzz reads it straight from the bytes,
+    /// which live as long as the file.
+    func hbFace(index: Int) -> OpaquePointer? {
+        lock.withLock {
+            if let face = hbFaces[index] { return face }
+            let face = data.withUnsafeBytes { bytes -> OpaquePointer? in
+                guard let base = bytes.baseAddress,
+                      let blob = hb_blob_create(base.assumingMemoryBound(to: CChar.self), UInt32(bytes.count),
+                                                HB_MEMORY_MODE_READONLY, nil, nil) else { return nil }
+                defer { hb_blob_destroy(blob) }
+                return hb_face_create(blob, UInt32(index))
+            }
+            if let face {
+                hb_face_make_immutable(face)
+                hbFaces[index] = face
+            }
+            return face
+        }
     }
 
     /// The PostScript names of the file's named instances, in order. A game
@@ -80,7 +122,6 @@ final class FaceHandle {
     let size: CGFloat
     private let lock = NSRecursiveLock()
     private(set) var ftFace: FT_Face?
-    private(set) var hbFont: OpaquePointer?
     /// HarfBuzz's own OpenType font over the same face, at a scale of
     /// `subunits` to the font unit: what lines are shaped and measured with.
     /// HarfBuzz over FreeType takes its advances from FreeType in 1/64
@@ -117,15 +158,16 @@ final class FaceHandle {
     /// at those sizes too.
     static let loadFlags = FT_Int32(FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP)
 
-    init(file: FontFile, size: CGFloat, instance: String?) throws {
+    init(file: FontFile, size: CGFloat, instance: String?, index: Int = 0, variations: [String: Double] = [:]) throws {
         guard let library = FaceHandle.library else { throw FontError.libraryUnavailable }
         self.file = file
         self.size = size
 
         var face: FT_Face?
         let error = FaceHandle.libraryLock.withLock {
-            file.bytes.withUnsafeBufferPointer { buffer in
-                FT_New_Memory_Face(library, buffer.baseAddress, FT_Long(buffer.count), 0, &face)
+            file.data.withUnsafeBytes { buffer in
+                FT_New_Memory_Face(library, buffer.baseAddress?.assumingMemoryBound(to: FT_Byte.self),
+                                   FT_Long(buffer.count), FT_Long(index), &face)
             }
         }
         guard error == FT_Err_Ok, let face else {
@@ -144,37 +186,67 @@ final class FaceHandle {
             }
         }
 
+        if !variations.isEmpty {
+            FaceHandle.setDesignCoordinates(face, variations)
+        }
+
         // 72 dpi so one point is one pixel unit, and 26.6 fixed point so a
         // fractional size survives — games scale labels freely.
         let sized = FT_Set_Char_Size(face, 0, FT_F26Dot6((size * 64).rounded()), 72, 72)
-        guard sized == FT_Err_Ok else { throw FontError.sizeRejected(sized) }
+        // A face of bitmap strikes only (colour emoji) takes no other size;
+        // it is shaped and measured from its tables all the same.
+        let isScalable = FT_Long(face.pointee.face_flags) & FT_FACE_FLAG_SCALABLE != 0
+        guard sized == FT_Err_Ok || !isScalable else { throw FontError.sizeRejected(sized) }
 
-        hbFont = hb_ft_font_create_referenced(face)
-        if let hbFont {
-            hb_ft_font_set_load_flags(hbFont, Int32(FaceHandle.loadFlags))
-            if let hbFace = hb_font_get_face(hbFont), let exact = hb_font_create(hbFace) {
-                let units = Int32(face.pointee.units_per_EM) * FaceHandle.subunits
-                hb_font_set_scale(exact, units, units)
-                // HarfBuzz counts named instances from 0, FreeType from 1.
-                if let instance, let index = instanceNames.firstIndex(of: instance) {
-                    hb_font_set_var_named_instance(exact, UInt32(index))
-                }
-                exactFont = exact
-                pointsPerUnit = units > 0 ? size / CGFloat(units) : 0
-                var length: UInt32 = 0
-                if let coordinates = hb_font_get_var_coords_normalized(exact, &length), length > 0,
-                   let blob = hb_face_reference_table(hbFace, FaceHandle.tag("HVAR")) {
-                    defer { hb_blob_destroy(blob) }
-                    var size: UInt32 = 0
-                    if let data = hb_blob_get_data(blob, &size), size > 0 {
-                        let table = [UInt8](UnsafeRawBufferPointer(start: data, count: Int(size)))
-                        advanceVariations = AdvanceVariations(
-                            hvar: table, normalizedCoordinates: Array(UnsafeBufferPointer(start: coordinates, count: Int(length)))
-                        )
-                    }
+        if let hbFace = file.hbFace(index: index), let exact = hb_font_create(hbFace) {
+            let units = Int32(face.pointee.units_per_EM) * FaceHandle.subunits
+            hb_font_set_scale(exact, units, units)
+            // HarfBuzz counts named instances from 0, FreeType from 1.
+            if let instance, let index = instanceNames.firstIndex(of: instance) {
+                hb_font_set_var_named_instance(exact, UInt32(index))
+            }
+            if !variations.isEmpty {
+                let settings = variations.map { hb_variation_t(tag: FaceHandle.tag($0.key), value: Float($0.value)) }
+                hb_font_set_variations(exact, settings, UInt32(settings.count))
+            }
+            exactFont = exact
+            pointsPerUnit = units > 0 ? size / CGFloat(units) : 0
+            var length: UInt32 = 0
+            if let coordinates = hb_font_get_var_coords_normalized(exact, &length), length > 0,
+               let blob = hb_face_reference_table(hbFace, FaceHandle.tag("HVAR")) {
+                defer { hb_blob_destroy(blob) }
+                var size: UInt32 = 0
+                if let data = hb_blob_get_data(blob, &size), size > 0 {
+                    let table = [UInt8](UnsafeRawBufferPointer(start: data, count: Int(size)))
+                    advanceVariations = AdvanceVariations(
+                        hvar: table, normalizedCoordinates: Array(UnsafeBufferPointer(start: coordinates, count: Int(length)))
+                    )
                 }
             }
         }
+    }
+
+    /// Whether the face has a glyph for `scalar` (its cmap maps it).
+    func covers(_ scalar: Unicode.Scalar) -> Bool {
+        run {
+            guard let exactFont else { return false }
+            var glyph: hb_codepoint_t = 0
+            return hb_font_get_nominal_glyph(exactFont, scalar.value, &glyph) != 0 && glyph != 0
+        }
+    }
+
+    /// Sets a variable face's axes by tag; the others keep their defaults.
+    private static func setDesignCoordinates(_ face: FT_Face, _ variations: [String: Double]) {
+        var master: UnsafeMutablePointer<FT_MM_Var>?
+        guard FT_Long(face.pointee.face_flags) & FT_FACE_FLAG_MULTIPLE_MASTERS != 0,
+              FT_Get_MM_Var(face, &master) == FT_Err_Ok, let master, let axes = master.pointee.axis else { return }
+        defer { FT_Done_MM_Var(FaceHandle.library, master) }
+        var coordinates = (0 ..< Int(master.pointee.num_axis)).map { index -> FT_Fixed in
+            let axis = axes[index]
+            guard let value = variations.first(where: { tag($0.key) == UInt32(axis.tag) })?.value else { return axis.def }
+            return FT_Fixed((min(max(value, Double(axis.minimum) / 65536), Double(axis.maximum) / 65536) * 65536).rounded())
+        }
+        FT_Set_Var_Design_Coordinates(face, FT_UInt(coordinates.count), &coordinates)
     }
 
     /// An OpenType table tag.
@@ -183,10 +255,8 @@ final class FaceHandle {
     }
 
     deinit {
-        // HarfBuzz's FreeType font lets go of its reference with FT_Done_Face too.
         FaceHandle.libraryLock.withLock {
             if let exactFont { hb_font_destroy(exactFont) }
-            if let hbFont { hb_font_destroy(hbFont) }
             if let ftFace { FT_Done_Face(ftFace) }
         }
     }

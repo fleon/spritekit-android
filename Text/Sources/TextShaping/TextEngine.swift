@@ -17,6 +17,29 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
 
     private let lock = NSLock()
     private var measured: [Measure: TextLine] = [:]
+    private var fallbackProvider: FontFallbackProvider?
+    /// Each character's fallback face, per face it fell back from: its
+    /// registered name, or nil where nothing has it.
+    private var fallbackNames: [FallbackKey: String?] = [:]
+
+    private struct FallbackKey: Hashable {
+        var character: Character
+        var font: String
+    }
+
+    /// Where characters a line's face has no glyph for are drawn from; nil
+    /// draws them in the line's face (its .notdef), as before. Labels and
+    /// string drawing both fall back through it.
+    public var fallback: FontFallbackProvider? {
+        get { lock.withLock { fallbackProvider } }
+        set {
+            lock.withLock {
+                fallbackProvider = newValue
+                fallbackNames.removeAll()
+                measured.removeAll()
+            }
+        }
+    }
 
     private struct Measure: Hashable {
         var text: String
@@ -148,9 +171,113 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
 
     // MARK: - Shaping
 
-    /// Shapes a string, one run per script. Nil when the face is unknown.
+    /// Shapes a string, one run per script and face. Nil when the face is
+    /// unknown.
     public func shape(_ text: String, font: FontKey) -> [ShapedRun]? {
-        library.face(font).map { $0.shapeRuns(text) }
+        library.face(font).map { shapeRuns(text, font: font, face: $0) }
+    }
+
+    /// Characters `face` has every glyph of stay in it, as Core Text keeps
+    /// them (spaces and digits among fallback text too); the rest go to the
+    /// fallback face that has them, the last one used first, each stretch
+    /// shaped in its own face at the line's size.
+    private func shapeRuns(_ text: String, font: FontKey, face: FaceHandle) -> [ShapedRun] {
+        guard let provider = fallback,
+              !text.unicodeScalars.allSatisfy({ $0.isIgnorableForFallback || face.covers($0) }) else {
+            return face.shapeRuns(text)
+        }
+        var stretches: [(range: Range<String.Index>, font: String?)] = []
+        var last: (name: String, face: FaceHandle)?
+        var index = text.startIndex
+        while index < text.endIndex {
+            let next = text.index(after: index)
+            let character = text[index]
+            let scalars = character.unicodeScalars.filter { !$0.isIgnorableForFallback }
+            var name: String?
+            if !scalars.allSatisfy(face.covers) {
+                if let last, scalars.allSatisfy(last.face.covers) {
+                    name = last.name
+                } else if let found = fallbackName(for: character, font: font, provider: provider),
+                          let fallbackFace = library.face(FontKey(name: found, size: font.size)) {
+                    name = found
+                    last = (found, fallbackFace)
+                }
+            }
+            if let open = stretches.last, open.font == name {
+                stretches[stretches.count - 1].range = open.range.lowerBound ..< next
+            } else {
+                stretches.append((index ..< next, name))
+            }
+            index = next
+        }
+        let runs = stretches.flatMap { stretch -> [ShapedRun] in
+            let shaper = stretch.font.flatMap { library.face(FontKey(name: $0, size: font.size)) } ?? face
+            let start = text.utf8.distance(from: text.startIndex, to: stretch.range.lowerBound)
+            return shaper.shapeRuns(String(text[stretch.range])).map { run in
+                var run = run
+                run.byteOffset += start
+                run.glyphs = run.glyphs.map { var glyph = $0; glyph.cluster += start; return glyph }
+                run.font = stretch.font
+                return run
+            }
+        }
+        return Self.visualOrder(runs)
+    }
+
+    /// Right-to-left runs, with the spaces and punctuation between them, in
+    /// the order they are drawn: each such stretch reversed, as the bidi
+    /// algorithm lays it out in a left-to-right line. Shaping alone keeps
+    /// one script together, which is why only fallback, where a line's own
+    /// face keeps the spaces, splits a right-to-left stretch.
+    static func visualOrder(_ runs: [ShapedRun]) -> [ShapedRun] {
+        guard runs.contains(where: \.script.isRightToLeft) else { return runs }
+        var ordered: [ShapedRun] = []
+        var index = 0
+        while index < runs.count {
+            guard runs[index].script.isRightToLeft else {
+                ordered.append(runs[index])
+                index += 1
+                continue
+            }
+            // Through every later right-to-left run reached over neutrals.
+            var end = index
+            var probe = index + 1
+            while probe < runs.count, runs[probe].script == .common || runs[probe].script.isRightToLeft {
+                if runs[probe].script.isRightToLeft { end = probe }
+                probe += 1
+            }
+            ordered.append(contentsOf: runs[index ... end].reversed())
+            index = end + 1
+        }
+        return ordered
+    }
+
+    private func fallbackName(for character: Character, font: FontKey, provider: FontFallbackProvider) -> String? {
+        let key = FallbackKey(character: character, font: font.name)
+        if let known = lock.withLock({ fallbackNames[key] }) { return known }
+        let weight = library.describedFace(named: font.name)?.weightClass ?? 400
+        let name = provider.face(for: character, font: font, weight: weight).flatMap(library.registerFallback)
+        lock.withLock { fallbackNames[key] = name }
+        return name
+    }
+
+    /// The ink box of shaped runs, each glyph's from its own run's face.
+    private func inkBounds(of runs: [ShapedRun], font: FontKey, face: FaceHandle) -> CGRect {
+        var pen: CGFloat = 0
+        var box: CGRect?
+        for run in runs {
+            let runFace = run.font == nil ? face : library.face(run.face(in: font)) ?? face
+            for glyph in run.glyphs {
+                if let outline = runFace.outlineBox(glyph.glyph) {
+                    let placed = outline.offsetBy(dx: pen + glyph.xOffset, dy: glyph.yOffset)
+                    box = box.map { $0.union(placed) } ?? placed
+                }
+                pen += glyph.xAdvance
+            }
+        }
+        // Nothing drawn (a line of spaces) still has width, which is what a
+        // centred label is positioned by.
+        return box ?? CGRect(x: 0, y: 0, width: pen, height: 0)
     }
 
     /// Shapes and rasterises in one go: each glyph with where it sits on the
@@ -161,9 +288,10 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         var placed: [PlacedGlyph] = []
         var pen: CGFloat = 0
         for run in runs {
+            let runFont = run.face(in: font)
             for glyph in run.glyphs {
-                let key = GlyphAtlas.Key(font: font.name, size: font.size, glyph: glyph.glyph)
-                if let entry = atlas.glyph(key, font: font), !entry.isEmpty {
+                let key = GlyphAtlas.Key(font: runFont.name, size: runFont.size, glyph: glyph.glyph)
+                if let entry = atlas.glyph(key, font: runFont), !entry.isEmpty {
                     placed.append(PlacedGlyph(
                         atlas: entry,
                         origin: CGPoint(x: pen + glyph.xOffset, y: glyph.yOffset),
@@ -189,11 +317,11 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         guard let face = library.face(font) else {
             return TextLine(text: text, advance: 0, inkBounds: .zero)
         }
-        let runs = face.shapeRuns(text)
+        let runs = shapeRuns(text, font: font, face: face)
         let line = TextLine(
             text: text,
             advance: runs.reduce(0) { $0 + $1.advance },
-            inkBounds: face.inkBounds(of: runs)
+            inkBounds: inkBounds(of: runs, font: font, face: face)
         )
         lock.withLock { measured[key] = line }
         return line
@@ -205,7 +333,7 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         return LineBreak.wrap(text, maxWidth: maxWidth) { piece in
             let key = String(piece)
             if let known = widths[key] { return known }
-            let width = face.shapeRuns(key).reduce(0) { $0 + $1.advance }
+            let width = self.shapeRuns(key, font: font, face: face).reduce(0) { $0 + $1.advance }
             widths[key] = width
             return width
         }
@@ -222,11 +350,14 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     /// draws text into is made once.
     public func glyphMasks(_ text: String, font: FontKey, scale: CGFloat, offset: CGPoint, positionsPerPixel: Int) -> [GlyphMask] {
         let steps = CGFloat(max(1, positionsPerPixel))
-        guard scale > 0, let runs = shape(text, font: font),
-              let face = library.face(FontKey(name: font.name, size: font.size * scale)) else { return [] }
+        guard scale > 0, let runs = shape(text, font: font) else { return [] }
         var masks: [GlyphMask] = []
         var pen: CGFloat = 0
         for run in runs {
+            guard let face = library.face(FontKey(name: run.face(in: font).name, size: font.size * scale)) else {
+                pen += run.advance
+                continue
+            }
             for glyph in run.glyphs {
                 let x = offset.x + (pen + glyph.xOffset) * scale
                 let y = offset.y + glyph.yOffset * scale
@@ -278,10 +409,14 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     /// The line's glyph outlines, shaped as it's measured, each moved to its
     /// pen position.
     public func glyphOutline(_ text: String, font: FontKey) -> [PathElement] {
-        guard let runs = shape(text, font: font), let face = library.face(font) else { return [] }
+        guard let runs = shape(text, font: font) else { return [] }
         var elements: [PathElement] = []
         var pen: CGFloat = 0
         for run in runs {
+            guard let face = library.face(run.face(in: font)) else {
+                pen += run.advance
+                continue
+            }
             for glyph in run.glyphs {
                 let dx = pen + glyph.xOffset, dy = glyph.yOffset
                 func move(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dy) }

@@ -15,7 +15,9 @@ public final class FontLibrary: @unchecked Sendable {
     private var files: [String: FontFile] = [:]                 // path -> file
     /// Each registered file's faces, as CoreText's descriptors list them.
     private var fileFaces: [String: [String]] = [:]             // path -> faces
-    private var names: [String: (file: FontFile, instance: String?)] = [:]
+    private var names: [String: (file: FontFile, instance: String?, index: Int, variations: [String: Double])] = [:]
+    /// Fallback faces registered so far, by file and index.
+    private var fallbackNames: [FallbackFace: String] = [:]
     private var faces: [Key: FaceHandle] = [:]
     /// The cached faces' keys, least recently used first.
     private var recency: [Key] = []
@@ -116,11 +118,47 @@ public final class FontLibrary: @unchecked Sendable {
                 families[face.family.lowercased(), default: []].append(face)
             }
             for name in registered where names[name] == nil {
-                names[name] = (file, probe.instanceNames.contains(name) ? name : nil)
+                names[name] = (file, probe.instanceNames.contains(name) ? name : nil, 0, [:])
             }
             if defaultName == nil { defaultName = registered.first }
         }
         return registered
+    }
+
+    /// The font file at `path`, mapped once and kept.
+    func file(atPath path: String) -> FontFile? {
+        lock.withLock {
+            if let existing = files[path] { return existing }
+            guard let made = try? FontFile(path: path) else { return nil }
+            files[path] = made
+            return made
+        }
+    }
+
+    /// Makes a system face that text falls back to drawable by name: the
+    /// name its runs carry (`ShapedRun.font`). Its PostScript name, unless
+    /// that already means another face. Only for drawing: it joins no
+    /// family and is no label's default. Nil when the face doesn't open.
+    func registerFallback(_ face: FallbackFace) -> String? {
+        if let known = lock.withLock({ fallbackNames[face] }) { return known }
+        guard let file = file(atPath: face.path),
+              let probe = try? FaceHandle(file: file, size: 16, instance: nil, index: face.index, variations: face.variations)
+        else { return nil }
+        let postScript = probe.postScriptName
+        return lock.withLock {
+            if let known = fallbackNames[face] { return known }
+            let axes = face.variations.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+            let unique = (["\(face.path)#\(face.index)"] + axes).joined(separator: "#")
+            // A variable face's PostScript name is its default instance's,
+            // so one set to other axis values goes by its own.
+            var name = face.variations.isEmpty ? postScript ?? unique : unique
+            if let taken = names[name], taken.file !== file || taken.index != face.index || taken.variations != face.variations {
+                name = unique
+            }
+            names[name] = (file, nil, face.index, face.variations)
+            fallbackNames[face] = name
+            return name
+        }
     }
 
     /// The registered face `name` stands for, in any case (CoreText's
@@ -166,7 +204,9 @@ public final class FontLibrary: @unchecked Sendable {
             guard let made = try? FaceHandle(
                 file: entry.file,
                 size: CGFloat(key.sixtyFourths) / 64,
-                instance: entry.instance
+                instance: entry.instance,
+                index: entry.index,
+                variations: entry.variations
             ) else {
                 missing.insert(key)
                 return nil
