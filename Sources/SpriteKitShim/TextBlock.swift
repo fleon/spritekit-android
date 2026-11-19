@@ -68,8 +68,8 @@ public extension TextProvider {
 ///     UIKit places them whatever `setShouldSubpixelQuantizeFonts` says.
 public struct TextBlock {
     public enum Alignment: Sendable {
-        /// `natural`: the paragraph's direction's, right for a right-to-left
-        /// paragraph (`Bidi`), else left.
+        /// `natural`: the app's direction's, which for these games is left,
+        /// even for a right-to-left paragraph (measured on Catalyst).
         case left, center, right, justified, natural
     }
 
@@ -133,9 +133,8 @@ public struct TextBlock {
         /// The spaces before its last visible character, which justifying
         /// widens.
         public var spaces: Int
-        /// In a right-to-left paragraph: its pieces placed right to left,
-        /// natural alignment its right edge, the spaces it ends on hanging
-        /// past its left (`Bidi`).
+        /// In a right-to-left paragraph: the spaces it ends on hang past its
+        /// left edge (`Bidi`).
         public var rightToLeft = false
 
         public var height: CGFloat { ascent + descent + leading }
@@ -178,10 +177,8 @@ public struct TextBlock {
             let x = Self.offset(of: line, in: width)
             if line.rightToLeft {
                 // A right-to-left line's spaces hang past its left edge, no
-                // further than the rect's, and naturally aligned it leaves
-                // them out (measured on Catalyst).
-                let hang = line.style.alignment == .natural ? 0 : line.width - line.visibleWidth
-                minX = min(minX, max(0, x - hang))
+                // further than the rect's (measured on Catalyst).
+                minX = min(minX, max(0, x - (line.width - line.visibleWidth)))
                 maxX = max(maxX, x + line.visibleWidth)
                 continue
             }
@@ -227,7 +224,7 @@ public struct TextBlock {
         switch line.style.alignment {
         case .left: 0
         case .justified: 0
-        case .natural: line.rightToLeft ? width - line.visibleWidth : 0
+        case .natural: 0
         case .center: (width - line.visibleWidth) / 2
         case .right: width - line.visibleWidth
         }
@@ -364,9 +361,10 @@ public struct TextBlock {
         }
         if ranges.isEmpty { ranges = [0 ..< 0] }
 
-        // A paragraph with right-to-left text in it: each line in its
-        // direction (`Bidi.marked`), a right-to-left one's pieces placed
-        // from its right edge.
+        // A paragraph with right-to-left text in it: each line's visible
+        // characters in the order drawn (`Bidi.segments`), a piece per run
+        // and level, each in its own direction; then the spaces it ends on,
+        // at its right end, where they draw nothing.
         let direction: Bidi.Direction? = Bidi.needsReordering(text) ? Bidi.direction(of: text) : nil
         return ranges.enumerated().map { index, range in
             let visible = visibleEnd(range.lowerBound, range.upperBound)
@@ -375,11 +373,30 @@ public struct TextBlock {
                       width: width(piece.lowerBound, piece.upperBound))
             }
             if let direction {
-                for (offset, (_, piece)) in groups(range.lowerBound, range.upperBound).enumerated() {
-                    pieces[offset].text = Bidi.marked(pieces[offset].text, in: direction)
-                    guard direction == .rightToLeft else { continue }
-                    let shown = width(piece.lowerBound, min(piece.upperBound, max(piece.lowerBound, visible)))
-                    pieces[offset].x = width(range.lowerBound, visible) - pieces[offset].x - shown
+                let shown = groups(range.lowerBound, visible)
+                var x: CGFloat = 0
+                pieces = []
+                func place(_ run: Int, _ a: Int, _ b: Int, _ text: String) {
+                    guard a < b else { return }
+                    pieces.append(Piece(run: run, text: text, x: x, width: width(a, b)))
+                    x += width(a, b)
+                }
+                for segment in Bidi.segments(of: shown.map { String(characters[$0.1]) }, in: direction) {
+                    let (run, piece) = shown[segment.piece]
+                    let a = piece.lowerBound + segment.characters.lowerBound, b = piece.lowerBound + segment.characters.upperBound
+                    guard segment.rightToLeft else {
+                        place(run, a, b, Bidi.marked(String(characters[a ..< b]), in: .leftToRight))
+                        continue
+                    }
+                    // Right to left, the spaces a stretch ends on are on its left.
+                    let body = visibleEnd(a, b)
+                    place(run, body, b, String(characters[body ..< b]))
+                    // Always led by its mark, which draws nothing, so drawing
+                    // knows to place its words right to left.
+                    place(run, a, body, "\u{200F}" + String(characters[a ..< body]))
+                }
+                for (run, piece) in groups(visible, range.upperBound) {
+                    place(run, piece.lowerBound, piece.upperBound, String(characters[piece]))
                 }
             }
             let present = pieces.isEmpty ? [paragraph.empty] : Array(Set(pieces.map(\.run))).sorted()
@@ -503,13 +520,18 @@ public struct TextBlock {
                 let run = runs[piece.run]
                 // Justified text widens its spaces; letter spacing places each character.
                 let parts: [(String, CGFloat)] = if stretch != 0 || run.kern != 0 {
-                    Self.split(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
+                    piece.text.first == "\u{200F}"
+                        ? Self.splitRightToLeft(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
+                        : Self.split(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
                 } else {
                     [(piece.text, 0)]
                 }
                 for (text, offset) in parts {
+                    // A right-to-left word's spaces are before it, to its left.
+                    let leading = text.first == "\u{200F}" ? 0 : text.prefix(while: { $0 == " " }).count
+                    spacesBefore += leading
                     let x = start + piece.x + offset + stretch * CGFloat(spacesBefore)
-                    spacesBefore += text.filter { $0 == " " }.count
+                    spacesBefore += text.filter { $0 == " " }.count - leading
                     guard !text.allSatisfy(\.isWhitespace) else { continue }
                     let baseline = top + line.ascent - run.baselineOffset
                     if axisAligned {
@@ -546,6 +568,37 @@ public struct TextBlock {
             defer { x += provider.measure(part, font: run.font).advance + run.kern * CGFloat(part.count) }
             return (part, x)
         }
+    }
+
+    /// A right-to-left piece (led by its mark) split as `split` splits one,
+    /// its words placed right to left: each word after the spaces that
+    /// follow it in the text, which are on its left.
+    private static func splitRightToLeft(_ text: String, run: Run, byCharacter: Bool, provider: TextProvider) -> [(String, CGFloat)] {
+        var parts: [String] = []
+        for character in text.dropFirst() {
+            if byCharacter || parts.isEmpty || parts[parts.count - 1].last == " " {
+                parts.append(String(character))
+            } else {
+                parts[parts.count - 1].append(character)
+            }
+        }
+        func advance(_ text: String) -> CGFloat {
+            text.isEmpty ? 0 : provider.measure(text, font: run.font).advance + run.kern * CGFloat(text.count)
+        }
+        var x: CGFloat = 0
+        var placed: [(String, CGFloat)] = []
+        for part in parts.reversed() {
+            var word = Substring(part)
+            while word.last == " " { word = word.dropLast() }
+            let spaces = String(repeating: " ", count: part.count - word.count)
+            if !spaces.isEmpty {
+                placed.append((spaces, x))
+                x += advance(spaces)
+            }
+            placed.append(("\u{200F}" + word, x))
+            x += advance(String(word))
+        }
+        return placed
     }
 
     private func draw(

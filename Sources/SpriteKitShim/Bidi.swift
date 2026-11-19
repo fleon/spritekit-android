@@ -25,8 +25,9 @@ enum BidiClass: UInt8, Sendable {
 ///   stretch at or above that level reversed (L2).
 ///
 /// Explicit embeddings, overrides and isolates (U+202A to U+202E, U+2066
-/// to U+2069) are dropped, as X9 drops them from what the rules see; text
-/// in a game hardly has them.
+/// to U+2069) set levels as X1 to X8 set them; embeddings and overrides are
+/// then dropped from what the rules see (X9), and each isolating run
+/// sequence is resolved on its own (X10).
 public enum Bidi {
     public enum Direction: Sendable, Equatable {
         case leftToRight, rightToLeft
@@ -74,10 +75,15 @@ public enum Bidi {
     /// The direction of `text`'s first strong character (P2, P3), or nil
     /// when it has none.
     public static func firstStrongDirection(_ text: String) -> Direction? {
+        // What an isolate holds doesn't count (P2).
+        var depth = 0
         for scalar in text.unicodeScalars {
             switch bidiClass(scalar) {
-            case .l: return .leftToRight
-            case .r, .al: return .rightToLeft
+            case .l where depth == 0: return .leftToRight
+            case .r where depth == 0, .al where depth == 0: return .rightToLeft
+            case .lri, .rli, .fsi: depth += 1
+            case .pdi: if depth == 0 { return nil } else { depth -= 1 }
+            case .b: return nil
             default: continue
             }
         }
@@ -104,8 +110,52 @@ public enum Bidi {
     /// line in their own direction (P2, P3).
     public static func levels(_ scalars: [Unicode.Scalar]) -> (levels: [UInt8], line: UInt8) {
         let classes = scalars.map(bidiClass)
-        let base: UInt8 = classes.first(where: { $0 == .l || $0 == .r || $0 == .al }).map { $0 == .l ? 0 : 1 } ?? 0
+        let base: UInt8 = firstStrong(classes, in: 0 ..< classes.count).map { $0 == .l ? 0 : 1 } ?? 0
         return (resolve(classes, base: base), base)
+    }
+
+    /// Each scalar's level for `scalars` as one line of a paragraph in
+    /// `direction`.
+    public static func levels(_ scalars: [Unicode.Scalar], in direction: Direction) -> [UInt8] {
+        resolve(scalars.map(bidiClass), base: direction.level)
+    }
+
+    /// A stretch of one piece of a line at one level.
+    public struct Segment: Equatable, Sendable {
+        /// Which piece, and which of its characters (offsets into it).
+        public var piece: Int
+        public var characters: Range<Int>
+        public var level: UInt8
+        /// Whether it reads right to left (an odd level).
+        public var rightToLeft: Bool { level % 2 == 1 }
+    }
+
+    /// A line made of `pieces` (stretches of text in their own styles, in
+    /// logical order) as one line of a paragraph in `direction`: the
+    /// stretches of one piece and one level each, in the order drawn, left
+    /// to right (L2 across the pieces). Each is drawn in its own direction,
+    /// led by its mark (`marked`).
+    public static func segments(of pieces: [String], in direction: Direction) -> [Segment] {
+        var scalars: [Unicode.Scalar] = []
+        // Each character's piece, offset and first scalar.
+        var characters: [(piece: Int, offset: Int, scalar: Int)] = []
+        for (number, piece) in pieces.enumerated() {
+            for (offset, character) in piece.enumerated() {
+                characters.append((number, offset, scalars.count))
+                scalars.append(contentsOf: character.unicodeScalars)
+            }
+        }
+        let levels = levels(scalars, in: direction)
+        var segments: [Segment] = []
+        for character in characters {
+            let level = levels[character.scalar]
+            if let last = segments.last, last.piece == character.piece, last.level == level {
+                segments[segments.count - 1].characters = last.characters.lowerBound ..< character.offset + 1
+            } else {
+                segments.append(Segment(piece: character.piece, characters: character.offset ..< character.offset + 1, level: level))
+            }
+        }
+        return visualOrder(segments.map(\.level)).map { segments[$0] }
     }
 
     /// The order to draw items in, left to right, given each one's level
@@ -133,41 +183,228 @@ public enum Bidi {
 
     private static func isStrong(_ type: BidiClass) -> Bool { type == .l || type == .r || type == .al }
 
-    private static func isRemoved(_ type: BidiClass) -> Bool {
+    /// Dropped before the rules run (X9): embeddings, overrides, their
+    /// ends, and boundary neutrals. Isolates stay, as neutrals.
+    static func isRemoved(_ type: BidiClass) -> Bool {
         switch type {
-        case .bn, .lre, .lro, .rle, .rlo, .pdf, .lri, .rli, .fsi, .pdi: return true
+        case .bn, .lre, .lro, .rle, .rlo, .pdf: return true
         default: return false
         }
     }
 
+    private static func isIsolateInitiator(_ type: BidiClass) -> Bool { type == .lri || type == .rli || type == .fsi }
+
     private static func isNeutral(_ type: BidiClass) -> Bool {
-        type == .b || type == .s || type == .ws || type == .on
+        switch type {
+        case .b, .s, .ws, .on, .lri, .rli, .fsi, .pdi: return true
+        default: return false
+        }
     }
 
-    /// W1 to I2 over one line at `base`, then L1.
+    /// The first strong type in `classes[range]` (P2), skipping what an
+    /// isolate holds and stopping at an unmatched isolate end.
+    static func firstStrong(_ classes: [BidiClass], in range: Range<Int>) -> BidiClass? {
+        var depth = 0
+        for index in range {
+            switch classes[index] {
+            case .lri, .rli, .fsi: depth += 1
+            case .pdi:
+                if depth == 0 { return nil }
+                depth -= 1
+            case .l, .r, .al:
+                if depth == 0 { return classes[index] }
+            case .b: return nil
+            default: continue
+            }
+        }
+        return nil
+    }
+
+    /// The whole algorithm over one line at paragraph level `base`: the
+    /// explicit levels (X1 to X8), what the rules see (X9), each isolating
+    /// run sequence resolved on its own (X10, W1 to I2), then L1.
     static func resolve(_ classes: [BidiClass], base: UInt8) -> [UInt8] {
         let count = classes.count
         guard count > 0 else { return [] }
-        let embedding: BidiClass = base % 2 == 0 ? .l : .r
-        // The characters the rules see (X9 drops the rest).
-        let kept = classes.indices.filter { !isRemoved(classes[$0]) }
-        var types = kept.map { classes[$0] }
+        var types = classes
+        var levels = [UInt8](repeating: base, count: count)
 
-        // W1: a mark takes the type before it (the line's at its start).
-        for i in types.indices where types[i] == .nsm {
-            types[i] = i == 0 ? embedding : types[i - 1]
+        // BD9: each isolate initiator's matching end, and back.
+        var matchingEnd = [Int](repeating: -1, count: count)
+        var matchingStart = [Int](repeating: -1, count: count)
+        var open: [Int] = []
+        for index in 0 ..< count {
+            switch classes[index] {
+            case .lri, .rli, .fsi: open.append(index)
+            case .pdi:
+                if let start = open.popLast() {
+                    matchingEnd[start] = index
+                    matchingStart[index] = start
+                }
+            case .b: open.removeAll()
+            default: break
+            }
+        }
+
+        // X1 to X8: the directional status stack.
+        struct Status { var level: UInt8; var override: BidiClass?; var isolate: Bool }
+        var stack = [Status(level: base, override: nil, isolate: false)]
+        var overflowIsolates = 0, overflowEmbeddings = 0, validIsolates = 0
+        let maxDepth: UInt8 = 125
+        func next(rightToLeft: Bool, after level: UInt8) -> UInt8 {
+            rightToLeft ? (level + 1) | 1 : (level + 2) & ~1
+        }
+        for index in 0 ..< count {
+            let top = stack[stack.count - 1]
+            switch classes[index] {
+            case .rle, .lre, .rlo, .lro:
+                let type = classes[index]
+                levels[index] = top.level
+                let level = next(rightToLeft: type == .rle || type == .rlo, after: top.level)
+                if level <= maxDepth, overflowIsolates == 0, overflowEmbeddings == 0 {
+                    stack.append(Status(level: level, override: type == .rlo ? .r : type == .lro ? .l : nil, isolate: false))
+                } else if overflowIsolates == 0 {
+                    overflowEmbeddings += 1
+                }
+            case .rli, .lri, .fsi:
+                levels[index] = top.level
+                if let override = top.override { types[index] = override }
+                var rightToLeft = classes[index] == .rli
+                if classes[index] == .fsi {
+                    let end = matchingEnd[index] >= 0 ? matchingEnd[index] : count
+                    let strong = firstStrong(classes, in: index + 1 ..< end)
+                    rightToLeft = strong == .r || strong == .al
+                }
+                let level = next(rightToLeft: rightToLeft, after: top.level)
+                if level <= maxDepth, overflowIsolates == 0, overflowEmbeddings == 0 {
+                    validIsolates += 1
+                    stack.append(Status(level: level, override: nil, isolate: true))
+                } else {
+                    overflowIsolates += 1
+                }
+            case .pdi:
+                if overflowIsolates > 0 {
+                    overflowIsolates -= 1
+                } else if validIsolates > 0 {
+                    overflowEmbeddings = 0
+                    while let last = stack.last, !last.isolate { stack.removeLast() }
+                    stack.removeLast()
+                    validIsolates -= 1
+                }
+                let now = stack[stack.count - 1]
+                levels[index] = now.level
+                if let override = now.override { types[index] = override }
+            case .pdf:
+                levels[index] = top.level
+                if overflowIsolates > 0 {
+                } else if overflowEmbeddings > 0 {
+                    overflowEmbeddings -= 1
+                } else if !top.isolate, stack.count >= 2 {
+                    stack.removeLast()
+                }
+            case .b:
+                levels[index] = base
+            case .bn:
+                levels[index] = top.level
+            default:
+                levels[index] = top.level
+                if let override = top.override { types[index] = override }
+            }
+        }
+
+        // X9, X10: level runs of what the rules see, joined across isolates
+        // into isolating run sequences.
+        let kept = (0 ..< count).filter { !isRemoved(classes[$0]) }
+        guard !kept.isEmpty else { return levels }
+        var runs: [[Int]] = []
+        for index in kept {
+            if let last = runs.last?.last, levels[last] == levels[index] {
+                runs[runs.count - 1].append(index)
+            } else {
+                runs.append([index])
+            }
+        }
+        var runStartingAt: [Int: Int] = [:]
+        for (number, run) in runs.enumerated() { runStartingAt[run[0]] = number }
+        var sequences: [[Int]] = []
+        for run in runs {
+            // A run starting with a matched isolate end continues a sequence.
+            if classes[run[0]] == .pdi, matchingStart[run[0]] >= 0 { continue }
+            var sequence = run
+            while let last = sequence.last, isIsolateInitiator(classes[last]), matchingEnd[last] >= 0,
+                  let following = runStartingAt[matchingEnd[last]] {
+                sequence += runs[following]
+            }
+            sequences.append(sequence)
+        }
+        let keptPosition = Dictionary(uniqueKeysWithValues: kept.enumerated().map { ($1, $0) })
+        for sequence in sequences {
+            let level = levels[sequence[0]]
+            let first = keptPosition[sequence[0]]!, last = keptPosition[sequence[sequence.count - 1]]!
+            let before = first > 0 ? levels[kept[first - 1]] : base
+            let lastIsInitiator = isIsolateInitiator(classes[sequence[sequence.count - 1]])
+            let after = !lastIsInitiator && last + 1 < kept.count ? levels[kept[last + 1]] : base
+            let sos: BidiClass = max(level, before) % 2 == 0 ? .l : .r
+            let eos: BidiClass = max(level, after) % 2 == 0 ? .l : .r
+            var sequenceTypes = sequence.map { types[$0] }
+            resolveWeakAndNeutral(&sequenceTypes, classes: sequence.map { classes[$0] }, sos: sos, eos: eos, level: level)
+            for (position, index) in sequence.enumerated() {
+                let type = sequenceTypes[position]
+                if level % 2 == 0 {
+                    levels[index] = type == .r ? level + 1 : type == .an || type == .en ? level + 2 : level
+                } else {
+                    levels[index] = type == .l || type == .en || type == .an ? level + 1 : level
+                }
+            }
+        }
+
+        // A dropped character takes the level before it (the line's first).
+        var previous = base
+        for index in 0 ..< count {
+            if isRemoved(classes[index]) { levels[index] = previous } else { previous = levels[index] }
+        }
+        // L1: separators, and the whitespace and isolate controls before them
+        // and at the line's end, at the line's level.
+        var trailing = true
+        for index in stride(from: count - 1, through: 0, by: -1) {
+            let type = classes[index]
+            if type == .s || type == .b {
+                levels[index] = base
+                trailing = true
+            } else if trailing, type == .ws || isRemoved(type) || isIsolateInitiator(type) || type == .pdi {
+                levels[index] = base
+            } else {
+                trailing = false
+            }
+        }
+        return levels
+    }
+
+    /// W1 to N2 over one isolating run sequence's types.
+    private static func resolveWeakAndNeutral(_ types: inout [BidiClass], classes: [BidiClass], sos: BidiClass, eos: BidiClass, level: UInt8) {
+        let count = types.count
+        let embedding: BidiClass = level % 2 == 0 ? .l : .r
+        // W1: a mark takes the type before it (sos at the start, a neutral
+        // after an isolate's start or end).
+        for i in 0 ..< count where types[i] == .nsm {
+            if i == 0 {
+                types[i] = sos
+            } else {
+                let before = types[i - 1]
+                types[i] = isIsolateInitiator(before) || before == .pdi ? .on : before
+            }
         }
         // W2: a European digit after Arabic letters is an Arabic one.
-        var lastStrong = embedding
-        for i in types.indices {
+        var lastStrong = sos
+        for i in 0 ..< count {
             if isStrong(types[i]) { lastStrong = types[i] }
             if types[i] == .en, lastStrong == .al { types[i] = .an }
         }
         // W3: Arabic letters are right to left.
-        for i in types.indices where types[i] == .al { types[i] = .r }
+        for i in 0 ..< count where types[i] == .al { types[i] = .r }
         // W4: one separator between two numbers of a kind joins them.
-        if types.count >= 3 {
-            for i in 1 ..< types.count - 1 {
+        if count >= 3 {
+            for i in 1 ..< count - 1 {
                 let before = types[i - 1], after = types[i + 1]
                 if types[i] == .es, before == .en, after == .en { types[i] = .en }
                 if types[i] == .cs, before == after, before == .en || before == .an { types[i] = before }
@@ -175,24 +412,24 @@ public enum Bidi {
         }
         // W5: terminators next to a European digit become digits.
         var i = 0
-        while i < types.count {
+        while i < count {
             guard types[i] == .et else { i += 1; continue }
             var end = i
-            while end + 1 < types.count, types[end + 1] == .et { end += 1 }
-            let touches = (i > 0 && types[i - 1] == .en) || (end + 1 < types.count && types[end + 1] == .en)
+            while end + 1 < count, types[end + 1] == .et { end += 1 }
+            let touches = (i > 0 && types[i - 1] == .en) || (end + 1 < count && types[end + 1] == .en)
             if touches { for j in i ... end { types[j] = .en } }
             i = end + 1
         }
         // W6: the separators and terminators left are neutrals.
-        for i in types.indices where types[i] == .es || types[i] == .et || types[i] == .cs { types[i] = .on }
+        for i in 0 ..< count where types[i] == .es || types[i] == .et || types[i] == .cs { types[i] = .on }
         // W7: a European digit after left-to-right text is left to right.
-        lastStrong = embedding
-        for i in types.indices {
+        lastStrong = sos
+        for i in 0 ..< count {
             if types[i] == .l || types[i] == .r { lastStrong = types[i] }
             if types[i] == .en, lastStrong == .l { types[i] = .l }
         }
         // N1, N2: neutrals take the direction both sides share (numbers
-        // counting as right to left), else the line's.
+        // counting as right to left), else the embedding's.
         func direction(_ type: BidiClass) -> BidiClass? {
             switch type {
             case .l: return .l
@@ -201,46 +438,16 @@ public enum Bidi {
             }
         }
         i = 0
-        while i < types.count {
+        while i < count {
             guard isNeutral(types[i]) else { i += 1; continue }
             var end = i
-            while end + 1 < types.count, isNeutral(types[end + 1]) { end += 1 }
-            let before = i > 0 ? direction(types[i - 1]) ?? embedding : embedding
-            let after = end + 1 < types.count ? direction(types[end + 1]) ?? embedding : embedding
+            while end + 1 < count, isNeutral(types[end + 1]) { end += 1 }
+            let before = i > 0 ? direction(types[i - 1]) ?? embedding : sos
+            let after = end + 1 < count ? direction(types[end + 1]) ?? embedding : eos
             let resolved = before == after ? before : embedding
             for j in i ... end { types[j] = resolved }
             i = end + 1
         }
-        // I1, I2.
-        var levels = [UInt8](repeating: base, count: count)
-        for (position, index) in kept.enumerated() {
-            let type = types[position]
-            if base % 2 == 0 {
-                levels[index] = type == .r ? base + 1 : type == .an || type == .en ? base + 2 : base
-            } else {
-                levels[index] = type == .l || type == .en || type == .an ? base + 1 : base
-            }
-        }
-        // A dropped character takes the level before it (the line's first).
-        var previous = base
-        for index in 0 ..< count {
-            if isRemoved(classes[index]) { levels[index] = previous } else { previous = levels[index] }
-        }
-        // L1: separators, and the whitespace before them and at the line's
-        // end, at the line's level.
-        var trailing = true
-        for index in stride(from: count - 1, through: 0, by: -1) {
-            let type = classes[index]
-            if type == .s || type == .b {
-                levels[index] = base
-                trailing = true
-            } else if trailing, type == .ws || isRemoved(type) {
-                levels[index] = base
-            } else {
-                trailing = false
-            }
-        }
-        return levels
     }
 }
 #endif
