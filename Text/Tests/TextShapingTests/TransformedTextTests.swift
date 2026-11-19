@@ -9,7 +9,8 @@ import Testing
 /// renderer on Catalyst (macOS 27.2, smoothing off): the ink's centroid and
 /// box in device pixels and its coverage. UIKit snaps every filled glyph's
 /// pen in device space, whatever the transform: x down to its pixel size's
-/// step, the baseline down to the next row.
+/// step, the baseline down to the next row, a ten-thousandth of a pixel
+/// either side of one counting as on it.
 @Suite("Text through transformed contexts as UIKit draws it")
 struct TransformedTextTests {
     struct Case: CustomTestStringConvertible {
@@ -95,13 +96,76 @@ struct TransformedTextTests {
             }
         }
         // A seventh of a pixel a scale: FreeType's and CoreGraphics' rasterisers.
-        // A quarter turn at 3x sits up to 0.7 px short across the baseline,
-        // a rule of UIKit's not yet found.
-        let tolerance = item.transform == "rot90" && item.scale == 3 ? 0.75 : 0.15 * item.scale
-        #expect(hypot(sx / sum - item.centroid.x, sy / sum - item.centroid.y) < tolerance,
+        #expect(hypot(sx / sum - item.centroid.x, sy / sum - item.centroid.y) < 0.15 * item.scale,
                 "centroid (\(sx / sum), \(sy / sum)) against \(item.centroid)")
         #expect(zip(box, item.box).allSatisfy { abs($0 - $1) <= 1 }, "box \(box) against \(item.box)")
         #expect(abs(sum / Double(item.ink) - 1) < 0.03, "ink \(sum) against \(item.ink)")
+    }
+
+    /// "lil" (Montserrat-Black) at x -10.3 after a translate by 50 plus a
+    /// fraction, at 3x: where the fraction is .3 or .8, three times the x
+    /// comes out a hair under a whole pixel (119.99999999999999), which
+    /// UIKit floors as on it. Its ink's centroid on Catalyst.
+    static let edges: [(transform: String, size: CGFloat, fraction: CGFloat, centroid: CGPoint)] = [
+        ("identity", 11.0, 0.00, CGPoint(x: 134.5471, y: 107.9687)),
+        ("identity", 11.0, 0.30, CGPoint(x: 135.5471, y: 108.9687)),
+        ("identity", 11.0, 0.55, CGPoint(x: 136.2134, y: 109.9687)),
+        ("identity", 11.0, 0.80, CGPoint(x: 137.0401, y: 110.9678)),
+        ("identity", 31.5, 0.00, CGPoint(x: 164.2330, y: 141.5950)),
+        ("identity", 31.5, 0.30, CGPoint(x: 165.2330, y: 142.5950)),
+        ("identity", 31.5, 0.55, CGPoint(x: 165.9033, y: 143.5950)),
+        ("identity", 31.5, 0.80, CGPoint(x: 166.9033, y: 144.5950)),
+        ("rot90", 11.0, 0.00, CGPoint(x: 191.0324, y: 135.2015)),
+        ("rot90", 11.0, 0.30, CGPoint(x: 192.0324, y: 135.8715)),
+        ("rot90", 11.0, 0.55, CGPoint(x: 192.5263, y: 136.8715)),
+        ("rot90", 11.0, 0.80, CGPoint(x: 193.5263, y: 137.8715)),
+        ("rot90", 31.5, 0.00, CGPoint(x: 157.4055, y: 165.2311)),
+        ("rot90", 31.5, 0.30, CGPoint(x: 158.4055, y: 165.9014)),
+        ("rot90", 31.5, 0.55, CGPoint(x: 158.4055, y: 166.9014)),
+        ("rot90", 31.5, 0.80, CGPoint(x: 159.4055, y: 167.9014)),
+        ("rot270", 11.0, 0.00, CGPoint(x: 107.4738, y: 164.7985)),
+        ("rot270", 11.0, 0.30, CGPoint(x: 108.4738, y: 165.7985)),
+        ("rot270", 11.0, 0.55, CGPoint(x: 109.4738, y: 166.4586)),
+        ("rot270", 11.0, 0.80, CGPoint(x: 109.9677, y: 167.1285)),
+        ("rot270", 31.5, 0.00, CGPoint(x: 140.5953, y: 134.7670)),
+        ("rot270", 31.5, 0.30, CGPoint(x: 141.5953, y: 135.4265)),
+        ("rot270", 31.5, 0.55, CGPoint(x: 142.5953, y: 136.0968)),
+        ("rot270", 31.5, 0.80, CGPoint(x: 143.5953, y: 137.0968)),
+        ("mirrorY", 11.0, 0.00, CGPoint(x: 134.5471, y: 192.0311)),
+        ("mirrorY", 11.0, 0.30, CGPoint(x: 135.5471, y: 192.0311)),
+        ("mirrorY", 11.0, 0.55, CGPoint(x: 136.2134, y: 193.0311)),
+        ("mirrorY", 11.0, 0.80, CGPoint(x: 137.0401, y: 194.0319)),
+        ("mirrorY", 31.5, 0.00, CGPoint(x: 164.2330, y: 158.4047)),
+        ("mirrorY", 31.5, 0.30, CGPoint(x: 165.2330, y: 158.4047)),
+        ("mirrorY", 31.5, 0.55, CGPoint(x: 165.9032, y: 159.4047)),
+        ("mirrorY", 31.5, 0.80, CGPoint(x: 166.9032, y: 160.4047)),
+    ]
+
+    @Test("A pen a hair under a pixel snaps as on it, as UIKit's does")
+    func pixelEdge() throws {
+        _ = Fonts.engine
+        for item in Self.edges {
+            let context = BitmapContext(width: 300, height: 300, scale: 3)
+            context.translateBy(x: 50 + item.fraction, y: 50 + item.fraction)
+            switch item.transform {
+            case "rot90": context.rotate(by: .pi / 2)
+            case "rot270": context.rotate(by: -.pi / 2)
+            case "mirrorY": context.scaleBy(x: 1, y: -1)
+            default: break
+            }
+            let block = try #require(TextBlock(runs: [TextBlock.Run("lil", font: FontKey(name: "Montserrat-Black", size: item.size), colour: .white)], maxWidth: nil))
+            block.draw(in: CGRect(origin: CGPoint(x: -10.3, y: -20.7), size: block.size(in: nil)), context: context)
+            let data = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+            var sx = 0.0, sy = 0.0, sum = 0.0
+            for y in 0 ..< context.height {
+                for x in 0 ..< context.width {
+                    let a = Double(data[(y * context.width + x) * 4 + 3])
+                    sx += a * Double(x); sy += a * Double(y); sum += a
+                }
+            }
+            #expect(hypot(sx / sum - item.centroid.x, sy / sum - item.centroid.y) < 0.1,
+                    "\(item.transform) \(item.size) +\(item.fraction): centroid (\(sx / sum), \(sy / sum)) against \(item.centroid)")
+        }
     }
 
     /// "Level" (Montserrat-Black 15) drawn at a point after a translate by
