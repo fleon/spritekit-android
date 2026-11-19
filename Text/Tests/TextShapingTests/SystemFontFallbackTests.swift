@@ -135,6 +135,23 @@ struct SystemFontFallbackTests {
         #expect(fallback.face(for: "한", font: font, weight: 500)?.index == 0)
     }
 
+    @Test("An emoji goes to the emoji family first, text never does")
+    func presentation() {
+        // A symbol face with text forms of ⌚ and ☺, then the emoji family.
+        let fallback = SystemFontFallback(families: [
+            .init(languages: [], fonts: [Font(face: FallbackFace(path: "/System/Library/Fonts/Apple Symbols.ttf"))]),
+            .init(languages: ["und-Zsye"], fonts: [Font(face: FallbackFace(path: "/System/Library/Fonts/Apple Color Emoji.ttc"))]),
+        ], languages: ["en-US"], library: Fonts.engine.library)
+        let font = FontKey(name: "KoHo-Bold", size: 20)
+        let emoji = "/System/Library/Fonts/Apple Color Emoji.ttc", symbols = "/System/Library/Fonts/Apple Symbols.ttf"
+        #expect(fallback.face(for: "⌚", font: font, weight: 400)?.path == emoji, "an emoji by default")
+        #expect(fallback.face(for: "⌚\u{FE0E}", font: font, weight: 400)?.path == symbols, "asked for as text")
+        #expect(fallback.face(for: "☺", font: font, weight: 400)?.path == symbols, "text by default")
+        #expect(fallback.face(for: "☺\u{FE0F}", font: font, weight: 400)?.path == emoji, "asked for as an emoji")
+        #expect(EmojiPresentation("#\u{FE0F}\u{20E3}") == .emoji && EmojiPresentation("🇯🇵") == .emoji
+            && EmojiPresentation("👍🏽") == .emoji && EmojiPresentation("A") == .textByDefault)
+    }
+
     @Test("Lines fall back through the chain, at the fallback face's advances", .enabled(if: Fonts.hasCJK))
     func lines() throws {
         let library = FontLibrary()
