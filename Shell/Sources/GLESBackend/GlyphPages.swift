@@ -172,6 +172,7 @@ final class GlyphPages {
 final class EngineGlyphSource: CoverageGeometry.GlyphSource {
     private let engine: TextEngine
     private var lines: [Key: [CoverageGeometry.Glyph]] = [:]
+    private var colourEpoch = 0
     private var pageSizes: [CGSize] = []
 
     /// Pixels per point, set by the renderer whenever the drawable changes.
@@ -198,7 +199,19 @@ final class EngineGlyphSource: CoverageGeometry.GlyphSource {
             size: Int((font.size * 64).rounded()),
             density: Int((deviceScale * 64).rounded())
         )
-        if let cached = lines[key] { return cached }
+        // A colour page emptied since: the remembered rects may show other glyphs now.
+        let epoch = engine.atlas.colourEpoch
+        if epoch != colourEpoch {
+            lines.removeAll(keepingCapacity: true)
+            colourEpoch = epoch
+        }
+        if let cached = lines[key] {
+            // Drawn from again this frame: not to be emptied under it.
+            if cached.contains(where: \.isColour) {
+                engine.atlas.touchColourPages(cached.lazy.filter(\.isColour).map(\.page))
+            }
+            return cached
+        }
 
         guard font.size > 0, let runs = engine.shape(line, font: font) else { return [] }
 

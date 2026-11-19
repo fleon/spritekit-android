@@ -230,3 +230,53 @@ struct ColourGlyphTests {
     }
 }
 #endif
+
+#if canImport(CoreText) && os(macOS)
+@Suite("Colour pages as a cache") struct ColourPageEvictionTests {
+    /// A tiny atlas: 32-pixel colour pages, one 24-pixel glyph each.
+    static func atlas(limit: Int) throws -> (GlyphAtlas, FontKey) {
+        _ = Fonts.engine
+        let library = FontLibrary()
+        let atlas = GlyphAtlas(pageSize: 64, colourPageSize: 32, library: library)
+        atlas.colourPageLimit = limit
+        let name = try #require(try library.register(path: Fonts.directory + "/chromacheck-colr.ttf").last)
+        return (atlas, FontKey(name: name, size: 32))
+    }
+
+    @Test("Past the limit, the least recently drawn page is emptied for new glyphs")
+    func evicts() throws {
+        let (atlas, font) = try Self.atlas(limit: 2)
+        let a = try #require(atlas.colourGlyph(1, font: font, pixels: 24))
+        atlas.nextFrame()
+        let b = try #require(atlas.colourGlyph(1, font: font, pixels: 25))
+        atlas.nextFrame()
+        // a drawn again: b is now the least recently drawn.
+        _ = atlas.colourGlyph(1, font: font, pixels: 24)
+        atlas.nextFrame()
+        let epoch = atlas.colourEpoch
+        let c = try #require(atlas.colourGlyph(1, font: font, pixels: 26))
+        #expect(atlas.colourPages.count == 2, "no page past the limit")
+        #expect(c.page == b.page && a.page != b.page, "b's page emptied for c")
+        #expect(atlas.colourEpoch == epoch + 1)
+        // a drawn this frame too, then b again: both pages are in use this
+        // frame, so b goes onto a page past the limit.
+        #expect(atlas.colourGlyph(1, font: font, pixels: 24) == a, "a kept its place")
+        let again = try #require(atlas.colourGlyph(1, font: font, pixels: 25))
+        #expect(atlas.colourPages.count == 3 && again.page == 2)
+    }
+
+    @Test("A page drawn from this frame is never emptied under it")
+    func keepsCurrent() throws {
+        let (atlas, font) = try Self.atlas(limit: 1)
+        let a = try #require(atlas.colourGlyph(1, font: font, pixels: 24))
+        let b = try #require(atlas.colourGlyph(1, font: font, pixels: 25))
+        #expect(a.page != b.page && atlas.colourPages.count == 2, "a page past the limit rather than a's emptied")
+        // Touched by a caller drawing what it looked up before.
+        atlas.nextFrame()
+        atlas.touchColourPages([a.page])
+        let c = try #require(atlas.colourGlyph(1, font: font, pixels: 26))
+        #expect(c.page == b.page, "the untouched page is the one emptied")
+        #expect(atlas.colourGlyph(1, font: font, pixels: 24) == a)
+    }
+}
+#endif
