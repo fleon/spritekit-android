@@ -416,8 +416,9 @@ public struct TextBlock {
         scale: CGFloat, ctm: CGAffineTransform, provider: TextProvider, context: BitmapContext
     ) {
         let device = point.applying(ctm)
-        // The baseline down the page to the next whole pixel.
-        let baseline = upright ? (device.y - 0.0001).rounded(.up) : (device.y + 0.0001).rounded(.down)
+        // The baseline to the next whole device row, counting rows from the
+        // top of memory, flipped context or not (measured on Catalyst).
+        let baseline = (device.y - 0.0001).rounded(.up)
         if mode.fills {
             let column = device.x.rounded(.down)
             // The pen in glyph space (y up, in pixels).

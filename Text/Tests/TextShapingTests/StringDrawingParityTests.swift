@@ -468,6 +468,49 @@ import Testing
         #expect(stroke > 0 && stroke < fill && both > fill, "fill \(fill) stroke \(stroke) both \(both)")
     }
 
+    /// UIKit drawing "Level" (Montserrat-Black 15) into a pushed
+    /// `CGContext(data:)` that isn't flipped (y up): the text comes out
+    /// upside down in memory, its baseline on the next device row down
+    /// from the top of memory, as in a flipped one (Catalyst, smoothing off).
+    static let unflipped: [(scale: Int, origin: CGPoint, box: [Int], ink: Int)] = [
+        (1, CGPoint(x: 4.0, y: 4.0), [4, 50, 46, 62], 61979),
+        (1, CGPoint(x: 4.3, y: 3.6), [4, 51, 46, 63], 62021),
+        (1, CGPoint(x: 2.25, y: 5.1), [2, 49, 44, 61], 62021),
+        (1, CGPoint(x: 6.7, y: 20.45), [7, 34, 48, 46], 62009),
+        (3, CGPoint(x: 4.0, y: 4.0), [14, 152, 138, 186], 566501),
+        (3, CGPoint(x: 4.3, y: 3.6), [14, 154, 139, 188], 566501),
+        (3, CGPoint(x: 2.25, y: 5.1), [8, 149, 133, 183], 566501),
+        (3, CGPoint(x: 6.7, y: 20.45), [22, 103, 146, 137], 566501),
+    ]
+
+    @Test("In a context that isn't flipped, text lands where UIKit draws it")
+    func unflippedContext() throws {
+        _ = Fonts.engine
+        for item in Self.unflipped {
+            let width = 250 * item.scale, height = 70 * item.scale
+            var pixels = [UInt8](repeating: 0, count: width * height * 4)
+            try pixels.withUnsafeMutableBytes { buffer in
+                // As `CGContext(data:…)` makes one: CoreGraphics' space, y up, scaled.
+                let context = try #require(BitmapContext(wrapping: buffer.baseAddress!, width: width, height: height, bytesPerRow: width * 4))
+                context.translateBy(x: 0, y: CGFloat(height))
+                context.scaleBy(x: 1, y: -1)
+                context.scaleBy(x: CGFloat(item.scale), y: CGFloat(item.scale))
+                let block = try #require(TextBlock(runs: [TextBlock.Run("Level", font: FontKey(name: "Montserrat-Black", size: 15), colour: .white)], maxWidth: 240))
+                block.draw(in: CGRect(origin: item.origin, size: CGSize(width: 240, height: 60)), context: context)
+            }
+            var box = [width, height, -1, -1], ink = 0
+            for y in 0 ..< height {
+                for x in 0 ..< width where pixels[(y * width + x) * 4 + 3] > 0 {
+                    box = [min(box[0], x), min(box[1], y), max(box[2], x), max(box[3], y)]
+                    ink += Int(pixels[(y * width + x) * 4 + 3])
+                }
+            }
+            #expect(box[1] == item.box[1] && box[3] == item.box[3], "rows \(box) against \(item.box) at \(item.origin) \(item.scale)x")
+            #expect(abs(box[0] - item.box[0]) <= 1 && abs(box[2] - item.box[2]) <= 1, "columns \(box) against \(item.box)")
+            #expect(abs(Double(ink) / Double(item.ink) - 1) < 0.06, "ink \(ink) against \(item.ink)")
+        }
+    }
+
     @Test("Only the lines that fit wholly in the rect are drawn")
     func overflow() {
         _ = Fonts.engine
