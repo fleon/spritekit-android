@@ -140,11 +140,16 @@ public final class SKUniform: @unchecked Sendable {
     /// looked, as Apple's does: on every write, the same value too.
     public private(set) var writeStamp: UInt64 = 0
 
+    // Uniforms are written on whichever thread builds or updates a scene,
+    // so the shared clock ticks under a lock: no two writes share a stamp.
     nonisolated(unsafe) private static var writeClock: UInt64 = 0
+    private static let writeClockLock = NSLock()
 
     private static func nextWriteStamp() -> UInt64 {
-        writeClock &+= 1
-        return writeClock
+        writeClockLock.withLock {
+            writeClock &+= 1
+            return writeClock
+        }
     }
 
     /// What kind of value this holds, as SpriteKit reports it. A game may
