@@ -7,11 +7,18 @@
 // The first three sentences are laid out at every width from 90 to 258
 // points by 3 (the sweep the breaker was fitted to); the rest from 93 to
 // 300 by 7 (held out while fitting).
+//
+// With `rtl` after the fonts' folder, right-to-left and mixed paragraphs
+// instead, for `textkit2-justified-rtl.tsv`: Arabic in Noto Naskh Arabic
+// UI, Hebrew in Montserrat (falling back to the system's Hebrew), and
+// Latin with Arabic or Hebrew, runs between "|" in the second face; face,
+// second face, size, width, sentence (an index into `rightToLeft`, which
+// `JustifiedRightToLeftTests` repeats) and the lines.
 import CoreText
 import UIKit
 
 let fonts = CommandLine.arguments[1]
-for face in ["Montserrat", "KoHo-Bold"] {
+for face in ["Montserrat", "KoHo-Bold", "NotoNaskhArabicUI-Bold"] {
     CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: "\(fonts)/\(face).ttf") as CFURL, .process, nil)
 }
 
@@ -27,7 +34,7 @@ let texts = [
     "Museum tickets reset at midnight so come back tomorrow for more tours.",
 ]
 
-func lines(_ text: String, face: String, size: CGFloat, width: CGFloat) -> [String] {
+func lines(_ text: String, face: String, size: CGFloat, width: CGFloat, second: String? = nil) -> [String] {
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .justified
     let storage = NSTextContentStorage()
@@ -36,7 +43,12 @@ func lines(_ text: String, face: String, size: CGFloat, width: CGFloat) -> [Stri
     let container = NSTextContainer(size: CGSize(width: width, height: 100_000))
     container.lineFragmentPadding = 0
     layout.textContainer = container
-    storage.attributedString = NSAttributedString(string: text, attributes: [.font: UIFont(name: face, size: size)!, .paragraphStyle: paragraph])
+    let string = NSMutableAttributedString()
+    for (index, part) in text.split(separator: "|", omittingEmptySubsequences: false).enumerated() where !part.isEmpty {
+        let name = index % 2 == 1 ? second ?? face : face
+        string.append(NSAttributedString(string: String(part), attributes: [.font: UIFont(name: name, size: size)!, .paragraphStyle: paragraph]))
+    }
+    storage.attributedString = string
     var lines: [String] = []
     layout.enumerateTextLayoutFragments(from: layout.documentRange.location, options: [.ensuresLayout]) { fragment in
         for line in fragment.textLineFragments {
@@ -45,6 +57,43 @@ func lines(_ text: String, face: String, size: CGFloat, width: CGFloat) -> [Stri
         return true
     }
     return lines
+}
+
+let rightToLeft = [
+    "ذهبنا إلى السوق في الصباح واشترينا الخبز والحليب والفاكهة الطازجة",
+    "القطار يغادر المحطة كل ساعة ويصل إلى المدينة بعد الظهر",
+    "تقع المكتبة بجانب الحديقة وتفتح أبوابها من التاسعة حتى المساء",
+    "كان الطقس جميلا اليوم فجلسنا على الشاطئ نقرأ الكتب",
+    "הרכבת יוצאת מהתחנה בכל שעה ומגיעה לעיר אחרי הצהריים",
+    "הספרייה נמצאת ליד הגן ופתוחה מתשע בבוקר ועד הערב",
+    "הלכנו לשוק בבוקר וקנינו לחם חלב ופירות טריים",
+    "מזג האוויר היה נעים היום אז ישבנו על החוף וקראנו ספרים",
+    "The museum מוזיאון opens at nine and closes בערב at six",
+    "Our train |القطار| leaves at noon from |المحطة| seven",
+]
+
+if CommandLine.arguments.count > 2, CommandLine.arguments[2] == "rtl" {
+    // Arabic, Hebrew, mixed: each sentence's faces.
+    let groups: [(Range<Int>, [(String, String)])] = [
+        (0 ..< 4, [("NotoNaskhArabicUI-Bold", "NotoNaskhArabicUI-Bold")]),
+        (4 ..< 9, [("Montserrat-Black", "Montserrat-Black"), ("Montserrat-Regular", "Montserrat-Regular")]),
+        (9 ..< 10, [("Montserrat-Black", "NotoNaskhArabicUI-Bold")]),
+    ]
+    var out = ""
+    for (texts, faces) in groups {
+        for (face, second) in faces {
+            for size in [11, 15, 20, 24] as [CGFloat] {
+                for index in texts {
+                    for width in stride(from: 93, through: 300, by: 7) as StrideThrough<CGFloat> {
+                        let found = lines(rightToLeft[index], face: face, size: size, width: width, second: second)
+                        out += "\(face)\t\(second)\t\(size)\t\(width)\t\(index)\t\(found.joined(separator: "|"))\n"
+                    }
+                }
+            }
+        }
+    }
+    print(out, terminator: "")
+    exit(0)
 }
 
 let faces = ["Montserrat-Black", "Montserrat-Regular", "KoHo-Bold", "Geneva"]
