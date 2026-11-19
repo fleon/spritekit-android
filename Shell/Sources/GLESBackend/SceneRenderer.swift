@@ -61,8 +61,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// Shapes as triangles in the sprite batches; what it can't take
     /// (textured, crossing itself, a crop's mask) falls to `shapeMasks`.
     private let shapeMeshes = ShapeMeshes()
-    /// Whether the frame on screen draws without a page still decoding
-    /// rather than waiting for it: where pages decode in software.
+    /// Whether pages decode in software here, where the frame on screen
+    /// may draw without one still decoding (`ResourceCache.defersPages`).
     private var defersPagesOnScreen = false
 
     /// Pixels per point, so glyphs are rasterised and masks filled at the
@@ -625,8 +625,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     public func drawFrame(_ frame: Frame) {
         // A page still decoding is left out of this frame, not waited for
-        // (`ResourceCache.defersPages`); what's kept as drawn waits.
-        cache.defersPages = defersPagesOnScreen
+        // (`ResourceCache.defersPages`), in play; a capture's stills and what's
+        // kept as drawn wait.
+        cache.defersPages = ResourceCache.defersPages(
+            decodesInSoftware: defersPagesOnScreen, fixedFrameStep: MediaTime.fixedStep, clockHeld: holdsClock
+        )
         defer { cache.defersPages = false }
         // The scene first: a transition, or a scene presenting another, can
         // change which scene the view shows, and the projection is that

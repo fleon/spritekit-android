@@ -221,6 +221,14 @@ struct PackedPageTests {
         #expect(cache.name(for: SKTexture(imageNamed: "Brick")) == name, "an uploaded page isn't asked about again")
     }
 
+    @Test("Pages are left out only in play: a fixed frame step or a held clock waits for them")
+    func deferralSwitch() {
+        #expect(ResourceCache.defersPages(decodesInSoftware: true, fixedFrameStep: nil, clockHeld: false))
+        #expect(!ResourceCache.defersPages(decodesInSoftware: true, fixedFrameStep: 1.0 / 60, clockHeld: false), "a capture's stills are complete")
+        #expect(!ResourceCache.defersPages(decodesInSoftware: true, fixedFrameStep: nil, clockHeld: true), "a held clock waits")
+        #expect(!ResourceCache.defersPages(decodesInSoftware: false, fixedFrameStep: nil, clockHeld: false), "ASTC on the GPU: nothing to defer")
+    }
+
     @Test("A snapshot or film, kept as drawn, waits for its pages")
     func pageNotDeferred() throws {
         let index = try AssetIndex(json: Data("""

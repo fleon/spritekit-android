@@ -130,6 +130,15 @@ public final class ResourceCache {
     /// was made: a rasterized node that drew one keeps no pixels of it.
     public private(set) var deferredPages = 0
 
+    /// Whether the frame on screen leaves out pages still decoding: only
+    /// where they decode in software, and only in play. A fixed frame step
+    /// (`-FixedFrameStep`, a capture or parity sweep) or a held media clock
+    /// (work off the main thread being waited for) means every still is
+    /// taken complete, so its pages are waited for as before.
+    public static func defersPages(decodesInSoftware: Bool, fixedFrameStep: TimeInterval?, clockHeld: Bool) -> Bool {
+        decodesInSoftware && fixedFrameStep == nil && !clockHeld
+    }
+
     /// Whether `page` is left out of this draw while it decodes.
     private func deferring(_ page: Int) -> Bool {
         guard defersPages, let ready = pageIsReady, !ready(page) else { return false }
