@@ -554,6 +554,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if texturedCoverageProgram != 0 { device.deleteProgram(texturedCoverageProgram) }
         if maskProgram != 0 { device.deleteProgram(maskProgram) }
         if shapeMaskProgram != 0 { device.deleteProgram(shapeMaskProgram) }
+        if alongSamplerName != 0 { glDeleteSamplers(1, &alongSamplerName) }
+        alongSamplerName = 0
         // A new context relinks every program, and GL reuses names, so a
         // location learned for an old one must not be trusted again.
         attributeLocations.removeAll()
@@ -2113,6 +2115,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             name = cache.name(for: SceneRenderer.white)
         }
         bindSprite(name, program: program, held: held)
+        // A textured stroke's texture repeats along it and clamps across,
+        // through a sampler of its own, so the texture's own wrapping (what
+        // its sprites sample with) is left as it is.
+        if batch.repeatsAlong { glBindSampler(0, alongSampler()) }
 
         // SpriteKit's blend modes over premultiplied colour. A light drawn as
         // a `.multiplyX2` pass leaves what's under a grey of 0.5 as painted.
@@ -2126,7 +2132,25 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             bindVertexArray(dynamicVAO)
             drawElements(count: batch.indices.count, first: first)
         }
+        if batch.repeatsAlong { glBindSampler(0, 0) }
         quadsDrawn += batch.quadCount
+    }
+
+    private var alongSamplerName: GLuint = 0
+
+    /// Linear, as every texture here is drawn; repeating along a stroke
+    /// (`s`) and clamped across it (`t`), so the feathered rim past each
+    /// side reads the edge rather than the other side.
+    private func alongSampler() -> GLuint {
+        if alongSamplerName != 0 { return alongSamplerName }
+        var name: GLuint = 0
+        glGenSamplers(1, &name)
+        glSamplerParameteri(name, GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
+        glSamplerParameteri(name, GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+        glSamplerParameteri(name, GLenum(GL_TEXTURE_WRAP_S), GL_REPEAT)
+        glSamplerParameteri(name, GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE)
+        alongSamplerName = name
+        return name
     }
 
     // MARK: State, set only where it changes
