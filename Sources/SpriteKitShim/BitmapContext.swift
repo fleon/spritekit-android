@@ -138,7 +138,28 @@ public final class BitmapContext {
         var clip: Clip?
         var shadow: Shadow?
         var interpolation = InterpolationQuality.default
+        var textDrawingMode = TextDrawingMode.fill
     }
+
+    /// CoreGraphics' text drawing modes (`CGTextDrawingMode`): what drawing
+    /// text does with the glyphs. Part of the graphics state, as in
+    /// CoreGraphics.
+    public enum TextDrawingMode: Int32, Sendable {
+        case fill, stroke, fillStroke, invisible, fillClip, strokeClip, fillStrokeClip, clip
+
+        var fills: Bool { self == .fill || self == .fillStroke || self == .fillClip || self == .fillStrokeClip }
+        var strokes: Bool { self == .stroke || self == .fillStroke || self == .strokeClip || self == .fillStrokeClip }
+    }
+
+    /// How text draws (`setTextDrawingMode`). The clip modes draw as their
+    /// fill and stroke parts; clipping to text isn't done here.
+    public var textDrawingMode: TextDrawingMode {
+        get { state.textDrawingMode }
+        set { state.textDrawingMode = newValue }
+    }
+
+    /// The current line width, which text drawn in a stroke mode uses.
+    public var lineWidth: CGFloat { state.lineWidth }
 
     // MARK: Storage
 
@@ -843,6 +864,13 @@ public final class BitmapContext {
         state.shadow = nil
     }
 
+    /// CoreGraphics' bounded layer: as `beginTransparencyLayer`, with what
+    /// is drawn inside it clipped to `rect` (user space).
+    public func beginTransparencyLayer(in rect: CGRect, auxiliaryInfo: [String: Any]? = nil) {
+        beginTransparencyLayer(auxiliaryInfo: auxiliaryInfo)
+        clip(to: rect)
+    }
+
     public func endTransparencyLayer() {
         flushPending()
         guard let layer = layers.popLast() else { return }
@@ -958,6 +986,36 @@ public final class BitmapContext {
         }
         guard any, minX <= maxX, minY <= maxY else { return nil }
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    // MARK: Masks
+
+    /// Fills `colour` through an 8-bit mask (`width × height`, rows top
+    /// first) whose first row lands on device row `y` and runs down the
+    /// canvas (`rowsDown`) or up it, from column `x`: a glyph, as
+    /// `TextBlock` draws one. Device space is the bitmap's: row 0 is the
+    /// first in memory. The clip, alpha and blend mode apply as to a fill.
+    public func fillMask(
+        _ mask: [UInt8], width maskWidth: Int, height maskHeight: Int,
+        atDeviceX x: Int, y: Int, rowsDown: Bool, colour: SKColor
+    ) {
+        flushPending()
+        guard maskWidth > 0, maskHeight > 0, mask.count >= maskWidth * maskHeight else { return }
+        let firstRow = rowsDown ? y : y - maskHeight + 1
+        var reachable = canvasBox
+        if let clip = state.clip { reachable = reachable.intersection(clip.box) }
+        let box = PathRasteriser.PixelBox(x: x, y: firstRow, width: maskWidth, height: maskHeight).intersection(reachable)
+        guard !box.isEmpty else { return }
+        var alpha = [UInt8](repeating: 0, count: box.count)
+        for row in 0 ..< box.height {
+            let canvasRow = box.y + row
+            let maskRow = rowsDown ? canvasRow - y : y - canvasRow
+            let source = maskRow * maskWidth + (box.x - x)
+            for column in 0 ..< box.width {
+                alpha[row * box.width + column] = mask[source + column]
+            }
+        }
+        paint(Coverage(box: box, alpha: alpha), with: .solid(Premultiplied(colour, alpha: state.alpha)))
     }
 
     // MARK: Painting

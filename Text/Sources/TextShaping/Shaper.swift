@@ -167,8 +167,55 @@ extension FaceHandle {
     /// the pen, and the rows to copy. The buffer belongs to FreeType's glyph
     /// slot and is only valid inside `body`, which is why this is a closure
     /// and not a return value.
+    /// A glyph's outline at the face's size, in its units (points), y up
+    /// from the pen on the baseline: what stroked text strokes.
+    func outline(_ glyph: UInt32) -> [PathElement] {
+        run {
+            guard let ftFace, FT_Load_Glyph(ftFace, glyph, FaceHandle.loadFlags) == FT_Err_Ok,
+                  let slot = ftFace.pointee.glyph, slot.pointee.format == FT_GLYPH_FORMAT_OUTLINE else { return [] }
+            final class Sink { var elements: [PathElement] = [] }
+            func point(_ vector: UnsafePointer<FT_Vector>?) -> CGPoint {
+                guard let vector else { return .zero }
+                return CGPoint(x: CGFloat(vector.pointee.x) / 64, y: CGFloat(vector.pointee.y) / 64)
+            }
+            func sink(_ user: UnsafeMutableRawPointer?) -> Sink? {
+                user.map { Unmanaged<Sink>.fromOpaque($0).takeUnretainedValue() }
+            }
+            var funcs = FT_Outline_Funcs(
+                move_to: { to, user in
+                    guard let sink = sink(user) else { return 1 }
+                    if !sink.elements.isEmpty { sink.elements.append(.close) }
+                    sink.elements.append(.move(point(to)))
+                    return 0
+                },
+                line_to: { to, user in
+                    sink(user)?.elements.append(.line(point(to)))
+                    return 0
+                },
+                conic_to: { control, to, user in
+                    sink(user)?.elements.append(.quadCurve(to: point(to), control: point(control)))
+                    return 0
+                },
+                cubic_to: { control1, control2, to, user in
+                    sink(user)?.elements.append(.curve(to: point(to), control1: point(control1), control2: point(control2)))
+                    return 0
+                },
+                shift: 0, delta: 0
+            )
+            let collected = Sink()
+            let user = Unmanaged.passUnretained(collected).toOpaque()
+            guard FT_Outline_Decompose(&slot.pointee.outline, &funcs, user) == 0 else { return [] }
+            if !collected.elements.isEmpty { collected.elements.append(.close) }
+            return collected.elements
+        } ?? []
+    }
+
+    /// `offset` moves an outline glyph by a fraction of a pixel (y up)
+    /// before it's rendered, so a glyph drawn at a sub-pixel pen position
+    /// keeps its shape there rather than snapping to the grid.
     func renderGlyph<T>(
         _ glyph: UInt32,
+        offset: CGPoint = .zero,
         _ body: (_ pixels: UnsafePointer<UInt8>?, _ width: Int, _ height: Int,
                  _ pitch: Int, _ left: Int, _ top: Int) -> T
     ) -> T? {
@@ -176,6 +223,9 @@ extension FaceHandle {
             guard let ftFace,
                   FT_Load_Glyph(ftFace, glyph, FaceHandle.loadFlags) == FT_Err_Ok,
                   let slot = ftFace.pointee.glyph else { return nil }
+            if offset != .zero, slot.pointee.format == FT_GLYPH_FORMAT_OUTLINE {
+                FT_Outline_Translate(&slot.pointee.outline, FT_Pos((offset.x * 64).rounded()), FT_Pos((offset.y * 64).rounded()))
+            }
             if slot.pointee.format != FT_GLYPH_FORMAT_BITMAP,
                FT_Render_Glyph(slot, FT_RENDER_MODE_NORMAL) != FT_Err_Ok {
                 return nil
