@@ -120,9 +120,9 @@ struct FrameReport {
             label, Self.summary(scales).median, scales.min() ?? 0, scales.max() ?? 0
         ))
         Log.info(String(
-            format: "[frames] %@ draw calls %d  target binds %d  quads %d  effects drawn %d cached %d  buffer maps %d",
+            format: "[frames] %@ draw calls %d  target binds %d  quads %d  effects drawn %d cached %d  crops composited %d  buffer maps %d",
             label, renderer.drawCalls, renderer.targetBinds, renderer.quadsDrawn,
-            renderer.effectsDrawn, renderer.effectsCached, renderer.streamMaps
+            renderer.effectsDrawn, renderer.effectsCached, renderer.cropsComposited, renderer.streamMaps
         ))
         Log.info(String(
             format: "[frames] %@ nodes %d  texture memory %.1f MB",

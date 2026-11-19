@@ -320,6 +320,38 @@ public enum ShaderTranslator {
     /// shader that moved alpha around would change the mask's shape, and
     /// nothing in this game masks with one. The renderer logs it if it ever
     /// meets one rather than silently clipping to the wrong shape.
+    /// A composited crop (`CropCompositing`): its contents, drawn into a
+    /// target of their own, times its mask's coverage, drawn into another.
+    /// The mask is read four times, three quarters of a texel apart: a hard
+    /// edge comes out as a ramp about 2.5 pixels wide, the average of the
+    /// soft edge SpriteKit gives a shape mask (measured at 3x); its own
+    /// per-pixel scatter, an offscreen mask resampled, is not matched.
+    public static let cropCompositeFragmentShader = """
+    #version 300 es
+
+    precision mediump float;
+
+    in highp vec2 v_tex_coord;
+    in vec4 v_color_mix;
+    in float v_blend;
+
+    uniform sampler2D u_texture;
+    uniform sampler2D u_mask;
+    uniform highp vec2 u_mask_texel;
+
+    out vec4 \(fragColor);
+
+    void main() {
+        highp vec2 d = u_mask_texel * 0.75;
+        float mask = 0.25 * (
+            texture(u_mask, v_tex_coord + vec2(-d.x, -d.y)).a +
+            texture(u_mask, v_tex_coord + vec2(d.x, -d.y)).a +
+            texture(u_mask, v_tex_coord + vec2(-d.x, d.y)).a +
+            texture(u_mask, v_tex_coord + vec2(d.x, d.y)).a);
+        \(fragColor) = texture(u_texture, v_tex_coord) * mask * v_color_mix.a;
+    }
+    """
+
     public static let maskFragmentShader = """
     #version 300 es
 

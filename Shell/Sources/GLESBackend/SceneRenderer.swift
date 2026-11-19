@@ -52,6 +52,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var texturedCoverageProgram: GLuint = 0
     /// An `SKCropNode`'s mask, written into the stencil.
     private var maskProgram: GLuint = 0
+    /// A crop drawn offscreen, its contents times its mask (`CropCompositing`).
+    private var cropCompositeProgram: GLuint = 0
     /// A shape as a crop's mask: its coverage, cut at half.
     private var shapeMaskProgram: GLuint = 0
 
@@ -170,6 +172,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     public private(set) var drawCalls = 0
     public private(set) var targetBinds = 0
     public private(set) var effectsDrawn = 0
+    /// Crops drawn offscreen and multiplied by their mask (`CropCompositing`).
+    public private(set) var cropsComposited = 0
     public private(set) var effectsCached = 0
     public private(set) var quadsDrawn = 0
     /// What the GPU holds in textures (`GLDevice.liveTextureBytes`).
@@ -459,6 +463,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         if maskProgram == 0 { Log.error("the crop mask program did not link") }
 
+        cropCompositeProgram = device.createProgram(
+            vertex: ShaderTranslator.spriteVertexShader(),
+            fragment: ShaderTranslator.cropCompositeFragmentShader
+        )
+        if cropCompositeProgram == 0 { Log.error("the crop composite program did not link") }
+
         shapeMaskProgram = device.createProgram(
             vertex: ShaderTranslator.spriteVertexShader(),
             fragment: ShaderTranslator.coverageMaskFragmentShader
@@ -574,6 +584,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if colourGlyphProgram != 0 { device.deleteProgram(colourGlyphProgram) }
         if texturedCoverageProgram != 0 { device.deleteProgram(texturedCoverageProgram) }
         if maskProgram != 0 { device.deleteProgram(maskProgram) }
+        if cropCompositeProgram != 0 { device.deleteProgram(cropCompositeProgram) }
         if shapeMaskProgram != 0 { device.deleteProgram(shapeMaskProgram) }
         if alongSamplerName != 0 { glDeleteSamplers(1, &alongSamplerName) }
         alongSamplerName = 0
@@ -690,6 +701,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         drawCalls = 0
         targetBinds = 1
         effectsDrawn = 0
+        cropsComposited = 0
         effectsCached = 0
         quadsDrawn = 0
         streamMaps = 0
@@ -1012,6 +1024,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             draw(contents, projection: projection, time: time)
             return
         }
+        if cropCompositeProgram != 0, CropCompositing.composites(mask),
+           drawCompositedCrop(mask: mask, contents: contents, projection: projection, time: time) {
+            return
+        }
 
         if cropDepth == 0 { glEnable(GLenum(GL_STENCIL_TEST)) }
         cropDepth += 1
@@ -1045,6 +1061,99 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         } else {
             glStencilMask(0)
             glStencilFunc(GLenum(GL_EQUAL), cropDepth, 0xFF)
+        }
+    }
+
+    /// A crop whose mask holds a shape, as SpriteKit draws one: its contents
+    /// and its mask's coverage each into a target the size of the mask's
+    /// reach on the target drawn into, then the contents times the mask
+    /// (`cropCompositeFragmentShader`). False when it can't be, and the
+    /// stencil takes it.
+    private func drawCompositedCrop(
+        mask: [SpriteBatcher.Pass],
+        contents: [SpriteBatcher.Pass],
+        projection: [Float],
+        time: Float
+    ) -> Bool {
+        guard let reach = CropCompositing.bounds(of: mask) else { return false }
+        // Only what the target shows: a list's crop runs far off it.
+        let shown = target.visible
+        let left = max(reach.minX, shown.minX), right = min(reach.maxX, shown.maxX)
+        let bottom = max(reach.minY, shown.minY), top = min(reach.maxY, shown.maxY)
+        guard right > left, top > bottom else { return true }          // nothing on it
+        let plan = EffectTexture(
+            bounds: CGRect(x: left, y: bottom, width: right - left, height: top - bottom),
+            density: target.density, maximumSide: device.maximumTextureSide
+        )
+        guard let drawn = targets.transient(width: plan.widthInPixels, height: plan.heightInPixels, stencil: true),
+              let coverage = targets.transient(width: plan.widthInPixels, height: plan.heightInPixels, stencil: false)
+        else { return false }
+
+        cropsComposited += 1
+        let outer = target
+        let outerDepth = cropDepth
+        // As an effect node's: the stencil is the outer target's, and the
+        // crops inside count from none in a target of their own.
+        if outerDepth > 0 { glDisable(GLenum(GL_STENCIL_TEST)) }
+        cropDepth = 0
+
+        target = Target(
+            framebuffer: drawn.framebuffer, widthInPixels: drawn.width, heightInPixels: drawn.height,
+            visible: plan.bounds, fragSpace: plan.contentsSpace, density: plan.density
+        )
+        bindTarget()
+        RenderPoison.fillTarget()
+        glClearColor(0, 0, 0, 0)
+        glClearStencil(0)
+        glStencilMask(0xFF)
+        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_STENCIL_BUFFER_BIT))
+        draw(contents, projection: plan.projection, time: time)
+
+        target = Target(
+            framebuffer: coverage.framebuffer, widthInPixels: coverage.width, heightInPixels: coverage.height,
+            visible: plan.bounds, fragSpace: plan.contentsSpace, density: plan.density
+        )
+        bindTarget()
+        glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+        drawMaskCoverage(mask, projection: plan.projection, time: time)
+
+        target = outer
+        cropDepth = outerDepth
+        bindTarget()
+        glClearColor(0, 0, 0, 1)
+        resumeCrops()
+
+        // The contents times the mask, onto the target, inside any crops
+        // around it.
+        useProgram(cropCompositeProgram)
+        bindSampler(coverage.texture, unit: 1)
+        let sampler = uniformLocation(cropCompositeProgram, "u_mask")
+        if sampler >= 0 { glUniform1i(sampler, 1) }
+        let texel = uniformLocation(cropCompositeProgram, "u_mask_texel")
+        if texel >= 0 { glUniform2f(texel, 1 / Float(coverage.width), 1 / Float(coverage.height)) }
+        let quad = compositeQuad(bounds: plan.bounds, transform: .identity, alpha: 1, shader: nil, blendMode: .alpha)
+        draw(quad, projection: projection, time: time, overrideProgram: cropCompositeProgram,
+             fragSpace: outer.fragSpace, texture: drawn.texture)
+        return true
+    }
+
+    /// A composited crop's mask as coverage: its shapes and labels as they
+    /// draw (their colour's alpha included), its sprites through the
+    /// alpha test, all or nothing as SpriteKit clips by them.
+    private func drawMaskCoverage(_ passes: [SpriteBatcher.Pass], projection: [Float], time: Float) {
+        for pass in passes {
+            switch pass {
+            case let .batches(batches):
+                for batch in batches { draw(batch, projection: projection, time: time, overrideProgram: maskProgram) }
+            case let .coverage(staged):
+                draw(staged, projection: projection)
+            case let .shape(shape):
+                draw(shape, projection: projection)
+            case let .label(label):
+                draw(label, projection: projection)
+            case .effect, .crop:
+                continue                // never composited (`CropCompositing`)
+            }
         }
     }
 
