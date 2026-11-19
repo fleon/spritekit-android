@@ -33,6 +33,13 @@ public enum BundleResources {
         provider?(name, ext)
     }
 
+    /// "star.png" as ("star", "png"); a name with no extension as itself
+    /// and "".
+    static func splitExtension(_ name: String) -> (String, String) {
+        guard let dot = name.lastIndex(of: "."), dot != name.startIndex else { return (name, "") }
+        return (String(name[..<dot]), String(name[name.index(after: dot)...]))
+    }
+
     /// Answers with a readable folder for a resource that is one: a
     /// language's `.lproj`, which a game's localization opens with
     /// `Bundle(path:)`.
@@ -46,6 +53,18 @@ public extension Bundle {
         // Spelled with optionals so this picks Foundation's own overload
         // rather than calling itself.
         let name: String? = name, ext: String? = ext
+        return url(forResource: name, withExtension: ext)
+    }
+
+    /// The same with the extension left nil, as Apple takes it: the name
+    /// carries its extension ("star.png"), or has none. Without this a nil
+    /// extension picked Foundation's overload, which finds nothing on
+    /// Android.
+    func url(forResource name: String, withExtension ext: String?) -> URL? {
+        if let ext, !ext.isEmpty { return url(forResource: name, withExtension: ext) }
+        let (base, split) = BundleResources.splitExtension(name)
+        if let url = BundleResources.url(forResource: base, withExtension: split) { return url }
+        let name: String? = name, ext: String? = nil
         return url(forResource: name, withExtension: ext)
     }
 
