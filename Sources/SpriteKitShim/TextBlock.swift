@@ -360,9 +360,10 @@ public struct TextBlock {
         let mode = context.textDrawingMode
         guard mode.fills || mode.strokes else { return }
         let ctm = context.ctm
-        // Axis-aligned only, as text is drawn here: no rotation or shear.
-        guard ctm.b == 0, ctm.c == 0, ctm.a > 0, ctm.d != 0 else { return }
-        let scale = ctm.a
+        // Rotated, sheared or mirrored, glyphs are drawn as their outlines
+        // through the transform; axis-aligned, as masks at the device's scale.
+        let axisAligned = ctm.b == 0 && ctm.c == 0 && ctm.a > 0 && ctm.d != 0
+        let scale = axisAligned ? ctm.a : sqrt(abs(ctm.a * ctm.d - ctm.b * ctm.c))
         // Whether up on the page (toward the ascent, -y in UIKit's space) is
         // up in memory too (toward row 0). In a context that isn't flipped
         // for UIKit, text comes out upside down, as UIKit draws it there.
@@ -387,8 +388,13 @@ public struct TextBlock {
                     spacesBefore += text.filter { $0 == " " }.count
                     guard !text.allSatisfy(\.isWhitespace) else { continue }
                     let baseline = top + line.ascent - run.baselineOffset
-                    draw(text, run: run, at: CGPoint(x: x, y: baseline), mode: mode, upright: upright,
-                         scale: scale, ctm: ctm, provider: provider, context: context)
+                    if axisAligned {
+                        draw(text, run: run, at: CGPoint(x: x, y: baseline), mode: mode, upright: upright,
+                             scale: scale, ctm: ctm, provider: provider, context: context)
+                    } else {
+                        outline(text, run: run, at: CGPoint(x: x, y: baseline), fill: mode.fills, stroke: mode.strokes,
+                                provider: provider, context: context)
+                    }
                 }
             }
         }
@@ -439,16 +445,24 @@ public struct TextBlock {
             }
         }
         if mode.strokes {
-            let outline = provider.glyphOutline(text, font: run.font)
-            guard !outline.isEmpty else { return }
             // Outlines stroke where the pen is, unsnapped: UIKit snaps only
             // the glyphs it fills (measured on Catalyst).
-            let origin = point
-            func place(_ p: CGPoint) -> CGPoint { CGPoint(x: origin.x + p.x, y: origin.y - p.y) }
-            context.saveGState()
-            context.setStroke(run.colour)
+            outline(text, run: run, at: point, fill: false, stroke: true, provider: provider, context: context)
+        }
+    }
+
+    /// The glyphs' outlines with the pen at `point` (user space), filled
+    /// and or stroked in the run's colour, through the context's transform.
+    private func outline(
+        _ text: String, run: Run, at point: CGPoint, fill: Bool, stroke: Bool, provider: TextProvider, context: BitmapContext
+    ) {
+        guard fill || stroke else { return }
+        let elements = provider.glyphOutline(text, font: run.font)
+        guard !elements.isEmpty else { return }
+        func place(_ p: CGPoint) -> CGPoint { CGPoint(x: point.x + p.x, y: point.y - p.y) }
+        func trace() {
             context.beginPath()
-            for element in outline {
+            for element in elements {
                 switch element {
                 case let .move(p): context.move(to: place(p))
                 case let .line(p): context.addLine(to: place(p))
@@ -458,9 +472,19 @@ public struct TextBlock {
                 case .arc: break
                 }
             }
-            context.strokePath()
-            context.restoreGState()
         }
+        context.saveGState()
+        if fill {
+            context.setFill(run.colour)
+            trace()
+            context.fillPath()
+        }
+        if stroke {
+            context.setStroke(run.colour)
+            trace()
+            context.strokePath()
+        }
+        context.restoreGState()
     }
 }
 #endif
