@@ -35,6 +35,11 @@ open class RigNode: SKNode {
     /// Below this size (points per point), moving through the scene trails
     /// nothing: a rig shrunk to a speck would move millions of its units.
     public static var leastTrailingScale: CGFloat = 0.05
+    /// How much a rig's size in the scene may change between ticks (a share
+    /// of it) for its move to count as travel: a rig zooming into place (a
+    /// panel growing out of its button) moves as it grows, and that isn't
+    /// travel, so nothing trails.
+    public static var steadyScale: CGFloat = 0.001
     /// How many textures `texture(_:)` keeps.
     public static var textureCacheLimit = 12 {
         didSet { textures.countLimit = textureCacheLimit }
@@ -95,8 +100,8 @@ open class RigNode: SKNode {
     private var clips: [Int: (crop: SKCropNode, mask: SKShapeNode, attachment: Int)] = [:]
     private var points: [CGPoint] = []
     private var lastTick: CGFloat = 0
-    /// Where the rig stood in the scene last frame.
-    private var sceneAt: CGPoint?
+    /// Where the rig stood in the scene last frame, and its size there.
+    private var sceneAt: (at: CGPoint, size: CGFloat)?
     /// Nodes riding bones, each with its bone and that bone at rest.
     private var riders: [(node: SKNode, bone: Int, rest: RigPose.Transform)] = []
 
@@ -319,20 +324,31 @@ open class RigNode: SKNode {
             sceneAt = nil
             return
         }
-        // How far the rig moved through the scene, in its units at its size
-        // now, so trailing parts lag as it moves (not as it shrinks or grows in place).
+        // How far the rig moved through the scene, in its units, so trailing
+        // parts lag as it moves.
         if let scene {
             let at = convert(CGPoint.zero, to: scene), across = convert(CGPoint(x: 1, y: 0), to: scene)
-            let size = hypot(across.x - at.x, across.y - at.y)
-            let scale = size * unit
-            if let sceneAt, feelsMoves, size >= Self.leastTrailingScale {
-                pose.origin = CGPoint(x: pose.origin.x + (at.x - sceneAt.x) / scale, y: pose.origin.y + (at.y - sceneAt.y) / scale)
+            let now = (at: at, size: hypot(across.x - at.x, across.y - at.y))
+            if feelsMoves, let moved = Self.travel(from: sceneAt, to: now, unit: unit) {
+                pose.origin = CGPoint(x: pose.origin.x + moved.x, y: pose.origin.y + moved.y)
             }
-            sceneAt = at
+            sceneAt = now
         }
         pose.advance(delta)
         render()
         updateCaching()
+    }
+
+    /// How far a rig moved through the scene between two ticks, in its units
+    /// at its size now: nil when it wasn't there before, when it's too small
+    /// to trail (`leastTrailingScale`), or when its size changed (it shrank,
+    /// grew or zoomed into place, carried as it grew: `steadyScale`), so only
+    /// travel at a steady size swings what trails.
+    static func travel(from before: (at: CGPoint, size: CGFloat)?, to now: (at: CGPoint, size: CGFloat), unit: CGFloat) -> CGPoint? {
+        guard let before, now.size >= leastTrailingScale, unit > 0,
+              abs(now.size - before.size) <= steadyScale * max(now.size, before.size) else { return nil }
+        let scale = now.size * unit
+        return CGPoint(x: (now.at.x - before.at.x) / scale, y: (now.at.y - before.at.y) / scale)
     }
 
     /// Whether neither it nor anything it stands in is hidden.

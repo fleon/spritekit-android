@@ -77,6 +77,19 @@ struct RigNodeTests {
         #expect(abs(lifted.y - rest.y - 40 * 2) < 1e-6)
     }
 
+    @Test("Only a move at a steady size is travel, in the rig's units at its size")
+    func travel() {
+        let unit: CGFloat = 0.5
+        let from = (at: CGPoint(x: 10, y: 20), size: CGFloat(2))
+        let moved = RigNode.travel(from: from, to: (at: CGPoint(x: 30, y: 10), size: 2), unit: unit)
+        #expect(moved == CGPoint(x: 20, y: -10))
+        #expect(RigNode.travel(from: nil, to: from, unit: unit) == nil, "nothing to move from")
+        #expect(RigNode.travel(from: from, to: (at: CGPoint(x: 30, y: 10), size: 2.1), unit: unit) == nil, "zooming isn't travel")
+        #expect(RigNode.travel(from: from, to: (at: CGPoint(x: 30, y: 10), size: 2.0015), unit: unit) != nil, "a hair's change still is")
+        let speck = (at: CGPoint.zero, size: RigNode.leastTrailingScale / 2)
+        #expect(RigNode.travel(from: speck, to: (at: CGPoint(x: 1, y: 0), size: speck.size), unit: unit) == nil, "a speck trails nothing")
+    }
+
     @Test("A still rig caches its parts; a moving or swinging one draws them live")
     func caching() throws {
         let json: [String: Any] = [
