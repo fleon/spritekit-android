@@ -7,43 +7,39 @@ import CoreGraphics
 #endif
 
 /// An `SKShapeNode`'s edges as SpriteKit draws them (`ShapeTessellator.Edges.spriteKit`),
-/// held to what a Mac's SpriteKit renders through `SKRenderer`: white on
-/// black, a row of pixels read back across a vertical line or a fill's
-/// edge, at 1x, 2x and 3x.
+/// held to what SpriteKit renders in an `SKView` on the iPhone 17 Pro (3x)
+/// and iPad Air (2x) simulators, read back through `texture(from:)`: white
+/// on black, a row of pixels across a vertical line or a fill's edge. (A
+/// windowless `SKRenderer` on a Mac softens strokes over a whole node unit
+/// whatever the density, which is not what a device draws.)
 final class SpriteKitShapeEdgesTests: XCTestCase {
 
     // MARK: Strokes
 
-    /// Measured: across a vertical line, the pixels from the one holding its
-    /// centre outward (the centre on a pixel's centre: `off` 0.5).
+    /// Measured in an `SKView` on the iPhone 17 Pro (3x) and iPad Air (2x)
+    /// simulators: across a vertical line, the pixels from the one holding
+    /// its centre outward, the centre on a pixel's centre.
     func testStrokesAreSoftenedAsSpriteKitSoftensThem() throws {
-        let measured: [(width: CGFloat, scale: CGFloat, profile: [Double])] = [
-            (2, 2, [1.00, 0.76, 0.34, 0]),
-            (4, 2, [1.00, 1.00, 1.00, 0.76, 0.34, 0]),
-            (1, 2, [1.00, 0.47, 0]),
-            (0.5, 2, [1.00, 0.38, 0]),
-            (2, 1, [1.00, 0.34, 0]),
-            (4, 1, [1.00, 1.00, 0.34, 0]),
-            (2, 3, [1.00, 0.89, 0.62, 0.34, 0.06, 0]),
-            (1, 3, [1.00, 0.69, 0.24, 0]),
-            (0.25, 3, [1.00, 0.64, 0.13, 0]),
+        let measured: [(width: CGFloat, scale: CGFloat, nodeScale: CGFloat, profile: [Double])] = [
+            (0.25, 3, 1, [1.00, 0.46, 0]),
+            (0.5, 3, 1, [1.00, 0.46, 0]),
+            (1, 3, 1, [1.00, 0.67, 0.01]),
+            (2, 3, 1, [1.00, 1.00, 0.93, 0.34, 0]),
+            (6, 3, 1, [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 0.93]),
+            (0.5, 2, 1, [1.00, 0.38, 0]),
+            (1, 2, 1, [1.00, 0.47, 0]),
+            (2, 2, 1, [1.00, 0.93, 0.34, 0]),
+            (6, 2, 1, [1.00, 1.00, 1.00, 1.00, 1.00, 0.93, 0.34, 0]),
+            // In a node scaled 2x the edge is twice as soft on the screen.
+            (0.5, 3, 2, [1.00, 0.85, 0.46, 0.08, 0]),
+            (1, 3, 2, [1.00, 1.00, 0.67, 0.34, 0.01]),
+            (2, 3, 2, [1.00, 1.00, 1.00, 1.00, 0.93, 0.64, 0.34, 0.05, 0]),
         ]
-        for (width, scale, profile) in measured {
-            let drawn = try strokeProfile(width: width, scale: scale, nodeScale: 1, count: profile.count)
+        for (width, scale, nodeScale, profile) in measured {
+            let drawn = try strokeProfile(width: width, scale: scale, nodeScale: nodeScale, count: profile.count)
             for (d, (got, want)) in zip(drawn, profile).enumerated() {
-                XCTAssertEqual(got, want, accuracy: 0.09, "width \(width) at \(scale)x, \(d) px out")
+                XCTAssertEqual(got, want, accuracy: 0.12, "width \(width) at \(scale)x, node scale \(nodeScale), \(d) px out")
             }
-        }
-    }
-
-    /// The softening is in the node's own units: scaled up, a node's stroke
-    /// is softer; measured with a 1-unit line in a node scaled 2x at 2x.
-    func testTheSofteningScalesWithTheNode() throws {
-        // Measured, from the line's centre (on a pixel boundary) outward:
-        // 1.00 0.72 0.38 0.05 on the far side of its centre pixel.
-        let drawn = try strokeProfile(width: 1, scale: 2, nodeScale: 2, count: 4, centredOnPixel: false)
-        for (got, want) in zip(drawn, [1.00, 0.72, 0.38, 0.05]) {
-            XCTAssertEqual(got, want, accuracy: 0.1)
         }
     }
 
@@ -58,7 +54,7 @@ final class SpriteKitShapeEdgesTests: XCTestCase {
         XCTAssertTrue(mesh.coverage.allSatisfy { $0 == 1 }, "no feathered rim")
         let pixels = sample(mesh, box: CGRect(x: -14, y: -14, width: 28, height: 28), scale: scale)
         XCTAssertTrue(pixels.allSatisfy { $0 < 1e-5 || $0 > 1 - 1e-5 }, "no partial pixels")
-        // Measured on a Mac: 1804 pixels at 2x, against 1809.6 exact.
+        // Measured at 2x (the iPad Air simulator, and a Mac): 1804 pixels, against 1809.6 exact.
         XCTAssertEqual(pixels.reduce(0, +), 1804, accuracy: 6)
     }
 
@@ -77,7 +73,7 @@ final class SpriteKitShapeEdgesTests: XCTestCase {
         path.addLine(to: CGPoint(x: 0, y: 20))
         let mesh = try XCTUnwrap(ShapeTessellator.stroke(
             PathRasteriser.flatten(path, scale: scale * nodeScale), width: width, cap: .butt, join: .miter,
-            scale: scale * nodeScale, edges: .spriteKit
+            scale: scale * nodeScale, edges: .spriteKit, edgePixels: scale
         ))
         // Pixels across the middle row, their centres `k` pixels out from the
         // line (or `k + 0.5` with the line on a boundary).

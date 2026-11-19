@@ -26,11 +26,13 @@ public enum SpriteKitMasks {
         width: CGFloat,
         cap: CGLineCap,
         join: CGLineJoin,
-        scale: CGFloat
+        scale: CGFloat,
+        edgePixels: CGFloat
     ) -> PathRasteriser.Mask? {
         guard scale > 0, width > 0 else { return nil }
         guard let mesh = ShapeTessellator.stroke(
-            PathRasteriser.flatten(path, scale: scale), width: width, cap: cap, join: join, scale: scale, edges: .spriteKit
+            PathRasteriser.flatten(path, scale: scale), width: width, cap: cap, join: join, scale: scale,
+            edges: .spriteKit, edgePixels: edgePixels
         ) else {
             return PathRasteriser.stroke(path, width: width, cap: cap, join: join, scale: scale)
         }

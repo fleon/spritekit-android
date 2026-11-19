@@ -41,6 +41,11 @@ enum Fonts {
         for path in [hiragino, appleSDGothic, "/System/Library/Fonts/Geneva.ttf"] {
             _ = try? library.register(path: path)
         }
+        #if canImport(CoreText)
+        // Characters the test faces lack fall back as Core Text's do.
+        _ = CoreTextFallback.registered
+        engine.fallback = CoreTextFallback(library: library)
+        #endif
         engine.install()
         return engine
     }()
@@ -87,3 +92,66 @@ enum Fonts {
         return (glyphs, advance)
     }
 }
+
+#if canImport(CoreText)
+import CoreText
+
+/// Core Text's own fallback (`CTFontCreateForString`) as the provider, so
+/// the tests compare fallback text with Apple's on the same faces: the
+/// face it picks, found by PostScript name in its file.
+final class CoreTextFallback: FontFallbackProvider, @unchecked Sendable {
+    private let library: FontLibrary
+    private let lock = NSLock()
+    private var indices: [String: Int] = [:]
+    static let registered: Bool = {
+        for file in ["KoHo-Bold", "Montserrat"] {
+            CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: Fonts.directory + "/" + file + ".ttf") as CFURL, .process, nil)
+        }
+        return true
+    }()
+
+    init(library: FontLibrary) {
+        self.library = library
+    }
+
+    func face(for character: Character, font: FontKey, weight: Int) -> FallbackFace? {
+        _ = Self.registered
+        // One query at a time: Core Text's font registry, asked cold from
+        // every test thread at once, can stall them all.
+        lock.lock()
+        defer { lock.unlock() }
+        let primary = CTFontCreateWithName(font.name as CFString, font.size, nil)
+        let string = String(character) as CFString
+        // Japanese, so Han falls back to Hiragino: FreeType can't read the
+        // Mac's PingFang (a private format).
+        let picked = CTFontCreateForStringWithLanguage(primary, string, CFRange(location: 0, length: CFStringGetLength(string)), "ja" as CFString)
+        let name = CTFontCopyPostScriptName(picked) as String
+        guard name != CTFontCopyPostScriptName(primary) as String,
+              let url = CTFontCopyAttribute(picked, kCTFontURLAttribute) as? URL else { return nil }
+        let path = url.path
+        // A variable face's axes as Core Text set them, by tag.
+        var variations: [String: Double] = [:]
+        for (key, value) in (CTFontCopyVariation(picked) as? [NSNumber: NSNumber]) ?? [:] {
+            let tag = key.uint32Value
+            let name = String(bytes: [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: tag >> $0) }, encoding: .ascii) ?? ""
+            variations[name] = value.doubleValue
+        }
+        let key = path + "#" + name
+        let index = { () -> Int? in
+            if let known = indices[key] { return known }
+            guard let file = library.file(atPath: path) else { return nil }
+            for index in 0 ..< max(1, file.faceCount) {
+                guard let probe = try? FaceHandle(file: file, size: 16, instance: nil, index: index) else { continue }
+                // A variable collection's faces go by their default instance's name.
+                let family = { (name: String) in name.split(separator: "-").first }
+                if probe.postScriptName == name || !variations.isEmpty && probe.postScriptName.map(family) == family(name) {
+                    indices[key] = index
+                    return index
+                }
+            }
+            return nil
+        }()
+        return index.map { FallbackFace(path: path, index: $0, variations: variations) }
+    }
+}
+#endif

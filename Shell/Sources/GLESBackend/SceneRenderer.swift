@@ -638,7 +638,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let ticked = MediaTime.source()
         // Shapes are tessellated as they're batched, for the density the
         // scene is drawn at: the screen's, times the share of it drawn.
-        shapeMeshes.pixelsPerPoint = max(viewport.scale.x, viewport.scale.y) * drawnFraction(of: frame)
+        shapeMeshes.screenPixelsPerPoint = max(viewport.scale.x, viewport.scale.y)
+        shapeMeshes.pixelsPerPoint = shapeMeshes.screenPixelsPerPoint * drawnFraction(of: frame)
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
         // the runtime's own cost, with no GL in it. Worth separating, because
@@ -1289,6 +1290,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         deviceScale = max(frame.scale.x, frame.scale.y)
         glyphSource.deviceScale = deviceScale
         shapeMeshes.pixelsPerPoint = deviceScale
+        shapeMeshes.screenPixelsPerPoint = deviceScale
         target = Target(
             framebuffer: handle.framebuffer,
             widthInPixels: width,
@@ -1888,7 +1890,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
            let mask = shapeMasks.stroke(
                path, width: shape.lineWidth,
-               cap: shape.lineCap, join: shape.lineJoin, scale: scale, owner: shape.owner
+               cap: shape.lineCap, join: shape.lineJoin, scale: scale,
+               edgePixels: shapeMeshes.screenPixelsPerPoint, owner: shape.owner
            ) {
             drawCoverage(
                 CoverageGeometry.run(
@@ -2114,7 +2117,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             ))
         }
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
-           let mask = shapeMasks.stroke(path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale, owner: shape.owner) {
+           let mask = shapeMasks.stroke(
+               path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
+               edgePixels: shapeMeshes.screenPixelsPerPoint, owner: shape.owner
+           ) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),
                 mask: mask.name,

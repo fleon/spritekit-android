@@ -42,11 +42,21 @@ public struct ShapedRun: Equatable, Sendable {
     /// Where this run started in the whole string, in UTF-8 bytes, so a
     /// run's clusters can be read against the original text.
     public var byteOffset: Int
+    /// The face the run was shaped in when it isn't the line's own: a
+    /// fallback face's registered name, for characters the line's face has
+    /// no glyph for.
+    public var font: String?
 
-    public init(glyphs: [ShapedGlyph], script: TextScript, byteOffset: Int) {
+    public init(glyphs: [ShapedGlyph], script: TextScript, byteOffset: Int, font: String? = nil) {
         self.glyphs = glyphs
         self.script = script
         self.byteOffset = byteOffset
+        self.font = font
+    }
+
+    /// The run's face at `font`'s size.
+    public func face(in font: FontKey) -> FontKey {
+        self.font.map { FontKey(name: $0, size: font.size) } ?? font
     }
 
     /// How far the pen travels across the run.
@@ -57,8 +67,7 @@ public struct ShapedRun: Equatable, Sendable {
 /// punctuation, which take the script of whatever they sit among.
 ///
 /// This is not a general Unicode script property: it is only as fine as the
-/// shaper needs, because every one of these is left-to-right and a label
-/// uses one face for all of it. What it is for is handing HarfBuzz the
+/// shaper needs. What it is for is handing HarfBuzz the
 /// right script tag, which is what turns Thai reordering on.
 public enum TextScript: String, Equatable, Sendable, CaseIterable {
     case common
@@ -69,6 +78,12 @@ public enum TextScript: String, Equatable, Sendable, CaseIterable {
     case hiragana
     case katakana
     case hangul
+    case arabic
+    case hebrew
+
+    /// Arabic and Hebrew are shaped right to left, their glyphs coming back
+    /// in the order they are drawn, left to right.
+    var isRightToLeft: Bool { self == .arabic || self == .hebrew }
 
     var hbScript: hb_script_t {
         switch self {
@@ -80,6 +95,8 @@ public enum TextScript: String, Equatable, Sendable, CaseIterable {
         case .hiragana: return HB_SCRIPT_HIRAGANA
         case .katakana: return HB_SCRIPT_KATAKANA
         case .hangul: return HB_SCRIPT_HANGUL
+        case .arabic: return HB_SCRIPT_ARABIC
+        case .hebrew: return HB_SCRIPT_HEBREW
         }
     }
 
@@ -90,6 +107,8 @@ public enum TextScript: String, Equatable, Sendable, CaseIterable {
         case .han: return "zh"
         case .hiragana, .katakana: return "ja"
         case .hangul: return "ko"
+        case .arabic: return "ar"
+        case .hebrew: return "he"
         default: return "en"
         }
     }
@@ -108,6 +127,10 @@ public enum TextScript: String, Equatable, Sendable, CaseIterable {
             return .katakana
         case 0x1100...0x11FF, 0xA960...0xA97F, 0xAC00...0xD7AF, 0x3130...0x318F:
             return .hangul
+        case 0x0600...0x06FF, 0x0750...0x077F, 0x08A0...0x08FF, 0xFB50...0xFDFF, 0xFE70...0xFEFE:
+            return .arabic
+        case 0x0590...0x05FF, 0xFB1D...0xFB4F:
+            return .hebrew
         case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF,
              0x20000...0x2A6DF, 0x2A700...0x2EBEF:
             return .han

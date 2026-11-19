@@ -61,13 +61,15 @@ public enum ShapeTessellator {
         /// Each edge's coverage as CoreGraphics' exact area gives it:
         /// feathered across one device pixel (`PathRasteriser`'s masks).
         case exact
-        /// As SpriteKit draws an `SKShapeNode`, measured through `SKRenderer`
-        /// on a Mac at 1x, 2x and 3x: a fill's edge not antialiased at all
-        /// (a pixel is in when its centre is), a stroke's softened over
-        /// 1.19 of the node's own units whatever the density, from full
-        /// coverage `0.785` inside its edge to none `0.405` outside it
-        /// (narrower and softer than CoreGraphics'), its middle always at
-        /// full coverage and no narrower than half a unit.
+        /// As SpriteKit draws an `SKShapeNode`, measured in an `SKView` on
+        /// the iPhone 17 Pro (3x) and iPad Air (2x) simulators: a fill's edge
+        /// not antialiased at all (a pixel is in when its centre is), a
+        /// stroke's softened over about 1.7 of the screen's pixels whatever
+        /// the density, from full coverage 1.12 pixels inside its edge to
+        /// none 0.58 outside (narrower than CoreGraphics'), its middle full
+        /// however thin and no narrower than half a unit. The pixels are the
+        /// screen's at the node's own scale: a node scaled 2x is twice as
+        /// soft (`stroke(edgePixels:)`).
         case spriteKit
     }
 
@@ -122,7 +124,8 @@ public enum ShapeTessellator {
         miterLimit: CGFloat = 10,
         scale: CGFloat,
         alongTexture: Bool = false,
-        edges: Edges = .exact
+        edges: Edges = .exact,
+        edgePixels: CGFloat = 1
     ) -> Mesh? {
         guard scale > 0, scale.isFinite, width.isFinite else { return nil }
         guard width > 0 else { return Mesh() }
@@ -136,7 +139,8 @@ public enum ShapeTessellator {
             scale: scale,
             join: join,
             miterLimit: miterLimit,
-            edges: edges
+            edges: edges,
+            edgePixels: max(edgePixels, 0.01)
         )
 
         var builder = Builder()
@@ -392,6 +396,9 @@ public enum ShapeTessellator {
         var join: CGLineJoin
         var miterLimit: CGFloat
         var edges: Edges = .exact
+        /// The screen's pixels per node unit SpriteKit's edge is measured
+        /// in (`Edges.spriteKit`): the scene's density, not the node's scale.
+        var edgePixels: CGFloat = 1
         /// Where full coverage ends and where the feather reaches nothing.
         ///
         /// Across the stroke its exact coverage is a trapezoid: the width
@@ -400,14 +407,15 @@ public enum ShapeTessellator {
         /// coverage unless the stroke is thinner than the span: then at
         /// `width / fringe`, a hairline drawn fainter rather than wider.
         ///
-        /// SpriteKit's (`Edges.spriteKit`) is in the node's own units: full
-        /// out to `0.785` inside the edge, none from `0.405` outside it, its
-        /// middle full however thin, as measured.
+        /// SpriteKit's (`Edges.spriteKit`), measured at 3x and 2x and the
+        /// same in the screen's pixels at both: full out to 1.12 inside the
+        /// edge (but at least 0.2 either side of the middle), none from 0.58
+        /// outside it (and not before 1.5 from the middle).
         var core: CGFloat {
-            edges == .spriteKit ? max(0.1, drawnHalf - 0.785) : abs(width - fringe) / 2
+            edges == .spriteKit ? max(0.2, drawnHalf * edgePixels - 1.12) / edgePixels : abs(width - fringe) / 2
         }
         var outer: CGFloat {
-            edges == .spriteKit ? max(drawnHalf + 0.405, 0.75) : (width + fringe) / 2
+            edges == .spriteKit ? max(drawnHalf * edgePixels + 0.58, 1.5) / edgePixels : (width + fringe) / 2
         }
         var coverage: Float {
             edges == .spriteKit ? 1 : Float(min(1, width / fringe))

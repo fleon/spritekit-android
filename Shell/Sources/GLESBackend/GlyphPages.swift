@@ -200,12 +200,13 @@ final class EngineGlyphSource: CoverageGeometry.GlyphSource {
         // than assumed — half a pixel of drift over a line is visible.
         let wanted = max(font.size * max(deviceScale, 0.01), 1.0 / 64)
         let rasterSize = (wanted * 64).rounded() / 64
-        let raster = FontKey(name: font.name, size: rasterSize)
         let density = rasterSize / font.size
 
         var made: [CoverageGeometry.Glyph] = []
         var pen: CGFloat = 0
         for run in runs {
+            // A fallback run's glyphs come from its own face.
+            let raster = FontKey(name: run.face(in: font).name, size: rasterSize)
             for glyph in run.glyphs {
                 let entry = engine.atlas.glyph(
                     GlyphAtlas.Key(font: raster.name, size: raster.size, glyph: glyph.glyph),
