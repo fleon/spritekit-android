@@ -441,9 +441,12 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
             for glyph in run.glyphs {
                 let x = offset.x + (pen + glyph.xOffset) * scale
                 let y = offset.y + glyph.yOffset * scale
-                let whole = CGPoint(x: x.rounded(.down), y: y.rounded(.down))
-                // The x within its pixel, floored to the size's step.
-                let fraction = CGPoint(x: ((x - whole.x) * steps).rounded(.down) / steps, y: y - whole.y)
+                // The x floored to the size's step, a ten-thousandth of a
+                // pixel short counting as on it (as UIKit floors, where a
+                // transform's arithmetic leaves 272.99999999999994).
+                let stepped = (x * steps + 0.0001).rounded(.down) / steps
+                let whole = CGPoint(x: stepped.rounded(.down), y: y.rounded(.down))
+                let fraction = CGPoint(x: stepped - whole.x, y: y - whole.y)
                 let mask = face.renderGlyph(glyph.glyph, offset: fraction) { pixels, width, height, pitch, left, top -> GlyphMask? in
                     guard let pixels, width > 0, height > 0, pitch >= width else { return nil }
                     var coverage = [UInt8](repeating: 0, count: width * height)

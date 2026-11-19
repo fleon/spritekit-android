@@ -661,7 +661,8 @@ public struct TextBlock {
         context.beginPath()
         for glyph in glyphs {
             let device = CGPoint(x: point.x + glyph.origin.x, y: point.y - glyph.origin.y).applying(ctm)
-            let pen = CGPoint(x: (device.x * steps).rounded(.down) / steps, y: (device.y - 0.0001).rounded(.up)).applying(inverse)
+            // Within a ten-thousandth of a pixel counts as on it, both ways.
+            let pen = CGPoint(x: (device.x * steps + 0.0001).rounded(.down) / steps, y: (device.y - 0.0001).rounded(.up)).applying(inverse)
             func place(_ p: CGPoint) -> CGPoint { CGPoint(x: pen.x + p.x, y: pen.y - p.y) }
             for element in glyph.elements {
                 switch element {
