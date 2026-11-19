@@ -243,44 +243,9 @@ final class ShapeMasks {
     /// per point is below what the eye reads as a resampling step.
     private func quantised(_ scale: CGFloat) -> Int { Int((scale * 20).rounded()) }
 
-    /// A hash of what the path draws. Hashing is what makes the cache work
-    /// across rebuilt paths — the game's helpers make a new `UIBezierPath`
-    /// each time a node lays out, with the same shape in it.
-    private func digest(of path: CGPath) -> Int {
-        var hasher = Hasher()
-        for element in path.pathElements {
-            switch element {
-            case let .move(p): hasher.combine(0); combine(p, into: &hasher)
-            case let .line(p): hasher.combine(1); combine(p, into: &hasher)
-            case let .quadCurve(p, c):
-                hasher.combine(2); combine(p, into: &hasher); combine(c, into: &hasher)
-            case let .curve(p, c1, c2):
-                hasher.combine(3)
-                combine(p, into: &hasher); combine(c1, into: &hasher); combine(c2, into: &hasher)
-            case let .arc(centre, radius, start, end, clockwise):
-                hasher.combine(4)
-                combine(centre, into: &hasher)
-                hasher.combine(quantise(radius))
-                hasher.combine(quantise(start))
-                hasher.combine(quantise(end))
-                hasher.combine(clockwise)
-            case .close: hasher.combine(5)
-            }
-        }
-        return hasher.finalize()
-    }
-
-    private func combine(_ point: CGPoint, into hasher: inout Hasher) {
-        hasher.combine(quantise(point.x))
-        hasher.combine(quantise(point.y))
-    }
-
-    /// Coordinates are compared at a thousandth of a point: far finer than
-    /// anything that could show, and it keeps the key an integer, so the
-    /// float noise of a rebuilt path does not miss its own cache entry.
-    private func quantise(_ value: CGFloat) -> Int {
-        value.isFinite ? Int((value * 1000).rounded()) : 0
-    }
+    /// A hash of what the path draws (`PathDigest`), shared with the
+    /// shapes drawn as triangles.
+    private func digest(of path: CGPath) -> Int { PathDigest.of(path) }
 }
 
 /// The thread masks are made on: one of its own, at the lowest priority, so

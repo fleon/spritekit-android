@@ -103,7 +103,10 @@ final class FaceHandle {
     /// shaping and rasterising must load glyphs the same way or the advances
     /// a line is measured with would not be the advances it is drawn with.
     /// It also keeps measurement stable across sizes, which hinting is not.
-    static let loadFlags = FT_Int32(FT_LOAD_NO_HINTING)
+    /// Embedded bitmap strikes are skipped, as Core Text skips them: a face
+    /// with strikes at some sizes (Geneva's 9 to 24 ppem) draws its outlines
+    /// at those sizes too.
+    static let loadFlags = FT_Int32(FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP)
 
     init(file: FontFile, size: CGFloat, instance: String?) throws {
         guard let library = FaceHandle.library else { throw FontError.libraryUnavailable }

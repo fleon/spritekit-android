@@ -20,7 +20,13 @@ public final class CGPath: @unchecked Sendable {
         case close
     }
 
-    public private(set) var elements: [Element] = []
+    public private(set) var elements: [Element] = [] {
+        didSet { version &+= 1 }
+    }
+
+    /// Counts changes to the recording, so a renderer holding this path can
+    /// tell it is unchanged without reading it again.
+    public private(set) var version = 0
 
     public init() {}
 
