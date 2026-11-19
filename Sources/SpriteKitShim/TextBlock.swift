@@ -70,8 +70,10 @@ public extension TextProvider {
 ///     UIKit places them whatever `setShouldSubpixelQuantizeFonts` says.
 public struct TextBlock {
     public enum Alignment: Sendable {
-        /// `natural`: the app's direction's, which for these games is left,
-        /// even for a right-to-left paragraph (measured on Catalyst).
+        /// `natural`: the interface's direction's, as UIKit's string drawing
+        /// takes it, not the paragraph's: left, the games' interfaces being
+        /// left-to-right, even for a right-to-left paragraph (measured on
+        /// Catalyst).
         case left, center, right, justified, natural
     }
 
