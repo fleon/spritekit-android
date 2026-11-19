@@ -27,7 +27,7 @@ public final class ShapeMeshes {
         public var signature: Int = 0
     }
 
-    private struct Key: Hashable {
+    struct Key: Hashable {
         var digest: Int
         var kind: Int               // 0 fill, 1 stroke, 2 a stroke a texture runs along
         var width: Int              // hundredths of a point
@@ -59,25 +59,71 @@ public final class ShapeMeshes {
     /// The shape's fill and stroke as triangles in its own space, or nil
     /// when it should draw through its mask: a textured fill or stroke, or
     /// a path the tessellator leaves alone.
-    public func meshes(for shape: DrawList.Shape) -> Meshes? {
-        guard Self.isEnabled, let path = shape.path else { return nil }
+    /// What a shape's meshes are keyed by, worked out without looking them
+    /// up: what the batcher compares a node's kept vertices against before
+    /// it fetches anything. `.mask` when the shape keeps its mask, `.nothing`
+    /// when there's nothing to draw.
+    enum Plan {
+        case mask
+        case nothing
+        case meshes(Keys)
+    }
+
+    struct Keys {
+        var path: CGPath
+        var fill: Key?
+        var stroke: Key?
+        var textured: Bool
+        var scale: CGFloat
+        var signature: Int
+    }
+
+    func plan(for shape: DrawList.Shape) -> Plan {
+        guard Self.isEnabled, let path = shape.path else { return .mask }
         let wantsFill = shape.fillColor.alpha > 0
         let wantsStroke = shape.lineWidth > 0 && shape.strokeColor.alpha > 0
-        guard wantsFill || wantsStroke else { return Meshes() }
-        if wantsFill, shape.fillTexture != nil { return nil }
+        guard wantsFill || wantsStroke else { return .nothing }
+        if wantsFill, shape.fillTexture != nil { return .mask }
         // A stroke's texture runs along it (`StrokeTextureTests`), which the
         // mask can't carry: the stroke is triangles with places along it. A
         // texture cut from another (`SKTexture(rect:in:)`) does too, over the
         // whole image it was cut from, as SpriteKit draws one.
         let textured = wantsStroke && shape.strokeTexture != nil
-        if textured, !Self.runsAlong(shape.strokeTexture) { return nil }
+        if textured, !Self.runsAlong(shape.strokeTexture) { return .mask }
 
         let quantised = Int((pixelsPerPoint * Self.transformScale(shape.transform) * 20).rounded())
-        guard quantised > 0 else { return Meshes() }
-        let scale = CGFloat(quantised) / 20
+        guard quantised > 0 else { return .nothing }
         let digest = self.digest(of: path, owner: shape.owner)
+        var keys = Keys(path: path, textured: textured, scale: CGFloat(quantised) / 20, signature: 0)
+        if wantsFill {
+            let key = Key(digest: digest, kind: 0, width: 0, cap: 0, join: 0, scale: quantised)
+            keys.fill = key
+            keys.signature = key.hashValue
+        }
+        if wantsStroke {
+            let key = Key(
+                digest: digest, kind: textured ? 2 : 1, width: Int((shape.lineWidth * 100).rounded()),
+                cap: Int(shape.lineCap.rawValue), join: Int(shape.lineJoin.rawValue), scale: quantised
+            )
+            keys.stroke = key
+            keys.signature = keys.signature &* 31 &+ key.hashValue
+        }
+        return .meshes(keys)
+    }
 
+    public func meshes(for shape: DrawList.Shape) -> Meshes? {
+        switch plan(for: shape) {
+        case .mask: return nil
+        case .nothing: return Meshes()
+        case let .meshes(keys): return meshes(for: shape, keys)
+        }
+    }
+
+    /// The meshes `keys` name, made where they're missing.
+    func meshes(for shape: DrawList.Shape, _ keys: Keys) -> Meshes? {
+        let path = keys.path, scale = keys.scale
         var result = Meshes()
+        result.signature = keys.signature
         var subpaths: [PathRasteriser.Subpath]?
         func flattened() -> [PathRasteriser.Subpath] {
             if let subpaths { return subpaths }
@@ -85,9 +131,7 @@ public final class ShapeMeshes {
             subpaths = made
             return made
         }
-
-        if wantsFill {
-            let key = Key(digest: digest, kind: 0, width: 0, cap: 0, join: 0, scale: quantised)
+        if let key = keys.fill {
             guard let mesh = mesh(for: key, make: {
                 // Flattened four times as fine as the stroke: with no feather a
                 // fill's rim is its chords, each cutting inside the curve,
@@ -97,13 +141,9 @@ public final class ShapeMeshes {
                 ShapeTessellator.fill(PathRasteriser.flatten(path, scale: scale * 4), scale: scale, edges: .spriteKit)
             }) else { return nil }
             result.fill = mesh
-            result.signature = key.hashValue
         }
-        if wantsStroke {
-            let key = Key(
-                digest: digest, kind: textured ? 2 : 1, width: Int((shape.lineWidth * 100).rounded()),
-                cap: Int(shape.lineCap.rawValue), join: Int(shape.lineJoin.rawValue), scale: quantised
-            )
+        if let key = keys.stroke {
+            let textured = keys.textured
             guard let mesh = mesh(for: key, make: {
                 ShapeTessellator.stroke(
                     flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
@@ -111,7 +151,6 @@ public final class ShapeMeshes {
                 )
             }) else { return nil }
             result.stroke = mesh
-            result.signature = result.signature &* 31 &+ key.hashValue
         }
         return result
     }
@@ -141,6 +180,8 @@ public final class ShapeMeshes {
     }
 
     public func removeAll() {
+        batchFloats = 0
+        batchIndices = 0
         #if !canImport(Darwin)
         pathDigests.removeAll()
         #endif
@@ -161,7 +202,10 @@ public final class ShapeMeshes {
     /// Kept only once a node has drawn the same way twice running: one
     /// that moves every frame would otherwise pay to keep vertices it never
     /// uses again, so it is written straight into the batch instead.
-    struct Placed {
+    ///
+    /// A class, so reading one is a reference: as a struct, every look at
+    /// an entry copied it, and retained and released its three arrays.
+    final class Placed {
         var signature: Int
         var transform: CGAffineTransform
         var colours: SIMD8<Float>
@@ -172,6 +216,13 @@ public final class ShapeMeshes {
         var isKept = false
         var used: UInt64 = 0
         var byteCount: Int { 64 + vertices.count * 4 + (indices.count + offsetIndices.count) * 2 }
+
+        init(signature: Int, transform: CGAffineTransform, colours: SIMD8<Float>, used: UInt64) {
+            self.signature = signature
+            self.transform = transform
+            self.colours = colours
+            self.used = used
+        }
     }
 
     private var placed: [ObjectIdentifier: Placed] = [:]
@@ -190,34 +241,85 @@ public final class ShapeMeshes {
     ) -> (vertices: [Float], indices: [UInt16])? {
         guard let owner = shape.owner else { return nil }
         clock += 1
-        guard var entry = placed[owner], entry.signature == meshes.signature,
-              entry.transform == shape.transform, entry.colours == colours else {
+        guard let entry = placed[owner],
+              matches(entry, meshes.signature, shape.transform, colours) else {
             // New, or changed: noted, and written by the caller this time.
-            if let old = placed[owner] { placedBytes -= old.byteCount }
-            let note = Placed(signature: meshes.signature, transform: shape.transform, colours: colours, used: clock)
-            placed[owner] = note
-            placedBytes += note.byteCount
-            if placedBytes > placedBudget { evictPlaced() }
+            // A node that changes every frame notes into the entry it has.
+            if let old = placed[owner] {
+                placedBytes -= old.byteCount
+                old.signature = meshes.signature
+                old.transform = shape.transform
+                old.colours = colours
+                old.used = clock
+                old.vertices = []
+                old.indices = []
+                old.offsetIndices = []
+                old.offsetFirst = -1
+                old.isKept = false
+                placedBytes += old.byteCount
+            } else {
+                let note = Placed(signature: meshes.signature, transform: shape.transform, colours: colours, used: clock)
+                placed[owner] = note
+                placedBytes += note.byteCount
+                if placedBytes > placedBudget { evictPlaced() }
+            }
             return nil
         }
-        placedBytes -= entry.byteCount
-        entry.used = clock
         if !entry.isKept {
+            placedBytes -= entry.byteCount
             let made = make()
             entry.vertices = made.vertices
             entry.indices = made.indices
+            entry.offsetIndices = []
             entry.isKept = true
             entry.offsetFirst = -1
+            placedBytes += entry.byteCount
         }
+        let kept = keep(entry, first: first)
+        if placedBytes > placedBudget { evictPlaced() }
+        return kept
+    }
+
+    /// A node's kept vertices for this frame, when nothing that went into
+    /// them has changed: found from its plan alone, before any mesh is
+    /// looked up or copied. The batcher's path for a still shape.
+    func kept(for shape: DrawList.Shape, _ keys: Keys, colours: SIMD8<Float>) -> Placed? {
+        guard let owner = shape.owner, let entry = placed[owner], entry.isKept,
+              matches(entry, keys.signature, shape.transform, colours) else { return nil }
+        return entry
+    }
+
+    /// `entry`'s vertices, its indices offset by `first`.
+    func keep(_ entry: Placed, first: Int) -> (vertices: [Float], indices: [UInt16]) {
+        clock += 1
+        entry.used = clock
         if entry.offsetFirst != first {
             let offset = UInt16(first)
-            entry.offsetIndices = first == 0 ? entry.indices : entry.indices.map { $0 &+ offset }
+            let indices = entry.indices
+            placedBytes -= entry.offsetIndices.count * 2
+            entry.offsetIndices = SpriteBatcher.offset(indices, by: offset)
             entry.offsetFirst = first
+            placedBytes += entry.offsetIndices.count * 2
         }
-        placedBytes += entry.byteCount
-        placed[owner] = entry
-        if placedBytes > placedBudget { evictPlaced() }
         return (entry.vertices, entry.offsetIndices)
+    }
+
+    private func matches(_ entry: Placed, _ signature: Int, _ transform: CGAffineTransform, _ colours: SIMD8<Float>) -> Bool {
+        entry.signature == signature && entry.transform == transform && entry.colours == colours
+    }
+
+    // MARK: Batch sizes
+
+    /// The most floats and indices a colour batch has taken since the
+    /// scene began: what a batch reserves the first time a shape needs it
+    /// to grow, so it is allocated once a frame rather than regrown (and
+    /// copied) every time it doubles.
+    private(set) var batchFloats = 0
+    private(set) var batchIndices = 0
+
+    func noteBatch(floats: Int, indices: Int) {
+        batchFloats = max(batchFloats, floats)
+        batchIndices = max(batchIndices, indices)
     }
 
     /// The fill's rgb and alpha, the stroke's, each alpha times the node's.

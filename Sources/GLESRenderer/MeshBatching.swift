@@ -41,6 +41,54 @@ extension SpriteBatcher {
 /// times the node's times the vertex's coverage. So shapes merge with the
 /// colour sprites and other shapes either side of them, in order.
 extension SpriteBatcher {
+    /// A still shape's kept vertices (`ShapeMeshes.kept`), appended whole
+    /// without its meshes being fetched; false when it has none to give.
+    func appendKeptShape(_ shape: DrawList.Shape, _ keys: ShapeMeshes.Keys, _ shapeMeshes: ShapeMeshes, to batches: inout [Batch]) -> Bool {
+        guard !keys.textured else { return false }
+        let colours = ShapeMeshes.colours(shape)
+        guard let entry = shapeMeshes.kept(for: shape, keys, colours: colours) else { return false }
+        let count = entry.vertices.count / Self.floatsPerVertex
+        guard count > 0 else { return true }
+        let index = colourBatch(for: count, in: &batches)
+        let first = batches[index].vertices.count / Self.floatsPerVertex
+        let kept = shapeMeshes.keep(entry, first: first)
+        append(kept.vertices, kept.indices, to: &batches[index])
+        return true
+    }
+
+    /// The open colour batch if `count` more vertices fit in it, else a new one.
+    private func colourBatch(for count: Int, in batches: inout [Batch]) -> Int {
+        if let last = batches.indices.last,
+           batches[last].texture == nil, batches[last].shader == nil,
+           batches[last].attributeValues.isEmpty, batches[last].blendMode == .alpha,
+           batches[last].vertices.count / Self.floatsPerVertex + count <= Int(UInt16.max) + 1 {
+            return last
+        }
+        batches.append(Batch(blendMode: .alpha))
+        return batches.count - 1
+    }
+
+    /// Room for `floats` and `indices` more in `batch`: reserved at once to
+    /// the largest a batch has been (`ShapeMeshes.noteBatch`), so a frame's
+    /// shapes grow it once rather than doubling it, and copying it, as they
+    /// come.
+    private func reserve(_ floats: Int, _ indices: Int, in batch: inout Batch) {
+        let hint = shapeMeshes
+        if batch.vertices.capacity < batch.vertices.count + floats {
+            batch.vertices.reserveCapacity(max(batch.vertices.count + floats, hint?.batchFloats ?? 0))
+        }
+        if batch.indices.capacity < batch.indices.count + indices {
+            batch.indices.reserveCapacity(max(batch.indices.count + indices, hint?.batchIndices ?? 0))
+        }
+    }
+
+    private func append(_ vertices: [Float], _ indices: [UInt16], to batch: inout Batch) {
+        reserve(vertices.count, indices.count, in: &batch)
+        batch.vertices.append(contentsOf: vertices)
+        batch.indices.append(contentsOf: indices)
+        shapeMeshes?.noteBatch(floats: batch.vertices.count, indices: batch.indices.count)
+    }
+
     func appendShape(_ shape: DrawList.Shape, _ meshes: ShapeMeshes.Meshes, to batches: inout [Batch]) {
         let colours = ShapeMeshes.colours(shape)
         let fill = meshes.fill.flatMap { !$0.isEmpty && colours[3] > 0 ? $0 : nil }
@@ -75,16 +123,7 @@ extension SpriteBatcher {
         to batches: inout [Batch]
     ) {
         let count = (fill?.vertexCount ?? 0) + (stroke?.vertexCount ?? 0)
-        let index: Int
-        if let last = batches.indices.last,
-           batches[last].texture == nil, batches[last].shader == nil,
-           batches[last].attributeValues.isEmpty, batches[last].blendMode == .alpha,
-           batches[last].vertices.count / Self.floatsPerVertex + count <= Int(UInt16.max) + 1 {
-            index = last
-        } else {
-            batches.append(Batch(blendMode: .alpha))
-            index = batches.count - 1
-        }
+        let index = colourBatch(for: count, in: &batches)
         let first = batches[index].vertices.count / Self.floatsPerVertex
 
         // Both parts written after whatever `vertices` holds, indices
@@ -111,14 +150,15 @@ extension SpriteBatcher {
                writeParts(into: &vertices, &indices, firstIndex: 0)
                return (vertices, indices)
            }) {
-            batches[index].vertices.append(contentsOf: kept.vertices)
-            batches[index].indices.append(contentsOf: kept.indices)
+            append(kept.vertices, kept.indices, to: &batches[index])
         } else {
+            reserve(count * Self.floatsPerVertex, (fill?.indices.count ?? 0) + (stroke?.indices.count ?? 0), in: &batches[index])
             // Moved out and back rather than borrowed twice from one batch.
             var vertices: [Float] = [], indices: [UInt16] = []
             swap(&vertices, &batches[index].vertices)
             swap(&indices, &batches[index].indices)
             writeParts(into: &vertices, &indices, firstIndex: first)
+            shapeMeshes?.noteBatch(floats: vertices.count, indices: indices.count)
             swap(&vertices, &batches[index].vertices)
             swap(&indices, &batches[index].indices)
         }
@@ -168,18 +208,36 @@ extension SpriteBatcher {
         }
         let t = shape.transform
         let a = Float(t.a), b = Float(t.b), c = Float(t.c), d = Float(t.d), tx = Float(t.tx), ty = Float(t.ty)
-        let first = UInt16(batches[index].vertices.count / Self.floatsPerVertex)
-        batches[index].vertices.reserveCapacity(batches[index].vertices.count + mesh.vertexCount * Self.floatsPerVertex)
-        for i in 0 ..< mesh.vertexCount {
-            let p = mesh.positions[i], uv = mesh.texCoords[i]
-            batches[index].vertices.append(contentsOf: [
-                a * p.x + c * p.y + tx, b * p.x + d * p.y + ty,
-                uv.x / repeatLength, uv.y,
-                colours[4], colours[5], colours[6], colours[7] * mesh.coverage[i],
-                0,
-            ])
+        let stride = Self.floatsPerVertex
+        let first = UInt16(batches[index].vertices.count / stride)
+        // Made in a buffer of its own and appended whole: a nine-float array
+        // a vertex was a heap allocation for every vertex of every ring.
+        let made = [Float](unsafeUninitializedCapacity: mesh.vertexCount * stride) { out, count in
+            mesh.positions.withUnsafeBufferPointer { positions in
+                mesh.texCoords.withUnsafeBufferPointer { texCoords in
+                    mesh.coverage.withUnsafeBufferPointer { coverage in
+                        var o = 0
+                        for i in 0 ..< positions.count {
+                            let p = positions[i], uv = texCoords[i]
+                            out[o] = a * p.x + c * p.y + tx
+                            out[o + 1] = b * p.x + d * p.y + ty
+                            out[o + 2] = uv.x / repeatLength
+                            out[o + 3] = uv.y
+                            out[o + 4] = colours[4]
+                            out[o + 5] = colours[5]
+                            out[o + 6] = colours[6]
+                            out[o + 7] = colours[7] * coverage[i]
+                            out[o + 8] = 0
+                            o += stride
+                        }
+                    }
+                }
+            }
+            count = mesh.vertexCount * stride
         }
-        batches[index].indices.append(contentsOf: mesh.indices.lazy.map { first &+ $0 })
+        reserve(made.count, mesh.indices.count, in: &batches[index])
+        batches[index].vertices.append(contentsOf: made)
+        batches[index].indices.append(contentsOf: Self.offset(mesh.indices, by: first))
     }
 
     /// One mesh moved by `transform` and coloured, appended as the colour
@@ -195,13 +253,13 @@ extension SpriteBatcher {
     ) {
         let a = Float(t.a), b = Float(t.b), c = Float(t.c), d = Float(t.d), tx = Float(t.tx), ty = Float(t.ty)
         let stride = floatsPerVertex
-        let start = vertices.count
         let first = UInt16(firstIndex)
-        vertices.append(contentsOf: repeatElement(0, count: mesh.vertexCount * stride))
-        vertices.withUnsafeMutableBufferPointer { out in
+        // Made in a buffer of its own and appended whole (a copy), rather
+        // than the batch grown by zeros a float at a time first.
+        let made = [Float](unsafeUninitializedCapacity: mesh.vertexCount * stride) { out, count in
             mesh.positions.withUnsafeBufferPointer { positions in
                 mesh.coverage.withUnsafeBufferPointer { coverage in
-                    var o = start
+                    var o = 0
                     for i in 0 ..< positions.count {
                         let p = positions[i]
                         out[o] = a * p.x + c * p.y + tx
@@ -217,7 +275,20 @@ extension SpriteBatcher {
                     }
                 }
             }
+            count = mesh.vertexCount * stride
         }
-        indices.append(contentsOf: mesh.indices.lazy.map { first &+ $0 })
+        vertices.append(contentsOf: made)
+        indices.append(contentsOf: offset(mesh.indices, by: first))
+    }
+
+    /// `indices` each moved on by `first`, made at once.
+    static func offset(_ indices: [UInt16], by first: UInt16) -> [UInt16] {
+        guard first != 0 else { return indices }
+        return [UInt16](unsafeUninitializedCapacity: indices.count) { out, count in
+            indices.withUnsafeBufferPointer { source in
+                for i in 0 ..< source.count { out[i] = source[i] &+ first }
+            }
+            count = indices.count
+        }
     }
 }
