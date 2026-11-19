@@ -18,6 +18,9 @@ public enum CoverageGeometry {
         public var page: Int
         public var vertices: [Float]
         public var indices: [UInt16]
+        /// Colour glyphs (emoji) off a colour page: RGBA drawn as it is,
+        /// the vertex colour's alpha its opacity.
+        public var isColour = false
 
         public var quadCount: Int { indices.count / 6 }
     }
@@ -77,12 +80,15 @@ public enum CoverageGeometry {
         /// The UTF-8 offset in the line of the character it came from
         /// (HarfBuzz's cluster), for letter spacing.
         public var cluster: Int
+        /// On a colour page rather than a coverage one.
+        public var isColour: Bool
 
-        public init(page: Int, rect: CGRect, frame: CGRect, cluster: Int = 0) {
+        public init(page: Int, rect: CGRect, frame: CGRect, cluster: Int = 0, isColour: Bool = false) {
             self.page = page
             self.rect = rect
             self.frame = frame
             self.cluster = cluster
+            self.isColour = isColour
         }
     }
 
@@ -95,6 +101,8 @@ public enum CoverageGeometry {
         /// The page's size in pixels, for turning rects into texture
         /// coordinates. Nil for a page that does not exist.
         func pageSize(_ page: Int) -> CGSize?
+        /// A colour page's size, likewise.
+        func colourPageSize(_ page: Int) -> CGSize?
     }
 
     // MARK: - Labels
@@ -110,13 +118,15 @@ public enum CoverageGeometry {
         let font = FontKey(name: label.fontName ?? "", size: label.fontSize)
         let colour = tint(label.color, alpha: label.alpha)
 
+        // Coverage pages by their index, colour pages after them by theirs.
         var runs: [Int: Run] = [:]
         var order: [Int] = []
 
         for placed in layout.lines {
             let characterStarts = label.kern == 0 ? [] : Self.characterStarts(placed.line.text)
             for glyph in source.glyphs(for: placed.line.text, font: font) {
-                guard let page = source.pageSize(glyph.page), page.width > 0, page.height > 0
+                guard let page = glyph.isColour ? source.colourPageSize(glyph.page) : source.pageSize(glyph.page),
+                      page.width > 0, page.height > 0
                 else { continue }
 
                 // Letter spacing (an attributed label's `.kern`): each
@@ -126,15 +136,19 @@ public enum CoverageGeometry {
                 let frame = glyph.frame.offsetBy(dx: placed.origin.x + spacing, dy: placed.origin.y)
                 guard frame.width > 0, frame.height > 0 else { continue }
 
-                if runs[glyph.page] == nil {
-                    runs[glyph.page] = Run(page: glyph.page, vertices: [], indices: [])
-                    order.append(glyph.page)
+                let key = glyph.isColour ? -2 - glyph.page : glyph.page
+                if runs[key] == nil {
+                    var run = Run(page: glyph.page, vertices: [], indices: [])
+                    run.isColour = glyph.isColour
+                    runs[key] = run
+                    order.append(key)
                 }
-                runs[glyph.page]!.append(
+                runs[key]!.append(
                     quad: frame,
                     uv: textureRect(of: glyph.rect, on: page),
                     transform: label.transform,
-                    colour: colour
+                    // Emoji keep their own colours, at the text's opacity.
+                    colour: glyph.isColour ? [1, 1, 1, colour[3], 0] : colour
                 )
             }
         }
@@ -221,6 +235,11 @@ public enum CoverageGeometry {
             0,
         ]
     }
+}
+
+extension CoverageGeometry.GlyphSource {
+    /// No colour pages, for a source without colour glyphs.
+    public func colourPageSize(_ page: Int) -> CGSize? { nil }
 }
 
 extension CoverageGeometry.Run {

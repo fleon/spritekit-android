@@ -354,6 +354,21 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
         var masks: [GlyphMask] = []
         var pen: CGFloat = 0
         for run in runs {
+            if let box = colourBox(of: run, font: font), let face = library.face(run.face(in: font)) {
+                // Colour glyphs (emoji): their image in its box, snapped to whole pixels.
+                let pixels = Int((box.width * scale).rounded())
+                for glyph in run.glyphs {
+                    let x = (offset.x + (pen + glyph.xOffset + box.minX) * scale).rounded(.down)
+                    let top = (offset.y + (glyph.yOffset + box.maxY) * scale).rounded()
+                    if let image = face.colourImage(glyph.glyph, pixels: pixels) {
+                        masks.append(GlyphMask(origin: CGPoint(x: x, y: top), width: pixels, height: pixels,
+                                               coverage: stride(from: 3, to: image.pixels.count, by: 4).map { image.pixels[$0] },
+                                               colour: image.pixels))
+                    }
+                    pen += glyph.xAdvance
+                }
+                continue
+            }
             guard let face = library.face(FontKey(name: run.face(in: font).name, size: font.size * scale)) else {
                 pen += run.advance
                 continue
@@ -378,6 +393,15 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
             }
         }
         return masks
+    }
+
+    /// Where a run's glyphs are drawn when its face is a colour face
+    /// (emoji): Apple Color Emoji's box at `font`'s size, from the pen on
+    /// the baseline, y up; their pixels come from `GlyphAtlas.colourGlyph`.
+    /// Nil for any other run.
+    public func colourBox(of run: ShapedRun, font: FontKey) -> CGRect? {
+        guard let face = library.face(run.face(in: font)), face.hasColourGlyphs else { return nil }
+        return EmojiMetrics.box(font.size)
     }
 
     /// Each character's advance in the shaped line: every glyph's advance

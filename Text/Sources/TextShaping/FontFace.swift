@@ -28,41 +28,51 @@ public enum FontError: Error, CustomStringConvertible {
 /// read: a system collection (Noto CJK) is tens of megabytes, of which a
 /// line touches a few pages.
 public final class FontFile: @unchecked Sendable {
-    /// Never changed, so its bytes stay where FreeType and HarfBuzz were
-    /// told they are for as long as the file lives (every face keeps it).
-    let data: Data
+    /// The file's bytes, owned by the file: mapped from disk, or a copy of
+    /// bytes handed over. FreeType and HarfBuzz keep pointers into them for
+    /// as long as the file lives (every face keeps it), so they are never
+    /// borrowed from a `Data`, whose storage a closure only lends.
+    let bytes: UnsafeRawBufferPointer
+    private let isMapped: Bool
     public let path: String
     private let lock = NSLock()
-    /// HarfBuzz's face of each index, over `data` itself (no table copies),
-    /// shared by every size.
+    /// HarfBuzz's face of each index, over `bytes` themselves (no table
+    /// copies), shared by every size.
     private var hbFaces: [Int: OpaquePointer] = [:]
 
     public init(path: String) throws {
-        guard let data = MappedFile.map(path) else {
+        guard let bytes = MappedFile.map(path) else {
             throw FontError.fileUnreadable(path)
         }
         self.path = path
-        self.data = data
+        self.bytes = bytes
+        isMapped = true
     }
 
     public init(data: Data, name: String) {
         path = name
-        self.data = data
+        let copy = UnsafeMutableRawBufferPointer.allocate(byteCount: max(data.count, 1), alignment: 16)
+        data.copyBytes(to: copy.bindMemory(to: UInt8.self))
+        bytes = UnsafeRawBufferPointer(rebasing: copy[0 ..< data.count])
+        isMapped = false
     }
 
     deinit {
         for face in hbFaces.values { hb_face_destroy(face) }
+        if isMapped {
+            MappedFile.unmap(bytes)
+        } else {
+            bytes.baseAddress.map { UnsafeMutableRawPointer(mutating: $0).deallocate() }
+        }
     }
 
     /// How many faces the file holds: one, or a collection's count.
     var faceCount: Int {
-        data.withUnsafeBytes { bytes -> Int in
-            guard let base = bytes.baseAddress,
-                  let blob = hb_blob_create(base.assumingMemoryBound(to: CChar.self), UInt32(bytes.count),
-                                            HB_MEMORY_MODE_READONLY, nil, nil) else { return 0 }
-            defer { hb_blob_destroy(blob) }
-            return Int(hb_face_count(blob))
-        }
+        guard let base = bytes.baseAddress,
+              let blob = hb_blob_create(base.assumingMemoryBound(to: CChar.self), UInt32(bytes.count),
+                                        HB_MEMORY_MODE_READONLY, nil, nil) else { return 0 }
+        defer { hb_blob_destroy(blob) }
+        return Int(hb_face_count(blob))
     }
 
     /// The face at `index` as HarfBuzz reads it straight from the bytes,
@@ -70,12 +80,12 @@ public final class FontFile: @unchecked Sendable {
     func hbFace(index: Int) -> OpaquePointer? {
         lock.withLock {
             if let face = hbFaces[index] { return face }
-            let face = data.withUnsafeBytes { bytes -> OpaquePointer? in
-                guard let base = bytes.baseAddress,
-                      let blob = hb_blob_create(base.assumingMemoryBound(to: CChar.self), UInt32(bytes.count),
-                                                HB_MEMORY_MODE_READONLY, nil, nil) else { return nil }
-                defer { hb_blob_destroy(blob) }
-                return hb_face_create(blob, UInt32(index))
+            var face: OpaquePointer?
+            if let base = bytes.baseAddress,
+               let blob = hb_blob_create(base.assumingMemoryBound(to: CChar.self), UInt32(bytes.count),
+                                         HB_MEMORY_MODE_READONLY, nil, nil) {
+                face = hb_face_create(blob, UInt32(index))
+                hb_blob_destroy(blob)
             }
             if let face {
                 hb_face_make_immutable(face)
@@ -139,6 +149,9 @@ final class FaceHandle {
     /// default instance.
     private(set) var advanceVariations: AdvanceVariations?
     private(set) var instanceNames: [String] = []
+    /// A colour face (emoji): strikes (CBDT, sbix) or COLR glyphs, laid
+    /// out and drawn as Core Text lays out Apple Color Emoji (`EmojiMetrics`).
+    private(set) var hasColourGlyphs = false
 
     /// Holds the face while `body` uses it. Every call into FreeType or
     /// HarfBuzz on this face is inside one of these.
@@ -165,10 +178,8 @@ final class FaceHandle {
 
         var face: FT_Face?
         let error = FaceHandle.libraryLock.withLock {
-            file.data.withUnsafeBytes { buffer in
-                FT_New_Memory_Face(library, buffer.baseAddress?.assumingMemoryBound(to: FT_Byte.self),
-                                   FT_Long(buffer.count), FT_Long(index), &face)
-            }
+            FT_New_Memory_Face(library, file.bytes.baseAddress?.assumingMemoryBound(to: FT_Byte.self),
+                               FT_Long(file.bytes.count), FT_Long(index), &face)
         }
         guard error == FT_Err_Ok, let face else {
             throw FontError.faceUnreadable(file.path, error)
@@ -199,6 +210,8 @@ final class FaceHandle {
         guard sized == FT_Err_Ok || !isScalable else { throw FontError.sizeRejected(sized) }
 
         if let hbFace = file.hbFace(index: index), let exact = hb_font_create(hbFace) {
+            hasColourGlyphs = hb_ot_color_has_png(hbFace) != 0 || hb_ot_color_has_paint(hbFace) != 0
+                || hb_ot_color_has_layers(hbFace) != 0
             let units = Int32(face.pointee.units_per_EM) * FaceHandle.subunits
             hb_font_set_scale(exact, units, units)
             // HarfBuzz counts named instances from 0, FreeType from 1.

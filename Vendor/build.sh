@@ -80,6 +80,10 @@ HB_FLAGS=(
     -DHB_BUILD_SUBSET=OFF
     -DHB_BUILD_UTILS=OFF
     -DHB_BUILD_TESTS=OFF
+    # Its rasteriser (colour glyphs) would take a host's libpng where it
+    # finds one; Android has none, and strikes' PNGs are decoded by the
+    # platform's decoder, so neither build has it.
+    -DCMAKE_DISABLE_FIND_PACKAGE_PNG=ON
 )
 
 write_pc() { # prefix

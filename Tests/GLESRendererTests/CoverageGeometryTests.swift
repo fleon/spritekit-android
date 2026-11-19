@@ -17,6 +17,8 @@ final class CoverageGeometryTests: XCTestCase {
     /// put on page 1 to check runs are split by page.
     private final class Squares: CoverageGeometry.GlyphSource {
         var onPageOne: Set<Character> = []
+        /// Characters whose glyph is a colour glyph, on colour page 0.
+        var colour: Set<Character> = []
         private(set) var asked: [String] = []
 
         func glyphs(for line: String, font: FontKey) -> [CoverageGeometry.Glyph] {
@@ -28,7 +30,8 @@ final class CoverageGeometryTests: XCTestCase {
                     page: onPageOne.contains(character) ? 1 : 0,
                     rect: CGRect(x: 10, y: 20, width: 10, height: 10),
                     frame: CGRect(x: CGFloat(index) * 12, y: 0, width: 10, height: 10),
-                    cluster: offset
+                    cluster: offset,
+                    isColour: colour.contains(character)
                 )
             }
         }
@@ -39,6 +42,10 @@ final class CoverageGeometryTests: XCTestCase {
             case 1: return CGSize(width: 50, height: 50)
             default: return nil
             }
+        }
+
+        func colourPageSize(_ page: Int) -> CGSize? {
+            page == 0 ? CGSize(width: 40, height: 40) : nil
         }
     }
 
@@ -94,6 +101,22 @@ final class CoverageGeometryTests: XCTestCase {
         XCTAssertEqual(corner(run, quad: 0, 2), CGPoint(x: 110, y: 60))
         // Second: one 12-point advance on.
         XCTAssertEqual(corner(run, quad: 1, 0), CGPoint(x: 112, y: 50))
+    }
+
+    func testColourGlyphsAreARunOfTheirOwnKeepingTheirColoursAtTheLabelsOpacity() throws {
+        let source = Squares()
+        source.colour = ["😀"]
+        let runs = CoverageGeometry.runs(
+            for: label("a😀b", lines: [("a😀b", CGPoint(x: 0, y: 0))], alpha: 0.5),
+            source: source
+        )
+        XCTAssertEqual(runs.map(\.isColour), [false, true], "coverage page 0 and colour page 0 are different pages")
+        XCTAssertEqual(runs.map(\.quadCount), [2, 1])
+        let colour = try XCTUnwrap(runs.last)
+        // Texture coordinates on the 40-point colour page; white at the label's opacity.
+        XCTAssertEqual(colour.vertices[2], 10.0 / 40, accuracy: 1e-6)
+        XCTAssertEqual(Array(colour.vertices[4 ..< 9]), [1, 1, 1, 0.5, 0])
+        XCTAssertEqual(corner(colour, quad: 0, 0), CGPoint(x: 12, y: 0))
     }
 
     func testLetterSpacingMovesEachCharacterOnByTheSpacingBeforeIt() throws {

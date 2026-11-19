@@ -42,6 +42,14 @@ extension FaceHandle {
 
         var glyphs: [ShapedGlyph] = []
         glyphs.reserveCapacity(Int(count))
+        // A colour face's glyphs (emoji) space as Apple Color Emoji's do.
+        if hasColourGlyphs {
+            let advance = EmojiMetrics.advance(size)
+            for index in 0..<Int(count) {
+                glyphs.append(ShapedGlyph(glyph: infos[index].codepoint, cluster: byteOffset + Int(infos[index].cluster), xAdvance: advance))
+            }
+            return ShapedRun(glyphs: glyphs, script: script, byteOffset: byteOffset)
+        }
         for index in 0..<Int(count) {
             glyphs.append(ShapedGlyph(
                 glyph: infos[index].codepoint,
@@ -115,16 +123,11 @@ extension FaceHandle {
     /// Drawn by HarfBuzz at `exactFont`'s scale, so the named instance's
     /// variations are in it.
     private func unsafeOutlineBox(_ glyph: UInt32) -> CGRect? {
+        // A colour glyph's box is its image's, where Core Text puts Apple Color Emoji's.
+        if hasColourGlyphs { return EmojiMetrics.box(size) }
         guard let exactFont, let funcs = FaceHandle.inkFuncs else { return nil }
         var box = InkBox()
         hb_font_draw_glyph(exactFont, glyph, funcs, &box)
-        if box.minX > box.maxX {
-            // No outline: a colour bitmap's own box (emoji), where it has one.
-            var extents = hb_glyph_extents_t()
-            guard hb_font_get_glyph_extents(exactFont, glyph, &extents) != 0, extents.width != 0, extents.height != 0 else { return nil }
-            box.add(Double(extents.x_bearing), Double(extents.y_bearing))
-            box.add(Double(extents.x_bearing + extents.width), Double(extents.y_bearing + extents.height))
-        }
         guard box.minX <= box.maxX, box.minY <= box.maxY else { return nil }
         let unit = Double(FaceHandle.subunits)
         let scale = Double(pointsPerUnit) * unit

@@ -1018,6 +1018,31 @@ public final class BitmapContext {
         paint(Coverage(box: box, alpha: alpha), with: .solid(Premultiplied(colour, alpha: state.alpha)))
     }
 
+    /// Lays a colour glyph's premultiplied RGBA pixels down source-over at
+    /// `alpha`, placed as `fillMask` places a mask (`y` its top row in
+    /// memory when `rowsDown`, else its bottom).
+    public func fillImage(
+        _ image: [UInt8], width imageWidth: Int, height imageHeight: Int,
+        atDeviceX x: Int, y: Int, rowsDown: Bool, alpha: CGFloat
+    ) {
+        flushPending()
+        guard imageWidth > 0, imageHeight > 0, image.count >= imageWidth * imageHeight * 4 else { return }
+        let firstRow = rowsDown ? y : y - imageHeight + 1
+        var reachable = canvasBox
+        if let clip = state.clip { reachable = reachable.intersection(clip.box) }
+        let box = PathRasteriser.PixelBox(x: x, y: firstRow, width: imageWidth, height: imageHeight).intersection(reachable)
+        guard !box.isEmpty else { return }
+        let opacity = max(0, min(1, alpha * state.alpha))
+        let unit = Self.unit
+        composite(box: box, coverage: nil) { px, py in
+            let row = rowsDown ? py - y : y - py
+            let at = (row * imageWidth + (px - x)) * 4
+            guard image[at + 3] > 0 else { return nil }
+            return Premultiplied(r: unit[Int(image[at])] * opacity, g: unit[Int(image[at + 1])] * opacity,
+                                 b: unit[Int(image[at + 2])] * opacity, a: unit[Int(image[at + 3])] * opacity)
+        }
+    }
+
     // MARK: Painting
 
     private enum Paint {

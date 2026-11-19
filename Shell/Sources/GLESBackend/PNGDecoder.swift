@@ -41,6 +41,9 @@ public enum PNGDecoder {
         var width = 0, height = 0, depth = 0, colour = 0, interlace = 0
         var compressed = Data()
         var palette: [UInt8] = []
+        // Transparency (tRNS): a palette's alphas, or the one grey or rgb
+        // value that is clear (a colour emoji's strike has them).
+        var transparency: [UInt8] = []
         var sawHeader = false
 
         var i = 8
@@ -61,6 +64,8 @@ public enum PNGDecoder {
                 sawHeader = true
             case "PLTE":
                 palette = Array(bytes[start ..< start + length])
+            case "tRNS":
+                transparency = Array(bytes[start ..< start + length])
             case "IDAT":
                 compressed.append(contentsOf: bytes[start ..< start + length])
             case "IEND":
@@ -98,7 +103,8 @@ public enum PNGDecoder {
         return Image(
             width: width,
             height: height,
-            pixels: expand(lines, width: width, height: height, colour: colour, channels: channels, palette: palette)
+            pixels: expand(lines, width: width, height: height, colour: colour, channels: channels, palette: palette,
+                           transparency: transparency)
         )
     }
 
@@ -191,9 +197,15 @@ public enum PNGDecoder {
 
     private static func expand(
         _ lines: [UInt8], width: Int, height: Int,
-        colour: Int, channels: Int, palette: [UInt8]
+        colour: Int, channels: Int, palette: [UInt8], transparency: [UInt8] = []
     ) -> Data {
         if colour == 6 { return Data(lines) }
+        // A grey or rgb key: 16-bit samples, of which an 8-bit image uses the low byte.
+        let key: [UInt8]? = switch colour {
+        case 0 where transparency.count >= 2: [transparency[1]]
+        case 2 where transparency.count >= 6: [transparency[1], transparency[3], transparency[5]]
+        default: nil
+        }
 
         var out = [UInt8](repeating: 255, count: width * height * 4)
         for i in 0 ..< (width * height) {
@@ -203,17 +215,22 @@ public enum PNGDecoder {
             case 0:
                 let g = lines[source]
                 out[destination] = g; out[destination + 1] = g; out[destination + 2] = g
+                if let key, g == key[0] { out[destination + 3] = 0 }
             case 2:
                 out[destination] = lines[source]
                 out[destination + 1] = lines[source + 1]
                 out[destination + 2] = lines[source + 2]
+                if let key, lines[source] == key[0], lines[source + 1] == key[1], lines[source + 2] == key[2] {
+                    out[destination + 3] = 0
+                }
             case 3:
-                let index = Int(lines[source]) * 3
+                let entry = Int(lines[source]), index = entry * 3
                 if index + 2 < palette.count {
                     out[destination] = palette[index]
                     out[destination + 1] = palette[index + 1]
                     out[destination + 2] = palette[index + 2]
                 }
+                if entry < transparency.count { out[destination + 3] = transparency[entry] }
             case 4:
                 let g = lines[source]
                 out[destination] = g; out[destination + 1] = g; out[destination + 2] = g

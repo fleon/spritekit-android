@@ -8,11 +8,11 @@ import Android
 import Glibc
 #endif
 
-/// A file mapped read-only into memory, as `Data` that unmaps it when the
-/// last copy goes. Pages are read as they are touched, so a large font costs
-/// what is drawn from it, not its size.
+/// A file mapped read-only into memory, until `unmap`. Pages are read as
+/// they are touched, so a large font costs what is drawn from it, not its
+/// size.
 enum MappedFile {
-    static func map(_ path: String) -> Data? {
+    static func map(_ path: String) -> UnsafeRawBufferPointer? {
         let descriptor = open(path, O_RDONLY)
         guard descriptor >= 0 else { return nil }
         defer { close(descriptor) }
@@ -23,9 +23,11 @@ enum MappedFile {
         // is (void *)-1 on both (MAP_FAILED, which Swift doesn't import on Android).
         let mapped: UnsafeMutableRawPointer? = mmap(nil, length, PROT_READ, MAP_PRIVATE, descriptor, 0)
         guard let address = mapped, Int(bitPattern: address) != -1 else { return nil }
-        return Data(bytesNoCopy: address, count: length, deallocator: .custom { pointer, count in
-            munmap(pointer, count)
-        })
+        return UnsafeRawBufferPointer(start: address, count: length)
+    }
+
+    static func unmap(_ bytes: UnsafeRawBufferPointer) {
+        if let base = bytes.baseAddress { munmap(UnsafeMutableRawPointer(mutating: base), bytes.count) }
     }
 }
 #endif
