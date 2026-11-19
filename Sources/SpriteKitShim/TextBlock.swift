@@ -68,8 +68,10 @@ public extension TextProvider {
 ///     UIKit places them whatever `setShouldSubpixelQuantizeFonts` says.
 public struct TextBlock {
     public enum Alignment: Sendable {
-        /// `natural`: the paragraph's direction's, right for a right-to-left
-        /// paragraph (`Bidi`), else left.
+        /// `natural`: the interface's direction's, as UIKit's string drawing
+        /// takes it, not the paragraph's: left, the games' interfaces being
+        /// left-to-right, even for a right-to-left paragraph (measured on
+        /// Catalyst).
         case left, center, right, justified, natural
     }
 
@@ -134,8 +136,7 @@ public struct TextBlock {
         /// widens.
         public var spaces: Int
         /// In a right-to-left paragraph: its pieces placed right to left,
-        /// natural alignment its right edge, the spaces it ends on hanging
-        /// past its left (`Bidi`).
+        /// the spaces it ends on hanging past its left edge (`Bidi`).
         public var rightToLeft = false
 
         public var height: CGFloat { ascent + descent + leading }
@@ -178,10 +179,8 @@ public struct TextBlock {
             let x = Self.offset(of: line, in: width)
             if line.rightToLeft {
                 // A right-to-left line's spaces hang past its left edge, no
-                // further than the rect's, and naturally aligned it leaves
-                // them out (measured on Catalyst).
-                let hang = line.style.alignment == .natural ? 0 : line.width - line.visibleWidth
-                minX = min(minX, max(0, x - hang))
+                // further than the rect's (measured on Catalyst).
+                minX = min(minX, max(0, x - (line.width - line.visibleWidth)))
                 maxX = max(maxX, x + line.visibleWidth)
                 continue
             }
@@ -227,7 +226,7 @@ public struct TextBlock {
         switch line.style.alignment {
         case .left: 0
         case .justified: 0
-        case .natural: line.rightToLeft ? width - line.visibleWidth : 0
+        case .natural: 0
         case .center: (width - line.visibleWidth) / 2
         case .right: width - line.visibleWidth
         }
