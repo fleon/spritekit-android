@@ -1,30 +1,48 @@
 # SpriteKit for Android
 
-**The parts every SpriteKit game rewrites, written once, and a way to ship
-the same game on Android without rewriting it.**
+**Bring your SpriteKit game to Android without rewriting it.**
 
-This repository is two things, and you can use either on its own:
+SpriteKit for Android is a Swift runtime that lets a SpriteKit game's own
+sources compile and run on Android, unedited. Your code keeps `import
+SpriteKit`, `import UIKit`, `import CoreGraphics` and the rest; this runtime
+answers those imports with its own implementation of the SpriteKit, UIKit,
+CoreGraphics and CoreText surface a game uses, draws with OpenGL ES 3
+through SDL3, and puts Google Play's billing, games services and saved games
+behind the same Apple-shaped APIs your managers already call.
 
-- **A toolkit for SpriteKit games on Apple platforms** (`Platform/`). The
-  boilerplate nearly every SpriteKit game ends up writing for itself, as
-  small Swift packages: audio, in-app purchases, Game Center, synced saved
-  data, focus and gamepads, frame-rate and graphics settings, sprite and
-  text helpers, eased actions and more. It builds against Apple's own
-  SpriteKit, UIKit, StoreKit and GameKit on iPhone, iPad, Apple TV and the
-  Mac, so it's useful even if you never ship on Android.
-- **A SpriteKit runtime for Android.** A Swift implementation of the
-  SpriteKit, UIKit, CoreGraphics and CoreText surface a game uses, so your
-  game's own sources compile for Android unedited, `import SpriteKit` and
-  all. It draws with OpenGL ES 3 through SDL3 and puts Google Play's
-  billing, games services and saved games behind the same Apple-shaped APIs.
-
-The toolkit runs on Android too, so a game that uses it gets its purchases,
-achievements and saves on both stores from one set of calls.
+Alongside it is a toolkit (`Platform/`): the boilerplate nearly every
+SpriteKit game ends up writing for itself (audio, in-app purchases, Game
+Center, synced saved data, focus and gamepads, display settings, sprite and
+text helpers), as small Swift packages that build against Apple's own
+frameworks on iPhone, iPad, Apple TV and the Mac and against the runtime on
+Android. A game that uses it gets its purchases, achievements and saves on
+both stores from one set of calls, and it's useful on its own in a game that
+only ships on Apple platforms.
 
 It grew out of building and porting real, shipping SpriteKit games. It's
 open source under the MIT license, and contributions are very welcome.
 
-## The toolkit
+## What the runtime covers
+
+- **Your scenes, nodes and actions as they are.** `SKNode`, `SKScene`,
+  `SKSpriteNode` and your subclasses of them, actions, shaders (GLSL, as
+  SpriteKit takes them), crop and effect nodes, warps, emitters, labels,
+  transitions and cameras.
+- **Text that looks like Apple's.** HarfBuzz shaping and FreeType
+  rasterising, matched to Core Text's metrics: bidirectional text, Arabic,
+  Thai, CJK, emoji and attributed strings.
+- **Google Play behind Apple's APIs.** StoreKit-shaped purchases on Play
+  Billing, GameKit-shaped achievements and leaderboards on Play Games,
+  `NSUbiquitousKeyValueStore` on Saved Games, sharing, haptics and in-app
+  review.
+- **Measured against Apple.** Behaviour is checked against SpriteKit on a
+  Mac and pinned in host tests, so the Android build looks and moves like
+  the iOS one.
+- **One build number, one product ID.** The Gradle app template reads the
+  Xcode project's version and uses the iOS bundle ID, so both stores stay in
+  step.
+
+## The toolkit (`Platform/`)
 
 Each module is its own library product in `Platform/Package.swift`; link
 only the ones you need. A game passes in what's its own (its sounds, product
@@ -47,38 +65,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 
 "Shared platform code" below describes each one in detail.
 
-## The Android runtime
-
-- **Your scenes, nodes and actions as they are.** `SKNode`, `SKScene`,
-  `SKSpriteNode` and your subclasses of them, actions, shaders (GLSL, as
-  SpriteKit takes them), crop and effect nodes, warps, emitters, labels,
-  transitions and cameras.
-- **Text that looks like Apple's.** HarfBuzz shaping and FreeType
-  rasterising, matched to Core Text's metrics: bidirectional text, Arabic,
-  Thai, CJK, emoji and attributed strings.
-- **Google Play behind Apple's APIs.** StoreKit-shaped purchases on Play
-  Billing, GameKit-shaped achievements and leaderboards on Play Games,
-  `NSUbiquitousKeyValueStore` on Saved Games, sharing, haptics and in-app
-  review.
-- **Measured against Apple.** Behaviour is checked against SpriteKit on a
-  Mac and pinned in host tests, so the Android build looks and moves like
-  the iOS one.
-- **One build number, one product ID.** The Gradle app template reads the
-  Xcode project's version and uses the iOS bundle ID, so both stores stay in
-  step.
-
 ## Getting started
-
-### Use the toolkit in your Apple game
-
-1. Add this repository to your game as a git submodule, for example at
-   `Android/spritekit-android` (the path the Android half expects, so it's
-   ready if you port later).
-2. In Xcode, add `<submodule>/Platform` as a local package (File → Add
-   Package Dependencies → Add Local…) and link the products you want to
-   your app target.
-3. `import PlatformCore` (or `PlatformStore`, `PlatformAudio`, …) where you
-   use them, and delete your own copies of what they replace.
 
 ### Try the Android runtime
 
@@ -115,6 +102,17 @@ Scripts/check-android.sh arm64-v8a          # cross-compiles the runtime
 
 "Using it in a game" below has each step in detail, and "How it works"
 explains the runtime itself.
+
+### Use just the toolkit in an Apple game
+
+1. Add this repository to your game as a git submodule, for example at
+   `Android/spritekit-android` (the path the runtime expects, so it's
+   ready if you port later).
+2. In Xcode, add `<submodule>/Platform` as a local package (File → Add
+   Package Dependencies → Add Local…) and link the products you want to
+   your app target.
+3. `import PlatformCore` (or `PlatformStore`, `PlatformAudio`, …) where you
+   use them, and delete your own copies of what they replace.
 
 ## Getting help and contributing
 
