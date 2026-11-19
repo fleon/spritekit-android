@@ -43,8 +43,9 @@ public enum ResourceBundle {
     nonisolated(unsafe) private static var unpacked: Set<String> = []
     nonisolated(unsafe) private static var cache: URL?
 
-    /// The strings each language's folder holds.
-    static let stringTables = ["Localizable.strings", "Content.strings"]
+    /// The strings each language's folder holds, and their plurals
+    /// (`StringsDict`).
+    static let stringTables = ["Localizable.strings", "Content.strings", "Localizable.stringsdict", "Content.stringsdict"]
 
     /// Installs the providers. Call once, before the first scene builds.
     public static func install(folder rule: @escaping FolderRule = defaultFolder) {
