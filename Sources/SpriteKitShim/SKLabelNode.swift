@@ -299,7 +299,8 @@ open class SKLabelNode: SKNode {
         if let runs, preferredMaxLayoutWidth == 0 {
             guard let (lines, pieces) = paragraphLines(runs, provider: provider) else { return nil }
             laidOutRuns = pieces
-            return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode, alignsLinesRight: alignsLinesRight)
+            return Self.spriteKitParagraph(lines, horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode,
+                                           alignsLinesRight: alignsLinesRight, alignsLinesByDirection: alignsLinesByDirection)
         }
         let font = FontKey(name: fontName ?? "", size: fontSize)
         guard let metrics = provider.fontMetrics(font) else { return nil }
@@ -395,6 +396,56 @@ open class SKLabelNode: SKNode {
             }
             return true
         }
+        // A line with right-to-left text in it: its pieces cut where the
+        // level changes and drawn in L2's order (`Bidi.segments`), each in
+        // its own direction, a right-to-left stretch's spaces on its left;
+        // a right-to-left line ends on the block's right edge.
+        var lineStart = 0
+        func reorder() {
+            defer { lineStart = placedRuns.count }
+            let texts = currentText.map(\.text)
+            guard texts.contains(where: Bidi.needsReordering) else { return }
+            let direction = Bidi.direction(of: texts.joined())
+            current.rightToLeft = direction == .rightToLeft
+            var pieces: [(line: TextLine, x: CGFloat, rise: CGFloat)] = []
+            var placed: [Run] = []
+            var pen: CGFloat = 0
+            func place(_ run: Run, _ text: String) {
+                guard !text.isEmpty else { return }
+                let line = measured(run, text)
+                pieces.append((line, pen, run.baselineOffset))
+                var piece = run
+                piece.text = text
+                placed.append(piece)
+                pen += line.advance
+            }
+            // The spaces the line ends on go last, at its right, where they
+            // draw nothing.
+            var visible = texts.map { Array($0) }
+            var trailing: [(Int, [Character])] = []
+            for index in visible.indices.reversed() {
+                var end = visible[index].count
+                while end > 0, visible[index][end - 1].isWhitespace { end -= 1 }
+                if end < visible[index].count { trailing.insert((index, Array(visible[index][end...])), at: 0) }
+                visible[index] = Array(visible[index][..<end])
+                if end > 0 { break }
+            }
+            for segment in Bidi.segments(of: visible.map { String($0) }, in: direction) {
+                let run = currentText[segment.piece].run
+                let characters = visible[segment.piece][segment.characters]
+                guard segment.rightToLeft else {
+                    place(run, Bidi.marked(String(characters), in: .leftToRight))
+                    continue
+                }
+                var body = characters.endIndex
+                while body > characters.startIndex, characters[body - 1].isWhitespace { body -= 1 }
+                place(run, String(characters[body...]))
+                place(run, Bidi.marked(String(characters[..<body]), in: .rightToLeft))
+            }
+            for (index, spaces) in trailing { place(currentText[index].run, String(spaces)) }
+            current.pieces = pieces
+            placedRuns.replaceSubrange(lineStart..., with: placed)
+        }
         func finishLine() {
             // The width is the line's run of text without its trailing
             // whitespace: pieces after the last ink-bearing one count for
@@ -410,6 +461,7 @@ open class SKLabelNode: SKNode {
                 x += measured(piece.run, piece.text).advance
             }
             current.width = width
+            reorder()
             lines.append(current)
             current = ParagraphLine(pieces: [], width: 0, metrics: current.metrics)
             currentText = []
