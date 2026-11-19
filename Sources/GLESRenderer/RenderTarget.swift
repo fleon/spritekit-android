@@ -255,6 +255,15 @@ public final class RenderTargetPool {
         return existing.generation == generation && existing.contents == contents
     }
 
+    /// The kept target's pixels are not what its node shows (a page it
+    /// draws hadn't decoded yet): it is drawn again next time it's asked for.
+    public func markStale(_ key: Key) {
+        guard var existing = kept[key] else { return }
+        existing.generation = .max
+        existing.contents = .max
+        kept[key] = existing
+    }
+
     public func markDrawn(_ key: Key, generation: UInt64, contents: UInt64) {
         guard var existing = kept[key] else { return }
         existing.generation = generation

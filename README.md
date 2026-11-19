@@ -740,7 +740,9 @@ A game's images reach the runtime as an index and pages:
 texture reports its art's size in points and `textureRect()` is its slice of
 the page. Pages are ASTC with mip levels where the GPU samples ASTC
 (`GL_KHR_texture_compression_astc_ldr`), else decoded on the CPU
-(`ASTCDecoder`) and uploaded as RGBA8. Images over 512 px take a page of
+(`ASTCDecoder`) and uploaded as RGBA8; decoding there takes seconds a page
+on an emulator, so the frame on screen draws without a page still decoding
+rather than wait (a snapshot or film waits). Images over 512 px take a page of
 their own, so they can repeat; packed images keep a 4 px gutter so filtering
 and block compression never reach a neighbour. Shaders sample level 0 only.
 
