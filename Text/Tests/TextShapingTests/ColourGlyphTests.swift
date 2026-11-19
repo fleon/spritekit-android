@@ -2,6 +2,7 @@
 import CoreText
 import Foundation
 import SpriteKit
+import CTextShaping
 import SpriteKitShim
 import Testing
 @testable import TextShaping
@@ -110,6 +111,26 @@ struct ColourGlyphTests {
         }
         let plain = try FaceHandle(file: FontFile(path: Fonts.directory + "/Montserrat.ttf"), size: 32, instance: nil)
         #expect(!plain.hasColourGlyphs)
+    }
+
+    @Test("A glyph the nearest strike leaves out comes from a larger one")
+    func missingStrike() throws {
+        _ = Fonts.engine
+        // Apple Color Emoji's 20-pixel strike leaves out some glyphs its
+        // larger strikes have (437 among them).
+        let face = try FaceHandle(file: FontFile(path: "/System/Library/Fonts/Apple Color Emoji.ttc"), size: 16, instance: nil)
+        let hbFace = try #require(face.exactFont.flatMap { hb_font_get_face($0) })
+        func hasPNG(_ glyph: UInt32, ppem: UInt32) -> Bool {
+            let font = hb_font_create(hbFace)!
+            defer { hb_font_destroy(font) }
+            hb_font_set_ppem(font, ppem, ppem)
+            let blob = hb_ot_color_glyph_reference_png(font, glyph)!
+            defer { hb_blob_destroy(blob) }
+            return hb_blob_get_length(blob) > 0
+        }
+        let left = try #require((1 ..< 3000).lazy.map(UInt32.init).first { !hasPNG($0, ppem: 20) && hasPNG($0, ppem: 160) })
+        let image = try #require(face.colourImage(left, pixels: 20), "glyph \(left)")
+        #expect(image.width == 20 && stride(from: 3, to: image.pixels.count, by: 4).contains { image.pixels[$0] > 0 })
     }
 
     @Test("A colour glyph goes onto an RGBA page, once a size")

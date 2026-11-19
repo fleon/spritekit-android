@@ -66,11 +66,15 @@ extension FaceHandle {
         return run {
             guard let exactFont, let face = hb_font_get_face(exactFont) else { return nil }
             // The strike nearest the size drawn, as Core Text picks one (an
-            // emoji face's small strikes are drawn for small sizes).
+            // emoji face's small strikes are drawn for small sizes); where
+            // that one has no image of the glyph (Apple Color Emoji's small
+            // strikes leave some out), the next larger, up to the largest.
             if let font = hb_font_create(face) {
-                hb_font_set_ppem(font, UInt32(pixels), UInt32(pixels))
                 defer { hb_font_destroy(font) }
-                if let image = strike(glyph, font: font, pixels: pixels) { return image }
+                for ppem in [pixels, pixels * 2, pixels * 4, 0] {
+                    hb_font_set_ppem(font, UInt32(ppem), UInt32(ppem))
+                    if let image = strike(glyph, font: font, pixels: pixels) { return image }
+                }
             }
             guard hb_ot_color_glyph_has_paint(face, glyph) != 0 || hb_ot_color_has_layers(face) != 0 else { return nil }
             return paint(glyph, face: face, pixels: pixels)
