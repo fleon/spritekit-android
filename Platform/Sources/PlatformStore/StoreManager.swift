@@ -144,8 +144,12 @@ public final class StoreManager {
     }
 
     /// Waits until the store has said every price, or `timeout` seconds.
+    /// With prices missing it asks the store again first (unless an answer
+    /// is on its way), so a first load that failed (offline at launch) is
+    /// made good the next time the game shows its prices.
     public func waitForPrices(timeout: TimeInterval) async {
         guard !hasAllPrices else { return }
+        if hasStarted { billing.reloadPrices() }
         await withCheckedContinuation { continuation in
             priceWaiters.append(continuation)
             Task { [weak self] in

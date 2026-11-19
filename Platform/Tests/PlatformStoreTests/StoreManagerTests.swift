@@ -24,8 +24,20 @@ private final class FakeBilling: BillingBackend {
     var knowsOwnedProducts = true
     var knowsFreeProducts = true
     var changed: (() -> Void)?
+    /// What a reload answers: nothing while the store is out of reach.
+    var reloadedPrices: [String: String]?
+    private(set) var reloads = 0
 
     var displayPrice: String? { prices[unlock] }
+
+    func reloadPrices() {
+        reloads += 1
+        guard let reloadedPrices else { return }
+        Task { @MainActor in
+            self.prices = reloadedPrices
+            self.changed?()
+        }
+    }
     func price(of productID: String) -> String? { prices[productID] }
 
     func start(changed: @escaping () -> Void) {
@@ -221,6 +233,34 @@ struct StoreManagerTests {
         await waiting.value
         #expect(manager.price(of: pack) == "0,99 €")
         #expect(manager.hasAllPrices)
+    }
+
+    @Test("A first load that failed is asked again when the prices are wanted")
+    func pricesReloadAfterFailedLoad() async {
+        // Offline at launch: the first load brought nothing.
+        let billing = FakeBilling()
+        let manager = store(billing, defaults: scratchDefaults())
+        manager.start()
+        await manager.waitForPrices(timeout: 0.01)
+        #expect(billing.reloads == 1)
+        #expect(!manager.hasAllPrices)
+        // Back online: the next wait asks again and gets them.
+        billing.reloadedPrices = [unlock: "4,99 €", pack: "0,99 €"]
+        await manager.waitForPrices(timeout: 30)
+        #expect(billing.reloads == 2)
+        #expect(manager.hasAllPrices)
+        #expect(manager.price(of: pack) == "0,99 €")
+        // With every price known, nothing is asked again.
+        await manager.waitForPrices(timeout: 30)
+        #expect(billing.reloads == 2)
+    }
+
+    @Test("Prices aren't asked for before the store starts")
+    func noReloadBeforeStart() async {
+        let billing = FakeBilling()
+        let manager = store(billing, defaults: scratchDefaults())
+        await manager.waitForPrices(timeout: 0.01)
+        #expect(billing.reloads == 0)
     }
 
     @Test("Waiting for prices gives up")

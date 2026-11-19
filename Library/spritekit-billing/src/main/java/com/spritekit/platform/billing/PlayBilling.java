@@ -71,6 +71,8 @@ public final class PlayBilling implements PlatformService {
     private final List<String> productIds = new ArrayList<>();
     private final Map<String, ProductDetails> details = new HashMap<>();
     private boolean connecting;
+    // A product query under way, so asking again (billing.prices) never doubles it.
+    private boolean queryingProducts;
 
     public PlayBilling(Activity activity, PlatformServices services) {
         this.activity = activity;
@@ -102,6 +104,14 @@ public final class PlayBilling implements PlatformService {
             }
             case "restore":
                 activity.runOnUiThread(this::queryPurchases);
+                return null;
+            case "prices":
+                // The prices again, after a first query that failed (offline
+                // at launch): connecting first if need be, which queries them.
+                activity.runOnUiThread(() -> {
+                    if (client.isReady()) queryProducts();
+                    else connect();
+                });
                 return null;
             case "acknowledge": {
                 String token = args.getString("token");
@@ -172,10 +182,12 @@ public final class PlayBilling implements PlatformService {
                     .build());
             }
         }
-        if (products.isEmpty()) return;
+        if (products.isEmpty() || queryingProducts) return;
+        queryingProducts = true;
         client.queryProductDetailsAsync(
             QueryProductDetailsParams.newBuilder().setProductList(products).build(),
             (result, found) -> activity.runOnUiThread(() -> {
+                queryingProducts = false;
                 if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                     Log.w(PlatformServices.tag(), "product details: " + result.getDebugMessage());
                     return;

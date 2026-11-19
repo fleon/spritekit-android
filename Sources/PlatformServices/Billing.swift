@@ -36,6 +36,11 @@ public protocol BillingBackend: AnyObject {
     var knowsFreeProducts: Bool { get }
     /// Loads prices and entitlements. Calls `changed` whenever either moves.
     func start(changed: @escaping () -> Void)
+    /// Asks the store for the prices again, unless an answer is already on
+    /// its way. A first load that failed (offline at launch) is never tried
+    /// again by itself, so a game about to show prices calls this
+    /// (`StoreManager.waitForPrices` does). Nothing before `start`.
+    func reloadPrices()
     func purchase(_ productID: String) async -> BillingResult
     /// Asks the service to hand back what the player already owns.
     func restore() async -> Bool
@@ -46,6 +51,9 @@ public protocol BillingBackend: AnyObject {
 
 public extension BillingBackend {
     var purchaseDates: [String: Date] { [:] }
+
+    /// A backend whose prices are known at once, or never.
+    func reloadPrices() {}
 
     /// A backend that answers at once.
     var knowsOwnedProducts: Bool { true }
