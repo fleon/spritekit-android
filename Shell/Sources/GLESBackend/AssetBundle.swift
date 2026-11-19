@@ -1,6 +1,7 @@
 import CAndroidShell
 import Foundation
 import GLESRenderer
+import PlatformShim
 import SpriteKitShim
 import ShellCore
 import TextShaping
@@ -80,6 +81,13 @@ public enum AssetBundle {
 
         do {
             let engine = try TextEngine.install(fonts: loaded)
+            // Thai lines break where the device's ICU says (Java's
+            // BreakIterator), as Core Text breaks them with ICU's on Apple.
+            if PlatformChannel.shared != nil {
+                ThaiLineBreaks.provider = { text in
+                    PlatformChannel.shared?.call("device.lineBreaks", ["text": text, "locale": "th"])?["offsets"] as? [Int]
+                }
+            }
             // The device's own face, for `UIFont.systemFont`.
             let system = engine.registerSystemFonts()
             Log.info("fonts: \(loaded.map(\.name).joined(separator: ", ")); system: \(system.count) faces")

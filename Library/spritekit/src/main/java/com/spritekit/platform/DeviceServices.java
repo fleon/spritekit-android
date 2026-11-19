@@ -108,6 +108,8 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
                     "haptics", vibrator != null && vibrator.hasVibrator());
             case "openAppSettings":
                 return PlatformServices.object("ok", openAppSettings());
+            case "lineBreaks":
+                return lineBreaks(args.optString("text"), args.optString("locale", "th"));
             case "finish":
                 // Shell.finishActivity: the game closes itself.
                 activity.runOnUiThread(activity::finish);
@@ -130,6 +132,21 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
      * The app's page in the system settings, where
      * {@code UIApplication.openSettingsURLString} goes on iOS.
      */
+    /**
+     * Where a line may start in {@code text} (UTF-16 offsets), by the
+     * platform's ICU line-break rules with their dictionaries, which is
+     * how Core Text breaks Thai on Apple. Answers {@code {"offsets": [...]}}.
+     */
+    private static JSONObject lineBreaks(String text, String locale) {
+        java.text.BreakIterator breaks = java.text.BreakIterator.getLineInstance(new java.util.Locale(locale));
+        breaks.setText(text);
+        org.json.JSONArray offsets = new org.json.JSONArray();
+        for (int at = breaks.next(); at != java.text.BreakIterator.DONE; at = breaks.next()) {
+            if (at < text.length()) offsets.put(at);
+        }
+        return PlatformServices.object("offsets", offsets);
+    }
+
     private boolean openAppSettings() {
         try {
             Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,

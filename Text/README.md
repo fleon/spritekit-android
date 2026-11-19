@@ -135,10 +135,15 @@ each grapheme-cluster boundary **except** straight after a leading vowel
 (เ แ โ ใ ไ), which is written before the consonant it sounds after and must
 never be stranded at a line end.
 
-Thai is properly broken with a dictionary, and there isn't one here. The
-fallback breaks mid-word, which is wrong and visible; it never breaks a
-cluster, which would be wrong and unreadable. If Thai text starts looking
-bad, a dictionary is the fix, and it goes behind this one function.
+Thai is properly broken with a dictionary, and there isn't one here: the
+platform's is asked (`ThaiLineBreaks.provider`). The shell installs
+Android's ICU (`java.text.BreakIterator.getLineInstance`, through
+`device.lineBreaks`), which is how Core Text breaks Thai on Apple:
+`ThaiBreakParityTests` holds the breaks to Core Text's with CoreFoundation's
+ICU tokenizer standing in, every line the same across a sweep of widths.
+With no provider (a host test that installs none), the fallback breaks
+mid-word, which is wrong and visible; it never breaks a cluster, which would
+be wrong and unreadable.
 
 ### The atlas
 
