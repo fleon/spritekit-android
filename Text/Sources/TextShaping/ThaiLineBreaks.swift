@@ -12,18 +12,26 @@ public enum ThaiLineBreaks {
     /// The UTF-16 offsets in a run of Thai text where a line may start (0
     /// may be left out); nil when the platform can't say, which keeps the
     /// fallback for that text.
-    public nonisolated(unsafe) static var provider: ((String) -> [Int]?)? {
-        didSet { lock.withLock { cache.removeAll() } }
+    public static var provider: ((String) -> [Int]?)? {
+        get { lock.withLock { installed } }
+        set { lock.withLock { installed = newValue; cache.removeAll() } }
     }
 
+    /// A provider for the current task only (a test's), ahead of the
+    /// installed one and never cached, so tests running side by side don't
+    /// see each other's.
+    @TaskLocal public static var scoped: ((String) -> [Int]?)?
+
     private static let lock = NSLock()
+    nonisolated(unsafe) private static var installed: ((String) -> [Int]?)?
     nonisolated(unsafe) private static var cache: [String: [Int]?] = [:]
     private static let cacheLimit = 256
 
     /// Every index in `text` where a line may start between two Thai
     /// characters; nil with no provider.
     static func lineStarts(in text: String) -> Set<String.Index>? {
-        guard let provider else { return nil }
+        let isScoped = scoped != nil
+        guard let provider = scoped ?? provider else { return nil }
         guard text.contains(where: LineBreak.isThai) else { return [] }
         var starts: Set<String.Index> = []
         var index = text.startIndex
@@ -36,9 +44,10 @@ public enum ThaiLineBreaks {
             var end = index
             while end < text.endIndex, LineBreak.isThai(text[end]) { end = text.index(after: end) }
             let run = String(text[index ..< end])
-            let known: [Int]?? = lock.withLock { cache[run] }
+            let known: [Int]?? = isScoped ? nil : lock.withLock { cache[run] }
             let answer: [Int]? = known ?? {
                 let found = provider(run)
+                if isScoped { return found }
                 lock.withLock {
                     if cache.count >= cacheLimit { cache.removeAll() }
                     cache[run] = found

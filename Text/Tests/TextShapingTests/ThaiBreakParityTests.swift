@@ -66,17 +66,21 @@ import Testing
 
     @Test("With ICU's dictionary, Thai breaks where Core Text breaks it")
     func withDictionary() {
-        ThaiLineBreaks.provider = Self.icuLineBreaks
-        defer { ThaiLineBreaks.provider = nil }
         Fonts.engine.flush()
-        let (checked, differ, examples) = Self.differences()
+        let (checked, differ, examples) = ThaiLineBreaks.$scoped.withValue(Self.icuLineBreaks) { Self.differences() }
         print("THAI with dictionary: \(differ) of \(checked) differ")
         #expect(differ == 0, "\(differ) of \(checked):\n\(examples.joined(separator: "\n"))")
     }
 
+    @Test("A platform that can't say (no Thai dictionary) keeps the fallback")
+    func providerDeclines() {
+        let declined = ThaiLineBreaks.$scoped.withValue({ _ in nil }) { LineBreak.opportunities(in: "แกะของคุณกำลังรอ") }
+        let fallback = LineBreak.opportunities(in: "แกะของคุณกำลังรอ")
+        #expect(!declined.isEmpty && declined == fallback)
+    }
+
     @Test("Without one, the cluster fallback still never breaks a cluster or strands a leading vowel")
     func withoutDictionary() {
-        ThaiLineBreaks.provider = nil
         Fonts.engine.flush()
         let (checked, differ, _) = Self.differences()
         print("THAI without dictionary: \(differ) of \(checked) differ")

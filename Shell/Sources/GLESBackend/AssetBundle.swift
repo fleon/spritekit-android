@@ -85,7 +85,10 @@ public enum AssetBundle {
             // BreakIterator), as Core Text breaks them with ICU's on Apple.
             if PlatformChannel.shared != nil {
                 ThaiLineBreaks.provider = { text in
-                    PlatformChannel.shared?.call("device.lineBreaks", ["text": text, "locale": "th"])?["offsets"] as? [Int]
+                    // Nil, and the cluster fallback, where the device's ICU has no Thai dictionary.
+                    guard let answer = PlatformChannel.shared?.call("device.lineBreaks", ["text": text, "locale": "th"]),
+                          answer.bool("dictionary") == true else { return nil }
+                    return answer["offsets"] as? [Int]
                 }
             }
             // The device's own face, for `UIFont.systemFont`.

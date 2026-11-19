@@ -135,16 +135,32 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
     /**
      * Where a line may start in {@code text} (UTF-16 offsets), by the
      * platform's ICU line-break rules with their dictionaries, which is
-     * how Core Text breaks Thai on Apple. Answers {@code {"offsets": [...]}}.
+     * how Core Text breaks Thai on Apple. Answers {@code {"offsets": [...],
+     * "dictionary": true}}, or {@code {"dictionary": false}} where the
+     * device's ICU has no Thai dictionary (it would then find no break
+     * inside Thai at all, and the caller keeps its own fallback).
      */
     private static JSONObject lineBreaks(String text, String locale) {
+        if (!hasThaiDictionary()) return PlatformServices.object("dictionary", false);
         java.text.BreakIterator breaks = java.text.BreakIterator.getLineInstance(new java.util.Locale(locale));
         breaks.setText(text);
         org.json.JSONArray offsets = new org.json.JSONArray();
         for (int at = breaks.next(); at != java.text.BreakIterator.DONE; at = breaks.next()) {
             if (at < text.length()) offsets.put(at);
         }
-        return PlatformServices.object("offsets", offsets);
+        return PlatformServices.object("offsets", offsets, "dictionary", true);
+    }
+
+    private static Boolean thaiDictionary;
+
+    /** Whether ICU breaks "ภาษาไทย" between its two words, which only its dictionary knows. */
+    private static synchronized boolean hasThaiDictionary() {
+        if (thaiDictionary == null) {
+            java.text.BreakIterator breaks = java.text.BreakIterator.getLineInstance(new java.util.Locale("th"));
+            breaks.setText("\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22");
+            thaiDictionary = breaks.isBoundary(4);
+        }
+        return thaiDictionary;
     }
 
     private boolean openAppSettings() {
