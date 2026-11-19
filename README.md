@@ -1193,18 +1193,37 @@ Scripts/signing.sh fetch "<Game> Android Upload Key" build/signing/upload.jks   
 Scripts/signing.sh debug   # ~/.android/debug.keystore from "Android Debug Keystore", only when missing
 ```
 
-A game's `build.gradle.kts` fetches its key only when a release task runs,
-and deletes it once that task ends; debug builds ask 1Password only when the
-shared debug keystore is missing, so they don't stop for Touch ID:
+A game's `build.gradle.kts` (as `Templates/App` has it) fetches its key only
+when a release build runs and deletes it when the build ends, failed or not
+(a build service closing); a build killed before then leaves it for the next
+non-release build to delete. Debug builds ask 1Password only when the shared
+debug keystore is missing, so they don't stop for Touch ID:
 
 ```kotlin
 val uploadItem = "<Game> Android Upload Key"
 val signingScript = file("../../spritekit-android/Scripts/signing.sh").path
 fun signing(vararg args: String): String =
-    providers.exec { commandLine(signingScript, *args) }.standardOutput.asText.get()
+    providers.exec { commandLine(signingScript, *args) }.standardOutput.asText.get().trim()
 val signsRelease = gradle.startParameter.taskNames.any { "Release" in it }
 val uploadKeystore = layout.buildDirectory.file("signing/upload.jks").get().asFile
-if (!signsRelease) signing("debug")
+if (!signsRelease) {
+    uploadKeystore.delete()   // left by a release build that was killed
+    signing("debug")
+}
+
+abstract class ForgetUploadKey : org.gradle.api.services.BuildService<ForgetUploadKey.Params>, AutoCloseable {
+    interface Params : org.gradle.api.services.BuildServiceParameters {
+        val key: RegularFileProperty
+    }
+    override fun close() {
+        parameters.key.get().asFile.delete()
+    }
+}
+if (signsRelease) {
+    gradle.sharedServices.registerIfAbsent("forgetUploadKey", ForgetUploadKey::class) {
+        parameters.key.set(uploadKeystore)
+    }.get()
+}
 
 android {
     signingConfigs {
@@ -1217,11 +1236,6 @@ android {
         }
     }
     buildTypes { release { signingConfig = signingConfigs.findByName("upload") } }
-}
-
-val forgetUploadKey = tasks.register<Delete>("forgetUploadKey") { delete(uploadKeystore) }
-tasks.configureEach {
-    if (name == "bundleRelease" || name == "assembleRelease") finalizedBy(forgetUploadKey)
 }
 ```
 

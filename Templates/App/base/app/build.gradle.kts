@@ -116,22 +116,37 @@ val checkBetaChoice = tasks.register("checkBetaChoice") {
 }
 
 // The upload key, which signs what goes to Play (Play re-signs it with the
-// app signing key). It lives outside every checkout and its password in the
-// macOS Keychain, never in a file:
-//
-//     ~/.config/GAME_KEY/android/upload.jks
-//     security find-generic-password -s GAME_KEY-android-upload -a upload -w
-//
-// CI passes both in the environment instead (GAME_UPLOAD_KEYSTORE,
-// GAME_UPLOAD_PASSWORD). With neither, a release build is unsigned.
-val uploadKeystore = file(System.getenv("GAME_UPLOAD_KEYSTORE")
-    ?: "${System.getProperty("user.home")}/.config/GAME_KEY/android/upload.jks")
-fun uploadPassword(): String? = System.getenv("GAME_UPLOAD_PASSWORD") ?: runCatching {
-    providers.exec {
-        commandLine("security", "find-generic-password", "-s", "GAME_KEY-android-upload", "-a", "upload", "-w")
-        isIgnoreExitValue = true
-    }.standardOutput.asText.get().trim().ifEmpty { null }
-}.getOrNull()
+// app signing key), lives in 1Password, never in a repository or a loose
+// file: the item "GAME_SIGNING_ITEM" in the "Game Signing" vault, read
+// through the runtime's Scripts/signing.sh (`sha1` prints its SHA-1). A
+// release build fetches it into build/signing/, checking its SHA-1, and
+// deletes it when the build ends, failed or not; a build killed before then
+// leaves it for the next non-release build to delete. Debug builds sign with
+// the shared debug key, fetched only when ~/.android/debug.keystore is missing.
+val uploadItem = "GAME_SIGNING_ITEM"
+val signingScript = file("../../spritekit-android/Scripts/signing.sh").path
+fun signing(vararg args: String): String =
+    providers.exec { commandLine(signingScript, *args) }.standardOutput.asText.get().trim()
+val signsRelease = gradle.startParameter.taskNames.any { "Release" in it }
+val uploadKeystore = layout.buildDirectory.file("signing/upload.jks").get().asFile
+if (!signsRelease) {
+    uploadKeystore.delete()
+    signing("debug")
+}
+
+abstract class ForgetUploadKey : org.gradle.api.services.BuildService<ForgetUploadKey.Params>, AutoCloseable {
+    interface Params : org.gradle.api.services.BuildServiceParameters {
+        val key: RegularFileProperty
+    }
+    override fun close() {
+        parameters.key.get().asFile.delete()
+    }
+}
+if (signsRelease) {
+    gradle.sharedServices.registerIfAbsent("forgetUploadKey", ForgetUploadKey::class) {
+        parameters.key.set(uploadKeystore)
+    }.get()
+}
 
 // One build setting from the iOS app's Xcode project (one build number on
 // every platform: Apple build = Android versionCode).
@@ -196,15 +211,12 @@ android {
     }
 
     signingConfigs {
-        if (uploadKeystore.exists()) {
-            create("upload") {
-                storeFile = uploadKeystore
-                storeType = "PKCS12"
-                keyAlias = "upload"
-                val password = uploadPassword()
-                storePassword = password
-                keyPassword = password
-            }
+        if (signsRelease) create("upload") {
+            signing("fetch", uploadItem, uploadKeystore.path)
+            storeFile = uploadKeystore
+            keyAlias = signing("alias", uploadItem)
+            storePassword = signing("password", uploadItem)
+            keyPassword = storePassword
         }
     }
 

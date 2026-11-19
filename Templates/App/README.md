@@ -125,7 +125,7 @@ itself.
    | `PACKAGE_PATH` | The same as a path: move `app/src/main/java/PACKAGE_PATH/` to `app/src/main/java/com/example/game/` |
    | `APP_NAME` | The game's name (the launcher label, the Gradle project) |
    | `XCODE_PROJECT` | The Xcode project's name, whose `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` become the version name and code |
-   | `GAME_KEY` | A short key for the upload keystore's folder and Keychain item (`~/.config/GAME_KEY/android/upload.jks`) |
+   | `GAME_SIGNING_ITEM` | The upload key's 1Password item (`<Game> Android Upload Key`), stored with `Scripts/signing.sh store` (README, "Signing") |
 
    The Gradle properties are under `game.` (`-Pgame.abis=arm64-v8a`,
    `-Pgame.beta=true|false`, `-Pgame.playGamesAppId=…`,
