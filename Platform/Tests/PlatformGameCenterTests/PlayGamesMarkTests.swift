@@ -30,4 +30,19 @@ struct PlayGamesMarkTests {
         #expect(!PlayGamesMark.hidesButton(for: manager))
         #endif
     }
+
+    @Test("The service is Play Games on the shim, Game Center on Apple platforms")
+    func service() {
+        let manager = GameCenterManager(
+            configuration: .init(progress: { _ in [:] }, logSubsystem: "test", defaults: UserDefaults(suiteName: UUID().uuidString)!),
+            achievements: LocalAchievements(),
+            leaderboards: LocalLeaderboards()
+        )
+        #if SPRITEKIT_SHIM
+        #expect(GameService.current == .playGames)
+        #else
+        #expect(GameService.current == .gameCenter)
+        #endif
+        #expect(manager.service == GameService.current)
+    }
 }
