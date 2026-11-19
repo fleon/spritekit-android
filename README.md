@@ -1176,6 +1176,55 @@ pool's AVDs, state and the debug properties cleared for each new owner in
 frame times describe the host's GPU, not a phone's: measure performance on a
 device.
 
+## Signing
+
+Keystores live in 1Password, never in a repository or a loose file. Each is
+one item in the `Game Signing` vault (`SIGNING_VAULT` names another): the
+keystore file (`keystore`), its password (`password`), alias (`alias`) and
+certificate SHA-1 (`sha1`, what Google's consoles ask for).
+`Scripts/signing.sh` reads and writes them through the 1Password CLI, which
+signs in through the 1Password app (Settings → Developer → Integrate with
+1Password CLI):
+
+```bash
+Scripts/signing.sh store "<Game> Android Upload Key" upload.jks   # password from SIGNING_PASSWORD, or asked
+Scripts/signing.sh sha1 "<Game> Android Upload Key"
+Scripts/signing.sh fetch "<Game> Android Upload Key" build/signing/upload.jks   # checks the SHA-1
+Scripts/signing.sh debug   # ~/.android/debug.keystore from "Android Debug Keystore", only when missing
+```
+
+A game's `build.gradle.kts` fetches its key only when a release task runs,
+and deletes it once that task ends; debug builds ask 1Password only when the
+shared debug keystore is missing, so they don't stop for Touch ID:
+
+```kotlin
+val uploadItem = "<Game> Android Upload Key"
+val signingScript = file("../../spritekit-android/Scripts/signing.sh").path
+fun signing(vararg args: String): String =
+    providers.exec { commandLine(signingScript, *args) }.standardOutput.asText.get()
+val signsRelease = gradle.startParameter.taskNames.any { "Release" in it }
+val uploadKeystore = layout.buildDirectory.file("signing/upload.jks").get().asFile
+if (!signsRelease) signing("debug")
+
+android {
+    signingConfigs {
+        if (signsRelease) create("upload") {
+            signing("fetch", uploadItem, uploadKeystore.path)
+            storeFile = uploadKeystore
+            keyAlias = signing("alias", uploadItem)
+            storePassword = signing("password", uploadItem)
+            keyPassword = storePassword
+        }
+    }
+    buildTypes { release { signingConfig = signingConfigs.findByName("upload") } }
+}
+
+val forgetUploadKey = tasks.register<Delete>("forgetUploadKey") { delete(uploadKeystore) }
+tasks.configureEach {
+    if (name == "bundleRelease" || name == "assembleRelease") finalizedBy(forgetUploadKey)
+}
+```
+
 ## Contributing
 
 - Nothing game-specific: no game's names, identifiers, content or reasons.
