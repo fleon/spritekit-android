@@ -403,10 +403,9 @@ import Testing
                                           usesLineFragmentOrigin: item.options != .none, usesFontLeading: item.options == .lfoLeading)
         #expect(abs(rect.minX - item.expected.minX) < 1e-4 && abs(rect.minY - item.expected.minY) < 1e-4)
         #expect(abs(rect.height - item.expected.height) < 1e-4, "height \(rect.height) against \(item.expected.height)")
-        // A variable font's instances (Montserrat-SemiBold) keep FreeType's
-        // rounded advance deltas, which Core Text keeps fractional: a few
-        // hundredths of a point a line, to be fixed in the engine's metrics.
-        let tolerance = item.font == "Montserrat-SemiBold" ? 0.002 * item.expected.width : 1e-4
+        // A variable instance (Montserrat-SemiBold) within a hundredth of a
+        // point: kerning's variation deltas, which HarfBuzz rounds.
+        let tolerance = item.font == "Montserrat-SemiBold" ? 0.01 : 1e-4
         #expect(abs(rect.width - item.expected.width) <= tolerance, "width \(rect.width) against \(item.expected.width)")
     }
 
