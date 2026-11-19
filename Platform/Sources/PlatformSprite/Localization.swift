@@ -56,7 +56,7 @@ public nonisolated final class Localizer<Language: LocalizationLanguage>: @unche
         bundle: Bundle = .main,
         read: (() -> String?)? = nil,
         save: ((String) -> Void)? = nil,
-        preferredLanguages: @escaping () -> [String] = { Locale.preferredLanguages }
+        preferredLanguages: @escaping () -> [String] = Localizer.devicePreferredLanguages
     ) {
         self.development = development
         self.settingKey = settingKey
@@ -67,6 +67,16 @@ public nonisolated final class Localizer<Language: LocalizationLanguage>: @unche
         readSetting = read ?? { UserDefaults.standard.string(forKey: settingKey) }
         saveSetting = save ?? { UserDefaults.standard.set($0, forKey: settingKey) }
         self.preferredLanguages = preferredLanguages
+    }
+
+    /// The player's languages: Apple's own list, or on Android the shell's
+    /// (`PreferredLanguages`), which corelibs' `Locale` doesn't see there.
+    public static func devicePreferredLanguages() -> [String] {
+        #if SPRITEKIT_SHIM
+        PreferredLanguages.current
+        #else
+        Locale.preferredLanguages
+        #endif
     }
 
     /// The language the game speaks.

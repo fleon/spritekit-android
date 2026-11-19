@@ -96,7 +96,7 @@ public enum AssetBundle {
             // Characters the game's fonts lack fall back through the
             // system's chain, in the user's languages (`GameEnvironment`
             // has set them by now), as an Android app's text falls back.
-            let fallback = SystemFontFallback.load(library: engine.library, languages: Locale.preferredLanguages)
+            let fallback = SystemFontFallback.load(library: engine.library, languages: PreferredLanguages.current)
             engine.fallback = fallback
             Log.info("fonts: \(loaded.map(\.name).joined(separator: ", ")); system: \(system.count) faces; fallback: \(fallback?.families.count ?? 0) families")
             Log.info("faces: \(engine.library.registeredNames.joined(separator: ", "))")

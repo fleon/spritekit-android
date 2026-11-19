@@ -14,9 +14,12 @@ import ShellCore
 ///   updates and goes with an uninstall, as an iOS app's container does —
 ///   whenever the game might be ended (`save()`), and reads them back first
 ///   thing at launch. `HOME` points there too, for anything else that asks.
-/// - **The device's language.** A game asks
-///   `Locale.preferredLanguages`, which corelibs reads from `AppleLanguages`;
-///   it is filled from Android's own list (`SDL_GetPreferredLocales`).
+/// - **The device's language.** `AppleLanguages` is filled from Android's
+///   own list (`SDL_GetPreferredLocales`), or `-AppleLanguages`. corelibs'
+///   `Locale.preferredLanguages` doesn't read it on Android (it answers
+///   `["en-001"]`), so the shim's strings, Platform's `Localizer` and the
+///   font fallback read it through `PreferredLanguages`, and so should a
+///   game that asks for the player's languages itself.
 /// - **Launch arguments.** On Apple, `-Key value` pairs reach
 ///   `UserDefaults`' argument domain, where a game reads them. Here the
 ///   intent's `args` or `args64` extra carries them (`ShellArguments`), and
@@ -53,8 +56,8 @@ enum GameEnvironment {
             device: AndroidDevice.current, beta: BetaBuild.current
         )
         // `-AppleLanguages "(ja)"` stands in for the device's, as on Apple;
-        // set where `Locale.preferredLanguages` reads it whichever domain
-        // that is, and never saved, since it's an argument.
+        // set where `PreferredLanguages` reads it, and never saved, since
+        // it's the device's or an argument's each launch.
         let languages = arguments["AppleLanguages"] as? [String] ?? preferredLanguages()
         if !languages.isEmpty {
             UserDefaults.standard.set(languages, forKey: "AppleLanguages")

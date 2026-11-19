@@ -57,8 +57,19 @@ struct LocalizedStringsTests {
         try? FileManager.default.removeItem(at: root)
         BundleResources.folderProvider = nil
         LocalizedStrings.localizations = nil
-        LocalizedStrings.preferredLanguages = { Locale.preferredLanguages }
+        LocalizedStrings.preferredLanguages = { PreferredLanguages.current }
         LocalizedStrings.reset()
+    }
+
+    @Test("The player's languages are the ones the shell put in AppleLanguages, which the strings read")
+    func preferredLanguagesFromTheShell() {
+        let saved = UserDefaults.standard.object(forKey: "AppleLanguages")
+        defer { UserDefaults.standard.set(saved, forKey: "AppleLanguages") }
+        UserDefaults.standard.set(["ja-JP", "en-US"], forKey: "AppleLanguages")
+        #expect(PreferredLanguages.current == ["ja-JP", "en-US"])
+        #expect(LocalizedStrings.preferredLanguages() == ["ja-JP", "en-US"])
+        UserDefaults.standard.set([String](), forKey: "AppleLanguages")
+        #expect(PreferredLanguages.current == Locale.preferredLanguages, "with none set, Foundation's")
     }
 
     /// Each case as `Bundle.main` answered it on macOS 27.2, with these
