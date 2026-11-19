@@ -8,9 +8,12 @@ import Foundation
 // module of that name in `Modules`, which re-exports these.
 //
 // A buffer is plain memory here, in the format it says it is in: the film
-// asks for 32-bit BGRA, so that is what the GLES renderer reads its frames
-// back as, what the picture's `CGContext` reads them as, and what the video
-// writer converts to YUV for the encoder.
+// asks for 32-bit BGRA, which is what the picture's `CGContext` reads and
+// the video writer converts to YUV for the encoder. The GLES renderer reads
+// a frame back as GL has it, rows bottom first and RGBA, straight into the
+// buffer, and says so (`isHeldAsRendered`): the video writer reads that
+// order as it converts, and locking the buffer's base address, as any other
+// reader of its pixels does, puts them in its own order first.
 
 #if !canImport(Darwin)
 public typealias OSType = UInt32
@@ -61,6 +64,43 @@ public final class CVPixelBuffer: @unchecked Sendable {
     }
 
     public var byteCount: Int { bytesPerRow * height }
+
+    /// The pixels are as a GL renderer read them back: rows bottom first and
+    /// RGBA, whatever `pixelFormat` says, until the base address is locked.
+    public var isHeldAsRendered = false
+
+    /// Turns the pixels into the buffer's own order (`isHeldAsRendered`):
+    /// rows top first, and BGRA where it's BGRA.
+    func putInOrder() {
+        guard isHeldAsRendered else { return }
+        isHeldAsRendered = false
+        let swizzle = pixelFormat == kCVPixelFormatType_32BGRA
+        let row = UnsafeMutableRawPointer.allocate(byteCount: bytesPerRow, alignment: 64)
+        defer { row.deallocate() }
+        for top in 0 ..< (height + 1) / 2 {
+            let bottom = height - 1 - top
+            let a = baseAddress + top * bytesPerRow, b = baseAddress + bottom * bytesPerRow
+            if top != bottom {
+                row.copyMemory(from: a, byteCount: bytesPerRow)
+                a.copyMemory(from: b, byteCount: bytesPerRow)
+                b.copyMemory(from: row, byteCount: bytesPerRow)
+            }
+            if swizzle {
+                Self.swapRedAndBlue(a, count: width)
+                if top != bottom { Self.swapRedAndBlue(b, count: width) }
+            }
+        }
+    }
+
+    /// RGBA into BGRA (or back) in place, a word at a time.
+    static func swapRedAndBlue(_ pixels: UnsafeMutableRawPointer, count: Int) {
+        let words = pixels.assumingMemoryBound(to: UInt32.self)
+        for x in 0 ..< count {
+            // Little-endian RGBA is 0xAABBGGRR; BGRA is 0xAARRGGBB.
+            let v = words[x]
+            words[x] = (v & 0xFF00_FF00) | ((v & 0x00FF_0000) >> 16) | ((v & 0x0000_00FF) << 16)
+        }
+    }
 }
 
 /// Buffers of one size, as an asset writer's adaptor hands them out.
@@ -104,7 +144,11 @@ public func CVPixelBufferPoolCreatePixelBuffer(_ allocator: CFAllocator?, _ pool
 }
 
 @discardableResult
-public func CVPixelBufferLockBaseAddress(_ pixelBuffer: CVPixelBuffer, _ lockFlags: CVPixelBufferLockFlags) -> CVReturn { kCVReturnSuccess }
+/// Puts pixels a GL renderer read back in the buffer's own order first.
+public func CVPixelBufferLockBaseAddress(_ pixelBuffer: CVPixelBuffer, _ lockFlags: CVPixelBufferLockFlags) -> CVReturn {
+    pixelBuffer.putInOrder()
+    return kCVReturnSuccess
+}
 
 @discardableResult
 public func CVPixelBufferUnlockBaseAddress(_ pixelBuffer: CVPixelBuffer, _ unlockFlags: CVPixelBufferLockFlags) -> CVReturn { kCVReturnSuccess }

@@ -22,17 +22,29 @@ public enum YUVConversion {
     /// Odd sizes lose their last column and row of chroma detail, as 4:2:0
     /// does anyway.
     public static func convert(bgra source: UnsafeRawPointer, bytesPerRow: Int, into destination: UnsafeMutableRawPointer, layout: YUVLayout) {
+        convert(source, rowStep: bytesPerRow, red: 2, blue: 0, into: destination, layout: layout)
+    }
+
+    /// The same from pixels as a GL renderer reads them back: RGBA, rows
+    /// bottom first, `rows` of them (`CVPixelBuffer.isHeldAsRendered`).
+    public static func convert(rendered source: UnsafeRawPointer, bytesPerRow: Int, rows: Int, into destination: UnsafeMutableRawPointer, layout: YUVLayout) {
+        convert(source + (rows - 1) * bytesPerRow, rowStep: -bytesPerRow, red: 0, blue: 2, into: destination, layout: layout)
+    }
+
+    /// From `top`, the top row, each row `rowStep` bytes on from the one
+    /// above, red and blue at those byte offsets in each pixel.
+    private static func convert(_ top: UnsafeRawPointer, rowStep: Int, red: Int, blue: Int, into destination: UnsafeMutableRawPointer, layout: YUVLayout) {
         let width = layout.width, height = layout.height, stride = layout.stride
         let luma = destination.assumingMemoryBound(to: UInt8.self)
         let chromaStart = luma + stride * layout.sliceHeight
-        let pixels = source.assumingMemoryBound(to: UInt8.self)
+        let pixels = top.assumingMemoryBound(to: UInt8.self)
 
         for y in 0 ..< height {
-            let row = pixels + y * bytesPerRow
+            let row = pixels + y * rowStep
             let out = luma + y * stride
             for x in 0 ..< width {
                 let p = row + x * 4
-                let b = Int(p[0]), g = Int(p[1]), r = Int(p[2])
+                let b = Int(p[blue]), g = Int(p[1]), r = Int(p[red])
                 out[x] = UInt8(truncatingIfNeeded: ((yR * r + yG * g + yB * b + half) >> 16) + 16)
             }
         }
@@ -40,13 +52,13 @@ public enum YUVConversion {
         let chromaWidth = width / 2, chromaHeight = height / 2
         let chromaStride = stride / 2
         for cy in 0 ..< chromaHeight {
-            let top = pixels + cy * 2 * bytesPerRow
-            let bottom = top + bytesPerRow
+            let upper = pixels + cy * 2 * rowStep
+            let lower = upper + rowStep
             for cx in 0 ..< chromaWidth {
-                let a = top + cx * 8, c = bottom + cx * 8
-                let b = Int(a[0]) + Int(a[4]) + Int(c[0]) + Int(c[4])
+                let a = upper + cx * 8, c = lower + cx * 8
+                let b = Int(a[blue]) + Int(a[blue + 4]) + Int(c[blue]) + Int(c[blue + 4])
                 let g = Int(a[1]) + Int(a[5]) + Int(c[1]) + Int(c[5])
-                let r = Int(a[2]) + Int(a[6]) + Int(c[2]) + Int(c[6])
+                let r = Int(a[red]) + Int(a[red + 4]) + Int(c[red]) + Int(c[red + 4])
                 // Four pixels summed: two more bits to shift away.
                 let u = UInt8(clamping: ((uR * r + uG * g + uB * b + (half << 2)) >> 18) + 128)
                 let v = UInt8(clamping: ((vR * r + vG * g + vB * b + (half << 2)) >> 18) + 128)
