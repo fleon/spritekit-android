@@ -498,8 +498,24 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
     /// The line's glyph outlines, shaped as it's measured, each moved to its
     /// pen position.
     public func glyphOutline(_ text: String, font: FontKey) -> [PathElement] {
+        glyphOutlines(text, font: font).flatMap { glyph -> [PathElement] in
+            func move(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + glyph.origin.x, y: p.y + glyph.origin.y) }
+            return glyph.elements.map { element in
+                switch element {
+                case let .move(p): .move(move(p))
+                case let .line(p): .line(move(p))
+                case let .quadCurve(to, control): .quadCurve(to: move(to), control: move(control))
+                case let .curve(to, c1, c2): .curve(to: move(to), control1: move(c1), control2: move(c2))
+                case .close, .arc: element
+                }
+            }
+        }
+    }
+
+    /// Each glyph's outline, from its own pen position on the line.
+    public func glyphOutlines(_ text: String, font: FontKey) -> [GlyphOutline] {
         guard let runs = shape(text, font: font) else { return [] }
-        var elements: [PathElement] = []
+        var glyphs: [GlyphOutline] = []
         var pen: CGFloat = 0
         for run in runs {
             guard let face = library.face(run.face(in: font)) else {
@@ -507,21 +523,14 @@ public final class TextEngine: TextProvider, FontCatalog, @unchecked Sendable {
                 continue
             }
             for glyph in run.glyphs {
-                let dx = pen + glyph.xOffset, dy = glyph.yOffset
-                func move(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dy) }
-                for element in face.outline(glyph.glyph) {
-                    switch element {
-                    case let .move(p): elements.append(.move(move(p)))
-                    case let .line(p): elements.append(.line(move(p)))
-                    case let .quadCurve(to, control): elements.append(.quadCurve(to: move(to), control: move(control)))
-                    case let .curve(to, c1, c2): elements.append(.curve(to: move(to), control1: move(c1), control2: move(c2)))
-                    case .close, .arc: elements.append(element)
-                    }
+                let elements = face.outline(glyph.glyph)
+                if !elements.isEmpty {
+                    glyphs.append(GlyphOutline(origin: CGPoint(x: pen + glyph.xOffset, y: glyph.yOffset), elements: elements))
                 }
                 pen += glyph.xAdvance
             }
         }
-        return elements
+        return glyphs
     }
 
     /// Drops the measurement cache. The atlas and the faces stay.

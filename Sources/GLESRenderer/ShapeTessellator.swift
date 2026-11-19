@@ -125,7 +125,10 @@ public enum ShapeTessellator {
         scale: CGFloat,
         alongTexture: Bool = false,
         edges: Edges = .exact,
-        edgePixels: CGFloat = 1
+        edgePixels: CGFloat = 1,
+        glow: CGFloat = 0,
+        antialiased: Bool = true,
+        miterClip: CGFloat? = nil
     ) -> Mesh? {
         guard scale > 0, scale.isFinite, width.isFinite else { return nil }
         guard width > 0 else { return Mesh() }
@@ -140,7 +143,10 @@ public enum ShapeTessellator {
             join: join,
             miterLimit: miterLimit,
             edges: edges,
-            edgePixels: max(edgePixels, 0.01)
+            edgePixels: max(edgePixels, 0.01),
+            glow: max(0, glow),
+            antialiased: antialiased,
+            miterClip: miterClip.map { max(0, $0) }
         )
 
         var builder = Builder()
@@ -399,6 +405,18 @@ public enum ShapeTessellator {
         /// The screen's pixels per node unit SpriteKit's edge is measured
         /// in (`Edges.spriteKit`): the scene's density, not the node's scale.
         var edgePixels: CGFloat = 1
+        /// `SKShapeNode.glowWidth`: SpriteKit's edge reaches this much further
+        /// out, its full coverage where it was (measured at 3x, at node
+        /// scales 1 and 2: the ramp's foot moves out by exactly the glow).
+        var glow: CGFloat = 0
+        /// `SKShapeNode.isAntialiased`: false, SpriteKit's stroke is a hard
+        /// band its own width, each pixel in when its centre is (measured).
+        var antialiased = true
+        /// How far from its vertex a `.miter` join reaches at most, its tip
+        /// cut straight across there (SpriteKit's: `miterLimit` times the
+        /// line's width, measured); nil, a join past `miterLimit` is bevelled
+        /// as CoreGraphics does.
+        var miterClip: CGFloat? = nil
         /// Where full coverage ends and where the feather reaches nothing.
         ///
         /// Across the stroke its exact coverage is a trapezoid: the width
@@ -412,10 +430,12 @@ public enum ShapeTessellator {
         /// edge (but at least 0.2 either side of the middle), none from 0.58
         /// outside it (and not before 1.5 from the middle).
         var core: CGFloat {
-            edges == .spriteKit ? max(0.2, drawnHalf * edgePixels - 1.12) / edgePixels : abs(width - fringe) / 2
+            guard edges == .spriteKit else { return abs(width - fringe) / 2 }
+            return antialiased ? max(0.2, drawnHalf * edgePixels - 1.12) / edgePixels : drawnHalf
         }
         var outer: CGFloat {
-            edges == .spriteKit ? max(drawnHalf * edgePixels + 0.58, 1.5) / edgePixels : (width + fringe) / 2
+            guard edges == .spriteKit else { return (width + fringe) / 2 }
+            return (antialiased ? max(drawnHalf * edgePixels + 0.58, 1.5) / edgePixels : drawnHalf) + glow
         }
         var coverage: Float {
             edges == .spriteKit ? 1 : Float(min(1, width / fringe))
@@ -573,7 +593,9 @@ public enum ShapeTessellator {
         let reach = denominator > 1e-9 ? pen.outer * abs(turn) / denominator : .infinity
         let insideMeets = miter != nil && reach <= min(length0, length1) / 2
 
-        if pen.join == .miter, let miter, miterLength <= pen.miterLimit, insideMeets {
+        // Whether a mitred join reaches past its clip and is cut across.
+        let clipped = pen.miterClip.map { pen.drawnHalf * miterLength > $0 } ?? false
+        if pen.join == .miter, let miter, miterLength <= pen.miterLimit, insideMeets, !clipped {
             let s = mitred(at: v, miter, pen: pen, into: &builder)
             return (s, s)
         }
@@ -628,7 +650,27 @@ public enum ShapeTessellator {
         case .miter:
             if let miter, miterLength <= pen.miterLimit {
                 let tip = CGPoint(x: miter.x * outside, y: miter.y * outside)
-                chain.append((builder.add(at(v, tip, pen.outer), 0), builder.add(at(v, tip, pen.core), k)))
+                if clipped, let clip = pen.miterClip {
+                    // Cut straight across `clip` out along the outside
+                    // bisector: where each side's edge meets that line, for
+                    // full coverage and for the feather's foot alike.
+                    let b = CGPoint(x: tip.x / miterLength, y: tip.y / miterLength)
+                    let coreClip = clip - (pen.drawnHalf - pen.core)
+                    let outerClip = clip + (pen.outer - pen.drawnHalf)
+                    func cut(_ normal: CGPoint, _ along: CGPoint, _ r: CGFloat, _ distance: CGFloat) -> CGPoint {
+                        let corner = at(v, normal, r)
+                        let towards = along.x * b.x + along.y * b.y
+                        let short = distance - r * (normal.x * b.x + normal.y * b.y)
+                        // The line behind the side's own corner: the corner.
+                        guard towards > 1e-9, short > 0 else { return corner }
+                        return at(corner, along, short / towards)
+                    }
+                    let back = CGPoint(x: -d1.x, y: -d1.y)
+                    chain.append((builder.add(cut(outA, d0, pen.outer, outerClip), 0), builder.add(cut(outA, d0, pen.core, coreClip), k)))
+                    chain.append((builder.add(cut(outB, back, pen.outer, outerClip), 0), builder.add(cut(outB, back, pen.core, coreClip), k)))
+                } else {
+                    chain.append((builder.add(at(v, tip, pen.outer), 0), builder.add(at(v, tip, pen.core), k)))
+                }
             }
         default:
             break                       // bevel: straight across

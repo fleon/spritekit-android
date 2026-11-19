@@ -36,6 +36,9 @@ final class ShapeMasks {
         var join: Int
         var scale: Int              // hundredths of a pixel per point
         var edge: Int = 0           // twentieths of a screen pixel per point
+        var glow: Int = 0           // hundredths of a point
+        var aliased = false
+        var miterClip: Int = 0      // hundredths of a point
     }
 
     private struct Cached {
@@ -84,17 +87,27 @@ final class ShapeMasks {
         join: CGLineJoin,
         scale: CGFloat,
         edgePixels: CGFloat,
+        glow: CGFloat = 0,
+        antialiased: Bool = true,
+        miterLimit: CGFloat = 0.5,
         owner: ObjectIdentifier? = nil
     ) -> Entry? {
+        let clip = ShapeMeshes.miterClip(limit: miterLimit, width: width)
         let edge = quantised(edgePixels)
         let key = Key(
             digest: digest(of: path), kind: 1, rule: 0,
             width: Int((width * 100).rounded()), cap: cap.rawValue, join: join.rawValue,
-            scale: quantised(scale), edge: edge
+            scale: quantised(scale), edge: edge,
+            glow: Int((max(0, glow) * 100).rounded()), aliased: !antialiased,
+            miterClip: Int((clip * 100).rounded())
         )
         return entry(for: key, owner: owner.map { OwnerKey(node: $0, kind: 1) }) {
             // SpriteKit's edge, in the screen's pixels (`Edges.spriteKit`).
-            SpriteKitMasks.stroke(path, width: width, cap: cap, join: join, scale: scale, edgePixels: CGFloat(edge) / 20)
+            SpriteKitMasks.stroke(
+                path, width: width, cap: cap, join: join, scale: scale, edgePixels: CGFloat(edge) / 20,
+                glow: CGFloat(key.glow) / 100, antialiased: !key.aliased,
+                miterClip: CGFloat(key.miterClip) / 100
+            )
         }
     }
 

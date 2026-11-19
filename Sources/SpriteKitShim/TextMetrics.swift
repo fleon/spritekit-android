@@ -322,6 +322,22 @@ public protocol TextProvider: AnyObject, Sendable {
     /// pen's start on the baseline, y up: what text drawn in a stroke mode
     /// strokes. None by default.
     func glyphOutline(_ text: String, font: FontKey) -> [PathElement]
+
+    /// The same outlines glyph by glyph: each its pen position on the line
+    /// and its outline from there, y up, so text drawn through a rotation
+    /// can place each glyph as UIKit does. By default the whole line as one.
+    func glyphOutlines(_ text: String, font: FontKey) -> [GlyphOutline]
+}
+
+/// One glyph's outline and where its pen sits on the line, in points, y up.
+public struct GlyphOutline: Sendable {
+    public var origin: CGPoint
+    public var elements: [PathElement]
+
+    public init(origin: CGPoint, elements: [PathElement]) {
+        self.origin = origin
+        self.elements = elements
+    }
 }
 
 #endif
