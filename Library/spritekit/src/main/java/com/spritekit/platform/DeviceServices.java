@@ -108,6 +108,10 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
                     "haptics", vibrator != null && vibrator.hasVibrator());
             case "openAppSettings":
                 return PlatformServices.object("ok", openAppSettings());
+            case "finish":
+                // Shell.finishActivity: the game closes itself.
+                activity.runOnUiThread(activity::finish);
+                return null;
             case "battery":
                 return PlatformServices.object("level", batteryLevel());
             case "connection":
