@@ -65,7 +65,13 @@ public enum SpriteKitMasks {
         // Into pixels, row 0 at the top: y grows down the mask.
         let s = Float(scale), left = Float(bounds.minX), top = Float(bounds.maxY)
         let pixels = mesh.positions.map { SIMD2(($0.x - left) * s, (top - $0.y) * s) }
-        var coverage = [Float](repeating: 0, count: width * height)
+        // Bytes from the start, touched only inside a triangle's box: a thin
+        // outline round a full-screen panel covers a few percent of its
+        // mask, and a float a pixel converted at the end cost more than the
+        // triangles did.
+        var bytes = [UInt8](repeating: 0, count: width * height)
+        var touched = false
+        bytes.withUnsafeMutableBufferPointer { out in
         for t in stride(from: 0, to: mesh.indices.count, by: 3) {
             let ia = Int(mesh.indices[t]), ib = Int(mesh.indices[t + 1]), ic = Int(mesh.indices[t + 2])
             let a = pixels[ia], b = pixels[ib], c = pixels[ic]
@@ -84,13 +90,16 @@ public enum SpriteKitMasks {
                     let wc = 1 - wa - wb
                     guard wa >= 0, wb >= 0, wc >= 0 else { continue }
                     let value = wa * ca + wb * cb + wc * cc
+                    guard value > 0 else { continue }
                     let i = y * width + x
-                    coverage[i] = value + coverage[i] * (1 - value)
+                    let under = Float(out[i]) / 255
+                    out[i] = UInt8(max(0, min(255, ((value + under * (1 - value)) * 255).rounded())))
+                    touched = true
                 }
             }
         }
-        let bytes = coverage.map { UInt8(max(0, min(255, ($0 * 255).rounded()))) }
-        guard bytes.contains(where: { $0 > 0 }) else { return nil }
+        }
+        guard touched, bytes.contains(where: { $0 > 0 }) else { return nil }
         return PathRasteriser.Mask(width: width, height: height, pixels: bytes, bounds: bounds, scale: scale)
     }
 }
