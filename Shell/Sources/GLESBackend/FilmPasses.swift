@@ -6,7 +6,8 @@ import SpriteKitShim
 ///
 /// The film renders on a thread of its own and waits for each frame
 /// (`waitUntilCompleted`); the renderer draws them on its own thread, where
-/// the context is current, before the view's frame. A game that films
+/// the context is current, before the view's frame, and reads each back as
+/// the next frame starts, once the GPU has drawn it, completing it then. A game that films
 /// through the view's delegate updates and encodes only between the view's
 /// frames, so the renderer
 /// gives it a moment at the top of each frame while a film is being made:
