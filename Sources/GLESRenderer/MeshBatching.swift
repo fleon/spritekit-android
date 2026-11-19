@@ -16,7 +16,7 @@ extension SpriteBatcher {
         let a = Float(t.a), b = Float(t.b), c = Float(t.c), d = Float(t.d), tx = Float(t.tx), ty = Float(t.ty)
         let colour = sprite.color
         let red = Float(colour.red), green = Float(colour.green), blue = Float(colour.blue)
-        let alpha = Float(sprite.alpha), blend = Float(sprite.colorBlendFactor)
+        let alpha = SpriteBatcher.tintAlpha(sprite), blend = Float(sprite.colorBlendFactor)
 
         let first = UInt16(batch.vertices.count / Self.floatsPerVertex)
         batch.vertices.reserveCapacity(batch.vertices.count + mesh.positions.count * Self.floatsPerVertex)
@@ -167,11 +167,10 @@ extension SpriteBatcher {
     /// What a textured stroke draws with: its texture multiplied by the
     /// stroke's colour and alpha (a white stroke leaves it as it is), as a
     /// Mac's SpriteKit tints one (`StrokeTextureTests`). `v_color_mix` here
-    /// is the colour unpremultiplied, its alpha the vertex's coverage too.
+    /// is the colour premultiplied by its alpha, the vertex's coverage too.
     static let strokeTextureShader = SKShader(source: """
     void main() {
-        vec4 texel = texture2D(u_texture, v_tex_coord);
-        gl_FragColor = texel * vec4(v_color_mix.rgb, 1.0) * v_color_mix.a;
+        gl_FragColor = texture2D(u_texture, v_tex_coord) * v_color_mix;
     }
     """)
 
@@ -227,7 +226,7 @@ extension SpriteBatcher {
                             out[o + 5] = colours[5]
                             out[o + 6] = colours[6]
                             out[o + 7] = colours[7] * coverage[i]
-                            out[o + 8] = 0
+                            out[o + 8] = 1
                             o += stride
                         }
                     }

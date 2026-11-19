@@ -211,14 +211,15 @@ public enum CoverageGeometry {
 
     // MARK: - Shared
 
-    /// rgb and the composited alpha, as `v_color_mix` carries them. The
-    /// coverage shader multiplies the two and premultiplies, so a clear
-    /// colour draws nothing rather than a black box.
+    /// rgb, the composited alpha and a blend factor of 1, from which the
+    /// vertex shader makes `v_color_mix` the colour premultiplied: the
+    /// coverage shader scales it by the coverage, so a clear colour draws
+    /// nothing rather than a black box.
     static func tint(_ colour: SKColor, alpha: CGFloat) -> [Float] {
         [
             Float(colour.red), Float(colour.green), Float(colour.blue),
             Float(colour.alpha * alpha),
-            0,
+            1,
         ]
     }
 }

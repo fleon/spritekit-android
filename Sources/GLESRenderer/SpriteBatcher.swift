@@ -12,6 +12,14 @@ import SpriteKitShim
 /// draw list is already in the order SpriteKit would composite, and swapping
 /// two overlapping quads would change the picture.
 public struct SpriteBatcher {
+    /// A sprite's alpha as its tint carries it: the node's, times its
+    /// colour's alpha mixed in from 1 by the blend factor, as SpriteKit
+    /// fades a sprite tinted toward a clear colour (Tools/TintProbe).
+    static func tintAlpha(_ sprite: DrawList.Sprite) -> Float {
+        let factor = min(1, max(0, sprite.colorBlendFactor))
+        return Float(sprite.alpha * (1 + (sprite.color.alpha - 1) * factor))
+    }
+
 
     /// Floats per vertex: x, y, u, v, r, g, b, a, blend.
     public static let floatsPerVertex = 9
@@ -353,14 +361,14 @@ public struct SpriteBatcher {
         let uv = sprite.shader == nil ? sprite.textureRect : Self.ownImage(sprite.textureRect, of: sprite.texture)
         let u0 = Float(uv.minX), u1 = Float(uv.maxX), v0 = Float(uv.minY), v1 = Float(uv.maxY)
 
-        // v_color_mix carries the tint in rgb and the node's alpha in a.
-        // The game reads `v_color_mix.a` as a fade multiplier in 12 places
-        // (`gl_FragColor = color * fade * v_color_mix.a;`), so that is the
-        // contract here. colorBlendFactor rides as its own attribute because
-        // it varies per node and batches merge nodes.
+        // The vertex carries the tint's colour, the node's alpha with the
+        // colour's own mixed in by the blend factor (`tintAlpha`), and the
+        // factor, which rides as its own attribute because it varies per
+        // node and batches merge nodes; the vertex shader makes SpriteKit's
+        // `v_color_mix` of them, whose alpha a shader reads as the fade.
         let colour = sprite.color
         let r = Float(colour.red), g = Float(colour.green), b = Float(colour.blue)
-        let a = Float(sprite.alpha), blend = Float(sprite.colorBlendFactor)
+        let blend = Float(sprite.colorBlendFactor), a = Self.tintAlpha(sprite)
 
         let first = UInt16(batch.vertices.count / Self.floatsPerVertex)
         batch.vertices.reserveCapacity(batch.vertices.count + 4 * Self.floatsPerVertex)

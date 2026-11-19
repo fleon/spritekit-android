@@ -172,21 +172,13 @@ public enum ShaderTranslator {
         }
 
         // SpriteKit's helper: what the sprite would draw with no shader of its
-        // own (`defaultFragmentShader`), its texture mixed toward its colour by
-        // `colorBlendFactor` and multiplied through by its alpha, as a Mac's
-        // SpriteKit measures. Declared only when the shader uses it.
+        // own (`defaultFragmentShader`), its texture multiplied by its tint
+        // (`v_color_mix`), as SpriteKit measures. Declared only when the
+        // shader uses it.
         let usesDefaultShading = usesIdentifier("SKDefaultShading", in: body)
-        if usesDefaultShading, !declares("v_blend", in: body) {
-            lines.insert("in float v_blend;", at: lines.firstIndex(of: "out vec4 \(fragColor);") ?? lines.endIndex)
-        }
         if usesDefaultShading {
-            // Its colour maths in half precision, as the default shader's;
-            // the coordinate it samples at stays the shader's own.
             lines.append("vec4 SKDefaultShading() {")
-            lines.append("    mediump vec4 texel = texture(u_texture, v_tex_coord);")
-            lines.append("    mediump vec4 tint = v_color_mix;")
-            lines.append("    mediump float blend = v_blend;")
-            lines.append("    return vec4(mix(texel.rgb, tint.rgb * texel.a, blend), texel.a) * tint.a;")
+            lines.append("    return texture(u_texture, v_tex_coord) * v_color_mix;")
             lines.append("}")
             lines.append("")
         }
@@ -216,7 +208,13 @@ public enum ShaderTranslator {
             "",
             "void main() {",
             "    v_tex_coord = a_tex_coord;",
-            "    v_color_mix = a_color_mix;",
+            // SpriteKit's tint, as a device's measures (Tools/TintProbe):
+            // the colour mixed from white by the blend factor, premultiplied
+            // by the alpha, which carries the node's alpha and the colour's
+            // own mixed in by the same factor (folded in by the batcher).
+            // What a shader reads as `v_color_mix`, and what the texel is
+            // multiplied by.
+            "    v_color_mix = vec4(mix(vec3(1.0), a_color_mix.rgb, a_blend) * a_color_mix.a, a_color_mix.a);",
             "    v_blend = a_blend;",
             "    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);",
             "}",
@@ -249,9 +247,7 @@ public enum ShaderTranslator {
     out vec4 \(fragColor);
 
     void main() {
-        vec4 texel = texture(u_texture, v_tex_coord);
-        vec3 tinted = mix(texel.rgb, v_color_mix.rgb * texel.a, v_blend);
-        \(fragColor) = vec4(tinted, texel.a) * v_color_mix.a;
+        \(fragColor) = texture(u_texture, v_tex_coord) * v_color_mix;
     }
     """
 
@@ -279,8 +275,7 @@ public enum ShaderTranslator {
     out vec4 \(fragColor);
 
     void main() {
-        float coverage = texture(u_texture, v_tex_coord).r * v_color_mix.a;
-        \(fragColor) = vec4(v_color_mix.rgb * coverage, coverage);
+        \(fragColor) = v_color_mix * texture(u_texture, v_tex_coord).r;
     }
     """
 
@@ -344,9 +339,8 @@ public enum ShaderTranslator {
     out vec4 \(fragColor);
 
     void main() {
-        float coverage = texture(u_texture, v_tex_coord).r * v_color_mix.a;
         vec4 fill = texture(u_fill, u_fill_map.xy + v_tex_coord * u_fill_map.zw);
-        \(fragColor) = vec4(v_color_mix.rgb * fill.rgb, fill.a) * coverage;
+        \(fragColor) = fill * v_color_mix * texture(u_texture, v_tex_coord).r;
     }
     """
 
