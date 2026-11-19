@@ -73,7 +73,16 @@ extension FaceHandle {
         run {
         itemise(text).map { item in
             let offset = text.utf8.distance(from: text.startIndex, to: item.range.lowerBound)
-            return shape(String(text[item.range]), script: item.script, byteOffset: offset, rightToLeft: rightToLeft)
+            // A script's letters are shaped in its own direction (kerning,
+            // joining) and turned round when their level runs the other way,
+            // which only an override does, as Core Text does it; digits and
+            // punctuation in the level's, which mirrors brackets.
+            guard let rightToLeft, item.script != .common, item.script.isRightToLeft != rightToLeft else {
+                return shape(String(text[item.range]), script: item.script, byteOffset: offset, rightToLeft: rightToLeft)
+            }
+            var run = shape(String(text[item.range]), script: item.script, byteOffset: offset, rightToLeft: item.script.isRightToLeft)
+            run.glyphs.reverse()
+            return run
         }
         }
     }
