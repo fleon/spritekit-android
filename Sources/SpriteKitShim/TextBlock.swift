@@ -173,7 +173,8 @@ public struct TextBlock {
     /// `NSAttributedString.boundingRect(with:options:context:)` for `runs`:
     /// with `.usesLineFragmentOrigin`, the text wrapped to `size.width`, its
     /// lines placed by their alignment; without, its first line alone,
-    /// measured from its baseline (y its rounded descent up) and no wider
+    /// measured from its baseline (y its rounded descent, and the leading
+    /// with `.usesFontLeading`, up) and no wider
     /// than `size.width`. The origin is zero across.
     public static func boundingRect(
         of runs: [Run], size: CGSize, usesLineFragmentOrigin: Bool, usesFontLeading: Bool
@@ -191,7 +192,7 @@ public struct TextBlock {
             }
             guard let block = TextBlock(runs: first, maxWidth: nil, usesFontLeading: usesFontLeading),
                   let line = block.lines.first else { return .zero }
-            return CGRect(x: 0, y: -line.descent, width: min(size.width, line.width), height: line.height)
+            return CGRect(x: 0, y: -(line.descent + line.leading), width: min(size.width, line.width), height: line.height)
         }
         guard let block = TextBlock(runs: runs, maxWidth: size.width, usesFontLeading: usesFontLeading) else { return .zero }
         return CGRect(origin: .zero, size: block.size(in: size.width))
@@ -448,8 +449,9 @@ public struct TextBlock {
         if mode.strokes {
             let outline = provider.glyphOutline(text, font: run.font)
             guard !outline.isEmpty else { return }
-            // Back into user space, on the snapped baseline.
-            let origin = CGPoint(x: point.x, y: (baseline - ctm.ty) / ctm.d)
+            // Outlines stroke where the pen is, unsnapped: UIKit snaps only
+            // the glyphs it fills (measured on Catalyst).
+            let origin = point
             func place(_ p: CGPoint) -> CGPoint { CGPoint(x: origin.x + p.x, y: origin.y - p.y) }
             context.saveGState()
             context.setStroke(run.colour)
