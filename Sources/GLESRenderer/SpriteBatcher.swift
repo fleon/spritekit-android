@@ -27,6 +27,10 @@ public struct SpriteBatcher {
         /// Set when the batch is a single node carrying its own SKAttribute
         /// values, which cannot be merged with anything else.
         public var attributeValues: [String: SKAttributeValue]
+        /// A textured stroke's batch (`appendTexturedStroke`): its texture
+        /// repeats along the stroke and is clamped across it, sampled so
+        /// without touching how the texture itself wraps for its sprites.
+        public var repeatsAlong = false
         /// The batch has a shader of its own, so its UVs are in its image's
         /// own 0…1 (`ownImage(_:)`) and the renderer binds that image alone
         /// (`ResourceCache.imageName(for:)`) rather than its packed page.

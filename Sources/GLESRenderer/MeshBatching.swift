@@ -44,7 +44,15 @@ extension SpriteBatcher {
     func appendShape(_ shape: DrawList.Shape, _ meshes: ShapeMeshes.Meshes, to batches: inout [Batch]) {
         let colours = ShapeMeshes.colours(shape)
         let fill = meshes.fill.flatMap { !$0.isEmpty && colours[3] > 0 ? $0 : nil }
-        let stroke = meshes.stroke.flatMap { !$0.isEmpty && colours[7] > 0 ? $0 : nil }
+        var stroke = meshes.stroke.flatMap { !$0.isEmpty && colours[7] > 0 ? $0 : nil }
+        // A textured stroke draws in a batch of its own texture, after the
+        // fill it sits on, as SpriteKit draws a shape's stroke over its fill.
+        if let textured = stroke, !textured.texCoords.isEmpty, let texture = shape.strokeTexture {
+            if let fill { appendShapeParts(fill: fill, stroke: nil, shape, colours: colours, to: &batches) }
+            appendTexturedStroke(textured, texture: texture, shape, colours: colours, to: &batches)
+            return
+        }
+        if stroke?.texCoords.isEmpty == false { stroke = nil }
         let count = (fill?.vertexCount ?? 0) + (stroke?.vertexCount ?? 0)
         guard count > 0 else { return }
 
@@ -114,6 +122,58 @@ extension SpriteBatcher {
             swap(&vertices, &batches[index].vertices)
             swap(&indices, &batches[index].indices)
         }
+    }
+
+    /// What a textured stroke draws with: its texture multiplied by the
+    /// stroke's colour and alpha (a white stroke leaves it as it is), as a
+    /// Mac's SpriteKit tints one (`StrokeTextureTests`). `v_color_mix` here
+    /// is the colour unpremultiplied, its alpha the vertex's coverage too.
+    static let strokeTextureShader = SKShader(source: """
+    void main() {
+        vec4 texel = texture2D(u_texture, v_tex_coord);
+        gl_FragColor = texel * vec4(v_color_mix.rgb, 1.0) * v_color_mix.a;
+    }
+    """)
+
+    /// A stroke whose texture runs along it: its own image, sampled
+    /// repeating along (`Batch.repeatsAlong`), one repeat every `lineWidth`
+    /// times the texture's aspect, 0 to 1 across from the right of travel
+    /// to the left, as SpriteKit maps one.
+    private func appendTexturedStroke(
+        _ mesh: ShapeTessellator.Mesh,
+        texture: SKTexture,
+        _ shape: DrawList.Shape,
+        colours: SIMD8<Float>,
+        to batches: inout [Batch]
+    ) {
+        let size = texture.size()
+        let repeatLength = Float(shape.lineWidth * size.width / max(size.height, 1e-6))
+        guard repeatLength > 0, repeatLength.isFinite else { return }
+        let index: Int
+        if let last = batches.indices.last,
+           batches[last].repeatsAlong, batches[last].texture === texture,
+           batches[last].vertices.count / Self.floatsPerVertex + mesh.vertexCount <= Int(UInt16.max) + 1 {
+            index = last
+        } else {
+            var batch = Batch(texture: texture, shader: Self.strokeTextureShader, blendMode: .alpha)
+            batch.repeatsAlong = true
+            batches.append(batch)
+            index = batches.count - 1
+        }
+        let t = shape.transform
+        let a = Float(t.a), b = Float(t.b), c = Float(t.c), d = Float(t.d), tx = Float(t.tx), ty = Float(t.ty)
+        let first = UInt16(batches[index].vertices.count / Self.floatsPerVertex)
+        batches[index].vertices.reserveCapacity(batches[index].vertices.count + mesh.vertexCount * Self.floatsPerVertex)
+        for i in 0 ..< mesh.vertexCount {
+            let p = mesh.positions[i], uv = mesh.texCoords[i]
+            batches[index].vertices.append(contentsOf: [
+                a * p.x + c * p.y + tx, b * p.x + d * p.y + ty,
+                uv.x / repeatLength, uv.y,
+                colours[4], colours[5], colours[6], colours[7] * mesh.coverage[i],
+                0,
+            ])
+        }
+        batches[index].indices.append(contentsOf: mesh.indices.lazy.map { first &+ $0 })
     }
 
     /// One mesh moved by `transform` and coloured, appended as the colour

@@ -29,7 +29,7 @@ public final class ShapeMeshes {
 
     private struct Key: Hashable {
         var digest: Int
-        var kind: Int               // 0 fill, 1 stroke
+        var kind: Int               // 0 fill, 1 stroke, 2 a stroke a texture runs along
         var width: Int              // hundredths of a point
         var cap: Int
         var join: Int
@@ -65,7 +65,12 @@ public final class ShapeMeshes {
         let wantsStroke = shape.lineWidth > 0 && shape.strokeColor.alpha > 0
         guard wantsFill || wantsStroke else { return Meshes() }
         if wantsFill, shape.fillTexture != nil { return nil }
-        if wantsStroke, shape.strokeTexture != nil { return nil }
+        // A stroke's texture runs along it (`StrokeTextureTests`), which the
+        // mask can't carry: the stroke is triangles with places along it. A
+        // texture cut from another (`SKTexture(rect:in:)`) can't repeat
+        // alone, so it keeps the mask.
+        let textured = wantsStroke && shape.strokeTexture != nil
+        if textured, !Self.runsAlong(shape.strokeTexture) { return nil }
 
         let quantised = Int((pixelsPerPoint * Self.transformScale(shape.transform) * 20).rounded())
         guard quantised > 0 else { return Meshes() }
@@ -89,11 +94,14 @@ public final class ShapeMeshes {
         }
         if wantsStroke {
             let key = Key(
-                digest: digest, kind: 1, width: Int((shape.lineWidth * 100).rounded()),
+                digest: digest, kind: textured ? 2 : 1, width: Int((shape.lineWidth * 100).rounded()),
                 cap: Int(shape.lineCap.rawValue), join: Int(shape.lineJoin.rawValue), scale: quantised
             )
             guard let mesh = mesh(for: key, make: {
-                ShapeTessellator.stroke(flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale)
+                ShapeTessellator.stroke(
+                    flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
+                    alongTexture: textured
+                )
             }) else { return nil }
             result.stroke = mesh
             result.signature = result.signature &* 31 &+ key.hashValue
@@ -206,6 +214,15 @@ public final class ShapeMeshes {
     }
 
     /// The fill's rgb and alpha, the stroke's, each alpha times the node's.
+    /// Whether a stroke's texture can run along it as triangles: an image
+    /// of its own (or a packed one, cut out of its page), not a part of
+    /// another, with a height to take its aspect from.
+    static func runsAlong(_ texture: SKTexture?) -> Bool {
+        guard let texture, texture === texture.root else { return false }
+        let size = texture.size()
+        return size.width > 0 && size.height > 0
+    }
+
     static func colours(_ shape: DrawList.Shape) -> SIMD8<Float> {
         let f = shape.fillColor, s = shape.strokeColor, a = shape.alpha
         return SIMD8(

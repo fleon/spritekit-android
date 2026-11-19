@@ -34,13 +34,19 @@ public enum ShapeTessellator {
         public var positions: [SIMD2<Float>] = []
         public var coverage: [Float] = []
         public var indices: [UInt16] = []
+        /// A stroke made for a texture (`stroke(…alongTexture: true)`): per
+        /// vertex, how far along the stroke it lies, in path points, and
+        /// where across, 0 on the right of travel to 1 on the left. Empty
+        /// otherwise. `SpriteBatcher` turns the first into the texture's
+        /// u, the stroke's width times its aspect a repeat.
+        public var texCoords: [SIMD2<Float>] = []
 
         public init() {}
 
         public var isEmpty: Bool { indices.isEmpty }
         public var vertexCount: Int { positions.count }
         /// What keeping it costs, roughly.
-        public var byteCount: Int { positions.count * 12 + indices.count * 2 }
+        public var byteCount: Int { positions.count * 12 + indices.count * 2 + texCoords.count * 8 }
     }
 
     /// The fill's points are tested pairwise for crossings, so a path with
@@ -96,7 +102,8 @@ public enum ShapeTessellator {
         cap: CGLineCap,
         join: CGLineJoin,
         miterLimit: CGFloat = 10,
-        scale: CGFloat
+        scale: CGFloat,
+        alongTexture: Bool = false
     ) -> Mesh? {
         guard scale > 0, scale.isFinite, width.isFinite else { return nil }
         guard width > 0 else { return Mesh() }
@@ -113,12 +120,29 @@ public enum ShapeTessellator {
         )
 
         var builder = Builder()
+        if alongTexture {
+            builder.texCoords = []
+            builder.inverseWidth = 1 / width
+        }
+        // How far the subpaths so far run: SpriteKit's texture runs over a
+        // subpath as far as every subpath up to its end does, measured on a
+        // Mac (`StrokeTextureTests`): the first at the path's own pace, the
+        // second twice over if as long, and so on.
+        var runSoFar: CGFloat = 0
         for subpath in subpaths {
             var points = dedupe(subpath.points)
             guard points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return nil }
             var closed = subpath.isClosed
             if closed, points.count > 2, distance(points[0], points[points.count - 1]) < epsilon { points.removeLast() }
             if points.count < 3 { closed = false }
+            if alongTexture {
+                var length: CGFloat = 0
+                for i in 0 ..< max(0, points.count - 1) { length += distance(points[i], points[i + 1]) }
+                if closed, let first = points.first, let last = points.last { length += distance(last, first) }
+                runSoFar += length
+                builder.alongScale = length > epsilon ? runSoFar / length : 1
+                builder.anchor = Anchor(point: points.first ?? .zero, along: 0, direction: CGPoint(x: 1, y: 0))
+            }
 
             guard points.count > 1 else {
                 // A subpath that goes nowhere: a dot, which round and
@@ -370,7 +394,7 @@ public enum ShapeTessellator {
 
     /// One cross-section of a stroke: two points each side of the path, the
     /// outer of each feathered to nothing. `plus` is the left of travel.
-    private struct Section {
+    fileprivate struct Section {
         var plusOuter: Int, plusCore: Int, minusCore: Int, minusOuter: Int
     }
 
@@ -412,6 +436,10 @@ public enum ShapeTessellator {
             directions.append(CGPoint(x: (b.x - a.x) / length, y: (b.y - a.y) / length))
         }
 
+        // How far along each point lies, for a texture run along the stroke.
+        var along = [CGFloat](repeating: 0, count: n)
+        for i in 1 ..< n { along[i] = along[i - 1] + lengths[i - 1] }
+
         // For each vertex, the section the segment arriving ends on and the
         // one the segment leaving starts from.
         var arriving = [Section?](repeating: nil, count: n)
@@ -420,6 +448,7 @@ public enum ShapeTessellator {
         let joined = closed ? Array(0 ..< n) : Array(1 ..< n - 1)
         for i in joined {
             let incoming = (i - 1 + segments) % segments
+            builder.anchor = Anchor(point: points[i], along: along[i], direction: bisector(directions[incoming], directions[i]))
             let (a, b) = appendJoin(
                 at: points[i],
                 from: directions[incoming], length: lengths[incoming],
@@ -430,11 +459,19 @@ public enum ShapeTessellator {
             leaving[i] = b
         }
 
+        // A closed subpath's last segment ends where its first begins, but a
+        // whole length further along: its own copy of that section.
+        if closed, builder.texCoords != nil, let start = arriving[0] {
+            arriving[0] = builder.shifted(start, along: along[n - 1] + lengths[segments - 1])
+        }
+
         if !closed {
+            builder.anchor = Anchor(point: points[0], along: 0, direction: directions[0])
             leaving[0] = appendCap(
                 at: points[0], direction: directions[0], isStart: true,
                 cap: cap, pen: pen.feathered(across: directions[0]), trueHalf: trueHalf, into: &builder
             )
+            builder.anchor = Anchor(point: points[n - 1], along: along[n - 1], direction: directions[segments - 1])
             arriving[n - 1] = appendCap(
                 at: points[n - 1], direction: directions[segments - 1], isStart: false,
                 cap: cap, pen: pen.feathered(across: directions[segments - 1]), trueHalf: trueHalf, into: &builder
@@ -630,15 +667,61 @@ public enum ShapeTessellator {
 
     // MARK: - Building
 
+    /// The point of the path a stroke's vertices are being made about, for
+    /// a texture run along it: how far along the subpath it lies, and the
+    /// way the stroke travels there.
+    struct Anchor {
+        var point: CGPoint
+        var along: CGFloat
+        var direction: CGPoint
+    }
+
     struct Builder {
         var positions: [SIMD2<Float>] = []
         var coverage: [Float] = []
         var indices: [Int] = []
+        /// Made for a texture when not nil: each vertex's place along and
+        /// across the stroke, from `anchor`.
+        var texCoords: [SIMD2<Float>]?
+        var anchor = Anchor(point: .zero, along: 0, direction: CGPoint(x: 1, y: 0))
+        /// The subpath's pace along the texture (see `stroke`).
+        var alongScale: CGFloat = 1
+        var inverseWidth: CGFloat = 1
 
         mutating func add(_ p: CGPoint, _ c: Float) -> Int {
             positions.append(SIMD2(Float(p.x), Float(p.y)))
             coverage.append(c)
+            if texCoords != nil {
+                // Past an end, or round a turn, the texture runs on as the
+                // stroke would: along by the offset's share of the way, across
+                // by the rest, as SpriteKit's does past a cap.
+                let dx = p.x - anchor.point.x, dy = p.y - anchor.point.y
+                let d = anchor.direction
+                let forward = dx * d.x + dy * d.y
+                let left = dx * -d.y + dy * d.x
+                texCoords!.append(SIMD2(
+                    Float((anchor.along + forward) * alongScale),
+                    Float(0.5 + left * inverseWidth)
+                ))
+            }
             return positions.count - 1
+        }
+
+        /// `section`'s four points again, `along` further along the texture.
+        fileprivate mutating func shifted(_ section: Section, along: CGFloat) -> Section {
+            func copy(_ i: Int) -> Int {
+                positions.append(positions[i])
+                coverage.append(coverage[i])
+                if var uv = texCoords?[i] {
+                    uv.x += Float(along * alongScale)
+                    texCoords!.append(uv)
+                }
+                return positions.count - 1
+            }
+            return Section(
+                plusOuter: copy(section.plusOuter), plusCore: copy(section.plusCore),
+                minusCore: copy(section.minusCore), minusOuter: copy(section.minusOuter)
+            )
         }
 
         mutating func triangle(_ a: Int, _ b: Int, _ c: Int) {
@@ -657,6 +740,7 @@ public enum ShapeTessellator {
             mesh.positions = positions
             mesh.coverage = coverage
             mesh.indices = indices.map { UInt16($0) }
+            mesh.texCoords = texCoords ?? []
             return mesh
         }
     }
