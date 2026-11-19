@@ -7,10 +7,12 @@ import SpriteKitShim
 // `import AVFoundation` resolves to the module of that name in `Modules`,
 // which re-exports these.
 //
-// Appending encodes at once, on the caller's thread (the film's own): the
-// frame is converted to the encoder's YUV and handed to MediaCodec, which
-// writes what it has encoded to the MP4 as it goes. So an input is always
-// ready for more, and the film's wait for it never waits.
+// Appending queues the frame on the input's own queue, where it's converted
+// to the encoder's YUV and handed to MediaCodec, which writes what it has
+// encoded to the MP4 as it goes. So the film renders its next frame while
+// the last encodes; the input stops being ready for more while two wait, as
+// AVFoundation's does when it falls behind, and finishing or cancelling
+// waits for what's queued.
 
 public typealias CMTimeValue = Int64
 public typealias CMTimeScale = Int32
@@ -146,20 +148,29 @@ public final class AVAssetWriter: @unchecked Sendable {
 
     public func cancelWriting() {
         guard status == .writing else { return }
-        inputs.first?.encoder?.cancel()
-        inputs.first?.encoder = nil
         status = .cancelled
-        try? FileManager.default.removeItem(at: outputURL)
+        let url = outputURL
+        // After the frames still encoding, which see the status and stop.
+        inputs.first?.encoding.sync { [self] in
+            inputs.first?.encoder?.cancel()
+            inputs.first?.encoder = nil
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     /// Drains the encoder and closes the file off the caller's thread, then
     /// calls `handler`, as AVFoundation does.
     public func finishWriting(completionHandler handler: @escaping @Sendable () -> Void) {
-        guard status == .writing, let encoder = inputs.first?.encoder else {
+        guard let input = inputs.first else {
             if status != .failed { _ = fail("finished without writing") }
             return DispatchQueue.global().async(execute: handler)
         }
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
+        // On the input's queue, after the frames it's still encoding.
+        input.encoding.async { [self] in
+            guard status == .writing, let encoder = input.encoder else {
+                if status != .failed { _ = fail("finished without writing") }
+                return handler()
+            }
             if encoder.finish() {
                 status = .completed
             } else {
@@ -187,23 +198,46 @@ public final class AVAssetWriterInput: @unchecked Sendable {
     fileprivate var open: ((CMTimeScale) -> VideoEncoding?)?
     fileprivate var sessionStart = CMTime.zero
     private var finished = false
+    /// Frames are converted and encoded here, in order, so the film renders
+    /// its next frame meanwhile; the writer finishes and cancels here too.
+    fileprivate let encoding = DispatchQueue(label: "AVAssetWriterInput.encoding", qos: .userInitiated)
+    private let lock = NSLock()
+    /// Frames appended and not yet encoded.
+    private var queued = 0
+    /// How many frames may wait to be encoded: one encoding while the next
+    /// is converted, and the film rendering the one after.
+    private static let depth = 2
+    /// Where each frame's YUV is converted, on the encoding queue.
+    private var scratch: [UInt8] = []
 
     public init(mediaType: AVMediaType, outputSettings: [String: Any]?) {
         self.mediaType = mediaType
         self.outputSettings = outputSettings
     }
 
-    /// Always, while writing: each append is encoded before it returns.
+    /// While writing, and fewer than `depth` frames wait to be encoded.
     public var isReadyForMoreMediaData: Bool {
-        !finished && writer?.status == .writing
+        !finished && writer?.status == .writing && lock.withLock { queued < Self.depth }
     }
 
     public func markAsFinished() {
         finished = true
     }
 
-    fileprivate func encode(_ buffer: CVPixelBuffer, at time: CMTime, scratch: inout [UInt8]) -> Bool {
+    /// Queues `buffer` to be encoded, keeping it until it has been: the
+    /// pool hands it out again only once nothing else holds it.
+    fileprivate func append(_ buffer: CVPixelBuffer, at time: CMTime) -> Bool {
         guard isReadyForMoreMediaData else { return false }
+        lock.withLock { queued += 1 }
+        encoding.async { [self] in
+            _ = encode(buffer, at: time)
+            lock.withLock { queued -= 1 }
+        }
+        return true
+    }
+
+    private func encode(_ buffer: CVPixelBuffer, at time: CMTime) -> Bool {
+        guard writer?.status == .writing else { return false }
         if encoder == nil, let open {
             encoder = open(time.timescale)
             self.open = nil
@@ -217,7 +251,11 @@ public final class AVAssetWriterInput: @unchecked Sendable {
         if scratch.count != layout.byteCount { scratch = [UInt8](repeating: 0, count: layout.byteCount) }
         let microseconds = max(0, time.microseconds - sessionStart.microseconds)
         let encoded = scratch.withUnsafeMutableBytes { yuv -> Bool in
-            YUVConversion.convert(bgra: buffer.baseAddress, bytesPerRow: buffer.bytesPerRow, into: yuv.baseAddress!, layout: layout)
+            if buffer.isHeldAsRendered {
+                YUVConversion.convert(rendered: buffer.baseAddress, bytesPerRow: buffer.bytesPerRow, rows: buffer.height, into: yuv.baseAddress!, layout: layout)
+            } else {
+                YUVConversion.convert(bgra: buffer.baseAddress, bytesPerRow: buffer.bytesPerRow, into: yuv.baseAddress!, layout: layout)
+            }
             return encoder.encode(UnsafeRawBufferPointer(yuv), presentationUs: microseconds)
         }
         return encoded || (writer?.fail("the encoder refused a frame") ?? false)
@@ -228,7 +266,6 @@ public final class AVAssetWriterInputPixelBufferAdaptor: @unchecked Sendable {
     public let assetWriterInput: AVAssetWriterInput
     public let sourcePixelBufferAttributes: [String: Any]?
     private var pool: CVPixelBufferPool?
-    private var scratch: [UInt8] = []
 
     public init(assetWriterInput input: AVAssetWriterInput, sourcePixelBufferAttributes attributes: [String: Any]?) {
         assetWriterInput = input
@@ -247,6 +284,6 @@ public final class AVAssetWriterInputPixelBufferAdaptor: @unchecked Sendable {
     }
 
     public func append(_ pixelBuffer: CVPixelBuffer, withPresentationTime presentationTime: CMTime) -> Bool {
-        assetWriterInput.encode(pixelBuffer, at: presentationTime, scratch: &scratch)
+        assetWriterInput.append(pixelBuffer, at: presentationTime)
     }
 }

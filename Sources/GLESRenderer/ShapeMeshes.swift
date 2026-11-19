@@ -19,6 +19,11 @@ public final class ShapeMeshes {
     /// multiplied in.
     public var pixelsPerPoint: CGFloat = 1
 
+    /// The screen's pixels per scene point, whatever share of them the
+    /// scene is drawn at: what SpriteKit's stroke edges are measured in
+    /// (`ShapeTessellator.Edges.spriteKit`).
+    public var screenPixelsPerPoint: CGFloat = 1
+
     public struct Meshes {
         public var fill: ShapeTessellator.Mesh?
         public var stroke: ShapeTessellator.Mesh?
@@ -34,6 +39,7 @@ public final class ShapeMeshes {
         var cap: Int
         var join: Int
         var scale: Int              // twentieths of a pixel per point
+        var edge: Int = 0           // twentieths of a screen pixel per point
     }
 
     private struct Cached {
@@ -103,7 +109,8 @@ public final class ShapeMeshes {
         if wantsStroke {
             let key = Key(
                 digest: digest, kind: textured ? 2 : 1, width: Int((shape.lineWidth * 100).rounded()),
-                cap: Int(shape.lineCap.rawValue), join: Int(shape.lineJoin.rawValue), scale: quantised
+                cap: Int(shape.lineCap.rawValue), join: Int(shape.lineJoin.rawValue), scale: quantised,
+                edge: Int((screenPixelsPerPoint * 20).rounded())
             )
             keys.stroke = key
             keys.signature = keys.signature &* 31 &+ key.hashValue
@@ -147,7 +154,7 @@ public final class ShapeMeshes {
             guard let mesh = mesh(for: key, make: {
                 ShapeTessellator.stroke(
                     flattened(), width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
-                    alongTexture: textured, edges: .spriteKit
+                    alongTexture: textured, edges: .spriteKit, edgePixels: CGFloat(key.edge) / 20
                 )
             }) else { return nil }
             result.stroke = mesh

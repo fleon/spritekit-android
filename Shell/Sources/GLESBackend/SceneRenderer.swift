@@ -23,10 +23,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
     /// An `SKRenderer`'s committed frames, and the target they draw into.
     private let films = FilmPasses()
-    private var filmTarget: RenderTargetHandle?
+    /// Targets free for a film's next frame; one is held by each frame
+    /// waiting to be read back (`filmReadbacks`).
+    private var freeFilmTargets: [RenderTargetHandle] = []
     /// A film frame read back from GL, rows bottom first, before it's turned
     /// over into the film's pixel buffer.
-    private var filmReadback: [UInt8] = []
+    /// Films' frames drawn and not yet read back: read at the top of the
+    /// next frame (`collectFilmReadbacks`), once the GPU has drawn them, so
+    /// the frame thread never waits for the GPU to catch up.
+    private var filmReadbacks: [FilmReadback] = []
     /// How long a frame waits for a film being made to commit its next.
     private static let filmTurnWait: TimeInterval = 0.012
 
@@ -540,8 +545,13 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         cache.programBuilds = nil
         if MetalExecution.executor === self { MetalExecution.executor = nil }
         films.failAll()
-        if let filmTarget { device.deleteRenderTarget(filmTarget) }
-        filmTarget = nil
+        for readback in filmReadbacks {
+            for pass in readback.passes { device.deleteRenderTarget(pass.target) }
+            readback.commands.complete(error: MTLCommandBufferError("the renderer stopped"))
+        }
+        filmReadbacks.removeAll()
+        for kept in freeFilmTargets { device.deleteRenderTarget(kept) }
+        freeFilmTargets.removeAll()
         for name in bakedTextures.removeAll() { device.deleteTexture(name) }
         targets.removeAll()
         cache.removeAll()
@@ -617,7 +627,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         let ticked = MediaTime.source()
         // Shapes are tessellated as they're batched, for the density the
         // scene is drawn at: the screen's, times the share of it drawn.
-        shapeMeshes.pixelsPerPoint = max(viewport.scale.x, viewport.scale.y) * drawnFraction(of: frame)
+        shapeMeshes.screenPixelsPerPoint = max(viewport.scale.x, viewport.scale.y)
+        shapeMeshes.pixelsPerPoint = shapeMeshes.screenPixelsPerPoint * drawnFraction(of: frame)
         let passes = batcher.passes(for: list)
         // Ticking the actions, flattening the scene graph and batching it:
         // the runtime's own cost, with no GL in it. Worth separating, because
@@ -1078,26 +1089,88 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// pass into a target of its texture's size, and reads it back into the
     /// film's pixel buffer.
     private func drawFilmPasses() {
+        collectFilmReadbacks()
         for buffer in films.take(waitingUpTo: Self.filmTurnWait) {
             var failure: Error?
+            var drawn: [FilmReadback.Pass] = []
             for pass in buffer.passes {
-                if let error = drawFilm(pass) { failure = error }
+                switch drawFilm(pass) {
+                case let .success(frame): drawn.append(frame)
+                case let .failure(error): failure = error
+                }
             }
-            buffer.complete(error: failure)
+            // Read back as the next frame starts; until then the film waits
+            // for it, as it would for the GPU on Apple.
+            guard failure == nil, !drawn.isEmpty else {
+                freeFilmTargets += drawn.map(\.target)
+                buffer.complete(error: failure)
+                continue
+            }
+            filmReadbacks.append(FilmReadback(commands: buffer, passes: drawn))
         }
     }
 
-    private func drawFilm(_ pass: RecordedRenderPass) -> Error? {
+    /// One command buffer's film frames, drawn into targets of their own and
+    /// waiting to be read back into its pixel buffers.
+    private struct FilmReadback {
+        struct Pass {
+            let target: RenderTargetHandle
+            let pixels: CVPixelBuffer
+        }
+
+        let commands: MTLCommandBuffer
+        let passes: [Pass]
+    }
+
+    /// Reads the frames drawn last time into their pixel buffers and
+    /// completes their command buffers. A frame later the GPU has drawn
+    /// them, so the read is only the copy. Each is read as GL has it, rows
+    /// bottom first and RGBA, straight into its buffer, which says so
+    /// (`CVPixelBuffer.isHeldAsRendered`): the video writer reads that
+    /// order as it converts, and a buffer's lock puts it right for anything
+    /// else, so nothing turns it round on this thread.
+    private func collectFilmReadbacks() {
+        guard !filmReadbacks.isEmpty else { return }
+        let waiting = filmReadbacks
+        filmReadbacks.removeAll(keepingCapacity: true)
+        glPixelStorei(GLenum(GL_PACK_ALIGNMENT), 4)
+        for readback in waiting {
+            for pass in readback.passes {
+                let pixels = pass.pixels
+                let width = min(pass.target.width, pixels.width), height = min(pass.target.height, pixels.height)
+                glBindFramebuffer(GLenum(GL_FRAMEBUFFER), pass.target.framebuffer)
+                glPixelStorei(GLenum(GL_PACK_ROW_LENGTH), GLint(pixels.bytesPerRow / 4))
+                // Bottom first: GL's first row goes in the buffer's last.
+                let into = pixels.baseAddress + (pixels.height - height) * pixels.bytesPerRow
+                glReadPixels(0, 0, GLsizei(width), GLsizei(height), GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), into)
+                pixels.isHeldAsRendered = true
+                freeFilmTargets.append(pass.target)
+            }
+            let error = glGetError()
+            readback.commands.complete(error: error == GLenum(GL_NO_ERROR) ? nil : MTLCommandBufferError("GL error \(error) reading a film's frame back"))
+        }
+        glPixelStorei(GLenum(GL_PACK_ROW_LENGTH), 0)
+    }
+
+    /// A target of the film's size, reused where one is free.
+    private func filmTarget(width: Int, height: Int) -> RenderTargetHandle? {
+        if let index = freeFilmTargets.firstIndex(where: { $0.width == width && $0.height == height }) {
+            return freeFilmTargets.remove(at: index)
+        }
+        // Another size: the film's changed, so those left over go.
+        for kept in freeFilmTargets { device.deleteRenderTarget(kept) }
+        freeFilmTargets.removeAll()
+        return device.createRenderTarget(width: width, height: height, stencil: true)
+    }
+
+    private func drawFilm(_ pass: RecordedRenderPass) -> Result<FilmReadback.Pass, Error> {
         guard let color = pass.color, let pixels = color.pixelBuffer else {
-            return MTLCommandBufferError("a film's pass has nothing to draw into")
+            return .failure(MTLCommandBufferError("a film's pass has nothing to draw into"))
         }
         let width = color.width, height = color.height
-        if let kept = filmTarget, kept.width != width || kept.height != height {
-            device.deleteRenderTarget(kept)
-            filmTarget = nil
+        guard let handle = filmTarget(width: width, height: height) else {
+            return .failure(MTLCommandBufferError("no \(width) × \(height) target"))
         }
-        if filmTarget == nil { filmTarget = device.createRenderTarget(width: width, height: height, stencil: true) }
-        guard let handle = filmTarget else { return MTLCommandBufferError("no \(width) × \(height) target") }
 
         let frame = Viewport(
             drawableSize: pass.viewport.size,
@@ -1108,6 +1181,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         deviceScale = max(frame.scale.x, frame.scale.y)
         glyphSource.deviceScale = deviceScale
         shapeMeshes.pixelsPerPoint = deviceScale
+        shapeMeshes.screenPixelsPerPoint = deviceScale
         target = Target(
             framebuffer: handle.framebuffer,
             widthInPixels: width,
@@ -1132,32 +1206,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         stagedComposites.removeAll(keepingCapacity: true)
         bindVertexArray(0)
 
-        // Back into the film's buffer: GL's rows run bottom first and RGBA,
-        // the buffer's top first and BGRA.
-        let rowBytes = width * 4
-        if filmReadback.count != rowBytes * height { filmReadback = [UInt8](repeating: 0, count: rowBytes * height) }
-        glPixelStorei(GLenum(GL_PACK_ALIGNMENT), 4)
-        filmReadback.withUnsafeMutableBytes { glReadPixels(0, 0, GLsizei(width), GLsizei(height), GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), $0.baseAddress) }
-        let bgra = color.pixelFormat == .bgra8Unorm
-        filmReadback.withUnsafeBufferPointer { source in
-            let out = pixels.baseAddress.assumingMemoryBound(to: UInt8.self)
-            for row in 0 ..< height {
-                let from = source.baseAddress! + (height - 1 - row) * rowBytes
-                let to = out + row * pixels.bytesPerRow
-                if bgra {
-                    for x in stride(from: 0, to: rowBytes, by: 4) {
-                        to[x] = from[x + 2]
-                        to[x + 1] = from[x + 1]
-                        to[x + 2] = from[x]
-                        to[x + 3] = from[x + 3]
-                    }
-                } else {
-                    to.update(from: from, count: rowBytes)
-                }
-            }
-        }
         let error = glGetError()
-        return error == GLenum(GL_NO_ERROR) ? nil : MTLCommandBufferError("GL error \(error) drawing a film's frame")
+        guard error == GLenum(GL_NO_ERROR) else {
+            freeFilmTargets.append(handle)
+            return .failure(MTLCommandBufferError("GL error \(error) drawing a film's frame"))
+        }
+        return .success(FilmReadback.Pass(target: handle, pixels: pixels))
     }
 
     // MARK: Baking
@@ -1727,7 +1781,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
            let mask = shapeMasks.stroke(
                path, width: shape.lineWidth,
-               cap: shape.lineCap, join: shape.lineJoin, scale: scale, owner: shape.owner
+               cap: shape.lineCap, join: shape.lineJoin, scale: scale,
+               edgePixels: shapeMeshes.screenPixelsPerPoint, owner: shape.owner
            ) {
             drawCoverage(
                 CoverageGeometry.run(
@@ -1953,7 +2008,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             ))
         }
         if shape.lineWidth > 0, shape.strokeColor.alpha > 0,
-           let mask = shapeMasks.stroke(path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale, owner: shape.owner) {
+           let mask = shapeMasks.stroke(
+               path, width: shape.lineWidth, cap: shape.lineCap, join: shape.lineJoin, scale: scale,
+               edgePixels: shapeMeshes.screenPixelsPerPoint, owner: shape.owner
+           ) {
             parts.append(.init(
                 run: CoverageGeometry.run(mask: mask.bounds, transform: shape.transform, colour: shape.strokeColor, alpha: shape.alpha),
                 mask: mask.name,
