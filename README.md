@@ -671,8 +671,13 @@ A change to the shim's behaviour comes with a test of this kind.
   the right way up.
 - **Effect and crop nodes** composite through render targets; a draw counts
   the pixels of the target it lands in, as on Metal. `shouldRasterize` keeps
-  its pixels until the subtree changes (a digest of transforms and textures,
-  not uniform values).
+  its pixels until what Apple's SpriteKit redraws for changes: the subtree
+  (a digest of transforms and textures), the node's own transform, alpha or
+  shader, a write to `shouldRasterize`, or any write to a uniform its shaders
+  or its subtree's use (the same value too). `u_time` running on, attribute
+  values and ancestors moving keep the pixels. A layer cached in bands gives
+  each band its own copies of the uniforms that change, written only on the
+  frame that band redraws.
 - **Batching:** one vertex and one index stream a frame, written through one
   synchronised map of a freshly orphaned buffer (Adreno drivers let
   unsynchronised writes land over draws still pending).

@@ -130,7 +130,22 @@ public final class SKUniform: @unchecked Sendable {
     }
 
     public let name: String
-    public var value: Value
+    public var value: Value {
+        didSet { writeStamp = Self.nextWriteStamp() }
+    }
+
+    /// When this uniform was last written, on a clock every uniform shares
+    /// (0: never since it was made). A rasterized `SKEffectNode` draws its
+    /// cached pixels again once a uniform inside it was written after it last
+    /// looked, as Apple's does: on every write, the same value too.
+    public private(set) var writeStamp: UInt64 = 0
+
+    nonisolated(unsafe) private static var writeClock: UInt64 = 0
+
+    private static func nextWriteStamp() -> UInt64 {
+        writeClock &+= 1
+        return writeClock
+    }
 
     /// What kind of value this holds, as SpriteKit reports it. A game may
     /// switch over it to copy a uniform (per cached band, say, so a band

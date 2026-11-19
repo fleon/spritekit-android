@@ -159,11 +159,13 @@ func digestFollowsTheContents() {
     #expect(before?.contentsDigest != after?.contentsDigest)
 }
 
-@Test("A band keeps its cache while only its shader's uniforms change")
+@Test("A uniform written inside a band redraws it through its generation, not its digest")
 func digestIgnoresUniformValues() {
-    // This is the whole point of caching in bands: `u_time` moves every frame
-    // and the light moves with it, and a band that redrew for either would
-    // cost exactly what not caching costs.
+    // `u_time` running on must never redraw a band, or caching in bands would
+    // cost what not caching costs; so the digest leaves uniform values out.
+    // But a uniform the game writes does redraw, as on Apple's SpriteKit
+    // (`RasterInvalidationTests`): a game caching in bands writes a band's
+    // own uniforms only on the frame it redraws that band.
     let effect = SKEffectNode()
     effect.shouldRasterize = true
     let sprite = SKSpriteNode(color: .white, size: CGSize(width: 10, height: 10))
@@ -181,6 +183,7 @@ func digestIgnoresUniformValues() {
     let after = effectCommand(DrawList(scene: wrap(effect)))
 
     #expect(before?.contentsDigest == after?.contentsDigest)
+    #expect(before?.rasterGeneration != after?.rasterGeneration)
 }
 
 @Test("Toggling shouldRasterize asks for a redraw, both ways round")
