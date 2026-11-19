@@ -394,14 +394,7 @@ import Testing
         Case("Geneva", 12.0, 3, .justified, .characters, 4.0, .lfo, x: 0.000000, y: 0.000000, w: 160.000000, h: 34.000000),
     ]
 
-    /// Justified, UIKit's `boundingRect` tightens a line to take one more
-    /// word (KoHo 20's "eakable word here", 1% over the width, on one line),
-    /// where its layout manager and this don't; the rule isn't pinned yet.
-    static func isTightened(_ item: Case) -> Bool {
-        item.font == "KoHo-Bold" && item.text == 3 && item.alignment == .justified
-    }
-
-    @Test("Bounding rects match UIKit's", arguments: cases.filter { !isTightened($0) })
+    @Test("Bounding rects match UIKit's", arguments: cases)
     func boundingRect(_ item: Case) {
         _ = Fonts.engine
         let style = TextBlock.Style(alignment: item.alignment, wrapping: item.wrapping, lineSpacing: item.spacing)
@@ -434,6 +427,34 @@ import Testing
             let rect = TextBlock.boundingRect(of: [TextBlock.Run(text, font: FontKey(name: font, size: size))],
                                               size: CGSize(width: 160, height: 10_000), usesLineFragmentOrigin: false, usesFontLeading: true)
             #expect(abs(rect.minY - y) < 1e-4 && abs(rect.width - w) < 1e-4 && abs(rect.height - h) < 1e-4, "\(font) \(size) \(text): \(rect)")
+        }
+    }
+
+    /// Justified, UIKit lets a line take one more word if it fits giving up
+    /// a fifth of each space's width: the narrowest width (Catalyst) at
+    /// which each text still lays out on one line, justified; left-aligned
+    /// it needs its whole width.
+    static let squeezes: [(String, CGFloat, String, natural: CGFloat, oneLineFrom: CGFloat)] = [
+        ("Montserrat-Black", 15, "ab cd", 44.310, 43.410),
+        ("Montserrat-Black", 15, "ab cd ef gh ij", 105.090, 101.490),
+        ("Montserrat-Black", 15, "Find a player near you and play together now", 371.460, 364.260),
+        ("Montserrat-Black", 15, "Unbelievablyunbreakable", 208.560, 208.559),
+        ("KoHo-Bold", 20, "ab cd ef", 71.000, 68.760),
+        ("KoHo-Bold", 20, "abcdefghij klmnopqrst", 199.740, 198.620),
+        ("Geneva", 11, "ab cd ef gh ij", 69.464, 66.530),
+        ("Geneva", 11, "Find a player near you and play together now", 240.598, 234.729),
+        ("Montserrat-Black", 30, "ab cd ef", 129.990, 126.390),
+    ]
+
+    @Test("Justified lines squeeze their spaces by a fifth to take one more word, as UIKit's do")
+    func justifiedSqueeze() throws {
+        _ = Fonts.engine
+        for (font, size, text, natural, from) in Self.squeezes {
+            func lines(_ width: CGFloat, _ alignment: TextBlock.Alignment) -> Int {
+                TextBlock(text, font: FontKey(name: font, size: size), maxWidth: width, style: TextBlock.Style(alignment: alignment))?.lines.count ?? 0
+            }
+            #expect(lines(from + 0.002, .justified) == 1 && lines(from - 0.002, .justified) == 2, "\(font) \(size) \(text) at \(from)")
+            #expect(lines(natural - 0.01, .left) == 2, "\(font) \(size) \(text) left")
         }
     }
 
@@ -488,6 +509,49 @@ import Testing
         #expect(stroke > 0 && stroke < fill && both > fill, "fill \(fill) stroke \(stroke) both \(both)")
     }
 
+    /// UIKit drawing "Level" (Montserrat-Black 15) into a pushed
+    /// `CGContext(data:)` that isn't flipped (y up): the text comes out
+    /// upside down in memory, its baseline on the next device row down
+    /// from the top of memory, as in a flipped one (Catalyst, smoothing off).
+    static let unflipped: [(scale: Int, origin: CGPoint, box: [Int], ink: Int)] = [
+        (1, CGPoint(x: 4.0, y: 4.0), [4, 50, 46, 62], 61979),
+        (1, CGPoint(x: 4.3, y: 3.6), [4, 51, 46, 63], 62021),
+        (1, CGPoint(x: 2.25, y: 5.1), [2, 49, 44, 61], 62021),
+        (1, CGPoint(x: 6.7, y: 20.45), [7, 34, 48, 46], 62009),
+        (3, CGPoint(x: 4.0, y: 4.0), [14, 152, 138, 186], 566501),
+        (3, CGPoint(x: 4.3, y: 3.6), [14, 154, 139, 188], 566501),
+        (3, CGPoint(x: 2.25, y: 5.1), [8, 149, 133, 183], 566501),
+        (3, CGPoint(x: 6.7, y: 20.45), [22, 103, 146, 137], 566501),
+    ]
+
+    @Test("In a context that isn't flipped, text lands where UIKit draws it")
+    func unflippedContext() throws {
+        _ = Fonts.engine
+        for item in Self.unflipped {
+            let width = 250 * item.scale, height = 70 * item.scale
+            var pixels = [UInt8](repeating: 0, count: width * height * 4)
+            try pixels.withUnsafeMutableBytes { buffer in
+                // As `CGContext(data:…)` makes one: CoreGraphics' space, y up, scaled.
+                let context = try #require(BitmapContext(wrapping: buffer.baseAddress!, width: width, height: height, bytesPerRow: width * 4))
+                context.translateBy(x: 0, y: CGFloat(height))
+                context.scaleBy(x: 1, y: -1)
+                context.scaleBy(x: CGFloat(item.scale), y: CGFloat(item.scale))
+                let block = try #require(TextBlock(runs: [TextBlock.Run("Level", font: FontKey(name: "Montserrat-Black", size: 15), colour: .white)], maxWidth: 240))
+                block.draw(in: CGRect(origin: item.origin, size: CGSize(width: 240, height: 60)), context: context)
+            }
+            var box = [width, height, -1, -1], ink = 0
+            for y in 0 ..< height {
+                for x in 0 ..< width where pixels[(y * width + x) * 4 + 3] > 0 {
+                    box = [min(box[0], x), min(box[1], y), max(box[2], x), max(box[3], y)]
+                    ink += Int(pixels[(y * width + x) * 4 + 3])
+                }
+            }
+            #expect(box[1] == item.box[1] && box[3] == item.box[3], "rows \(box) against \(item.box) at \(item.origin) \(item.scale)x")
+            #expect(abs(box[0] - item.box[0]) <= 1 && abs(box[2] - item.box[2]) <= 1, "columns \(box) against \(item.box)")
+            #expect(abs(Double(ink) / Double(item.ink) - 1) < 0.06, "ink \(ink) against \(item.ink)")
+        }
+    }
+
     /// UIKit's ink centroids for "Level" in Montserrat-Black 31.5, filled
     /// and stroked at line width 1, at three origins (Catalyst, smoothing
     /// off): the fill moves in whole pixels, the stroke with the origin.
@@ -524,6 +588,30 @@ import Testing
             let tolerance = 0.12 * item.scale
             #expect(abs(fill.y - item.fill.y) < tolerance && abs(fill.x - item.fill.x) < 2 * tolerance, "fill \(fill) against \(item.fill) at \(item.origin) \(item.scale)x")
             #expect(abs(stroke.y - item.stroke.y) < tolerance && abs(stroke.x - item.stroke.x) < 2 * tolerance, "stroke \(stroke) against \(item.stroke) at \(item.origin) \(item.scale)x")
+        }
+    }
+
+    /// UIKit drawing "Level" (Montserrat-Black 31.5) through rotated,
+    /// sheared and mirrored transforms at 1x (Catalyst, smoothing off): the
+    /// ink's centroid and total coverage.
+    static let transformed: [(String, CGAffineTransform, centroid: CGPoint, ink: Int)] = [
+        ("rotate30", CGAffineTransform(a: 0.8660254037844387, b: 0.49999999999999994, c: -0.49999999999999994, d: 0.8660254037844387, tx: 60.0, ty: 20.0), CGPoint(x: 89.259, y: 60.989), 277606),
+        ("rotate90", CGAffineTransform(a: 6.123233995736766e-17, b: 1.0, c: -1.0, d: 6.123233995736766e-17, tx: 150.0, ty: 10.0), CGPoint(x: 128.844, y: 56.466), 277096),
+        ("shear", CGAffineTransform(a: 1.0, b: 0.0, c: 0.4, d: 1.0, tx: 10.0, ty: 10.0), CGPoint(x: 64.163, y: 30.170), 277547),
+        ("mirror", CGAffineTransform(a: -1.0, b: 0.0, c: 0.0, d: 1.0, tx: 200.0, ty: 20.0), CGPoint(x: 152.722, y: 40.156), 277101),
+    ]
+
+    @Test("Rotated, sheared and mirrored text draws where UIKit draws it")
+    func transformedText() throws {
+        _ = Fonts.engine
+        for (name, transform, centroid, ink) in Self.transformed {
+            let context = BitmapContext(width: 250, height: 200)
+            context.concatenate(transform)
+            let block = try #require(TextBlock(runs: [TextBlock.Run("Level", font: FontKey(name: "Montserrat-Black", size: 31.5), colour: .white)], maxWidth: 200))
+            block.draw(in: CGRect(x: 0, y: 0, width: 200, height: 60), context: context)
+            let ours = Self.centroid(context), total = Self.ink(context)
+            #expect(hypot(ours.x - centroid.x, ours.y - centroid.y) < 0.5, "\(name): centroid \(ours) against \(centroid)")
+            #expect(abs(Double(total) / Double(ink) - 1) < 0.03, "\(name): ink \(total) against \(ink)")
         }
     }
 
