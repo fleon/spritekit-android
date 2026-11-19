@@ -577,7 +577,9 @@ public struct TextBlock {
             // Justified Arabic widens with kashida where it can, its spaces
             // left as they are.
             let kashida = kashida(line, in: rect.width, provider: provider)
-            let stretch = kashida == nil && Self.justifies(line, in: rect.width)
+            // Left to right, its spaces and then its letters (`Justification`).
+            let justified = kashida == nil ? justification(line, in: rect.width, provider: provider) : nil
+            let stretch = kashida == nil && justified == nil && Self.justifies(line, in: rect.width)
                 ? (rect.width - line.visibleWidth) / CGFloat(line.spaces) : 0
             var spacesBefore = 0
             var widened: CGFloat = 0
@@ -587,6 +589,8 @@ public struct TextBlock {
                 // Justified text widens its spaces; letter spacing places each character.
                 let parts: [(String, CGFloat)] = if let stretched = kashida?[index] {
                     stretched.parts
+                } else if let justified {
+                    justified[index] ?? []
                 } else if stretch != 0 || run.kern != 0 {
                     piece.text.first == "\u{200F}"
                         ? Self.splitRightToLeft(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
@@ -618,6 +622,70 @@ public struct TextBlock {
                 }
             }
         }
+    }
+
+    /// A justified left-to-right line's pieces cut and placed as Apple's
+    /// text system widens it (`Justification`): in words while only its
+    /// spaces widen, by character once its letters do, each part's x from
+    /// its piece's start with what the gaps before it add. Nil for a line
+    /// that isn't justified or has no slack, or with right-to-left text,
+    /// explicit controls or letter spacing, which keep their own ways.
+    private func justification(_ line: Line, in width: CGFloat, provider: TextProvider) -> [Int: [(String, CGFloat)]]? {
+        guard line.style.alignment == .justified, !line.endsParagraph || line.visibleWidth > width,
+              line.visibleWidth != width,
+              !line.pieces.contains(where: { piece in
+                  runs[piece.run].kern != 0 || piece.text.unicodeScalars.contains { $0.value == 0x200F || Bidi.isExplicitControl($0) }
+              }) else { return nil }
+        // Its clusters: a character the shaper gave no advance (the second
+        // of a ligature, a mark) stays with the one before it, as one glyph.
+        var clusters: [(text: String, em: CGFloat, advance: CGFloat, piece: Int)] = []
+        var clusterOf: [Int] = []
+        for (index, piece) in line.pieces.enumerated() {
+            let font = runs[piece.run].font
+            let measured = provider.characterAdvances(piece.text, font: font)
+            for (offset, character) in piece.text.enumerated() {
+                let advance = offset < measured.count ? measured[offset] : 0
+                if advance == 0, offset > 0, character != " ", let last = clusters.last, last.piece == index, last.text.last != " " {
+                    clusters[clusters.count - 1].text.append(character)
+                } else {
+                    clusters.append((String(character), font.size, advance, index))
+                }
+                clusterOf.append(clusters.count - 1)
+            }
+        }
+        // The spaces it ends on hang past the width, and add nothing.
+        var visible = clusters.count
+        while visible > 0, clusters[visible - 1].text == " " { visible -= 1 }
+        let gaps = Justification.gaps(clusters[..<visible].map { $0.text.first ?? " " }, ems: clusters[..<visible].map(\.em))
+        let extras = Justification.extras(slack: width - line.visibleWidth, gaps: gaps)
+        guard extras.contains(where: { $0 != 0 }) else { return nil }
+        // What the gaps before each cluster add.
+        var before = [CGFloat](repeating: 0, count: clusters.count + 1)
+        for index in clusters.indices { before[index + 1] = before[index] + (index < extras.count ? extras[index] : 0) }
+        let letters = zip(gaps, extras).contains { gap, extra in
+            if case .letter = gap { extra != 0 } else { false }
+        }
+        var parts: [Int: [(String, CGFloat)]] = [:]
+        var x: CGFloat = 0
+        for (index, cluster) in clusters.enumerated() {
+            if index == 0 || clusters[index - 1].piece != cluster.piece { x = 0 }
+            if letters { parts[cluster.piece, default: []].append((cluster.text, x + before[index])) }
+            x += cluster.advance
+        }
+        if !letters {
+            var first = 0
+            for (index, piece) in line.pieces.enumerated() {
+                var offset = first
+                parts[index] = Self.split(piece.text, run: runs[piece.run], byCharacter: false, provider: provider).map { part in
+                    defer { offset += part.0.count }
+                    // A word's spaces before it are its leading spaces.
+                    let leading = part.0.prefix(while: { $0 == " " }).count
+                    return (part.0, part.1 + before[clusterOf[offset + leading]])
+                }
+                first += piece.text.count
+            }
+        }
+        return parts
     }
 
     /// A justified line's Arabic widened with kashida (`Kashida`), when it
