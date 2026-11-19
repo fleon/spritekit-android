@@ -1,24 +1,53 @@
 # SpriteKit for Android
 
-**Bring your SpriteKit game to Android without rewriting it.**
+**The parts every SpriteKit game rewrites, written once, and a way to ship
+the same game on Android without rewriting it.**
 
-SpriteKit for Android is a Swift runtime that lets a SpriteKit game's own
-sources compile and run on Android, unedited. Your code keeps `import
-SpriteKit`, `import UIKit`, `import CoreGraphics` and the rest; this runtime
-answers those imports with its own implementation of the SpriteKit, UIKit,
-CoreGraphics and CoreText surface a game uses, draws with OpenGL ES 3
-through SDL3, and puts Google Play's billing, achievements, leaderboards and
-saved games behind the same Apple-shaped APIs your managers already call.
+This repository is two things, and you can use either on its own:
 
-It also holds platform code that SpriteKit games share on every platform,
-Apple's included (`Platform/`): audio, purchases, Game Center and Play
-Games, synced saved data, input, display settings and more, so one fix
-reaches every game that uses it.
+- **A toolkit for SpriteKit games on Apple platforms** (`Platform/`). The
+  boilerplate nearly every SpriteKit game ends up writing for itself, as
+  small Swift packages: audio, in-app purchases, Game Center, synced saved
+  data, focus and gamepads, frame-rate and graphics settings, sprite and
+  text helpers, eased actions and more. It builds against Apple's own
+  SpriteKit, UIKit, StoreKit and GameKit on iPhone, iPad, Apple TV and the
+  Mac, so it's useful even if you never ship on Android.
+- **A SpriteKit runtime for Android.** A Swift implementation of the
+  SpriteKit, UIKit, CoreGraphics and CoreText surface a game uses, so your
+  game's own sources compile for Android unedited, `import SpriteKit` and
+  all. It draws with OpenGL ES 3 through SDL3 and puts Google Play's
+  billing, games services and saved games behind the same Apple-shaped APIs.
 
-It grew out of porting real, shipping SpriteKit games to Android.
-It's open source under the MIT license, and contributions are very welcome.
+The toolkit runs on Android too, so a game that uses it gets its purchases,
+achievements and saves on both stores from one set of calls.
 
-## What you get
+It grew out of building and porting real, shipping SpriteKit games. It's
+open source under the MIT license, and contributions are very welcome.
+
+## The toolkit
+
+Each module is its own library product in `Platform/Package.swift`; link
+only the ones you need. A game passes in what's its own (its sounds, product
+IDs, achievement IDs, constants), and the module does the rest.
+
+| Module | What it saves you writing |
+| --- | --- |
+| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, seeded randomness you can replay, a launch-argument reader for debug switches |
+| `PlatformSprite` | A texture cache and sprite helpers, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, safe-area layout, localization, debug markers |
+| `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
+| `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
+| `PlatformGameCenter` | Sign-in, achievements and leaderboards that catch up from saved progress (GameKit, or Play Games) |
+| `PlatformSync` | Saved data synced across a player's devices (iCloud's key-value store, or Play's Saved Games), with sets that merge instead of overwrite |
+| `PlatformInput` | Focus for the Apple TV remote, gamepads and the Mac's pointer; keyboard and Menu handling |
+| `PlatformDisplay` | Frame-rate and graphics settings, with an Auto mode that picks a render scale for the device |
+| `PlatformDevice` | Haptics, rating prompts at the right moment, play time |
+| `PlatformShare` | The share sheet, pasteboard, the App Store review page, feedback mail |
+| `PlatformRigs` | Spine 4.2 skeletons posed and drawn in SpriteKit (Spine Runtimes License, see below) |
+| `Macros` | `@NSCodingUnsupported` for node subclasses |
+
+"Shared platform code" below describes each one in detail.
+
+## The Android runtime
 
 - **Your scenes, nodes and actions as they are.** `SKNode`, `SKScene`,
   `SKSpriteNode` and your subclasses of them, actions, shaders (GLSL, as
@@ -40,14 +69,25 @@ It's open source under the MIT license, and contributions are very welcome.
 
 ## Getting started
 
+### Use the toolkit in your Apple game
+
+1. Add this repository to your game as a git submodule, for example at
+   `Android/spritekit-android` (the path the Android half expects, so it's
+   ready if you port later).
+2. In Xcode, add `<submodule>/Platform` as a local package (File → Add
+   Package Dependencies → Add Local…) and link the products you want to
+   your app target.
+3. `import PlatformCore` (or `PlatformStore`, `PlatformAudio`, …) where you
+   use them, and delete your own copies of what they replace.
+
+### Try the Android runtime
+
 You'll need a Mac (the host tests compare against Apple's frameworks) and:
 
 - Swift 6.4.2 from [swift.org](https://www.swift.org/install/) via
   `swiftly` (Xcode's Swift can't cross-compile for Android), and the
   `swift-6.4.2-RELEASE_android` SDK;
 - Android NDK r30 at `$ANDROID_NDK_HOME`, JDK 17, cmake and ninja.
-
-Then try the runtime on its own:
 
 ```bash
 git clone https://github.com/fleon/spritekit-android.git
@@ -57,7 +97,7 @@ Vendor/build.sh android                     # FreeType and HarfBuzz for Android
 Scripts/check-android.sh arm64-v8a          # cross-compiles the runtime
 ```
 
-To port a game:
+### Bring your game to Android
 
 1. Add this repository as a submodule at `<game>/Android/spritekit-android`.
 2. Copy `Templates/App/base` to `<game>/Android/App` and fill in its
@@ -78,9 +118,11 @@ explains the runtime itself.
 
 ## Getting help and contributing
 
-- **Found a bug or a missing API?** Open an issue with the SpriteKit or
-  UIKit call involved, what Apple does and what you see on Android. A small
-  scene that shows it is the best report.
+- **Found a bug or a missing API?** Open an issue with the call involved
+  and what you expected (for the runtime, what Apple does and what you see
+  on Android). A small scene that shows it is the best report.
+- **Writing the same helper in every game?** It may belong in the toolkit:
+  open an issue describing it.
 - **Want to fix it?** Pull requests are welcome; `CONTRIBUTING.md` has the
   few house rules (above all: match Apple's exact signatures and behaviour,
   and keep the runtime free of any one game's code).
