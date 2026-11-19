@@ -394,14 +394,7 @@ import Testing
         Case("Geneva", 12.0, 3, .justified, .characters, 4.0, .lfo, x: 0.000000, y: 0.000000, w: 160.000000, h: 34.000000),
     ]
 
-    /// Justified, UIKit's `boundingRect` tightens a line to take one more
-    /// word (KoHo 20's "eakable word here", 1% over the width, on one line),
-    /// where its layout manager and this don't; the rule isn't pinned yet.
-    static func isTightened(_ item: Case) -> Bool {
-        item.font == "KoHo-Bold" && item.text == 3 && item.alignment == .justified
-    }
-
-    @Test("Bounding rects match UIKit's", arguments: cases.filter { !isTightened($0) })
+    @Test("Bounding rects match UIKit's", arguments: cases)
     func boundingRect(_ item: Case) {
         _ = Fonts.engine
         let style = TextBlock.Style(alignment: item.alignment, wrapping: item.wrapping, lineSpacing: item.spacing)
@@ -415,6 +408,55 @@ import Testing
         // hundredths of a point a line, to be fixed in the engine's metrics.
         let tolerance = item.font == "Montserrat-SemiBold" ? 0.002 * item.expected.width : 1e-4
         #expect(abs(rect.width - item.expected.width) <= tolerance, "width \(rect.width) against \(item.expected.width)")
+    }
+
+    /// With `.usesFontLeading` and no `.usesLineFragmentOrigin`, y is the
+    /// rounded descent and the leading, unrounded, up from the baseline.
+    static let leadingWithoutLineFragments: [(String, CGFloat, String, y: CGFloat, w: CGFloat, h: CGFloat)] = [
+        ("Geneva", 11.0, "Level Select", y: -3.91845703125, w: 64.3349609375, h: 14.91845703125),
+        ("Geneva", 11.0, "One\nTwo lines", y: -3.91845703125, w: 20.83447265625, h: 14.91845703125),
+        ("Geneva", 12.0, "Level Select", y: -4.001953125, w: 70.18359375, h: 16.001953125),
+        ("Geneva", 17.0, "Level Select", y: -5.41943359375, w: 99.4267578125, h: 22.41943359375),
+        ("Montserrat-Black", 15.0, "Level Select", y: -4.0, w: 98.13000000000001, h: 19.0),
+        ("KoHo-Bold", 20.0, "One\nTwo lines", y: -5.0, w: 34.42, h: 26.0),
+    ]
+
+    @Test("Font leading without line fragments: y is the descent and the leading, as UIKit has it")
+    func leadingWithoutLineFragmentOrigin() {
+        _ = Fonts.engine
+        for (font, size, text, y, w, h) in Self.leadingWithoutLineFragments {
+            let rect = TextBlock.boundingRect(of: [TextBlock.Run(text, font: FontKey(name: font, size: size))],
+                                              size: CGSize(width: 160, height: 10_000), usesLineFragmentOrigin: false, usesFontLeading: true)
+            #expect(abs(rect.minY - y) < 1e-4 && abs(rect.width - w) < 1e-4 && abs(rect.height - h) < 1e-4, "\(font) \(size) \(text): \(rect)")
+        }
+    }
+
+    /// Justified, UIKit lets a line take one more word if it fits giving up
+    /// a fifth of each space's width: the narrowest width (Catalyst) at
+    /// which each text still lays out on one line, justified; left-aligned
+    /// it needs its whole width.
+    static let squeezes: [(String, CGFloat, String, natural: CGFloat, oneLineFrom: CGFloat)] = [
+        ("Montserrat-Black", 15, "ab cd", 44.310, 43.410),
+        ("Montserrat-Black", 15, "ab cd ef gh ij", 105.090, 101.490),
+        ("Montserrat-Black", 15, "Find a player near you and play together now", 371.460, 364.260),
+        ("Montserrat-Black", 15, "Unbelievablyunbreakable", 208.560, 208.559),
+        ("KoHo-Bold", 20, "ab cd ef", 71.000, 68.760),
+        ("KoHo-Bold", 20, "abcdefghij klmnopqrst", 199.740, 198.620),
+        ("Geneva", 11, "ab cd ef gh ij", 69.464, 66.530),
+        ("Geneva", 11, "Find a player near you and play together now", 240.598, 234.729),
+        ("Montserrat-Black", 30, "ab cd ef", 129.990, 126.390),
+    ]
+
+    @Test("Justified lines squeeze their spaces by a fifth to take one more word, as UIKit's do")
+    func justifiedSqueeze() throws {
+        _ = Fonts.engine
+        for (font, size, text, natural, from) in Self.squeezes {
+            func lines(_ width: CGFloat, _ alignment: TextBlock.Alignment) -> Int {
+                TextBlock(text, font: FontKey(name: font, size: size), maxWidth: width, style: TextBlock.Style(alignment: alignment))?.lines.count ?? 0
+            }
+            #expect(lines(from + 0.002, .justified) == 1 && lines(from - 0.002, .justified) == 2, "\(font) \(size) \(text) at \(from)")
+            #expect(lines(natural - 0.01, .left) == 2, "\(font) \(size) \(text) left")
+        }
     }
 
     @Test("Mixed runs: each line as tall as its tallest run, a baseline offset raising it")
@@ -508,6 +550,45 @@ import Testing
             #expect(box[1] == item.box[1] && box[3] == item.box[3], "rows \(box) against \(item.box) at \(item.origin) \(item.scale)x")
             #expect(abs(box[0] - item.box[0]) <= 1 && abs(box[2] - item.box[2]) <= 1, "columns \(box) against \(item.box)")
             #expect(abs(Double(ink) / Double(item.ink) - 1) < 0.06, "ink \(ink) against \(item.ink)")
+        }
+    }
+
+    /// UIKit's ink centroids for "Level" in Montserrat-Black 31.5, filled
+    /// and stroked at line width 1, at three origins (Catalyst, smoothing
+    /// off): the fill moves in whole pixels, the stroke with the origin.
+    static let strokes: [(scale: CGFloat, origin: CGPoint, fill: CGPoint, stroke: CGPoint)] = [
+        (1, CGPoint(x: 4.0, y: 4.0), CGPoint(x: 49.8799, y: 24.1563), CGPoint(x: 51.0488, y: 24.2404)),
+        (1, CGPoint(x: 4.3, y: 3.6), CGPoint(x: 49.9909, y: 24.1563), CGPoint(x: 51.2936, y: 23.8372)),
+        (1, CGPoint(x: 2.25, y: 5.1), CGPoint(x: 47.9909, y: 26.1563), CGPoint(x: 49.1685, y: 25.3465)),
+        (3, CGPoint(x: 4.0, y: 4.0), CGPoint(x: 150.8686, y: 73.5203), CGPoint(x: 154.1870, y: 73.7525)),
+        (3, CGPoint(x: 4.3, y: 3.6), CGPoint(x: 151.4696, y: 72.5203), CGPoint(x: 155.0892, y: 72.5509)),
+        (3, CGPoint(x: 2.25, y: 5.1), CGPoint(x: 145.3168, y: 77.5203), CGPoint(x: 148.9409, y: 77.0503)),
+    ]
+
+    private static func centroid(_ context: BitmapContext) -> CGPoint {
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return .zero }
+        var sx = 0.0, sy = 0.0, sum = 0.0
+        for y in 0 ..< context.height {
+            for x in 0 ..< context.width {
+                let a = Double(data[(y * context.width + x) * 4 + 3])
+                sx += a * Double(x); sy += a * Double(y); sum += a
+            }
+        }
+        return sum > 0 ? CGPoint(x: sx / sum, y: sy / sum) : .zero
+    }
+
+    @Test("Stroked text sits where UIKit strokes it, filled text where it fills it")
+    func strokePosition() {
+        _ = Fonts.engine
+        let font = FontKey(name: "Montserrat-Black", size: 31.5)
+        for item in Self.strokes {
+            let rect = CGRect(origin: item.origin, size: CGSize(width: 240, height: 60))
+            let fill = Self.centroid(Self.draw("Level", font: font, scale: item.scale, rect: rect))
+            let stroke = Self.centroid(Self.draw("Level", font: font, mode: .stroke, scale: item.scale, rect: rect))
+            // A tenth of a pixel a scale: FreeType's and CoreGraphics' rasterisers.
+            let tolerance = 0.12 * item.scale
+            #expect(abs(fill.y - item.fill.y) < tolerance && abs(fill.x - item.fill.x) < 2 * tolerance, "fill \(fill) against \(item.fill) at \(item.origin) \(item.scale)x")
+            #expect(abs(stroke.y - item.stroke.y) < tolerance && abs(stroke.x - item.stroke.x) < 2 * tolerance, "stroke \(stroke) against \(item.stroke) at \(item.origin) \(item.scale)x")
         }
     }
 

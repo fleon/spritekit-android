@@ -17,7 +17,20 @@ public final class FontLibrary: @unchecked Sendable {
     private var fileFaces: [String: [String]] = [:]             // path -> faces
     private var names: [String: (file: FontFile, instance: String?)] = [:]
     private var faces: [Key: FaceHandle] = [:]
+    /// The cached faces' keys, least recently used first.
+    private var recency: [Key] = []
     private var missing: Set<Key> = []
+
+    /// How many faces (name × size) are kept open. A face is made per size
+    /// (and per screen scale, for drawing text into bitmaps), each an open
+    /// FreeType face and two HarfBuzz fonts, so the least recently used go
+    /// past this. One still in use stays alive until its user lets go.
+    public var faceLimit = 64 {
+        didSet { lock.withLock { evict() } }
+    }
+
+    /// How many faces are open now.
+    public var openFaces: Int { lock.withLock { faces.count } }
     /// Every registered face as a font descriptor matches it, by lowercased
     /// name, and each family's, by lowercased family, in registration order.
     private var described: [String: CatalogFace] = [:]
@@ -127,7 +140,9 @@ public final class FontLibrary: @unchecked Sendable {
     }
 
     /// Nil when the name was never registered. Repeated calls hand back the
-    /// same face, so a glyph atlas keyed on it stays stable.
+    /// same face while it stays among the `faceLimit` most recently used
+    /// (the atlas keys glyphs by name and size, so a face made again
+    /// rasterises them the same).
     func face(_ font: FontKey) -> FaceHandle? {
         let size = max(font.size, 1.0 / 64)
         let key = Key(
@@ -135,8 +150,16 @@ public final class FontLibrary: @unchecked Sendable {
             sixtyFourths: Int((size * 64).rounded())
         )
         return lock.withLock {
-            if let cached = faces[key] { return cached }
+            if let cached = faces[key] {
+                if recency.last != key, let index = recency.firstIndex(of: key) {
+                    recency.remove(at: index)
+                    recency.append(key)
+                }
+                return cached
+            }
             guard !missing.contains(key), let entry = names[key.name] else {
+                // Misses are keyed by size too: kept to the same bound.
+                if missing.count >= faceLimit { missing.removeAll() }
                 missing.insert(key)
                 return nil
             }
@@ -149,7 +172,17 @@ public final class FontLibrary: @unchecked Sendable {
                 return nil
             }
             faces[key] = made
+            recency.append(key)
+            evict()
             return made
+        }
+    }
+
+    /// Closes the least recently used faces past `faceLimit`. Called with
+    /// the lock held.
+    private func evict() {
+        while faces.count > max(1, faceLimit), !recency.isEmpty {
+            faces.removeValue(forKey: recency.removeFirst())
         }
     }
 
@@ -157,6 +190,7 @@ public final class FontLibrary: @unchecked Sendable {
     public func flush() {
         lock.withLock {
             faces.removeAll()
+            recency.removeAll()
             missing.removeAll()
         }
     }
