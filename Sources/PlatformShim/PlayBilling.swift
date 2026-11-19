@@ -177,6 +177,13 @@ public final class PlayBilling: BillingBackend {
         channel.call("billing.start", ["products": productIDs])
     }
 
+    /// Asks Play for the prices still missing. Java queries only when no
+    /// query is under way, and connects first if it has to.
+    public func reloadPrices() {
+        guard changed != nil, productIDs.contains(where: { prices[$0] == nil }) else { return }
+        channel.call("billing.prices")
+    }
+
     /// On the main actor, as Play's answers are delivered there
     /// (`PlatformBridge`): run off it, as a nonisolated `async` method
     /// does, it called into Java and changed the waiters from a

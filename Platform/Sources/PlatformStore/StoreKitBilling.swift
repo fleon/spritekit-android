@@ -48,6 +48,8 @@ public final class StoreKitBilling: BillingBackend {
     private var free: Set<String> = []
     private var dates: [String: Date] = [:]
     private var changed: (() -> Void)?
+    /// The products' load under way, so a reload and a purchase share it.
+    private var productLoad: Task<Void, Never>?
     private var updates: Task<Void, Never>?
     private var intents: Task<Void, Never>?
     /// Transactions being handled, so a purchase and a listener never both
@@ -152,7 +154,22 @@ public final class StoreKitBilling: BillingBackend {
 
     // MARK: - Transactions
 
+    public func reloadPrices() {
+        guard changed != nil, productIDs.contains(where: { products[$0] == nil }) else { return }
+        Task { [weak self] in await self?.loadProducts() }
+    }
+
+    /// Loads the products, or waits for the load under way. One that fails
+    /// (offline) leaves the next call to try again.
     private func loadProducts() async {
+        if let productLoad { return await productLoad.value }
+        let load = Task { [weak self] in await self?.fetchProducts() }
+        productLoad = load
+        await load.value
+        productLoad = nil
+    }
+
+    private func fetchProducts() async {
         guard let loaded = try? await Product.products(for: productIDs) else { return }
         for product in loaded {
             products[product.id] = product

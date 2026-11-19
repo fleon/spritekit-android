@@ -295,6 +295,23 @@ private func freshDefaults() -> UserDefaults {
 @Suite("Play Billing: consumables")
 @MainActor
 struct PlayBillingConsumableTests {
+    @Test("Prices missing after a failed first query are asked for again")
+    func reloadPrices() {
+        let java = FakeJava()
+        let billing = PlayBilling(channel: java.channel, products: [fullGame])
+        billing.reloadPrices()
+        #expect(java.count("billing.prices") == 0, "nothing before start")
+        billing.start {}
+        // The first query failed (offline): no price came back.
+        billing.reloadPrices()
+        #expect(java.count("billing.prices") == 1)
+        java.send("billing", "product", ["productId": fullGame, "price": "6,99 €", "priceMicros": 6_990_000, "currency": "EUR"])
+        #expect(billing.price(of: fullGame) == "6,99 €")
+        // Every price known: nothing more to ask.
+        billing.reloadPrices()
+        #expect(java.count("billing.prices") == 1)
+    }
+
     @Test("Each product's price, by product")
     func prices() {
         let java = FakeJava()
