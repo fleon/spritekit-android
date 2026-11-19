@@ -15,15 +15,21 @@ public struct AtlasGlyph: Equatable, Sendable {
     public var rect: CGRect
     public var bearing: CGPoint
     public var size: CGSize
+    /// On a colour page (`GlyphAtlas.colourPages`): premultiplied RGBA,
+    /// drawn as it is rather than in the text's colour.
+    public var isColour = false
 
     public var isEmpty: Bool { size.width <= 0 || size.height <= 0 }
 }
 
-/// A page of 8-bit coverage. The renderer uploads it as a single-channel
-/// texture; nothing here touches GL.
+/// A page of 8-bit coverage, or of premultiplied RGBA for colour glyphs.
+/// The renderer uploads it as a single-channel or an RGBA texture; nothing
+/// here touches GL.
 public final class AtlasPage {
     public let width: Int
     public let height: Int
+    /// 1 for coverage, 4 for colour.
+    public let bytesPerPixel: Int
     public private(set) var pixels: [UInt8]
     /// What has changed since the renderer last uploaded, so it can upload a
     /// sub-rectangle rather than the whole page. Nil when nothing has.
@@ -38,10 +44,11 @@ public final class AtlasPage {
     private var shelfX = 0
     private var shelfHeight = 0
 
-    init(width: Int, height: Int) {
+    init(width: Int, height: Int, bytesPerPixel: Int = 1) {
         self.width = width
         self.height = height
-        pixels = [UInt8](repeating: 0, count: width * height)
+        self.bytesPerPixel = bytesPerPixel
+        pixels = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
     }
 
     public func clearDirty() { dirty = nil }
@@ -80,6 +87,17 @@ public final class AtlasPage {
         dirty = dirty.map { $0.union(rect) } ?? rect
         generation += 1
     }
+
+    /// Copies a colour glyph's RGBA rows onto a colour page.
+    func write(rgba source: [UInt8], into rect: CGRect) {
+        let x0 = Int(rect.minX), y0 = Int(rect.minY), w = Int(rect.width), h = Int(rect.height)
+        for row in 0 ..< h {
+            let from = row * w * 4, to = ((y0 + row) * width + x0) * 4
+            pixels.replaceSubrange(to ..< to + w * 4, with: source[from ..< from + w * 4])
+        }
+        dirty = dirty.map { $0.union(rect) } ?? rect
+        generation += 1
+    }
 }
 
 /// Rasterised glyphs, packed into pages and kept.
@@ -113,6 +131,8 @@ public final class GlyphAtlas: @unchecked Sendable {
     private let library: FontLibrary
     private var cache: [Key: AtlasGlyph] = [:]
     private var store: [AtlasPage] = []
+    private var colourCache: [Key: AtlasGlyph] = [:]
+    private var colourStore: [AtlasPage] = []
 
     public init(pageSize: Int = 1024, library: FontLibrary = .shared) {
         self.pageSize = pageSize
@@ -120,6 +140,37 @@ public final class GlyphAtlas: @unchecked Sendable {
     }
 
     public var pages: [AtlasPage] { lock.withLock { store } }
+    /// The RGBA pages colour glyphs are on.
+    public var colourPages: [AtlasPage] { lock.withLock { colourStore } }
+
+    /// A colour glyph of `font`'s face (emoji) at `pixels` square, packed
+    /// onto a colour page on a miss. Nil for a glyph with no colour image.
+    /// Its `bearing` and `size` are in pixels; the caller places it, by
+    /// the box the glyph was laid out with.
+    public func colourGlyph(_ glyph: UInt32, font: FontKey, pixels: Int) -> AtlasGlyph? {
+        let key = Key(font: font.name, size: CGFloat(pixels), glyph: glyph)
+        if let cached = lock.withLock({ colourCache[key] }) { return cached }
+        guard let image = library.face(font)?.colourImage(glyph, pixels: pixels) else { return nil }
+        return lock.withLock {
+            if let cached = colourCache[key] { return cached }
+            let size = CGSize(width: image.width, height: image.height)
+            var placed: (Int, CGRect)?
+            for (index, page) in colourStore.enumerated() {
+                if let rect = page.place(width: image.width, height: image.height, padding: padding) { placed = (index, rect); break }
+            }
+            if placed == nil {
+                let page = AtlasPage(width: pageSize, height: pageSize, bytesPerPixel: 4)
+                guard let rect = page.place(width: image.width, height: image.height, padding: padding) else { return nil }
+                colourStore.append(page)
+                placed = (colourStore.count - 1, rect)
+            }
+            guard let (index, rect) = placed else { return nil }
+            colourStore[index].write(rgba: image.pixels, into: rect)
+            let entry = AtlasGlyph(page: index, rect: rect, bearing: .zero, size: size, isColour: true)
+            colourCache[key] = entry
+            return entry
+        }
+    }
 
     public var count: Int { lock.withLock { cache.count } }
 
@@ -147,6 +198,8 @@ public final class GlyphAtlas: @unchecked Sendable {
         lock.withLock {
             cache.removeAll()
             store.removeAll()
+            colourCache.removeAll()
+            colourStore.removeAll()
         }
     }
 
