@@ -93,6 +93,8 @@ struct ColourGlyphTests {
 
     @Test("Each kind of colour data gives an image: strikes (CBDT, sbix) and COLR layers")
     func kinds() throws {
+        // The engine installs the PNG decoder strikes are decoded with.
+        _ = Fonts.engine
         // ChromaCheck's test fonts: glyph 1 a square of one colour each.
         for (file, red) in [("chromacheck-cbdt", 100), ("chromacheck-colr", 200), ("chromacheck-sbix", 150)] {
             let face = try FaceHandle(file: FontFile(path: Fonts.directory + "/" + file + ".ttf"), size: 32, instance: nil)
@@ -112,6 +114,7 @@ struct ColourGlyphTests {
 
     @Test("A colour glyph goes onto an RGBA page, once a size")
     func atlas() throws {
+        _ = Fonts.engine
         let library = FontLibrary()
         let atlas = GlyphAtlas(pageSize: 256, library: library)
         let name = try #require(try library.register(path: Fonts.directory + "/chromacheck-colr.ttf").last)

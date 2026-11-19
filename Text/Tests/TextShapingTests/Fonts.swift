@@ -143,7 +143,11 @@ final class CoreTextFallback: FontFallbackProvider, @unchecked Sendable {
         let string = String(character) as CFString
         // Japanese, so Han falls back to Hiragino: FreeType can't read the
         // Mac's PingFang (a private format).
-        let picked = CTFontCreateForStringWithLanguage(primary, string, CFRange(location: 0, length: CFStringGetLength(string)), "ja" as CFString)
+        // A character drawn as an emoji goes to the emoji face, as a Core Text
+        // line sends it (CTFontCreateForString alone may not).
+        let picked = EmojiPresentation(character) == .emoji
+            ? CTFontCreateWithName("AppleColorEmoji" as CFString, font.size, nil)
+            : CTFontCreateForStringWithLanguage(primary, string, CFRange(location: 0, length: CFStringGetLength(string)), "ja" as CFString)
         let name = CTFontCopyPostScriptName(picked) as String
         guard name != CTFontCopyPostScriptName(primary) as String,
               let url = CTFontCopyAttribute(picked, kCTFontURLAttribute) as? URL else { return nil }
