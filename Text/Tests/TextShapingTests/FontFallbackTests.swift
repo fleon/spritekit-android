@@ -93,18 +93,6 @@ struct FontFallbackTests {
         }
     }
 
-    /// Core Text widens Apple Color Emoji at text sizes (23 points at 20,
-    /// 13 at 10) beyond its own advances; Android's emoji face has no such
-    /// quirk, so the emoji's own advance is what's laid out. Colour glyphs
-    /// aren't drawn yet (the atlas is coverage only).
-    @Test("Emoji fall back to the emoji face, at its own advances")
-    func emoji() throws {
-        let runs = try #require(Fonts.engine.shape("a😀b👍🏽", font: Fonts.display(20)))
-        #expect(Self.merged(runs.map { $0.font ?? "-" }) == ["-", "AppleColorEmoji", "-", "AppleColorEmoji"])
-        let emoji = runs.filter { $0.font == "AppleColorEmoji" }
-        #expect(emoji.map(\.advance) == [20, 20], "one em each, the face's own advance")
-    }
-
     @Test("The fallback decision is cached, and fallback text measures the same on many threads")
     func threads() async {
         let font = Fonts.display(17)

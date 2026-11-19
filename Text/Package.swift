@@ -50,7 +50,10 @@ let package = Package(
                 .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             path: "Sources/TextShaping",
-            swiftSettings: [v5, shimDefine]
+            swiftSettings: [v5, shimDefine],
+            // HarfBuzz's rasteriser, for colour (COLR) glyphs: built beside
+            // libharfbuzz by Vendor/build.sh, found on the same -L path.
+            linkerSettings: [.linkedLibrary("harfbuzz-raster")]
         ),
         .executableTarget(
             name: "TextProbe",
