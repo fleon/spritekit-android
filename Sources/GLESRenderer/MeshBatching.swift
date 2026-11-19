@@ -146,16 +146,22 @@ extension SpriteBatcher {
         colours: SIMD8<Float>,
         to batches: inout [Batch]
     ) {
+        // A texture cut from another (`SKTexture(rect:in:)`) runs over the
+        // whole image it was cut from, its rect ignored but for its aspect,
+        // as a Mac's SpriteKit draws one (`StrokeTextureTests`): the stroke
+        // samples that image, and repeats as often as the cut part's shape
+        // says. A packed image is its own root, cut out of its page.
+        let image = texture.root
         let size = texture.size()
         let repeatLength = Float(shape.lineWidth * size.width / max(size.height, 1e-6))
         guard repeatLength > 0, repeatLength.isFinite else { return }
         let index: Int
         if let last = batches.indices.last,
-           batches[last].repeatsAlong, batches[last].texture === texture,
+           batches[last].repeatsAlong, batches[last].texture === image,
            batches[last].vertices.count / Self.floatsPerVertex + mesh.vertexCount <= Int(UInt16.max) + 1 {
             index = last
         } else {
-            var batch = Batch(texture: texture, shader: Self.strokeTextureShader, blendMode: .alpha)
+            var batch = Batch(texture: image, shader: Self.strokeTextureShader, blendMode: .alpha)
             batch.repeatsAlong = true
             batches.append(batch)
             index = batches.count - 1

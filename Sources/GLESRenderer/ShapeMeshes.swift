@@ -67,8 +67,8 @@ public final class ShapeMeshes {
         if wantsFill, shape.fillTexture != nil { return nil }
         // A stroke's texture runs along it (`StrokeTextureTests`), which the
         // mask can't carry: the stroke is triangles with places along it. A
-        // texture cut from another (`SKTexture(rect:in:)`) can't repeat
-        // alone, so it keeps the mask.
+        // texture cut from another (`SKTexture(rect:in:)`) does too, over the
+        // whole image it was cut from, as SpriteKit draws one.
         let textured = wantsStroke && shape.strokeTexture != nil
         if textured, !Self.runsAlong(shape.strokeTexture) { return nil }
 
@@ -214,11 +214,10 @@ public final class ShapeMeshes {
     }
 
     /// The fill's rgb and alpha, the stroke's, each alpha times the node's.
-    /// Whether a stroke's texture can run along it as triangles: an image
-    /// of its own (or a packed one, cut out of its page), not a part of
-    /// another, with a height to take its aspect from.
+    /// Whether a stroke's texture can run along it as triangles: one with a
+    /// height to take its aspect from.
     static func runsAlong(_ texture: SKTexture?) -> Bool {
-        guard let texture, texture === texture.root else { return false }
+        guard let texture else { return false }
         let size = texture.size()
         return size.width > 0 && size.height > 0
     }
