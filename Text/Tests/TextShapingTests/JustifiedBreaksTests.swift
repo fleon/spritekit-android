@@ -9,18 +9,19 @@ import Testing
 /// all 3,420 of a sweep, where TextKit 1's and Core Text's framesetter's
 /// match 2,984). `Fixtures/Justified/textkit2-justified.tsv` holds TextKit
 /// 2's lines on Catalyst (macOS 27.2) for 7,020 layouts: four faces, five
-/// sizes, nine sentences and widths from 90 to 300 points.
+/// sizes, nine sentences and widths from 90 to 300 points, as
+/// `Tools/JustifiedProbe` regenerates it.
 @Suite("Justified paragraphs broken as UIKit breaks them")
 struct JustifiedBreaksTests {
     static let texts = [
         "Are you sure you want to quit? You will lose this game.", "Unbelievably unbreakable word here and there again",
         "The quick brown fox jumps over the lazy dog twice",
-        "Collect all the cards to unlock new allies and win more games against your friends.",
-        "Tap and hold a card to see what it does before you play it on a sheep.",
-        "You have been matched against a player of your level. Good luck and have fun!",
-        "Lure the sheep away from the shepherd and bring them back to your barn.",
-        "A little patience goes a long way when the wolves are at the gate tonight.",
-        "Daily rewards reset at midnight so come back tomorrow for more coins.",
+        "Gather all the shells along the shore to fill your basket before the tide returns.",
+        "Press and hold a key to see what it does before you use it in a sentence.",
+        "Your train has been delayed by twenty minutes. Thank you for your patience today!",
+        "Carry the parcel across the bridge and leave it beside the library door.",
+        "A little patience goes a long way when the kettle refuses to boil tonight.",
+        "Museum tickets reset at midnight so come back tomorrow for more tours.",
     ]
 
     static func layouts() throws -> [(font: String, size: CGFloat, width: CGFloat, text: String, lines: [String])] {
@@ -50,12 +51,12 @@ struct JustifiedBreaksTests {
             if lines.count == layout.lines.count { counts += 1; if index < 3420 { sweepCounts += 1 } }
         }
         print("JUSTIFIED exact \(exact) counts \(counts) of \(total); with a word wider than the line \(longExact) of \(longTotal); the 3,420 sweep's counts \(sweepCounts)")
-        // Where every word fits a line, 97% break exactly as TextKit 2's
-        // (breaking line by line, 72%); a word wider than the line is broken
-        // by character as before, which matches TextKit 2 in 60% of those.
+        // Where every word fits a line, 98% break exactly as TextKit 2's
+        // (breaking line by line, 78%); a word wider than the line is broken
+        // by character as before, which matches TextKit 2 in 55% of those.
         let wordsFit = total - longTotal, wordsFitExact = exact - longExact
-        #expect(Double(wordsFitExact) >= 0.96 * Double(wordsFit), "\(wordsFitExact) of \(wordsFit) break exactly as TextKit 2's: \(misses)")
-        #expect(Double(exact) >= 0.94 * Double(total), "\(exact) of \(total) layouts break exactly as TextKit 2's")
+        #expect(Double(wordsFitExact) >= 0.97 * Double(wordsFit), "\(wordsFitExact) of \(wordsFit) break exactly as TextKit 2's: \(misses)")
+        #expect(Double(exact) >= 0.945 * Double(total), "\(exact) of \(total) layouts break exactly as TextKit 2's")
         #expect(Double(counts) >= 0.97 * Double(total), "\(counts) of \(total) have TextKit 2's line count")
     }
 }
