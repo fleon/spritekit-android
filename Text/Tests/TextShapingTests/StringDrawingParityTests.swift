@@ -592,6 +592,30 @@ import Testing
         }
     }
 
+    /// UIKit drawing "Level" (Montserrat-Black 31.5) through rotated,
+    /// sheared and mirrored transforms at 1x (Catalyst, smoothing off): the
+    /// ink's centroid and total coverage.
+    static let transformed: [(String, CGAffineTransform, centroid: CGPoint, ink: Int)] = [
+        ("rotate30", CGAffineTransform(a: 0.8660254037844387, b: 0.49999999999999994, c: -0.49999999999999994, d: 0.8660254037844387, tx: 60.0, ty: 20.0), CGPoint(x: 89.259, y: 60.989), 277606),
+        ("rotate90", CGAffineTransform(a: 6.123233995736766e-17, b: 1.0, c: -1.0, d: 6.123233995736766e-17, tx: 150.0, ty: 10.0), CGPoint(x: 128.844, y: 56.466), 277096),
+        ("shear", CGAffineTransform(a: 1.0, b: 0.0, c: 0.4, d: 1.0, tx: 10.0, ty: 10.0), CGPoint(x: 64.163, y: 30.170), 277547),
+        ("mirror", CGAffineTransform(a: -1.0, b: 0.0, c: 0.0, d: 1.0, tx: 200.0, ty: 20.0), CGPoint(x: 152.722, y: 40.156), 277101),
+    ]
+
+    @Test("Rotated, sheared and mirrored text draws where UIKit draws it")
+    func transformedText() throws {
+        _ = Fonts.engine
+        for (name, transform, centroid, ink) in Self.transformed {
+            let context = BitmapContext(width: 250, height: 200)
+            context.concatenate(transform)
+            let block = try #require(TextBlock(runs: [TextBlock.Run("Level", font: FontKey(name: "Montserrat-Black", size: 31.5), colour: .white)], maxWidth: 200))
+            block.draw(in: CGRect(x: 0, y: 0, width: 200, height: 60), context: context)
+            let ours = Self.centroid(context), total = Self.ink(context)
+            #expect(hypot(ours.x - centroid.x, ours.y - centroid.y) < 0.5, "\(name): centroid \(ours) against \(centroid)")
+            #expect(abs(Double(total) / Double(ink) - 1) < 0.03, "\(name): ink \(total) against \(ink)")
+        }
+    }
+
     @Test("Only the lines that fit wholly in the rect are drawn")
     func overflow() {
         _ = Fonts.engine
