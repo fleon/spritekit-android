@@ -8,8 +8,8 @@ import CoreGraphics
 
 /// The masks a shape node falls back to (a textured fill, a self-crossing
 /// fill, a crop's mask) drawn with SpriteKit's edges, as its triangles are
-/// (`SpriteKitShapeEdgesTests`): measured on a Mac through `SKRenderer`,
-/// a crop node's shape mask included, which at 2x clips as the shape fills.
+/// (`SpriteKitShapeEdgesTests`). A fill's measured area holds at 2x for a
+/// crop node's shape mask too.
 final class SpriteKitMasksTests: XCTestCase {
 
     func testAFillMaskIsSampledAtPixelCentres() throws {
@@ -47,9 +47,10 @@ final class SpriteKitMasksTests: XCTestCase {
         let scale: CGFloat = 2
         let ring = CGPath(ellipseIn: CGRect(x: -20, y: -20, width: 40, height: 40), transform: nil)
         for width: CGFloat in [0.5, 2, 5] {
-            let mask = try XCTUnwrap(SpriteKitMasks.stroke(ring, width: width, cap: .butt, join: .miter, scale: scale))
+            let mask = try XCTUnwrap(SpriteKitMasks.stroke(ring, width: width, cap: .butt, join: .miter, scale: scale, edgePixels: scale))
             let mesh = try XCTUnwrap(ShapeTessellator.stroke(
-                PathRasteriser.flatten(ring, scale: scale), width: width, cap: .butt, join: .miter, scale: scale, edges: .spriteKit
+                PathRasteriser.flatten(ring, scale: scale), width: width, cap: .butt, join: .miter, scale: scale,
+                edges: .spriteKit, edgePixels: scale
             ))
             let (differ, covered) = compare(mask, mesh)
             XCTAssertGreaterThan(covered, 100)
