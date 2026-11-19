@@ -397,11 +397,12 @@ public struct DrawList {
                     textureRect: piece.textureRect,
                     color: sprite.color,
                     // SpriteKit draws an untextured sprite in its colour
-                    // whatever its blend factor says, its colour's alpha
-                    // with it (a clear one draws nothing), as the tint
-                    // carries it at a factor of 1.
+                    // whatever its blend factor says...
                     colorBlendFactor: sprite.texture == nil ? 1 : sprite.colorBlendFactor,
-                    alpha: alpha,
+                    // ...and its colour's alpha with it (a clear one draws
+                    // nothing); a textured sprite's tint carries its
+                    // colour's alpha by the blend factor (`SpriteBatcher.tintAlpha`).
+                    alpha: sprite.texture == nil ? alpha * sprite.color.alpha : alpha,
                     blendMode: sprite.blendMode,
                     shader: sprite.shader,
                     attributeValues: sprite.attributeValues

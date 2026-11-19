@@ -14,8 +14,10 @@ import SpriteKitShim
 public struct SpriteBatcher {
     /// A sprite's alpha as its tint carries it: the node's, times its
     /// colour's alpha mixed in from 1 by the blend factor, as SpriteKit
-    /// fades a sprite tinted toward a clear colour (Tools/TintProbe).
+    /// fades a sprite tinted toward a clear colour (Tools/TintProbe). An
+    /// untextured one's already has its colour's in it (`DrawList`).
     static func tintAlpha(_ sprite: DrawList.Sprite) -> Float {
+        guard sprite.texture != nil else { return Float(sprite.alpha) }
         let factor = min(1, max(0, sprite.colorBlendFactor))
         return Float(sprite.alpha * (1 + (sprite.color.alpha - 1) * factor))
     }
