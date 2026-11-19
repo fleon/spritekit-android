@@ -1,22 +1,98 @@
 # SpriteKit for Android
 
-A Swift runtime that runs SpriteKit games on Android. A game's own sources
-compile for Android unedited, keeping `import SpriteKit`, `import UIKit`,
-`import CoreGraphics` and the rest; this runtime answers those imports with
-its own implementation of the SpriteKit, UIKit, CoreGraphics and CoreText
-surface, draws with GLES 3 through SDL3, and puts Google Play's billing,
-achievements, leaderboards and saved games behind the Apple-shaped APIs a
-game's managers already call.
+**Bring your SpriteKit game to Android without rewriting it.**
 
-It also holds the platform code SpriteKit games share on every platform,
-Apple's included (`Platform/`): what's game-agnostic in a game's helpers and
-managers, so each game stops keeping its own copy and a fix reaches them
-all.
+SpriteKit for Android is a Swift runtime that lets a SpriteKit game's own
+sources compile and run on Android, unedited. Your code keeps `import
+SpriteKit`, `import UIKit`, `import CoreGraphics` and the rest; this runtime
+answers those imports with its own implementation of the SpriteKit, UIKit,
+CoreGraphics and CoreText surface a game uses, draws with OpenGL ES 3
+through SDL3, and puts Google Play's billing, achievements, leaderboards and
+saved games behind the same Apple-shaped APIs your managers already call.
 
-Nothing here is specific to any game. A game keeps its own Android code (its
-controller, its managers' bodies, its Gradle app, its art pipeline and its
-notes) in its own repository, and changes here are described in SpriteKit's
-and Apple's terms.
+It also holds platform code that SpriteKit games share on every platform,
+Apple's included (`Platform/`): audio, purchases, Game Center and Play
+Games, synced saved data, input, display settings and more, so one fix
+reaches every game that uses it.
+
+It grew out of porting real, shipping SpriteKit games to Android.
+It's open source under the MIT license, and contributions are very welcome.
+
+## What you get
+
+- **Your scenes, nodes and actions as they are.** `SKNode`, `SKScene`,
+  `SKSpriteNode` and your subclasses of them, actions, shaders (GLSL, as
+  SpriteKit takes them), crop and effect nodes, warps, emitters, labels,
+  transitions and cameras.
+- **Text that looks like Apple's.** HarfBuzz shaping and FreeType
+  rasterising, matched to Core Text's metrics: bidirectional text, Arabic,
+  Thai, CJK, emoji and attributed strings.
+- **Google Play behind Apple's APIs.** StoreKit-shaped purchases on Play
+  Billing, GameKit-shaped achievements and leaderboards on Play Games,
+  `NSUbiquitousKeyValueStore` on Saved Games, sharing, haptics and in-app
+  review.
+- **Measured against Apple.** Behaviour is checked against SpriteKit on a
+  Mac and pinned in host tests, so the Android build looks and moves like
+  the iOS one.
+- **One build number, one product ID.** The Gradle app template reads the
+  Xcode project's version and uses the iOS bundle ID, so both stores stay in
+  step.
+
+## Getting started
+
+You'll need a Mac (the host tests compare against Apple's frameworks) and:
+
+- Swift 6.4.2 from [swift.org](https://www.swift.org/install/) via
+  `swiftly` (Xcode's Swift can't cross-compile for Android), and the
+  `swift-6.4.2-RELEASE_android` SDK;
+- Android NDK r30 at `$ANDROID_NDK_HOME`, JDK 17, cmake and ninja.
+
+Then try the runtime on its own:
+
+```bash
+git clone https://github.com/fleon/spritekit-android.git
+cd spritekit-android
+swift test                                  # host tests: no device needed
+Vendor/build.sh android                     # FreeType and HarfBuzz for Android
+Scripts/check-android.sh arm64-v8a          # cross-compiles the runtime
+```
+
+To port a game:
+
+1. Add this repository as a submodule at `<game>/Android/spritekit-android`.
+2. Copy `Templates/App/base` to `<game>/Android/App` and fill in its
+   placeholders (`Templates/App/README.md` walks through them).
+3. Make a Swift package at `<game>/Android/Game` that links your game's
+   `Source/` folder, adds a controller adopting `GameHost`, and exports
+   `SDL_main`.
+4. Build SDL and your game's shell library, then the app:
+
+   ```bash
+   Scripts/build-sdl.sh arm64-v8a
+   Scripts/build-shell.sh --debug arm64-v8a
+   (cd ../App && ./gradlew installDebug)
+   ```
+
+"Using it in a game" below has each step in detail, and "How it works"
+explains the runtime itself.
+
+## Getting help and contributing
+
+- **Found a bug or a missing API?** Open an issue with the SpriteKit or
+  UIKit call involved, what Apple does and what you see on Android. A small
+  scene that shows it is the best report.
+- **Want to fix it?** Pull requests are welcome; `CONTRIBUTING.md` has the
+  few house rules (above all: match Apple's exact signatures and behaviour,
+  and keep the runtime free of any one game's code).
+- **Not sure where to start?** "What isn't here" lists SpriteKit features
+  the runtime doesn't cover yet.
+
+## License
+
+MIT, in `LICENSE`, except `Platform/Sources/PlatformRigs`, a port of the
+Spine Runtimes, which stays under the Spine Runtimes License (see
+`LICENSE`). Dependencies fetched at build time (SDL, FreeType, HarfBuzz)
+keep their own licenses, and the test fonts carry theirs beside them.
 
 ## Why a SpriteKit runtime rather than an engine
 
@@ -1245,9 +1321,4 @@ android {
 
 ## Contributing
 
-- Nothing game-specific: no game's names, identifiers, content or reasons.
-  Describe a change by what SpriteKit or Apple does, and test it with neutral
-  fixtures.
-- Fill a gap with SpriteKit's or Apple's exact signatures; measure behaviour
-  against Apple's on a Mac where it runs there, and pin it in a host test.
-- Every change: `swift test` and `Scripts/check-android.sh arm64-v8a`.
+See `CONTRIBUTING.md`.
