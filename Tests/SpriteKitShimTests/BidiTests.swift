@@ -93,5 +93,34 @@ struct BidiTests {
         let mixed = Bidi.segments(of: ["Hello ", "שלום", " עולם", " end"], in: .leftToRight)
         #expect(mixed.map(\.piece) == [0, 2, 1, 3])
         #expect(mixed.map(\.rightToLeft) == [false, true, true, false])
+        // Nothing explicit: every stretch reads its own way alone.
+        #expect(segments.filter(\.overridden).isEmpty && mixed.filter(\.overridden).isEmpty)
+    }
+
+    @Test("An override opened in one piece governs the next, which is drawn overridden")
+    func overrideAcrossPieces() {
+        // RLO in the first piece, PDF in the last: "def" reads right to left.
+        let segments = Bidi.segments(of: ["abc \u{202E}x", "def", "\u{202C} end"], in: .leftToRight)
+        let def = segments.first { $0.piece == 1 }
+        #expect(def?.level == 1)
+        #expect(def?.overridden == true)
+        // In one piece too, the override's characters cut from the stretch
+        // it forces (they take the level before them) are drawn forced.
+        let own = Bidi.segments(of: ["abc \u{202E}def\u{202C} end"], in: .leftToRight)
+        #expect(own.filter { $0.level == 1 }.map(\.overridden) == [true])
+        // An LRO spanning Hebrew pieces in a right-to-left line.
+        let hebrew = Bidi.segments(of: ["שלום \u{202D}עולם ", "טוב", "\u{202C} סוף"], in: .rightToLeft)
+        let tov = hebrew.first { $0.piece == 1 }
+        #expect(tov?.level == 2)
+        #expect(tov?.overridden == true)
+        // An isolate's content reads its own way alone: nothing to force.
+        let isolate = Bidi.segments(of: ["abc \u{2067}שלום ", "Wim", "\u{2069} end"], in: .leftToRight)
+        #expect(isolate.filter(\.overridden).isEmpty)
+    }
+
+    @Test("A stretch is forced its way: its controls out, an override of its direction round the rest, led by its mark")
+    func overridden() {
+        #expect(Bidi.overridden("de\u{202C}f", rightToLeft: true) == "\u{200F}\u{202E}def\u{202C}")
+        #expect(Bidi.overridden("עולם ", rightToLeft: false) == "\u{200E}\u{202D}עולם \u{202C}")
     }
 }

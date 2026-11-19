@@ -61,7 +61,9 @@ public extension TextProvider {
 ///     paragraph's last spans the width), the block as wide as all the
 ///     placed lines, trailing spaces included, but no wider than the width.
 ///     Justified, a line takes one more word if giving up a fifth of each
-///     of its spaces makes it fit, and is drawn with its spaces squeezed.
+///     of its spaces makes it fit, and is drawn with its spaces squeezed;
+///     one with Arabic letters a kashida can follow widens by kashida
+///     instead, its spaces as they are (`Kashida`).
 ///   - **Drawing**: only the lines that fit wholly in the rect; each
 ///     baseline down to the next whole device pixel, each glyph's x floored
 ///     to the sub-pixel step its size allows (`positionsPerPixel`), as
@@ -385,7 +387,8 @@ public struct TextBlock {
                     let (run, piece) = shown[segment.piece]
                     let a = piece.lowerBound + segment.characters.lowerBound, b = piece.lowerBound + segment.characters.upperBound
                     guard segment.rightToLeft else {
-                        place(run, a, b, Bidi.marked(String(characters[a ..< b]), in: .leftToRight))
+                        let text = String(characters[a ..< b])
+                        place(run, a, b, segment.overridden ? Bidi.overridden(text, rightToLeft: false) : Bidi.marked(text, in: .leftToRight))
                         continue
                     }
                     // Right to left, the spaces a stretch ends on are on its left.
@@ -393,7 +396,8 @@ public struct TextBlock {
                     place(run, body, b, String(characters[body ..< b]))
                     // Always led by its mark, which draws nothing, so drawing
                     // knows to place its words right to left.
-                    place(run, a, body, "\u{200F}" + String(characters[a ..< body]))
+                    let text = String(characters[a ..< body])
+                    place(run, a, body, segment.overridden ? Bidi.overridden(text, rightToLeft: true) : "\u{200F}" + text)
                 }
                 for (run, piece) in groups(visible, range.upperBound) {
                     place(run, piece.lowerBound, piece.upperBound, String(characters[piece]))
@@ -544,12 +548,20 @@ public struct TextBlock {
             guard top + line.height <= rect.maxY + 0.0001 else { break }
             defer { top += line.height + line.style.lineSpacing }
             let start = rect.minX + Self.offset(of: line, in: rect.width)
-            let stretch = Self.justifies(line, in: rect.width) ? (rect.width - line.visibleWidth) / CGFloat(line.spaces) : 0
+            // Justified Arabic widens with kashida where it can, its spaces
+            // left as they are.
+            let kashida = kashida(line, in: rect.width, provider: provider)
+            let stretch = kashida == nil && Self.justifies(line, in: rect.width)
+                ? (rect.width - line.visibleWidth) / CGFloat(line.spaces) : 0
             var spacesBefore = 0
-            for piece in line.pieces {
+            var widened: CGFloat = 0
+            for (index, piece) in line.pieces.enumerated() {
                 let run = runs[piece.run]
+                defer { widened += kashida?[index]?.extra ?? 0 }
                 // Justified text widens its spaces; letter spacing places each character.
-                let parts: [(String, CGFloat)] = if stretch != 0 || run.kern != 0 {
+                let parts: [(String, CGFloat)] = if let stretched = kashida?[index] {
+                    stretched.parts
+                } else if stretch != 0 || run.kern != 0 {
                     piece.text.first == "\u{200F}"
                         ? Self.splitRightToLeft(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
                         : Self.split(piece.text, run: run, byCharacter: run.kern != 0, provider: provider)
@@ -560,7 +572,7 @@ public struct TextBlock {
                     // A right-to-left word's spaces are before it, to its left.
                     let leading = text.first == "\u{200F}" ? 0 : text.prefix(while: { $0 == " " }).count
                     spacesBefore += leading
-                    let x = start + piece.x + offset + stretch * CGFloat(spacesBefore)
+                    let x = start + piece.x + widened + offset + stretch * CGFloat(spacesBefore)
                     spacesBefore += text.filter { $0 == " " }.count - leading
                     guard !text.allSatisfy(\.isWhitespace) else { continue }
                     let baseline = top + line.ascent - run.baselineOffset
@@ -582,11 +594,65 @@ public struct TextBlock {
         }
     }
 
+    /// A justified line's Arabic widened with kashida (`Kashida`), when it
+    /// has somewhere to put one: each right-to-left piece with a place for
+    /// one cut there, its stretches drawn right to left from its widened
+    /// right edge, each cut's kashida between them, each by itself; and what
+    /// each such piece adds to the line. Nil leaves its spaces to widen.
+    private func kashida(_ line: Line, in width: CGFloat, provider: TextProvider)
+        -> [Int: (parts: [(String, CGFloat)], extra: CGFloat)]? {
+        guard line.style.alignment == .justified, !line.endsParagraph, line.visibleWidth < width,
+              line.pieces.contains(where: { $0.text.first == "\u{200F}" }) else { return nil }
+        var places: [Int: (characters: [Character], advances: [CGFloat], after: [Int])] = [:]
+        for (index, piece) in line.pieces.enumerated() where piece.text.first == "\u{200F}" && runs[piece.run].kern == 0 {
+            let body = String(piece.text.dropFirst())
+            // An overridden stretch is drawn in the order it's forced to.
+            guard !body.unicodeScalars.contains(where: Bidi.isExplicitControl) else { continue }
+            let characters = Array(body)
+            let advances = provider.characterAdvances(body, font: runs[piece.run].font)
+            let after = Kashida.opportunities(in: characters, advances: advances)
+            if !after.isEmpty { places[index] = (characters, advances, after) }
+        }
+        guard let first = places.keys.min(),
+              let plan = Kashida.Plan(slack: width - line.visibleWidth, places: places.values.reduce(0) { $0 + $1.after.count },
+                                      tatweel: provider.measure("\u{0640}", font: runs[line.pieces[first].run].font).advance)
+        else { return nil }
+        var stretched: [Int: (parts: [(String, CGFloat)], extra: CGFloat)] = [:]
+        for (index, place) in places {
+            let font = runs[line.pieces[index].run].font
+            let extra = plan.extra * CGFloat(place.after.count)
+            var parts: [(String, CGFloat)] = []
+            var right = line.pieces[index].width + extra
+            var start = 0
+            for end in place.after.map({ $0 + 1 }) + [place.characters.count] {
+                let cut = end < place.characters.count
+                // The letters either side of a cut kept in the forms they join
+                // in by a tatweel joined to each, among the kashida. (A
+                // zero-width joiner would be taken for an emoji's.)
+                let text = "\u{200F}" + (start > 0 ? "\u{0640}" : "") + String(place.characters[start ..< end]) + (cut ? "\u{0640}" : "")
+                let tatweel = start > 0 ? provider.measure("\u{0640}", font: font).advance : 0
+                parts.append((text, right + tatweel - provider.measure(text, font: font).advance))
+                right -= place.advances[start ..< end].reduce(0, +)
+                if cut {
+                    for number in 1 ... plan.count {
+                        parts.append(("\u{0640}", right - plan.width * CGFloat(number)))
+                    }
+                    right -= plan.extra
+                }
+                start = end
+            }
+            stretched[index] = (parts, extra)
+        }
+        return stretched
+    }
+
     /// A piece cut into words (spaces kept with the word before) or
     /// characters, each with its x from the piece's start.
     private static func split(_ text: String, run: Run, byCharacter: Bool, provider: TextProvider) -> [(String, CGFloat)] {
+        // An overridden piece (`Bidi.overridden`): each part in the override.
+        let forced = text.hasPrefix("\u{200E}\u{202D}") && text.last == "\u{202C}"
         var parts: [String] = []
-        for character in text {
+        for character in forced ? text.dropFirst(2).dropLast() : Substring(text) {
             if byCharacter || parts.isEmpty || parts[parts.count - 1].last == " " {
                 parts.append(String(character))
             } else {
@@ -596,7 +662,12 @@ public struct TextBlock {
         var x: CGFloat = 0
         return parts.map { part in
             defer { x += provider.measure(part, font: run.font).advance + run.kern * CGFloat(part.count) }
-            return (part, x)
+            guard forced else { return (part, x) }
+            // Around what's between its spaces, which count where they are.
+            let leading = part.prefix(while: { $0 == " " }).count, trailing = part.reversed().prefix(while: { $0 == " " }).count
+            let core = part.dropFirst(leading).dropLast(trailing)
+            guard !core.isEmpty else { return (part, x) }
+            return (String(repeating: " ", count: leading) + "\u{200E}\u{202D}" + core + "\u{202C}" + String(repeating: " ", count: trailing), x)
         }
     }
 
@@ -604,8 +675,10 @@ public struct TextBlock {
     /// its words placed right to left: each word after the spaces that
     /// follow it in the text, which are on its left.
     private static func splitRightToLeft(_ text: String, run: Run, byCharacter: Bool, provider: TextProvider) -> [(String, CGFloat)] {
+        // An overridden piece (`Bidi.overridden`): each word in the override.
+        let forced = text.dropFirst().first == "\u{202E}" && text.last == "\u{202C}"
         var parts: [String] = []
-        for character in text.dropFirst() {
+        for character in forced ? text.dropFirst(2).dropLast() : text.dropFirst() {
             if byCharacter || parts.isEmpty || parts[parts.count - 1].last == " " {
                 parts.append(String(character))
             } else {
@@ -625,7 +698,7 @@ public struct TextBlock {
                 placed.append((spaces, x))
                 x += advance(spaces)
             }
-            placed.append(("\u{200F}" + word, x))
+            placed.append((forced ? "\u{200F}\u{202E}" + word + "\u{202C}" : "\u{200F}" + word, x))
             x += advance(String(word))
         }
         return placed
