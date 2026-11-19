@@ -70,7 +70,8 @@ final class ShapeMasks {
             width: 0, cap: 0, join: 0, scale: quantised(scale)
         )
         return entry(for: key, owner: owner.map { OwnerKey(node: $0, kind: 0) }) {
-            PathRasteriser.fill(path, rule: rule, scale: scale)
+            // SpriteKit's edges, as the shapes drawn as triangles have.
+            SpriteKitMasks.fill(path, rule: rule, scale: scale)
         }
     }
 
@@ -89,7 +90,7 @@ final class ShapeMasks {
             scale: quantised(scale)
         )
         return entry(for: key, owner: owner.map { OwnerKey(node: $0, kind: 1) }) {
-            PathRasteriser.stroke(path, width: width, cap: cap, join: join, scale: scale)
+            SpriteKitMasks.stroke(path, width: width, cap: cap, join: join, scale: scale)
         }
     }
 

@@ -510,7 +510,14 @@ public enum PathRasteriser {
     }
 
     /// The common path: polygons in path points, coverage out.
-    static func rasterise(_ polygons: [[CGPoint]], rule: FillRule, scale: CGFloat) -> Mask? {
+    /// Polygons in path points filled as SpriteKit fills a shape node: a
+    /// pixel wholly in when its centre is, none in part (measured through
+    /// `SKRenderer` on a Mac), where `rasterise` gives each its exact area.
+    public static func rasteriseCentreSampled(_ polygons: [[CGPoint]], rule: FillRule, scale: CGFloat) -> Mask? {
+        rasterise(polygons, rule: rule, scale: scale, centreSampled: true)
+    }
+
+    static func rasterise(_ polygons: [[CGPoint]], rule: FillRule, scale: CGFloat, centreSampled: Bool = false) -> Mask? {
         guard scale > 0, !polygons.isEmpty else { return nil }
 
         var minX = CGFloat.greatestFiniteMagnitude, minY = CGFloat.greatestFiniteMagnitude
@@ -548,10 +555,10 @@ public enum PathRasteriser {
                 CGPoint(x: ($0.x - bounds.minX) * scale, y: (bounds.maxY - $0.y) * scale)
             }
         }
-        let pixels = coverage(
-            inPixels, rule: rule,
-            in: PixelBox(x: 0, y: 0, width: width, height: height)
-        )
+        let box = PixelBox(x: 0, y: 0, width: width, height: height)
+        let pixels = centreSampled
+            ? centreCoverage(inPixels, rule: rule, in: box)
+            : coverage(inPixels, rule: rule, in: box)
         guard !pixels.isEmpty else { return nil }
         return Mask(width: width, height: height, pixels: pixels, bounds: bounds, scale: scale)
     }
@@ -714,6 +721,57 @@ public enum PathRasteriser {
             }
         }
 
+        return pixels
+    }
+
+    /// Coverage sampled once a pixel, at its centre: 255 where the centre
+    /// is inside, 0 elsewhere. The same edges and box as `coverage`.
+    static func centreCoverage(_ polygons: [[CGPoint]], rule: FillRule, in box: PixelBox) -> [UInt8] {
+        guard !box.isEmpty, !polygons.isEmpty else { return [] }
+        var edges: [Edge] = []
+        for polygon in polygons where polygon.count > 2 {
+            for i in 0 ..< polygon.count {
+                let a = polygon[i], b = polygon[(i + 1) % polygon.count]
+                guard a.x.isFinite, a.y.isFinite, b.x.isFinite, b.y.isFinite else { continue }
+                let ax = a.x - CGFloat(box.x), ay = a.y - CGFloat(box.y)
+                let bx = b.x - CGFloat(box.x), by = b.y - CGFloat(box.y)
+                guard ay != by else { continue }
+                edges.append(ay < by
+                    ? Edge(x0: ax, y0: ay, x1: bx, y1: by, winding: 1)
+                    : Edge(x0: bx, y0: by, x1: ax, y1: ay, winding: -1))
+            }
+        }
+        guard !edges.isEmpty else { return [] }
+        let width = box.width
+        var pixels = [UInt8](repeating: 0, count: width * box.height)
+        var crossings: [(x: CGFloat, winding: Int)] = []
+        for y in 0 ..< box.height {
+            let sy = CGFloat(y) + 0.5
+            crossings.removeAll(keepingCapacity: true)
+            for edge in edges where edge.y0 <= sy && sy < edge.y1 {
+                let t = (sy - edge.y0) / (edge.y1 - edge.y0)
+                crossings.append((edge.x0 + (edge.x1 - edge.x0) * t, edge.winding))
+            }
+            guard crossings.count > 1 else { continue }
+            crossings.sort { $0.x < $1.x }
+            var winding = 0
+            var spanStart: CGFloat = 0
+            for crossing in crossings {
+                let wasInside = inside(winding, rule)
+                winding += rule == .evenOdd ? 1 : crossing.winding
+                let isInside = inside(winding, rule)
+                if !wasInside, isInside {
+                    spanStart = crossing.x
+                } else if wasInside, !isInside {
+                    // Pixels whose centre x + 0.5 lies in [start, end).
+                    let first = max(0, Int((spanStart - 0.5).rounded(.up)))
+                    let last = min(width - 1, Int((crossing.x - 0.5).rounded(.up)) - 1)
+                    if first <= last {
+                        for x in first ... last { pixels[y * width + x] = 255 }
+                    }
+                }
+            }
+        }
         return pixels
     }
 
