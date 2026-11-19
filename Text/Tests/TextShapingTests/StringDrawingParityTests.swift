@@ -417,6 +417,27 @@ import Testing
         #expect(abs(rect.width - item.expected.width) <= tolerance, "width \(rect.width) against \(item.expected.width)")
     }
 
+    /// With `.usesFontLeading` and no `.usesLineFragmentOrigin`, y is the
+    /// rounded descent and the leading, unrounded, up from the baseline.
+    static let leadingWithoutLineFragments: [(String, CGFloat, String, y: CGFloat, w: CGFloat, h: CGFloat)] = [
+        ("Geneva", 11.0, "Level Select", y: -3.91845703125, w: 64.3349609375, h: 14.91845703125),
+        ("Geneva", 11.0, "One\nTwo lines", y: -3.91845703125, w: 20.83447265625, h: 14.91845703125),
+        ("Geneva", 12.0, "Level Select", y: -4.001953125, w: 70.18359375, h: 16.001953125),
+        ("Geneva", 17.0, "Level Select", y: -5.41943359375, w: 99.4267578125, h: 22.41943359375),
+        ("Montserrat-Black", 15.0, "Level Select", y: -4.0, w: 98.13000000000001, h: 19.0),
+        ("KoHo-Bold", 20.0, "One\nTwo lines", y: -5.0, w: 34.42, h: 26.0),
+    ]
+
+    @Test("Font leading without line fragments: y is the descent and the leading, as UIKit has it")
+    func leadingWithoutLineFragmentOrigin() {
+        _ = Fonts.engine
+        for (font, size, text, y, w, h) in Self.leadingWithoutLineFragments {
+            let rect = TextBlock.boundingRect(of: [TextBlock.Run(text, font: FontKey(name: font, size: size))],
+                                              size: CGSize(width: 160, height: 10_000), usesLineFragmentOrigin: false, usesFontLeading: true)
+            #expect(abs(rect.minY - y) < 1e-4 && abs(rect.width - w) < 1e-4 && abs(rect.height - h) < 1e-4, "\(font) \(size) \(text): \(rect)")
+        }
+    }
+
     @Test("Mixed runs: each line as tall as its tallest run, a baseline offset raising it")
     func mixedRuns() {
         _ = Fonts.engine
