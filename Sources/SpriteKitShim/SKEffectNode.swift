@@ -31,9 +31,25 @@ open class SKEffectNode: SKNode {
         didSet { rasterGeneration &+= 1 }
     }
 
-    /// Bumped on every write to `shouldRasterize`. The renderer holds a kept
+    /// Bumped on every write to `shouldRasterize`, and when a uniform inside
+    /// the node is written (`noteUniformWrite`). The renderer holds a kept
     /// render target against the node and redraws it when this moves.
     public private(set) var rasterGeneration: UInt64 = 0
+
+    /// The latest uniform write inside this node the renderer has seen.
+    private var seenUniformWrite: UInt64 = 0
+
+    /// Called as the draw list is built, with the latest `SKUniform` write
+    /// in this node's shaders and its subtree's. A later one than last time
+    /// stales the cached pixels, as Apple's SpriteKit does: a uniform set
+    /// (even to the value it had) redraws a rasterized node that uses it,
+    /// while `u_time` running on, attribute values, or a shader's uniforms
+    /// array replaced do not.
+    func noteUniformWrite(_ stamp: UInt64) {
+        guard stamp > seenUniformWrite else { return }
+        seenUniformWrite = stamp
+        rasterGeneration &+= 1
+    }
 
     open var shouldEnableEffects: Bool = true
     /// SpriteKit's Core Image filter on the node's picture, such as a

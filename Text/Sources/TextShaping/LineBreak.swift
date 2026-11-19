@@ -15,18 +15,21 @@ import SpriteKitShim
 /// - Chinese and Japanese break between almost any two characters, held off
 ///   only by the small kinsoku set below — no closing bracket or full stop
 ///   starts a line, and no opening bracket ends one.
-/// - Thai writes without spaces and is properly broken with a dictionary,
-///   which there isn't one of here. The fallback is a break at each
-///   grapheme-cluster boundary *except* straight after a leading vowel
-///   (เ แ โ ใ ไ), which is written before the consonant it sounds after and
-///   must never be left stranded at the end of a line. It breaks mid-word,
-///   which is wrong and visible; it never breaks a cluster, which would be
-///   wrong and unreadable.
+/// - Thai writes without spaces and is broken with a dictionary. There's
+///   none here: the platform's is asked (`ThaiLineBreaks.provider`, ICU's
+///   line breaks on Android and on Apple), as Core Text breaks Thai with
+///   ICU's. With none installed the fallback is a
+///   break at each grapheme-cluster boundary *except* straight after a
+///   leading vowel (เ แ โ ใ ไ), which is written before the consonant it
+///   sounds after and must never be left stranded at the end of a line. It
+///   breaks mid-word, which is wrong and visible; it never breaks a cluster,
+///   which would be wrong and unreadable.
 enum LineBreak {
     /// Indices in `text` where a line may start.
     static func opportunities(in text: String) -> [String.Index] {
         var places: [String.Index] = []
         var index = text.startIndex
+        let thaiBreaks = ThaiLineBreaks.lineStarts(in: text)
 
         while index < text.endIndex {
             let next = text.index(after: index)
@@ -40,7 +43,11 @@ enum LineBreak {
             } else if here == "-" || here == "\u{2010}" {
                 places.append(next)
             } else if isThai(after), isThai(here) {
-                if !isThaiLeadingVowel(here), !startsWithMark(after) { places.append(next) }
+                if let thaiBreaks {
+                    if thaiBreaks.contains(next) { places.append(next) }
+                } else if !isThaiLeadingVowel(here), !startsWithMark(after) {
+                    places.append(next)
+                }
             } else if isIdeographic(here) || isIdeographic(after) {
                 if !noStart(after), !noEnd(here), after != " " { places.append(next) }
             }
@@ -49,7 +56,7 @@ enum LineBreak {
         return places
     }
 
-    private static func isThai(_ character: Character) -> Bool {
+    static func isThai(_ character: Character) -> Bool {
         character.unicodeScalars.first.map { (0x0E00...0x0E7F).contains(Int($0.value)) } ?? false
     }
 

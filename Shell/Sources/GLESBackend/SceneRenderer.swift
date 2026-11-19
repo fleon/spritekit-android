@@ -1829,6 +1829,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         projection: [Float],
         program: GLuint? = nil,
         streamFirstIndex: Int = -1,
+        streamFirstVertex: Int = 0,
         fill: (texture: SKTexture, map: SIMD4<Float>)? = nil
     ) {
         guard !run.indices.isEmpty else { return }
@@ -1854,7 +1855,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         if streamFirstIndex >= 0 {
             bindVertexArray(vao)
-            drawElements(count: run.indices.count, first: streamFirstIndex)
+            drawElements(count: run.indices.count, first: streamFirstIndex, vertices: streamFirstVertex, run.vertices.count / SpriteBatcher.floatsPerVertex)
         } else {
             let first = uploadDynamic(vertices: run.vertices, indices: run.indices)
             bindVertexArray(dynamicVAO)
@@ -1879,7 +1880,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             let name = part.mask != 0 ? part.mask : glyphPages.name(of: part.run.page)
             guard name != 0 else { continue }
             let fill = mask || texturedCoverageProgram == 0 ? nil : part.texture.map { ($0, part.textureMap) }
-            drawCoverage(part.run, texture: name, projection: projection, program: program, streamFirstIndex: part.streamFirstIndex, fill: fill)
+            drawCoverage(
+                part.run, texture: name, projection: projection, program: program,
+                streamFirstIndex: part.streamFirstIndex, streamFirstVertex: part.streamFirstVertex, fill: fill
+            )
         }
     }
 
@@ -2047,6 +2051,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             case var .batches(batches):
                 for index in batches.indices where !batches[index].indices.isEmpty {
                     batches[index].streamFirstIndex = writer.add(batches[index].vertices, batches[index].indices)
+                    batches[index].streamFirstVertex = writer.lastFirstVertex
                 }
                 return .batches(batches)
             case let .effect(bounds, transform, shader, alpha, blendMode, rasterize, owner, generation, digest, contents):
@@ -2056,6 +2061,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     var quad = compositeQuad(bounds: bounds, transform: transform, alpha: alpha, shader: shader, blendMode: blendMode)
                     if !quad.indices.isEmpty {
                         quad.streamFirstIndex = writer.add(quad.vertices, quad.indices)
+                        quad.streamFirstVertex = writer.lastFirstVertex
                         stagedComposites[owner] = quad
                     }
                 }
@@ -2068,6 +2074,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             case var .coverage(staged):
                 for index in staged.parts.indices where !staged.parts[index].run.indices.isEmpty {
                     staged.parts[index].streamFirstIndex = writer.add(staged.parts[index].run.vertices, staged.parts[index].run.indices)
+                    staged.parts[index].streamFirstVertex = writer.lastFirstVertex
                 }
                 return .coverage(staged)
             case .label, .shape:
@@ -2102,6 +2109,22 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private func drawElements(count: Int, first: Int) {
         glDrawElements(
             GLenum(GL_TRIANGLES), GLsizei(count), GLenum(GL_UNSIGNED_INT),
+            UnsafeRawPointer(bitPattern: first * MemoryLayout<UInt32>.size)
+        )
+        drawCalls += 1
+    }
+
+    /// A draw from the frame's stream, given the vertices it reaches
+    /// (`vertexCount` from `firstVertex`). Without the range a Mali driver
+    /// reads every index of the draw on the CPU to find it: with shapes as
+    /// triangles, tens of thousands of indices a frame and most of what the
+    /// draw calls cost on a Galaxy M31 (simpleperf, `libGLES_mali` under
+    /// `glDrawElements`).
+    private func drawElements(count: Int, first: Int, vertices firstVertex: Int, _ vertexCount: Int) {
+        guard vertexCount > 0 else { return drawElements(count: count, first: first) }
+        glDrawRangeElements(
+            GLenum(GL_TRIANGLES), GLuint(firstVertex), GLuint(firstVertex + vertexCount - 1),
+            GLsizei(count), GLenum(GL_UNSIGNED_INT),
             UnsafeRawPointer(bitPattern: first * MemoryLayout<UInt32>.size)
         )
         drawCalls += 1
@@ -2178,7 +2201,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
 
         if batch.streamFirstIndex >= 0 {
             bindVertexArray(vao)
-            drawElements(count: batch.indices.count, first: batch.streamFirstIndex)
+            drawElements(count: batch.indices.count, first: batch.streamFirstIndex, vertices: batch.streamFirstVertex, batch.vertices.count / SpriteBatcher.floatsPerVertex)
         } else {
             let first = uploadDynamic(vertices: batch.vertices, indices: batch.indices)
             bindVertexArray(dynamicVAO)

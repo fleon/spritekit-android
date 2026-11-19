@@ -120,11 +120,12 @@ public struct DrawList {
         /// Bumped whenever `shouldRasterize` is written — which is exactly
         /// how a game asks for a redraw (`false` then `true`).
         public var rasterGeneration: UInt64
-        /// A digest of what the subtree draws this frame: transforms, sizes,
-        /// colours, alphas, texture and shader identity. A rasterized node
-        /// whose children moved redraws; one whose shader uniforms merely
-        /// changed does not, which is what keeps a band cached while
-        /// `u_time` runs on.
+        /// A digest of what the subtree draws this frame (transforms, sizes,
+        /// colours, alphas, texture and shader identity) and of the node's
+        /// own transform, alpha and shader. A rasterized node whose children
+        /// or own placement changed redraws; `u_time` running on does not,
+        /// which is what keeps a band cached. A uniform written inside it
+        /// redraws it through `rasterGeneration`, as on Apple.
         public var contentsDigest: UInt64
         public var contents: DrawList
     }
@@ -335,6 +336,7 @@ public struct DrawList {
                 inner = cull.applying(transform.inverted())
             }
             let contents = wrap(ordered(children(of: node, transform: .identity, alpha: 1, z: 0, cull: inner), byClass: tiesByClass))
+            if effect.shouldRasterize { effect.noteUniformWrite(latestUniformWrite(in: effect)) }
             entries.append((z, Command.effect(Effect(
                 bounds: effect.effectBounds,
                 transform: transform,
@@ -344,7 +346,7 @@ public struct DrawList {
                 shouldRasterize: effect.shouldRasterize,
                 owner: ObjectIdentifier(effect),
                 rasterGeneration: effect.rasterGeneration,
-                contentsDigest: effect.shouldRasterize ? contents.digest : 0,
+                contentsDigest: effect.shouldRasterize ? contents.digest ^ ownDigest(of: effect) : 0,
                 contents: contents
             ))))
             return
@@ -506,6 +508,36 @@ public struct DrawList {
         }
     }
 
+    /// The latest `SKUniform` write in `node`'s shaders and its subtree's.
+    @MainActor private static func latestUniformWrite(in node: SKNode) -> UInt64 {
+        func latest(_ shader: SKShader?) -> UInt64 {
+            shader?.uniforms.reduce(0) { max($0, $1.writeStamp) } ?? 0
+        }
+        var stamp: UInt64
+        switch node {
+        case let sprite as SKSpriteNode: stamp = latest(sprite.shader)
+        case let shape as SKShapeNode: stamp = max(latest(shape.fillShader), latest(shape.strokeShader))
+        case let effect as SKEffectNode: stamp = latest(effect.shader)
+        default: stamp = 0
+        }
+        for child in node.children { stamp = max(stamp, latestUniformWrite(in: child)) }
+        return stamp
+    }
+
+    /// What of a rasterized node's own makes Apple draw its cached pixels
+    /// again: its own position, scale, rotation, alpha and shader (but not an
+    /// ancestor's, which only moves the cached picture).
+    @MainActor private static func ownDigest(of effect: SKEffectNode) -> UInt64 {
+        var hash: UInt64 = 0x84222325cbf29ce4
+        func mix(_ value: CGFloat) {
+            hash = (hash ^ UInt64(bitPattern: Int64((value * 1000).rounded()))) &* 0x100_0000_01b3
+        }
+        let t = effect.localTransform
+        for value in [t.a, t.b, t.c, t.d, t.tx, t.ty, effect.alpha] { mix(value) }
+        hash = (hash ^ UInt64(UInt(bitPattern: effect.shader.map { ObjectIdentifier($0).hashValue } ?? 0))) &* 0x100_0000_01b3
+        return hash
+    }
+
     @MainActor private static func children(
         of node: SKNode,
         transform: CGAffineTransform,
@@ -532,10 +564,10 @@ public struct DrawList {
     /// `SKEffectNode` may keep last frame's pixels. So it covers what the
     /// renderer would put in a vertex buffer — transforms, sizes, anchors,
     /// colours, alphas, blend modes, which texture and which shader — and
-    /// deliberately **not** shader uniform values. A cached band must
-    /// survive `u_time` running on and a light moving, or the cache would never hold for a single frame and the
-    /// whole mechanism would be a loss rather than a saving. The game asks
-    /// for those redraws explicitly, by toggling `shouldRasterize`.
+    /// **not** shader uniform values. A cached band must survive `u_time`
+    /// running on, or the cache would never hold for a single frame. A
+    /// uniform the game writes redraws the nodes that use it, as Apple's
+    /// SpriteKit does, through `SKEffectNode.rasterGeneration` instead.
     public var digest: UInt64 {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         func mix(_ value: UInt64) {
