@@ -139,7 +139,7 @@ itself.
    | `Assets/Fonts/*.ttf`, `*.otf` | `fonts/` | `Shell.start(fonts:)`, `Bundle.main` |
    | `Assets/Music`, `Assets/SFX` | `audio/Music`, `audio/SFX` | `AudioAssets` |
    | `Assets/*.json`, Play Games' mapping | `resources/` | `Bundle.main` |
-   | `Assets/*.lproj/*.strings` | `lproj/` | `Bundle.main` |
+   | `Assets/*.lproj/*.strings`, `*.stringsdict` | `lproj/` | `Bundle.main` |
 
    `fonts/` and `resources/` are `ResourceBundle.defaultFolder`, the rule
    `Shell.start` uses unless given another. Point the sources at where the

@@ -20,7 +20,7 @@ val abis = (findProperty("game.abis") as String?)?.split(",")?.map { it.trim() }
 //               bundles, where the shell's `AudioAssets` reads them
 //   resources/  the .json files at the top of Assets (and Play Games'
 //               mapping, when there is one), where `Bundle.main` finds them
-//   lproj/      each language's Localizable.strings
+//   lproj/      each language's Localizable.strings and .stringsdict
 //   build.json  whether the build is a beta (`game.beta`, below)
 //
 // fonts/ and resources/ are `ResourceBundle.defaultFolder`, the rule
@@ -66,11 +66,11 @@ val stageResources = tasks.register<Sync>("stageResources") {
 }
 
 // Each language's strings, under `assets/lproj/<language>.lproj/`, as
-// `Bundle.main` opens them. Only the `.strings` files: the storyboards in
-// Base.lproj are Apple's alone.
+// `Bundle.main` opens them. Only the `.strings` and `.stringsdict` files:
+// the storyboards in Base.lproj are Apple's alone.
 val stringAssets = "build/generated/stringAssets"
 val stageStrings = tasks.register<Sync>("stageStrings") {
-    from(rootProject.file("../../Assets")) { include("*.lproj/*.strings") }
+    from(rootProject.file("../../Assets")) { include("*.lproj/*.strings", "*.lproj/*.stringsdict") }
     into(file("$stringAssets/lproj"))
 }
 

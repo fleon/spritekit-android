@@ -135,10 +135,12 @@ private nonisolated struct Strings {
     #if SPRITEKIT_SHIM
     let folder: String?
 
-    /// As Apple's bundle answers: the table's string, else `fallback`, else
-    /// the key.
+    /// As Apple's bundle answers: the table's `.stringsdict` format (its
+    /// plurals resolved when it's formatted, `StringsDict`), else its
+    /// `.strings` string, else `fallback`, else the key.
     func string(_ key: String, fallback: String, table: String?) -> String {
         let name = table.flatMap { $0.isEmpty ? nil : $0 } ?? "Localizable"
+        if let folder, let format = LocalizedStrings.pluralFormat(forKey: key, atPath: folder + "/" + name + ".stringsdict") { return format }
         if let folder, let found = LocalizedStrings.table(atPath: folder + "/" + name + ".strings")[key] { return found }
         return fallback.isEmpty ? key : fallback
     }

@@ -40,6 +40,7 @@ public enum LocalizedStrings {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var tables: [String: [String: String]] = [:]
     nonisolated(unsafe) private static var files: [String: [String: String]] = [:]
+    nonisolated(unsafe) private static var pluralTables: [String: [String: StringsDict.Entry]] = [:]
     nonisolated(unsafe) private static var chosen: String??
 
     /// The development language (`AppIdentity.developmentRegion`, Apple's
@@ -50,6 +51,9 @@ public enum LocalizedStrings {
     public static func string(forKey key: String, table: String?, value: String) -> String {
         let table = table.flatMap { $0.isEmpty ? nil : $0 } ?? "Localizable"
         for language in searchOrder() {
+            // A `.stringsdict` entry comes before the `.strings` file's, as
+            // Apple's bundle looks it up (`StringsDict`).
+            if let entry = plurals(language: language, table: table)[key] { return StringsDict.register(entry) }
             if let found = strings(language: language, table: table)[key] { return found }
         }
         return value.isEmpty ? key : value
@@ -90,6 +94,35 @@ public enum LocalizedStrings {
         return parsed
     }
 
+    /// One language's `.stringsdict` table, read once.
+    private static func plurals(language: String, table: String) -> [String: StringsDict.Entry] {
+        guard let folder = BundleResources.folderProvider?(language, "lproj") else { return [:] }
+        return pluralTable(atPath: folder + "/" + table + ".stringsdict")
+    }
+
+    /// The `.stringsdict` file at `path`, read once. Empty if there's none.
+    static func pluralTable(atPath path: String) -> [String: StringsDict.Entry] {
+        lock.lock()
+        if let cached = pluralTables[path] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+        let parsed = FileManager.default.contents(atPath: path).map(StringsDict.parse) ?? [:]
+        lock.lock()
+        pluralTables[path] = parsed
+        lock.unlock()
+        return parsed
+    }
+
+    /// The format of `key` in the `.stringsdict` file at `path`, registered
+    /// so formatting it resolves its plurals; nil when the file has no such
+    /// entry. For a game that reads a language's folder itself, before that
+    /// folder's `.strings` (`table(atPath:)`), as Apple's bundle looks keys up.
+    public static func pluralFormat(forKey key: String, atPath path: String) -> String? {
+        pluralTable(atPath: path)[key].map { StringsDict.register($0) }
+    }
+
     /// The `.strings` file at `path`, read once: for a game that picks its
     /// language itself and reads that language's folder
     /// (`BundleResources.folderProvider`). Empty if there's none.
@@ -112,6 +145,7 @@ public enum LocalizedStrings {
         lock.lock()
         tables = [:]
         files = [:]
+        pluralTables = [:]
         chosen = nil
         lock.unlock()
     }
