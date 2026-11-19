@@ -53,6 +53,15 @@ public final class AtlasPage {
 
     public func clearDirty() { dirty = nil }
 
+    /// Empties the page for reuse: every pixel clear, the packer back at
+    /// the top, the whole page to upload.
+    func reset() {
+        for index in pixels.indices { pixels[index] = 0 }
+        shelfX = 0; shelfY = 0; shelfHeight = 0
+        dirty = CGRect(x: 0, y: 0, width: width, height: height)
+        generation += 1
+    }
+
     func place(width glyphWidth: Int, height glyphHeight: Int, padding: Int) -> CGRect? {
         let w = glyphWidth + padding * 2
         let h = glyphHeight + padding * 2
@@ -133,10 +142,46 @@ public final class GlyphAtlas: @unchecked Sendable {
     private var store: [AtlasPage] = []
     private var colourCache: [Key: AtlasGlyph] = [:]
     private var colourStore: [AtlasPage] = []
+    /// The frame each colour page was last drawn from.
+    private var colourUse: [Int] = []
+    private var frame = 0
+    private var epoch = 0
 
-    public init(pageSize: Int = 1024, library: FontLibrary = .shared) {
+    /// Colour pages' side: smaller than coverage pages, as RGBA costs four
+    /// times the bytes and a page is what's evicted.
+    public let colourPageSize: Int
+    /// How many colour pages are kept before the least recently drawn one
+    /// is emptied for new glyphs: 8 MB of 1024² RGBA, or 8 pages of 512²
+    /// at 1 MB each by default. Pages drawn from this frame are never
+    /// emptied: past the limit a page is added rather than one in use lost.
+    public var colourPageLimit: Int {
+        get { lock.withLock { limit } }
+        set { lock.withLock { limit = max(1, newValue) } }
+    }
+    private var limit = 8
+
+    public init(pageSize: Int = 1024, colourPageSize: Int = 512, library: FontLibrary = .shared) {
         self.pageSize = pageSize
+        self.colourPageSize = colourPageSize
         self.library = library
+    }
+
+    /// Starts a frame: colour pages drawn from before it may be emptied for
+    /// new glyphs. The renderer calls it once a frame.
+    public func nextFrame() {
+        lock.withLock { frame += 1 }
+    }
+
+    /// Bumped whenever a colour page is emptied: a glyph rect remembered
+    /// from before may now show another glyph, so look it up again.
+    public var colourEpoch: Int { lock.withLock { epoch } }
+
+    /// Marks colour pages as drawn from this frame, for a caller drawing
+    /// glyphs it looked up earlier.
+    public func touchColourPages(_ pages: some Sequence<Int>) {
+        lock.withLock {
+            for page in pages where page >= 0 && page < colourUse.count { colourUse[page] = frame }
+        }
     }
 
     public var pages: [AtlasPage] { lock.withLock { store } }
@@ -149,27 +194,45 @@ public final class GlyphAtlas: @unchecked Sendable {
     /// the box the glyph was laid out with.
     public func colourGlyph(_ glyph: UInt32, font: FontKey, pixels: Int) -> AtlasGlyph? {
         let key = Key(font: font.name, size: CGFloat(pixels), glyph: glyph)
-        if let cached = lock.withLock({ colourCache[key] }) { return cached }
+        let hit = lock.withLock { () -> AtlasGlyph? in
+            guard let cached = colourCache[key] else { return nil }
+            colourUse[cached.page] = frame
+            return cached
+        }
+        if let hit { return hit }
         guard let image = library.face(font)?.colourImage(glyph, pixels: pixels) else { return nil }
         return lock.withLock {
             if let cached = colourCache[key] { return cached }
             let size = CGSize(width: image.width, height: image.height)
-            var placed: (Int, CGRect)?
-            for (index, page) in colourStore.enumerated() {
-                if let rect = page.place(width: image.width, height: image.height, padding: padding) { placed = (index, rect); break }
-            }
-            if placed == nil {
-                let page = AtlasPage(width: pageSize, height: pageSize, bytesPerPixel: 4)
-                guard let rect = page.place(width: image.width, height: image.height, padding: padding) else { return nil }
-                colourStore.append(page)
-                placed = (colourStore.count - 1, rect)
-            }
-            guard let (index, rect) = placed else { return nil }
+            guard let (index, rect) = placeColour(width: image.width, height: image.height) else { return nil }
             colourStore[index].write(rgba: image.pixels, into: rect)
+            colourUse[index] = frame
             let entry = AtlasGlyph(page: index, rect: rect, bearing: .zero, size: size, isColour: true)
             colourCache[key] = entry
             return entry
         }
+    }
+
+    /// Room for a colour glyph: on a page with space, a new page while
+    /// under the limit, else the least recently drawn page not drawn from
+    /// this frame, emptied (its glyphs forgotten), else a page past the
+    /// limit. Called with the lock held.
+    private func placeColour(width: Int, height: Int) -> (Int, CGRect)? {
+        for (index, page) in colourStore.enumerated() {
+            if let rect = page.place(width: width, height: height, padding: padding) { return (index, rect) }
+        }
+        let stale = colourStore.indices.filter { colourUse[$0] < frame }.min { colourUse[$0] < colourUse[$1] }
+        if colourStore.count >= limit, let stale {
+            colourStore[stale].reset()
+            colourCache = colourCache.filter { $0.value.page != stale }
+            epoch += 1
+            return colourStore[stale].place(width: width, height: height, padding: padding).map { (stale, $0) }
+        }
+        let page = AtlasPage(width: colourPageSize, height: colourPageSize, bytesPerPixel: 4)
+        guard let rect = page.place(width: width, height: height, padding: padding) else { return nil }
+        colourStore.append(page)
+        colourUse.append(frame)
+        return (colourStore.count - 1, rect)
     }
 
     public var count: Int { lock.withLock { cache.count } }
@@ -200,6 +263,8 @@ public final class GlyphAtlas: @unchecked Sendable {
             store.removeAll()
             colourCache.removeAll()
             colourStore.removeAll()
+            colourUse.removeAll()
+            epoch += 1
         }
     }
 

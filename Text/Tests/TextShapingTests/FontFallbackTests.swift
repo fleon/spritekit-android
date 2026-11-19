@@ -66,6 +66,23 @@ struct FontFallbackTests {
         }
     }
 
+    @Test("Emoji come from the emoji face, text from the line's face, as Core Text draws them")
+    func presentation() {
+        // ©, ▶ and # are Montserrat's, until FE0F or a keycap asks for an
+        // emoji; ⭐ is an emoji by default; FE0E asks for text.
+        for text in ["©", "©\u{FE0F}", "▶", "▶\u{FE0F}", "™", "#\u{FE0F}\u{20E3}", "⭐", "❤\u{FE0F}", "a©\u{FE0F}b▶c",
+                     "Lv. 8 ⭐ ©", "↔"] {
+            let line = Self.coreTextLine(text, "Montserrat-Black", 20)
+            let apple = Self.merged((CTLineGetGlyphRuns(line) as! [CTRun]).map {
+                CTFontCopyPostScriptName((CTRunGetAttributes($0) as NSDictionary)[kCTFontAttributeName] as! CTFont) as String
+            })
+            let ours = Self.merged((Fonts.engine.shape(text, font: Fonts.display(20)) ?? []).map { $0.font ?? "Montserrat-Black" })
+            #expect(ours == apple, "'\(text)': \(ours) against \(apple)")
+            let width = CTLineGetTypographicBounds(line, nil, nil, nil)
+            #expect(abs(Fonts.engine.measure(text, font: Fonts.display(20)).advance - width) < 1e-4, "'\(text)'")
+        }
+    }
+
     @Test("Right-to-left words a space apart are drawn last word first")
     func rightToLeft() throws {
         let runs = try #require(Fonts.engine.shape("مرحبا بك", font: Fonts.display(20)))

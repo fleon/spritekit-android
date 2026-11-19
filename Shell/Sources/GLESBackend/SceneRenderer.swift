@@ -643,6 +643,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // scene's.
         let started = MediaTime.source()
         FrameCosts.reset()
+        // Colour glyph pages last drawn from before this frame may be emptied.
+        TextEngine.shared.atlas.nextFrame()
         let list = view.tick(currentTime: frame.time, delta: frame.delta / max(slowdown, 1))
         SceneDump.check(view, at: frame.time)
         noteSceneChange(at: frame.time)
