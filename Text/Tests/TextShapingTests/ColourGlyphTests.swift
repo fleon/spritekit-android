@@ -43,7 +43,7 @@ struct ColourGlyphTests {
     }
 
     static let fonts: [(String, CGFloat)] = [("Montserrat-Black", 20), ("Montserrat-SemiBold", 15), ("KoHo-Bold", 13), ("Montserrat-Black", 31.5)]
-    static let texts = ["😀a", "a😀b👍🏽", "Lv. 8 🐑", "👨‍👩‍👧", "🇯🇵 Japan", "❤️", "#️⃣1"]
+    static let texts = ["😀a", "a😀b👍🏽", "No. 8 🐼", "👨‍👩‍👧", "🇯🇵 Japan", "❤️", "#️⃣1"]
 
     @Test("Lines with emoji: one glyph a sequence, at Core Text's widths")
     func lines() {
@@ -156,15 +156,15 @@ struct ColourGlyphTests {
     static let rects: [FallbackStringDrawingTests.Rect] = [
         FallbackStringDrawingTests.Rect("Montserrat-Black", 15.0, "😀", .left, x: 0.0, y: 0.0, w: 20.0, h: 19.0),
         FallbackStringDrawingTests.Rect("Montserrat-Black", 15.0, "a😀b", .left, x: 0.0, y: 0.0, w: 40.085, h: 19.0),
-        FallbackStringDrawingTests.Rect("Montserrat-Black", 15.0, "Lv. 8 🐑", .left, x: 0.0, y: 0.0, w: 61.66999999999999, h: 19.0),
+        FallbackStringDrawingTests.Rect("Montserrat-Black", 15.0, "No. 8 🐼", .left, x: 0.0, y: 0.0, w: 65.96, h: 19.0),
         FallbackStringDrawingTests.Rect("Montserrat-Black", 15.0, "👨‍👩‍👧 family and 🇯🇵 flags wrap 😀😀😀", .left, x: 0.0, y: 0.0, w: 150.285, h: 38.0),
         FallbackStringDrawingTests.Rect("KoHo-Bold", 20.0, "😀", .left, x: 0.0, y: 0.0, w: 23.0, h: 26.0),
         FallbackStringDrawingTests.Rect("KoHo-Bold", 20.0, "a😀b", .left, x: 0.0, y: 0.0, w: 45.480000000000004, h: 26.0),
-        FallbackStringDrawingTests.Rect("KoHo-Bold", 20.0, "Lv. 8 🐑", .left, x: 0.0, y: 0.0, w: 70.34, h: 26.0),
+        FallbackStringDrawingTests.Rect("KoHo-Bold", 20.0, "No. 8 🐼", .left, x: 0.0, y: 0.0, w: 76.6, h: 26.0),
         FallbackStringDrawingTests.Rect("KoHo-Bold", 20.0, "👨‍👩‍👧 family and 🇯🇵 flags wrap 😀😀😀", .left, x: 0.0, y: 0.0, w: 157.12, h: 78.0),
         FallbackStringDrawingTests.Rect("Montserrat-SemiBold", 13.0, "😀", .left, x: 0.0, y: 0.0, w: 17.0, h: 16.0),
         FallbackStringDrawingTests.Rect("Montserrat-SemiBold", 13.0, "a😀b", .left, x: 0.0, y: 0.0, w: 33.80709353999566, h: 16.0),
-        FallbackStringDrawingTests.Rect("Montserrat-SemiBold", 13.0, "Lv. 8 🐑", .left, x: 0.0, y: 0.0, w: 50.19374476683332, h: 16.0),
+        FallbackStringDrawingTests.Rect("Montserrat-SemiBold", 13.0, "No. 8 🐼", .left, x: 0.0, y: 0.0, w: 54.60223992714152, h: 16.0),
         FallbackStringDrawingTests.Rect("Montserrat-SemiBold", 13.0, "👨‍👩‍👧 family and 🇯🇵 flags wrap 😀😀😀", .left, x: 0.0, y: 0.0, w: 151.1435783000232, h: 32.0),
     ]
 
@@ -188,22 +188,22 @@ struct ColourGlyphTests {
     static let inks: [Emoji] = [
         Emoji("Montserrat-Black", 15.0, "😀", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [4, 3, 23, 22], ink: 59495, colour: 242),
         Emoji("Montserrat-Black", 15.0, "a😀b", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [4, 3, 43, 22], ink: 94440, colour: 242),
-        Emoji("Montserrat-Black", 15.0, "Lv. 8 🐑", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [4, 3, 65, 22], ink: 97156, colour: 0),
+        Emoji("Montserrat-Black", 15.0, "No. 8 🐼", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [4, 4, 69, 22], ink: 122176, colour: 0),
         Emoji("KoHo-Bold", 20.0, "😀", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [4, 6, 26, 28], ink: 79024, colour: 319),
         Emoji("KoHo-Bold", 20.0, "a😀b", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [4, 6, 48, 28], ink: 112377, colour: 319),
-        Emoji("KoHo-Bold", 20.0, "Lv. 8 🐑", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [5, 7, 74, 28], ink: 110267, colour: 0),
+        Emoji("KoHo-Bold", 20.0, "No. 8 🐼", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [5, 8, 80, 28], ink: 143516, colour: 0),
         Emoji("Montserrat-Black", 31.5, "😀", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [5, 6, 35, 36], ink: 169768, colour: 659),
         Emoji("Montserrat-Black", 31.5, "a😀b", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [4, 6, 77, 36], ink: 316172, colour: 659),
-        Emoji("Montserrat-Black", 31.5, "Lv. 8 🐑", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [5, 7, 124, 36], ink: 345532, colour: 0),
+        Emoji("Montserrat-Black", 31.5, "No. 8 🐼", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 1.0, box: [5, 6, 133, 36], ink: 437129, colour: 0),
         Emoji("Montserrat-Black", 15.0, "😀", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [14, 10, 69, 66], ink: 516845, colour: 1941),
         Emoji("Montserrat-Black", 15.0, "a😀b", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [13, 10, 131, 66], ink: 816532, colour: 1941),
-        Emoji("Montserrat-Black", 15.0, "Lv. 8 🐑", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [14, 14, 194, 66], ink: 839063, colour: 0),
+        Emoji("Montserrat-Black", 15.0, "No. 8 🐼", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [14, 10, 207, 66], ink: 1063782, colour: 0),
         Emoji("KoHo-Bold", 20.0, "😀", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [13, 18, 79, 84], ink: 714668, colour: 2652),
         Emoji("KoHo-Bold", 20.0, "a😀b", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [14, 18, 146, 84], ink: 1017758, colour: 2652),
-        Emoji("KoHo-Bold", 20.0, "Lv. 8 🐑", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [15, 23, 221, 83], ink: 1002298, colour: 2),
+        Emoji("KoHo-Bold", 20.0, "No. 8 🐼", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [17, 18, 240, 84], ink: 1302239, colour: 0),
         Emoji("Montserrat-Black", 31.5, "😀", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [12, 17, 107, 112], ink: 1495161, colour: 5494),
         Emoji("Montserrat-Black", 31.5, "a😀b", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [14, 17, 233, 112], ink: 2816203, colour: 5494),
-        Emoji("Montserrat-Black", 31.5, "Lv. 8 🐑", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [17, 22, 370, 111], ink: 3086635, colour: 0),
+        Emoji("Montserrat-Black", 31.5, "No. 8 🐼", CGRect(x: 4.3, y: 3.6, width: 240.0, height: 60.0), scale: 3.0, box: [17, 17, 397, 112], ink: 3907673, colour: 0),
     ]
 
     @Test("Drawn emoji land where UIKit draws them, in their own colours", arguments: inks)
@@ -225,8 +225,8 @@ struct ColourGlyphTests {
         }
         // The baseline's row is UIKit's. The image snaps to whole pixels,
         // where Core Graphics draws it at its fractional place and smears
-        // its faint edges a pixel further (two across, at 1x, for the
-        // sheep's pale wool): a pixel either side, two across at 1x.
+        // its faint edges a pixel further (two across, at 1x, for an
+        // emoji's pale edges): a pixel either side, two across at 1x.
         let across = item.scale == 1 ? 2 : 1
         #expect(abs(box[3] - item.box[3]) <= 1 && abs(box[1] - item.box[1]) <= 1, "rows \(box) against \(item.box)")
         #expect(abs(box[0] - item.box[0]) <= across && abs(box[2] - item.box[2]) <= across, "columns \(box) against \(item.box)")

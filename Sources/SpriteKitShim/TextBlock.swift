@@ -427,10 +427,11 @@ public struct TextBlock {
     /// paragraph cheapest, a justified line costing the cube of how far its
     /// spaces stretch (or squeeze, by up to a fifth) for its width, a line
     /// of one word costing more the emptier it is, steeply, and the last
-    /// line nothing. Fitted to TextKit 2's breaks over 6,505 layouts (four
-    /// faces, five sizes, nine sentences, widths from 90 to 300 points) on
-    /// Catalyst, it matches 97% of them exactly, where breaking line by line
-    /// matched 72%. Nil where a word is wider than the line, which is
+    /// line nothing. Fitted to TextKit 2's breaks on Catalyst, and checked
+    /// over 6,500 layouts where every word fits (four faces, five sizes,
+    /// nine sentences, six of them not seen while fitting, widths from 90
+    /// to 300 points), it matches 98% of them exactly, where breaking line
+    /// by line matched 78%. Nil where a word is wider than the line, which is
     /// broken by character as before.
     private static func balancedBreaks(
         starts: [Int], count: Int, maxWidth: CGFloat,
