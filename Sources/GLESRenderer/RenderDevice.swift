@@ -116,6 +116,37 @@ public final class ResourceCache {
     /// turned over where they decoded rather than as they upload.
     public var pageRowsBottomFirst = false
 
+    /// While set, a packed page that isn't decoded yet doesn't hold the
+    /// frame for its decode: `pageIsReady` says whether `pageSource` would
+    /// hand it over at once, and if not `pageWanted` starts it and the
+    /// texture's name is 0 this time, its draws left out of the frame until
+    /// it's in (`deferredPages` counts them). Set for the frame on screen
+    /// where pages decode in software (ASTC on a GPU without it: seconds a
+    /// page on an emulator); a snapshot or film, kept as drawn, waits.
+    public var defersPages = false
+    public var pageIsReady: ((Int) -> Bool)?
+    public var pageWanted: ((Int) -> Void)?
+    /// Textures handed out as 0 for a page still decoding, since the cache
+    /// was made: a rasterized node that drew one keeps no pixels of it.
+    public private(set) var deferredPages = 0
+
+    /// Whether the frame on screen leaves out pages still decoding: only
+    /// where they decode in software, and only in play. A fixed frame step
+    /// (`-FixedFrameStep`, a capture or parity sweep) or a held media clock
+    /// (work off the main thread being waited for) means every still is
+    /// taken complete, so its pages are waited for as before.
+    public static func defersPages(decodesInSoftware: Bool, fixedFrameStep: TimeInterval?, clockHeld: Bool) -> Bool {
+        decodesInSoftware && fixedFrameStep == nil && !clockHeld
+    }
+
+    /// Whether `page` is left out of this draw while it decodes.
+    private func deferring(_ page: Int) -> Bool {
+        guard defersPages, let ready = pageIsReady, !ready(page) else { return false }
+        pageWanted?(page)
+        deferredPages += 1
+        return true
+    }
+
     /// A page decoded ahead of its first draw (`SKTexture.preload`) and not
     /// uploaded yet, taken for `uploadAhead`.
     public var pageAhead: (() -> (page: Int, image: PageImage)?)?
@@ -150,6 +181,7 @@ public final class ResourceCache {
                 uploadAhead(while: { true }, finishingOnly: true)
                 if let existing = pageNames[page] { return existing }
             }
+            if deferring(page) { return 0 }
             let name = uploadPage(pageSource?(page), page: page)
             // A page the index marks as one whole tiling image may wrap.
             // A shader that reads one as a sphere's surface and wraps
@@ -249,7 +281,10 @@ public final class ResourceCache {
         // phone, and a scene may ask for several slices off several pages.
         // A compressed page can't be read that way (it can't be a
         // framebuffer's attachment); its blocks are copied instead, below.
+        let deferredBefore = deferredPages
         let pageName = name(for: texture)
+        // Its page still decoding: nothing to cut out of yet.
+        if deferredPages != deferredBefore { return 0 }
         let unit = entry.textureRect
         if !compressedPages.contains(entry.page) {
             let copied = device.copyRegion(
@@ -265,7 +300,10 @@ public final class ResourceCache {
             }
         }
         // A page reads once for the slices cut from it in a row.
-        if lastPage?.number != entry.page { lastPage = pageSource?(entry.page).map { (entry.page, $0) } }
+        if lastPage?.number != entry.page {
+            if deferring(entry.page) { return 0 }
+            lastPage = pageSource?(entry.page).map { (entry.page, $0) }
+        }
         guard let source = lastPage?.image else { return name(for: texture) }
         let x0 = max(0, Int(entry.rect.minX.rounded())), y0 = max(0, Int(entry.rect.minY.rounded()))
         let width = min(Int(entry.rect.width.rounded()), source.width - x0)
@@ -322,6 +360,7 @@ public final class ResourceCache {
         let mipped = AssetIndex.shared.map { page < $0.pages.count && $0.pages[page].levels > 1 } == true
         guard mipped else { return name(for: texture) }
         if let existing = plainPages[page] { return existing }
+        if deferring(page) { return 0 }
         guard let source = pageSource?(page) else { return name(for: texture) }
         var name: UInt32 = 0
         if let compressed = source.compressed, device.supportsASTC {

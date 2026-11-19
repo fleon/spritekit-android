@@ -2,6 +2,7 @@
 import CoreText
 import Foundation
 import SpriteKit
+import CTextShaping
 import SpriteKitShim
 import Testing
 @testable import TextShaping
@@ -93,6 +94,8 @@ struct ColourGlyphTests {
 
     @Test("Each kind of colour data gives an image: strikes (CBDT, sbix) and COLR layers")
     func kinds() throws {
+        // The engine installs the PNG decoder strikes are decoded with.
+        _ = Fonts.engine
         // ChromaCheck's test fonts: glyph 1 a square of one colour each.
         for (file, red) in [("chromacheck-cbdt", 100), ("chromacheck-colr", 200), ("chromacheck-sbix", 150)] {
             let face = try FaceHandle(file: FontFile(path: Fonts.directory + "/" + file + ".ttf"), size: 32, instance: nil)
@@ -110,8 +113,29 @@ struct ColourGlyphTests {
         #expect(!plain.hasColourGlyphs)
     }
 
+    @Test("A glyph the nearest strike leaves out comes from a larger one")
+    func missingStrike() throws {
+        _ = Fonts.engine
+        // Apple Color Emoji's 20-pixel strike leaves out some glyphs its
+        // larger strikes have (437 among them).
+        let face = try FaceHandle(file: FontFile(path: "/System/Library/Fonts/Apple Color Emoji.ttc"), size: 16, instance: nil)
+        let hbFace = try #require(face.exactFont.flatMap { hb_font_get_face($0) })
+        func hasPNG(_ glyph: UInt32, ppem: UInt32) -> Bool {
+            let font = hb_font_create(hbFace)!
+            defer { hb_font_destroy(font) }
+            hb_font_set_ppem(font, ppem, ppem)
+            let blob = hb_ot_color_glyph_reference_png(font, glyph)!
+            defer { hb_blob_destroy(blob) }
+            return hb_blob_get_length(blob) > 0
+        }
+        let left = try #require((1 ..< 3000).lazy.map(UInt32.init).first { !hasPNG($0, ppem: 20) && hasPNG($0, ppem: 160) })
+        let image = try #require(face.colourImage(left, pixels: 20), "glyph \(left)")
+        #expect(image.width == 20 && stride(from: 3, to: image.pixels.count, by: 4).contains { image.pixels[$0] > 0 })
+    }
+
     @Test("A colour glyph goes onto an RGBA page, once a size")
     func atlas() throws {
+        _ = Fonts.engine
         let library = FontLibrary()
         let atlas = GlyphAtlas(pageSize: 256, library: library)
         let name = try #require(try library.register(path: Fonts.directory + "/chromacheck-colr.ttf").last)
@@ -224,6 +248,56 @@ struct ColourGlyphTests {
         #expect(white == black && white == faint)
         let clear = try draw(SpriteKitShim.SKColor(white: 1, alpha: 0))
         #expect(clear.allSatisfy { $0 == 0 })
+    }
+}
+#endif
+
+#if canImport(CoreText) && os(macOS)
+@Suite("Colour pages as a cache") struct ColourPageEvictionTests {
+    /// A tiny atlas: 32-pixel colour pages, one 24-pixel glyph each.
+    static func atlas(limit: Int) throws -> (GlyphAtlas, FontKey) {
+        _ = Fonts.engine
+        let library = FontLibrary()
+        let atlas = GlyphAtlas(pageSize: 64, colourPageSize: 32, library: library)
+        atlas.colourPageLimit = limit
+        let name = try #require(try library.register(path: Fonts.directory + "/chromacheck-colr.ttf").last)
+        return (atlas, FontKey(name: name, size: 32))
+    }
+
+    @Test("Past the limit, the least recently drawn page is emptied for new glyphs")
+    func evicts() throws {
+        let (atlas, font) = try Self.atlas(limit: 2)
+        let a = try #require(atlas.colourGlyph(1, font: font, pixels: 24))
+        atlas.nextFrame()
+        let b = try #require(atlas.colourGlyph(1, font: font, pixels: 25))
+        atlas.nextFrame()
+        // a drawn again: b is now the least recently drawn.
+        _ = atlas.colourGlyph(1, font: font, pixels: 24)
+        atlas.nextFrame()
+        let epoch = atlas.colourEpoch
+        let c = try #require(atlas.colourGlyph(1, font: font, pixels: 26))
+        #expect(atlas.colourPages.count == 2, "no page past the limit")
+        #expect(c.page == b.page && a.page != b.page, "b's page emptied for c")
+        #expect(atlas.colourEpoch == epoch + 1)
+        // a drawn this frame too, then b again: both pages are in use this
+        // frame, so b goes onto a page past the limit.
+        #expect(atlas.colourGlyph(1, font: font, pixels: 24) == a, "a kept its place")
+        let again = try #require(atlas.colourGlyph(1, font: font, pixels: 25))
+        #expect(atlas.colourPages.count == 3 && again.page == 2)
+    }
+
+    @Test("A page drawn from this frame is never emptied under it")
+    func keepsCurrent() throws {
+        let (atlas, font) = try Self.atlas(limit: 1)
+        let a = try #require(atlas.colourGlyph(1, font: font, pixels: 24))
+        let b = try #require(atlas.colourGlyph(1, font: font, pixels: 25))
+        #expect(a.page != b.page && atlas.colourPages.count == 2, "a page past the limit rather than a's emptied")
+        // Touched by a caller drawing what it looked up before.
+        atlas.nextFrame()
+        atlas.touchColourPages([a.page])
+        let c = try #require(atlas.colourGlyph(1, font: font, pixels: 26))
+        #expect(c.page == b.page, "the untouched page is the one emptied")
+        #expect(atlas.colourGlyph(1, font: font, pixels: 24) == a)
     }
 }
 #endif
