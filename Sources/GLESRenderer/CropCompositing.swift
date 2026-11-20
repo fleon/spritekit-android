@@ -9,15 +9,22 @@ import SpriteKitShim
 /// nothing, which the stencil does exactly (`maskFragmentShader`). A shape
 /// node as the mask does not: its fill's alpha passes through (a fill at
 /// 0.3 leaves 0.3 of the contents), and its edge is soft, about 2.5 pixels
-/// on average, though a shape drawn on its own has a hard one. So a crop
-/// whose mask holds a shape is drawn into a target of its own and
-/// multiplied by the mask's coverage (`cropCompositeFragmentShader`).
+/// on average, though a shape drawn on its own has a hard one. A shape
+/// anywhere in the crop, in its mask's tree (even hidden, under a hidden
+/// node or at alpha 0) or in its contents, does the same for a sprite
+/// mask: a gradient sprite then fades the contents rather than cutting
+/// them (`Tools/ShapeProbe/crop-masks.sh`, on screen; `texture(from:)`
+/// crops otherwise). `DrawList` gives such a mask a shape that draws
+/// nothing, to say so. So a crop whose mask holds a shape is
+/// drawn into a target of its own and multiplied by the mask's coverage
+/// (`cropCompositeFragmentShader`).
 public enum CropCompositing {
     public enum Mode: String, Sendable {
         /// Every crop through the stencil, shape masks cut at half coverage.
         case stencil
         /// Offscreen only where a shape mask would visibly differ: a fill
-        /// that isn't opaque, or a stroke (its soft edge multiplies in).
+        /// that isn't opaque, a stroke (its soft edge multiplies in), or a
+        /// sprite beside it (its alpha multiplies in).
         case hybrid
         /// Offscreen for every crop whose mask holds a shape: Apple's soft
         /// edge everywhere.
@@ -32,6 +39,7 @@ public enum CropCompositing {
         var shapes: [DrawList.Shape] = []
         guard collectShapes(mask, into: &shapes), !shapes.isEmpty else { return false }
         if mode == .composited { return true }
+        if mask.contains(where: { if case .batches = $0 { return true }; return false }) { return true }
         return shapes.contains { shape in
             let fills = shape.fillColor.alpha > 0
             let strokes = shape.lineWidth > 0 && shape.strokeColor.alpha > 0

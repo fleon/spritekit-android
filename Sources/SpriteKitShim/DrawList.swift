@@ -146,6 +146,11 @@ public struct DrawList {
 
     public init() {}
 
+    /// Whether `node` or any node under it, drawn or not, is a shape.
+    static func holdsShape(_ node: SKNode) -> Bool {
+        node is SKShapeNode || node.children.contains(where: holdsShape)
+    }
+
     /// Flattens a subtree in SpriteKit's draw order.
     ///
     /// That orders **every** node in the scene by its accumulated zPosition,
@@ -368,6 +373,17 @@ public struct DrawList {
             var mask: [(CGFloat, Command)] = []
             if let maskNode = crop.maskNode {
                 collect(maskNode, parentTransform: transform, parentAlpha: 1, parentZ: 0, into: &mask)
+                // A shape anywhere in the crop, its mask's tree (even
+                // hidden or clear) or its contents, makes SpriteKit multiply
+                // by the whole mask, its sprites' alpha included
+                // (`Tools/ShapeProbe/crop-masks.sh`). A mask that holds no
+                // shape of its own says so with one that draws nothing.
+                if Self.holdsShape(maskNode) || crop.children.contains(where: Self.holdsShape), !mask.contains(where: { if case .shape = $0.1 { return true }; return false }) {
+                    mask.append((0, .shape(Shape(
+                        transform: transform, path: nil, fillColor: .clear, strokeColor: .clear,
+                        lineWidth: 0, lineCap: .butt, lineJoin: .miter, alpha: 0
+                    ))))
+                }
             }
             let contents = children(of: node, transform: transform, alpha: alpha, z: 0, cull: cull)
             entries.append((z, Command.crop(Crop(
