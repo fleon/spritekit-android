@@ -129,6 +129,10 @@ final class CropCompositingTests: XCTestCase {
             XCTAssertTrue(CropCompositing.composites(crop.mask, mode: .hybrid), name)
             XCTAssertNil(maskShape(crop.mask)?.path, "\(name): the shape that stands in draws nothing")
         }
+        let shaped = spriteMaskCrop(beside: nil)
+        shaped.addChild(SKShapeNode(rect: CGRect(x: 0, y: 0, width: 4, height: 4)))
+        let inContents = try XCTUnwrap(findCrop(SpriteBatcher().passes(for: list { $0.addChild(shaped) })))
+        XCTAssertTrue(CropCompositing.composites(inContents.mask, mode: .composited), "a shape in the contents")
         let alone = try XCTUnwrap(findCrop(SpriteBatcher().passes(for: list { $0.addChild(spriteMaskCrop(beside: nil)) })))
         XCTAssertFalse(CropCompositing.composites(alone.mask, mode: .composited), "sprites alone clip, all or nothing")
         XCTAssertNil(maskShape(alone.mask))

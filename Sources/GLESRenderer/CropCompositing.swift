@@ -10,10 +10,12 @@ import SpriteKitShim
 /// node as the mask does not: its fill's alpha passes through (a fill at
 /// 0.3 leaves 0.3 of the contents), and its edge is soft, about 2.5 pixels
 /// on average, though a shape drawn on its own has a hard one. A shape
-/// anywhere in the mask's tree, even hidden, under a hidden node or at
-/// alpha 0, does the same for the sprites beside it: a gradient sprite
-/// then fades the contents rather than cutting them (`DrawList` keeps a
-/// shape that draws nothing for it). So a crop whose mask holds a shape is
+/// anywhere in the crop, in its mask's tree (even hidden, under a hidden
+/// node or at alpha 0) or in its contents, does the same for a sprite
+/// mask: a gradient sprite then fades the contents rather than cutting
+/// them (`Tools/ShapeProbe/crop-masks.sh`, on screen; `texture(from:)`
+/// crops otherwise). `DrawList` gives such a mask a shape that draws
+/// nothing, to say so. So a crop whose mask holds a shape is
 /// drawn into a target of its own and multiplied by the mask's coverage
 /// (`cropCompositeFragmentShader`).
 public enum CropCompositing {

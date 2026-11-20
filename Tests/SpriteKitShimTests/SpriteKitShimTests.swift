@@ -116,6 +116,24 @@ struct ActionTests {
         #expect(abs(node.position.x - 100) < 0.0001)
     }
 
+    @Test("A crop's mask runs its actions with the crop, paused when it is")
+    func cropMaskActions() {
+        let parent = SKNode()
+        let crop = SKCropNode()
+        let mask = SKNode()
+        let edge = SKSpriteNode(color: .white, size: CGSize(width: 4, height: 4))
+        mask.addChild(edge)
+        crop.maskNode = mask
+        parent.addChild(crop)
+        edge.run(.fadeAlpha(to: 0, duration: 0.2))
+        crop.isPaused = true
+        run(parent, seconds: 0.3)
+        #expect(edge.alpha == 1)
+        crop.isPaused = false
+        run(parent, seconds: 0.3)
+        #expect(edge.alpha == 0)
+    }
+
     @Test("A sequence runs its steps in order and finishes")
     func sequence() {
         let node = SKNode()

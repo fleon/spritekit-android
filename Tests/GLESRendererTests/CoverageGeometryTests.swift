@@ -143,16 +143,21 @@ final class CoverageGeometryTests: XCTestCase {
         let mask = path.insetBy(dx: -2, dy: -2)
         let map = CoverageGeometry.fillMap(mask: mask, path: path)
         func fill(_ u: Float, _ v: Float) -> SIMD2<Float> { SIMD2(map.x + u * map.z, map.y + v * map.w) }
-        // The mask's top-left corner is 2 points beyond the path's.
+        // The mask's top-left corner (its row 0) is 2 points beyond the
+        // path's, which is the texture's top: v 1, as rows are stored
+        // bottom first.
         XCTAssertEqual(fill(0, 0).x, -0.02, accuracy: 1e-6)
-        XCTAssertEqual(fill(0, 0).y, -0.04, accuracy: 1e-6)
-        // Its bottom-right, 2 points beyond the path's bottom-right.
+        XCTAssertEqual(fill(0, 0).y, 1.04, accuracy: 1e-6)
+        // Its bottom-right, 2 points beyond the path's bottom-right: v 0.
         XCTAssertEqual(fill(1, 1).x, 1.02, accuracy: 1e-6)
-        XCTAssertEqual(fill(1, 1).y, 1.04, accuracy: 1e-6)
-        // The path's own top-left is the texture's (0, 0).
+        XCTAssertEqual(fill(1, 1).y, -0.04, accuracy: 1e-6)
+        // The path's own top-left is the texture's top-left, (0, 1).
         let u = Float((path.minX - mask.minX) / mask.width), v = Float((mask.maxY - path.maxY) / mask.height)
         XCTAssertEqual(fill(u, v).x, 0, accuracy: 1e-6)
-        XCTAssertEqual(fill(u, v).y, 0, accuracy: 1e-6)
+        XCTAssertEqual(fill(u, v).y, 1, accuracy: 1e-6)
+        // As a sprite samples it: its bottom edge at v 0.
+        let bottom = Float((mask.maxY - path.minY) / mask.height)
+        XCTAssertEqual(fill(u, bottom).y, 0, accuracy: 1e-6)
         XCTAssertEqual(CoverageGeometry.fillMap(mask: mask, path: .zero), SIMD4(0, 0, 0, 0))
     }
 

@@ -324,6 +324,9 @@ open class SKNode {
         let speed = self.speed * speedAbove
         // A child may remove itself while ticking, so walk a snapshot.
         for child in Array(children) { child.tickTree(delta, pausedAbove: paused, speedAbove: speed) }
+        // A crop's mask isn't among its children, but its actions run with
+        // the crop's, as on Apple: a mask's edge fading in as a list scrolls.
+        (self as? SKCropNode)?.maskNode?.tickTree(delta, pausedAbove: paused, speedAbove: speed)
     }
 }
 

@@ -92,45 +92,6 @@ final class Probe {
         let gr = cropped(gradient)
         let grow = gr[gr.count / 2]
         report("PROBE crop gradient sprite, every 10th px: " + stride(from: 0, to: grow.count, by: 10).map { String(format: "%.2f", grow[$0]) }.joined(separator: " "))
-        // The same gradient inside a plain node, alone and beside a hidden shape.
-        func gradientSprite() -> SKSpriteNode {
-            let sprite = SKSpriteNode(texture: gradient.texture, size: CGSize(width: 40, height: 40))
-            sprite.position = CGPoint(x: 20, y: 20)
-            return sprite
-        }
-        let container = SKNode()
-        container.addChild(gradientSprite())
-        let cr = cropped(container)
-        report("PROBE crop gradient sprite in a node, every 10th px: " + stride(from: 0, to: cr[cr.count / 2].count, by: 10).map { String(format: "%.2f", cr[cr.count / 2][$0]) }.joined(separator: " "))
-        let withShape = SKNode()
-        withShape.addChild(gradientSprite())
-        let hiddenShape = SKShapeNode(rect: CGRect(x: 0, y: 0, width: 10, height: 10))
-        hiddenShape.isHidden = true
-        withShape.addChild(hiddenShape)
-        let hr = cropped(withShape)
-        report("PROBE crop gradient sprite beside a hidden shape, every 10th px: " + stride(from: 0, to: hr[hr.count / 2].count, by: 10).map { String(format: "%.2f", hr[hr.count / 2][$0]) }.joined(separator: " "))
-        let twoSprites = SKNode()
-        twoSprites.addChild(gradientSprite())
-        let solid = SKSpriteNode(color: .white, size: CGSize(width: 4, height: 4))
-        solid.position = CGPoint(x: -100, y: -100)
-        twoSprites.addChild(solid)
-        let tr = cropped(twoSprites)
-        report("PROBE crop gradient sprite beside a solid sprite, every 10th px: " + stride(from: 0, to: tr[tr.count / 2].count, by: 10).map { String(format: "%.2f", tr[tr.count / 2][$0]) }.joined(separator: " "))
-        let hiddenParent = SKNode()
-        hiddenParent.addChild(gradientSprite())
-        let hiddenGroup = SKNode()
-        hiddenGroup.isHidden = true
-        hiddenGroup.addChild(SKShapeNode(rect: CGRect(x: 0, y: 0, width: 10, height: 10)))
-        hiddenParent.addChild(hiddenGroup)
-        let pr = cropped(hiddenParent)
-        report("PROBE crop gradient sprite beside a shape in a hidden node, every 10th px: " + stride(from: 0, to: pr[pr.count / 2].count, by: 10).map { String(format: "%.2f", pr[pr.count / 2][$0]) }.joined(separator: " "))
-        let clearShape = SKNode()
-        clearShape.addChild(gradientSprite())
-        let faded = SKShapeNode(rect: CGRect(x: 0, y: 0, width: 10, height: 10))
-        faded.alpha = 0
-        clearShape.addChild(faded)
-        let fr = cropped(clearShape)
-        report("PROBE crop gradient sprite beside a shape at alpha 0, every 10th px: " + stride(from: 0, to: fr[fr.count / 2].count, by: 10).map { String(format: "%.2f", fr[fr.count / 2][$0]) }.joined(separator: " "))
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("probe.txt")
         try? probeOut.write(to: url, atomically: true, encoding: .utf8)
         exit(0)
