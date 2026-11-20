@@ -233,7 +233,10 @@ public final class RenderTargetPool {
         stencil: Bool
     ) -> (target: RenderTargetHandle, needsRedraw: Bool)? {
         if let existing = kept[key] {
-            if existing.target.width == width, existing.target.height == height {
+            // Its size, and a stencil only when asked for one (its contents
+            // came to hold a crop, or no longer do).
+            if existing.target.width == width, existing.target.height == height,
+               (existing.target.stencil != 0) == stencil {
                 let fresh = existing.generation == generation && existing.contents == contents
                 return (existing.target, !fresh)
             }
