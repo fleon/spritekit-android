@@ -1,5 +1,8 @@
 # Contributing
 
+Using an AI coding agent? `AGENTS.md` has the conventions every game on this
+runtime shares; point your game's own agent file at it.
+
 Thanks for helping. Bug reports, missing APIs, fixes and docs are all
 welcome, from a one-line typo fix to a new node type.
 
