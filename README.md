@@ -51,7 +51,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 | Module | What it saves you writing |
 | --- | --- |
 | `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, seeded randomness you can replay, a launch-argument reader for debug switches |
-| `PlatformSprite` | A texture cache and sprite helpers, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, safe-area layout, localization, debug markers |
+| `PlatformSprite` | A texture cache and sprite helpers, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
 | `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
 | `PlatformGameCenter` | Sign-in, achievements and leaderboards that catch up from saved progress (GameKit, or Play Games) |
@@ -399,6 +399,13 @@ decides, it hands in:
   (`DisplayCorners`), a camera's occlusion (iOS 27.1's `reservedRegions`)
   and where round buttons stand in the corners or a rail, by the game's
   `SceneLayout.Metrics`.
+- **Launch splash** (`StudioSplashScene`): a studio's logo over a footer
+  line or two, held at least a minimum time and until the game reports
+  what it waits for `ready` (a game service's first answer, a feed), never
+  past a maximum, then `onReady`; `present(_:in:)` crossfades into the
+  game's first scene. The logo's asset, the footer's text and font, the
+  colours and the timings are the game's (`StudioSplashScene.Style`), so
+  nothing here names a studio. `StudioSplashGate` is its timing alone.
 - **Localization** (`Localizer`): the player's pick, else the device's
   language among the game's (`LocalizationLanguage`), its strings read from
   the bundle's `.lproj` with a content table keyed by its text; on Android
