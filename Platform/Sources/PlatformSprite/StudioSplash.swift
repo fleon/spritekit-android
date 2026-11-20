@@ -49,6 +49,32 @@ public struct StudioSplashGate: Equatable, Sendable {
     }
 }
 
+/// How a launch splash sizes its logo, footer text, insets and spacing.
+public enum StudioSplashSizing: Equatable, Sendable {
+    /// The iPhone 16 Pro's screen in points, upright: what a scaled splash is
+    /// laid out for unless the game says otherwise.
+    public static let iPhone16Pro = CGSize(width: 393, height: 852)
+
+    /// Laid out for `design` (turned to match the view when it's landscape)
+    /// and scaled to fit the view, so the splash keeps its proportions on a
+    /// phone, a tablet, a window or a TV.
+    case scaled(design: CGSize = StudioSplashSizing.iPhone16Pro)
+    /// Sizes as given, in points, whatever the view's size.
+    case fixed
+
+    /// The scale for a view of `size`: the largest at which the design fits
+    /// it, so nothing crops; 1 when fixed, or for an empty size or design.
+    public func scale(for size: CGSize) -> CGFloat {
+        guard case .scaled(var design) = self,
+              size.width > 0, size.height > 0, design.width > 0, design.height > 0
+        else { return 1 }
+        if (size.width > size.height) != (design.width > design.height) {
+            design = CGSize(width: design.height, height: design.width)
+        }
+        return min(size.width / design.width, size.height / design.height)
+    }
+}
+
 #if canImport(UIKit) || !canImport(Darwin)
 
 /// A studio's splash at launch: a logo over a footer line or two on a plain
@@ -69,11 +95,15 @@ public struct StudioSplashGate: Equatable, Sendable {
 ///     splash.ready("gameCenter")
 ///
 /// It lays itself out for any size, upright or turned: the logo centred, the
-/// footer above the bottom of the safe area. Call `layoutFooter()` when the
-/// view's safe area changes (`viewDidLayoutSubviews`).
+/// footer above the bottom of the safe area. By default its sizes are for an
+/// iPhone 16 Pro and scale with the view (`Style.sizing`). Call
+/// `layoutFooter()` when the view's safe area changes (`viewDidLayoutSubviews`).
 public final class StudioSplashScene: SKScene {
+    public typealias Sizing = StudioSplashSizing
+
     public struct Style {
-        /// The logo's image asset (`sprite(_:)`), shown at its own size.
+        /// The logo's image asset (`sprite(_:)`), at its own size on the
+        /// design (`sizing`).
         public var logo: String
         /// The footer's lines, top to bottom.
         public var footer: [String]
@@ -92,6 +122,9 @@ public final class StudioSplashScene: SKScene {
         public var maximumDuration: TimeInterval
         /// The crossfade into the first scene (`present(_:in:)`).
         public var fadeDuration: TimeInterval
+        /// Whether the logo, font size, inset and spacing scale with the view
+        /// (the default) or stay as given.
+        public var sizing: Sizing
 
         public init(
             logo: String,
@@ -104,7 +137,8 @@ public final class StudioSplashScene: SKScene {
             footerLineSpacing: CGFloat = 16,
             minimumDuration: TimeInterval = 1,
             maximumDuration: TimeInterval = 3,
-            fadeDuration: TimeInterval = 1
+            fadeDuration: TimeInterval = 1,
+            sizing: Sizing = .scaled()
         ) {
             self.logo = logo
             self.footer = footer
@@ -117,6 +151,7 @@ public final class StudioSplashScene: SKScene {
             self.minimumDuration = minimumDuration
             self.maximumDuration = maximumDuration
             self.fadeDuration = fadeDuration
+            self.sizing = sizing
         }
     }
 
@@ -130,6 +165,7 @@ public final class StudioSplashScene: SKScene {
     public let style: Style
 
     private var gate: StudioSplashGate
+    private var logoNode: SKSpriteNode?
     private let footerNode = SKNode()
     private var isConfigured = false
     /// Whether `startLoading()` has run (it runs once).
@@ -155,16 +191,16 @@ public final class StudioSplashScene: SKScene {
         let logo = sprite(style.logo)
         logo.zPosition = 1
         addChild(logo)
+        logoNode = logo
 
         footerNode.zPosition = 1
         addChild(footerNode)
-        for (index, text) in style.footer.enumerated() {
+        // Font size and line positions come from `layoutFooter()`.
+        for text in style.footer {
             let label = SKLabelNode(text: text)
             label.fontName = style.fontName
-            label.fontSize = style.fontSize
             label.fontColor = style.textColor
             label.verticalAlignmentMode = .bottom
-            label.position = CGPoint(x: 0, y: CGFloat(style.footer.count - 1 - index) * style.footerLineSpacing)
             footerNode.addChild(label)
         }
         layoutFooter()
@@ -174,11 +210,21 @@ public final class StudioSplashScene: SKScene {
         layoutFooter()
     }
 
-    /// Keeps the footer above the bottom of the safe area.
+    /// Scales the logo and footer for the view's size (`Style.sizing`) and
+    /// keeps the footer above the bottom of the safe area.
     public func layoutFooter() {
+        let scale = style.sizing.scale(for: size)
+        logoNode?.setScale(scale)
+        // The font size scales rather than the node, so the text renders
+        // sharp at its new size.
+        let lines = footerNode.children.compactMap { $0 as? SKLabelNode }
+        for (index, label) in lines.enumerated() {
+            label.fontSize = style.fontSize * scale
+            label.position = CGPoint(x: 0, y: CGFloat(lines.count - 1 - index) * style.footerLineSpacing * scale)
+        }
         footerNode.position = CGPoint(
             x: 0,
-            y: -size.height / 2 + (view?.safeAreaInsets.bottom ?? 0) + style.footerBottomInset
+            y: -size.height / 2 + (view?.safeAreaInsets.bottom ?? 0) + style.footerBottomInset * scale
         )
     }
 
