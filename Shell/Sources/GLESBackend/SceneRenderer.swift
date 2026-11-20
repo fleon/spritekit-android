@@ -1135,6 +1135,10 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             visible: plan.bounds, fragSpace: plan.contentsSpace, density: plan.density
         )
         bindTarget()
+        // Clear again, not as the contents left it: a crop or effect drawn
+        // in them puts the clear colour back to opaque, which would leave
+        // the mask covering its whole target.
+        glClearColor(0, 0, 0, 0)
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
         drawMaskCoverage(mask, projection: plan.projection, time: time)
 
