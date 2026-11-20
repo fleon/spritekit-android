@@ -925,6 +925,9 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             )
         }
 
+        // A crop in the contents clips through the stencil of the target
+        // it's drawn in: this one's, so it needs one (`needStencil`).
+        let stencil = SpriteBatcher.Pass.needStencil(contents)
         let handle: RenderTargetHandle
         var needsRedraw = true
         if rasterize {
@@ -933,7 +936,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             guard let kept = targets.kept(
                 for: key,
                 width: texture.widthInPixels, height: texture.heightInPixels,
-                generation: generation, contents: digest, stencil: false
+                generation: generation, contents: digest, stencil: stencil
             ) else {
                 draw(contents, projection: projection, time: time)
                 return
@@ -945,7 +948,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             if needsRedraw { targets.markDrawn(key, generation: generation, contents: digest) }
         } else {
             guard let transient = targets.transient(
-                width: texture.widthInPixels, height: texture.heightInPixels, stencil: false
+                width: texture.widthInPixels, height: texture.heightInPixels, stencil: stencil
             ) else {
                 draw(contents, projection: projection, time: time)
                 return
@@ -957,11 +960,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             effectsDrawn += 1
             let outer = target
             let outerDepth = cropDepth
-            // A crop's stencil belongs to the target that holds it; an
-            // offscreen target has none, so the clip is suspended for the
-            // contents and restored after. Nothing in the game crops across
-            // an effect boundary, and clipping again inside the texture
-            // would need the mask in the texture's own coordinates.
+            // A crop's stencil belongs to the target that holds it: a crop
+            // around the effect is suspended for its contents and restored
+            // after (nothing in a game crops across an effect boundary, and
+            // clipping again inside the texture would need the mask in the
+            // texture's own coordinates), and a crop inside it clips through
+            // this target's own stencil, cleared below.
             if outerDepth > 0 { glDisable(GLenum(GL_STENCIL_TEST)) }
             cropDepth = 0
 
@@ -974,8 +978,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             )
             bindTarget()
             RenderPoison.fillTarget()
-            glClearColor(0, 0, 0, 0)
-            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+            clearOffscreen(stencil: stencil)
             let deferredBefore = cache.deferredPages
             draw(contents, projection: texture.projection, time: time)
             // A page left out while it decodes: the kept pixels lack it, so
@@ -1180,6 +1183,20 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 continue                // never composited (`CropCompositing`)
             }
         }
+    }
+
+    /// An offscreen target cleared to transparent before its contents draw,
+    /// and its stencil to zero when it has one, so the crops in them start
+    /// from no clip (`RenderPoison` fills both).
+    private func clearOffscreen(stencil: Bool) {
+        glClearColor(0, 0, 0, 0)
+        guard stencil else {
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+            return
+        }
+        glClearStencil(0)
+        glStencilMask(0xFF)
+        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_STENCIL_BUFFER_BIT))
     }
 
     /// Back in the crops `cropDepth` deep after drawing into a target of
@@ -1404,10 +1421,6 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             : view.contentScaleFactor
         let plan = EffectTexture(bounds: bounds, density: density, maximumSide: device.maximumTextureSide)
 
-        guard let handle = device.createRenderTarget(
-            width: plan.widthInPixels, height: plan.heightInPixels, stencil: false
-        ) else { return nil }
-
         var list = DrawList()
         // SpriteKit draws a snapshot in tree order, whatever the view's
         // `ignoresSiblingOrder` (measured by readback on a Mac).
@@ -1417,6 +1430,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         shapeMeshes.pixelsPerPoint = density
         let passes = batcher.passes(for: list)
         shapeMeshes.pixelsPerPoint = framePixelsPerPoint
+
+        // A stencil when a crop in it clips through one (`needStencil`).
+        let stencil = SpriteBatcher.Pass.needStencil(passes)
+        guard let handle = device.createRenderTarget(
+            width: plan.widthInPixels, height: plan.heightInPixels, stencil: stencil
+        ) else { return nil }
 
         let outer = target
         let outerDepth = cropDepth
@@ -1429,8 +1448,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         bindTarget()
         RenderPoison.fillTarget()
-        glClearColor(0, 0, 0, 0)
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+        clearOffscreen(stencil: stencil)
         // Drawn as it comes: the frame's staged stream may still be read by
         // draws to come.
         draw(passes, projection: plan.projection, time: 0)

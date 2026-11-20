@@ -94,3 +94,19 @@ public enum CropCompositing {
         return CGRect(x: CGFloat(minX), y: CGFloat(minY), width: CGFloat(maxX - minX), height: CGFloat(maxY - minY))
     }
 }
+
+extension SpriteBatcher.Pass {
+    /// Whether an offscreen target that draws `passes` needs a stencil of
+    /// its own: they hold a crop, which clips through the stencil of the
+    /// target it draws in. On a target without one GL passes every stencil
+    /// test, so the crop's contents would draw unclipped: a crop inside an
+    /// `SKEffectNode`, or inside a scene a crossfade draws as one
+    /// translucent picture (`SKView`'s transitions). A nested effect draws
+    /// in a target of its own, which asks the same of its own contents.
+    public static func needStencil(_ passes: [SpriteBatcher.Pass]) -> Bool {
+        passes.contains { pass in
+            if case .crop = pass { return true }
+            return false
+        }
+    }
+}
