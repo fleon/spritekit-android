@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PlatformSprite
 
@@ -54,5 +55,48 @@ struct StudioSplashTests {
         let done12 = gate.ready("somethingElse")
         #expect(!done12)
         #expect(gate.pending == ["gameCenter"])
+    }
+}
+
+/// How much the splash grows or shrinks: laid out for the iPhone 16 Pro
+/// (393 × 852, turned when the view is landscape) and fitted to the view.
+struct StudioSplashScaleTests {
+    @Test("The design's own size is 1")
+    func designSize() {
+        #expect(studioSplashScale(for: CGSize(width: 393, height: 852)) == 1)
+    }
+
+    @Test("A larger phone grows by its tighter side")
+    func phone() {
+        // iPhone 16 Pro Max: 440 / 393 ≈ 1.120, 956 / 852 ≈ 1.122.
+        let scale = studioSplashScale(for: CGSize(width: 440, height: 956))
+        #expect(abs(scale - 440.0 / 393.0) < 0.0001)
+    }
+
+    @Test("An iPad fits by its height, so nothing crops")
+    func iPad() {
+        // iPad Pro 13": 1032 / 393 ≈ 2.63, 1376 / 852 ≈ 1.62.
+        let scale = studioSplashScale(for: CGSize(width: 1032, height: 1376))
+        #expect(abs(scale - 1376.0 / 852.0) < 0.0001)
+    }
+
+    @Test("Landscape turns the design, so a turned view scales as it did upright")
+    func landscape() {
+        let upright = studioSplashScale(for: CGSize(width: 1032, height: 1376))
+        let turned = studioSplashScale(for: CGSize(width: 1376, height: 1032))
+        #expect(upright == turned)
+        #expect(studioSplashScale(for: CGSize(width: 852, height: 393)) == 1)
+    }
+
+    @Test("A TV fits the turned design by its width")
+    func tv() {
+        // 1920 × 1080 against 852 × 393: 2.25 across, 2.75 down.
+        let scale = studioSplashScale(for: CGSize(width: 1920, height: 1080))
+        #expect(abs(scale - 1920.0 / 852.0) < 0.0001)
+    }
+
+    @Test("An empty view leaves sizes as given")
+    func empty() {
+        #expect(studioSplashScale(for: .zero) == 1)
     }
 }

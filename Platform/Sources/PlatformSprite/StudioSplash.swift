@@ -49,6 +49,23 @@ public struct StudioSplashGate: Equatable, Sendable {
     }
 }
 
+/// What a launch splash's sizes are for: the iPhone 16 Pro's screen in
+/// points, upright.
+let studioSplashDesignSize = CGSize(width: 393, height: 852)
+
+/// The scale for a splash in a view of `size`: the largest at which the
+/// design (turned to match a landscape view) fits it, so nothing crops and
+/// the splash keeps its proportions on a phone, a tablet, a window or a TV;
+/// 1 for an empty size.
+func studioSplashScale(for size: CGSize) -> CGFloat {
+    guard size.width > 0, size.height > 0 else { return 1 }
+    var design = studioSplashDesignSize
+    if size.width > size.height {
+        design = CGSize(width: design.height, height: design.width)
+    }
+    return min(size.width / design.width, size.height / design.height)
+}
+
 #if canImport(UIKit) || !canImport(Darwin)
 
 /// A studio's splash at launch: a logo over a footer line or two on a plain
@@ -69,11 +86,14 @@ public struct StudioSplashGate: Equatable, Sendable {
 ///     splash.ready("gameCenter")
 ///
 /// It lays itself out for any size, upright or turned: the logo centred, the
-/// footer above the bottom of the safe area. Call `layoutFooter()` when the
-/// view's safe area changes (`viewDidLayoutSubviews`).
+/// footer above the bottom of the safe area. Its sizes are for an iPhone 16
+/// Pro (393 × 852 points, turned for landscape) and scale to fit the view.
+/// Call `layoutFooter()` when the view's safe area changes
+/// (`viewDidLayoutSubviews`).
 public final class StudioSplashScene: SKScene {
+    /// Every size here is in points on an iPhone 16 Pro, scaled to the view.
     public struct Style {
-        /// The logo's image asset (`sprite(_:)`), shown at its own size.
+        /// The logo's image asset (`sprite(_:)`), at its own size.
         public var logo: String
         /// The footer's lines, top to bottom.
         public var footer: [String]
@@ -130,6 +150,7 @@ public final class StudioSplashScene: SKScene {
     public let style: Style
 
     private var gate: StudioSplashGate
+    private var logoNode: SKSpriteNode?
     private let footerNode = SKNode()
     private var isConfigured = false
     /// Whether `startLoading()` has run (it runs once).
@@ -155,16 +176,16 @@ public final class StudioSplashScene: SKScene {
         let logo = sprite(style.logo)
         logo.zPosition = 1
         addChild(logo)
+        logoNode = logo
 
         footerNode.zPosition = 1
         addChild(footerNode)
-        for (index, text) in style.footer.enumerated() {
+        // Font size and line positions come from `layoutFooter()`.
+        for text in style.footer {
             let label = SKLabelNode(text: text)
             label.fontName = style.fontName
-            label.fontSize = style.fontSize
             label.fontColor = style.textColor
             label.verticalAlignmentMode = .bottom
-            label.position = CGPoint(x: 0, y: CGFloat(style.footer.count - 1 - index) * style.footerLineSpacing)
             footerNode.addChild(label)
         }
         layoutFooter()
@@ -174,11 +195,21 @@ public final class StudioSplashScene: SKScene {
         layoutFooter()
     }
 
-    /// Keeps the footer above the bottom of the safe area.
+    /// Scales the logo and footer from an iPhone 16 Pro to the view and
+    /// keeps the footer above the bottom of the safe area.
     public func layoutFooter() {
+        let scale = studioSplashScale(for: size)
+        logoNode?.setScale(scale)
+        // The font size scales rather than the node, so the text renders
+        // sharp at its new size.
+        let lines = footerNode.children.compactMap { $0 as? SKLabelNode }
+        for (index, label) in lines.enumerated() {
+            label.fontSize = style.fontSize * scale
+            label.position = CGPoint(x: 0, y: CGFloat(lines.count - 1 - index) * style.footerLineSpacing * scale)
+        }
         footerNode.position = CGPoint(
             x: 0,
-            y: -size.height / 2 + (view?.safeAreaInsets.bottom ?? 0) + style.footerBottomInset
+            y: -size.height / 2 + (view?.safeAreaInsets.bottom ?? 0) + style.footerBottomInset * scale
         )
     }
 

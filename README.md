@@ -405,7 +405,10 @@ decides, it hands in:
   past a maximum, then `onReady`; `present(_:in:)` crossfades into the
   game's first scene. The logo's asset, the footer's text and font, the
   colours and the timings are the game's (`StudioSplashScene.Style`), so
-  nothing here names a studio. `StudioSplashGate` is its timing alone.
+  nothing here names a studio. Its sizes are for an iPhone 16 Pro (393 ×
+  852 points, turned for landscape) and scale to fit the view, so the
+  splash keeps its proportions on a phone, a tablet, a window, a TV and
+  Android. `StudioSplashGate` is its timing alone.
 - **Localization** (`Localizer`): the player's pick, else the device's
   language among the game's (`LocalizationLanguage`), its strings read from
   the bundle's `.lproj` with a content table keyed by its text; on Android
