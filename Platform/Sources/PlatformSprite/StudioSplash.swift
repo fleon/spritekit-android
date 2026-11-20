@@ -132,7 +132,8 @@ public final class StudioSplashScene: SKScene {
     private var gate: StudioSplashGate
     private let footerNode = SKNode()
     private var isConfigured = false
-    private var hasStartedLoading = false
+    /// Whether `startLoading()` has run (it runs once).
+    public private(set) var hasStartedLoading = false
 
     public init(size: CGSize, style: Style, waitingFor conditions: Set<String> = []) {
         self.style = style
