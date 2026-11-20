@@ -102,6 +102,38 @@ final class CropCompositingTests: XCTestCase {
         return nil
     }
 
+    /// A gradient sprite as the mask, in a plain node, beside `extra`.
+    @MainActor
+    private func spriteMaskCrop(beside extra: SKNode?) -> SKCropNode {
+        let crop = SKCropNode()
+        let mask = SKNode()
+        mask.addChild(SKSpriteNode(color: .white, size: CGSize(width: 20, height: 20)))
+        if let extra { mask.addChild(extra) }
+        crop.maskNode = mask
+        crop.addChild(SKSpriteNode(color: .red, size: CGSize(width: 30, height: 30)))
+        return crop
+    }
+
+    @MainActor
+    func testAShapeAnywhereInTheMaskMakesItsSpritesMultiply() throws {
+        let hidden = SKShapeNode(rect: CGRect(x: 0, y: 0, width: 10, height: 10))
+        hidden.isHidden = true
+        let clear = SKShapeNode(rect: CGRect(x: 0, y: 0, width: 10, height: 10))
+        clear.alpha = 0
+        let hiddenGroup = SKNode()
+        hiddenGroup.isHidden = true
+        hiddenGroup.addChild(SKShapeNode(rect: CGRect(x: 0, y: 0, width: 10, height: 10)))
+        for (name, extra) in [("hidden", hidden), ("alpha 0", clear), ("under a hidden node", hiddenGroup)] as [(String, SKNode)] {
+            let crop = try XCTUnwrap(findCrop(SpriteBatcher().passes(for: list { $0.addChild(spriteMaskCrop(beside: extra)) })), name)
+            XCTAssertTrue(CropCompositing.composites(crop.mask, mode: .composited), name)
+            XCTAssertTrue(CropCompositing.composites(crop.mask, mode: .hybrid), name)
+            XCTAssertNil(maskShape(crop.mask)?.path, "\(name): the shape that stands in draws nothing")
+        }
+        let alone = try XCTUnwrap(findCrop(SpriteBatcher().passes(for: list { $0.addChild(spriteMaskCrop(beside: nil)) })))
+        XCTAssertFalse(CropCompositing.composites(alone.mask, mode: .composited), "sprites alone clip, all or nothing")
+        XCTAssertNil(maskShape(alone.mask))
+    }
+
     @MainActor
     func testAShapeMaskedCropInsideAnEffectNodeIsCompositedAsOneOutsideIs() throws {
         let at = CGPoint(x: 30, y: 40)

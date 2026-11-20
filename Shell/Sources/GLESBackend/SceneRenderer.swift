@@ -1162,14 +1162,14 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         return true
     }
 
-    /// A composited crop's mask as coverage: its shapes and labels as they
-    /// draw (their colour's alpha included), its sprites through the
-    /// alpha test, all or nothing as SpriteKit clips by them.
+    /// A composited crop's mask as coverage: its shapes, labels and sprites
+    /// as they draw, their alpha included, as SpriteKit multiplies by a
+    /// mask that holds a shape (`CropCompositing`).
     private func drawMaskCoverage(_ passes: [SpriteBatcher.Pass], projection: [Float], time: Float) {
         for pass in passes {
             switch pass {
             case let .batches(batches):
-                for batch in batches { draw(batch, projection: projection, time: time, overrideProgram: maskProgram) }
+                for batch in batches { draw(batch, projection: projection, time: time) }
             case let .coverage(staged):
                 draw(staged, projection: projection, asCoverage: true)
             case let .shape(shape):
