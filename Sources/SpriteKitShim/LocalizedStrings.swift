@@ -30,12 +30,27 @@ import Foundation
 /// The overloads below take the arguments Foundation's takes, `tableName` as
 /// a plain `String`, so a call passing a literal or nothing resolves to them
 /// rather than to Foundation's (`LocalizedStringsTests`).
+/// The languages the player prefers, most preferred first, as Apple's
+/// `Locale.preferredLanguages` answers: what the shell put in `AppleLanguages`
+/// (Android's own list, or a `-AppleLanguages` launch argument). corelibs
+/// Foundation doesn't read `AppleLanguages` on Android, where its
+/// `Locale.preferredLanguages` answers `["en-001"]` whatever the device
+/// speaks, so what speaks the player's language asks this instead.
+public enum PreferredLanguages {
+    public static var current: [String] {
+        if let languages = UserDefaults.standard.stringArray(forKey: "AppleLanguages"), !languages.isEmpty {
+            return languages
+        }
+        return Locale.preferredLanguages
+    }
+}
+
 public enum LocalizedStrings {
     /// The `.lproj` folders the APK has, by name without the extension. Set
     /// by the shell (`ResourceBundle`).
     public nonisolated(unsafe) static var localizations: (() -> [String])?
     /// The device's preferred languages, most preferred first.
-    public nonisolated(unsafe) static var preferredLanguages: () -> [String] = { Locale.preferredLanguages }
+    public nonisolated(unsafe) static var preferredLanguages: () -> [String] = { PreferredLanguages.current }
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var tables: [String: [String: String]] = [:]

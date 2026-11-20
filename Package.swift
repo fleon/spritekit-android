@@ -56,9 +56,12 @@ let package = Package(
         // The renderer that consumes a DrawList. Its pure parts — shader
         // translation, batching decisions — build and test on the Mac; the
         // GL calls themselves are Android-only and come behind them.
+        // PNG's row filters undone in C, so a debug build doesn't spend
+        // seconds an image in unoptimised Swift (`PNGRows`).
+        .target(name: "CPixelRows", path: "Sources/CPixelRows"),
         .target(
             name: "GLESRenderer",
-            dependencies: ["SpriteKitShim", "PlatformServices"],
+            dependencies: ["SpriteKitShim", "PlatformServices", "CPixelRows"],
             path: "Sources/GLESRenderer",
             swiftSettings: [v5, shimDefine]
         ),

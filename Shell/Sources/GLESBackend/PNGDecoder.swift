@@ -1,5 +1,6 @@
 import CZlib
 import Foundation
+import GLESRenderer
 
 /// Decodes the packed art's PNGs to straight RGBA8.
 ///
@@ -104,8 +105,8 @@ public enum PNGDecoder {
         let raw = try inflate(compressed, expecting: expected)
         guard raw.count >= expected else { throw Failure.corrupt("truncated pixel data") }
 
-        var lines = [UInt8](repeating: 0, count: stride * height)
-        try unfilter(raw, into: &lines, stride: stride, height: height, channels: channels)
+        let unfiltered = PNGRows.unfilter(raw, stride: stride, height: height, channels: channels)
+        guard let lines = unfiltered.rows else { throw Failure.corrupt("row \(unfiltered.badRow ?? 0) has an unknown filter") }
 
         return Image(
             width: width,
@@ -156,58 +157,6 @@ public enum PNGDecoder {
             }
         }
         throw Failure.corrupt("inflate would not fit")
-    }
-
-    /// Undoes PNG's per-row filters in place.
-    private static func unfilter(
-        _ raw: [UInt8], into lines: inout [UInt8],
-        stride: Int, height: Int, channels: Int
-    ) throws {
-        // A row at a time through pointers, the filter chosen once a row and
-        // the first pixel's bytes (no left neighbour) apart from the rest:
-        // the byte-at-a-time switch took seconds a page in a debug build,
-        // on the thread that draws. Zeros stand in for the row above the
-        // first, as the format says.
-        let zeros = [UInt8](repeating: 0, count: stride)
-        try raw.withUnsafeBufferPointer { rawBuffer in
-            try zeros.withUnsafeBufferPointer { zeroBuffer in
-                try lines.withUnsafeMutableBufferPointer { lineBuffer in
-                    guard let source = rawBuffer.baseAddress, let out = lineBuffer.baseAddress,
-                          let zero = zeroBuffer.baseAddress else { return }
-                    let lead = min(channels, stride)
-                    for y in 0 ..< height {
-                        let filter = source[y * (stride + 1)]
-                        let input = source + y * (stride + 1) + 1
-                        let row = out + y * stride
-                        let above = y > 0 ? UnsafePointer(row - stride) : zero
-                        switch filter {
-                        case 0:
-                            row.update(from: input, count: stride)
-                        case 1:
-                            for x in 0 ..< lead { row[x] = input[x] }
-                            for x in lead ..< stride { row[x] = input[x] &+ row[x - channels] }
-                        case 2:
-                            for x in 0 ..< stride { row[x] = input[x] &+ above[x] }
-                        case 3:
-                            for x in 0 ..< lead { row[x] = input[x] &+ above[x] >> 1 }
-                            for x in lead ..< stride {
-                                row[x] = input[x] &+ UInt8((UInt16(row[x - channels]) + UInt16(above[x])) >> 1)
-                            }
-                        case 4:
-                            // Paeth; with no left neighbour it picks the byte above.
-                            for x in 0 ..< lead { row[x] = input[x] &+ above[x] }
-                            for x in lead ..< stride {
-                                let a = Int(row[x - channels]), b = Int(above[x]), c = Int(above[x - channels])
-                                let pa = abs(b - c), pb = abs(a - c), pc = abs(a + b - 2 * c)
-                                row[x] = input[x] &+ UInt8(truncatingIfNeeded: pa <= pb && pa <= pc ? a : (pb <= pc ? b : c))
-                            }
-                        default:
-                            throw Failure.corrupt("row \(y) has filter \(filter)")
-                        }
-                    }
-                }
-            }
-        }
     }
 
     private static func expand(

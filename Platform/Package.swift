@@ -90,6 +90,7 @@ let package = Package(
                 "Macros",
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
+            exclude: ["LICENSE"],
             swiftSettings: settings
         ),
         // Focus for the Apple TV remote, gamepads and the Mac's pointer,

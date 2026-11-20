@@ -225,6 +225,22 @@ struct LocalizationTests {
         )
     }
 
+    @Test("Left to itself, it speaks the language the shell set (AppleLanguages)")
+    func speaksTheShellsLanguages() {
+        let saved = UserDefaults.standard.object(forKey: "AppleLanguages")
+        defer { UserDefaults.standard.set(saved, forKey: "AppleLanguages") }
+        UserDefaults.standard.set(["de-AT", "en"], forKey: "AppleLanguages")
+        let localizer = Localizer<Language>(
+            development: .english,
+            settingKey: "settings.language",
+            didChange: Notification.Name("LocalizationTests.didChange"),
+            bundle: Bundle(url: Self.folder)!,
+            read: { nil },
+            save: { _ in }
+        )
+        #expect(localizer.current == .german)
+    }
+
     @Test func speaksTheDevicesLanguageItShipsIn() {
         #expect(localizer(device: ["de-AT", "en"]).current == .german)
         #expect(localizer(device: ["pt-BR"]).current == .portugueseBrazil)
