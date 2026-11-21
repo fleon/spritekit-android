@@ -56,10 +56,8 @@ final class MusicMixer {
         let decoder: OpaquePointer
         let rate: Int32
         let sourceChannels: Int32
-        /// Where the track repeats, in microseconds of presentation time.
-        let loop: (start: Int64, end: Int64)?
-        /// Where the decoder is, in microseconds.
-        var position: Int64 = 0
+        /// Where the decoder is in the track, in frames, and where it repeats.
+        var cursor: MusicLoopCursor
         var gain: Float = 0
         var target: Float = 0
         /// Frames left in the ramp from `gain` to `target`.
@@ -73,15 +71,17 @@ final class MusicMixer {
         /// peak goes in the log.
         var peak: Int16 = 0
         var hasReportedPeak = false
-        /// How many times it has been round its loop.
-        var loops = 0
 
-        init(name: String, decoder: OpaquePointer, rate: Int32, sourceChannels: Int32, loop: (start: Int64, end: Int64)?) {
+        init(name: String, decoder: OpaquePointer, rate: Int32, sourceChannels: Int32, loop: MusicLoop?) {
             self.name = name
             self.decoder = decoder
             self.rate = rate
             self.sourceChannels = sourceChannels
-            self.loop = loop
+            cursor = MusicLoopCursor(loop: loop)
+        }
+
+        func milliseconds(_ frame: Int64) -> Int64 {
+            frame * 1000 / Int64(rate)
         }
 
         func fade(to target: Float, over seconds: TimeInterval) {
@@ -189,15 +189,10 @@ final class MusicMixer {
             ska_audio_close(decoder)
             return nil
         }
-        let points = loop.map { (start: Self.microseconds($0.start, rate: rate), end: Self.microseconds($0.end, rate: rate)) }
-        Log.info("soundtrack \(track): \(rate) Hz, \(channels) ch, loops \(points.map { "\($0.start / 1000)–\($0.end / 1000) ms" } ?? "never")")
-        return Deck(name: track, decoder: decoder, rate: rate, sourceChannels: channels, loop: points)
-    }
-
-    /// A frame of the master as a presentation time. A game's loop points
-    /// count frames at the file's own rate, which is the master's.
-    private static func microseconds(_ frame: Int64, rate: Int32) -> Int64 {
-        frame * 1_000_000 / Int64(rate)
+        let deck = Deck(name: track, decoder: decoder, rate: rate, sourceChannels: channels, loop: loop)
+        let loops = deck.cursor.loop.map { "frames \($0.start)–\($0.end) (\(deck.milliseconds($0.start))–\(deck.milliseconds($0.end)) ms)" }
+        Log.info("soundtrack \(track): \(rate) Hz, \(channels) ch, loops \(loops ?? "never")")
+        return deck
     }
 
     // MARK: - The mixer thread
@@ -260,41 +255,25 @@ final class MusicMixer {
         }
     }
 
-    /// Decodes one block of `deck`, loops it if it reached the loop's end,
-    /// applies its gain ramp and adds it to the mix.
+    /// Decodes one block of `deck`, going back to the loop's start each time
+    /// it reaches the loop's end, applies its gain ramp and adds it to the mix.
     private func fill(_ deck: Deck) {
-        var produced = 0
-        while produced < Self.blockFrames {
-            var wanted = Int64(Self.blockFrames - produced)
-            if let loop = deck.loop, deck.position < loop.end {
-                let left = (loop.end - deck.position) * Int64(deck.rate) / 1_000_000
-                wanted = min(wanted, max(0, left))
-            }
-            if wanted == 0 {
-                guard let loop = deck.loop else { break }
-                let from = deck.position
-                guard ska_audio_seek(deck.decoder, loop.start) else { break }
-                deck.position = loop.start
-                deck.loops += 1
-                Log.info("soundtrack \(deck.name): loop \(deck.loops) at \(from / 1000) ms, back to \(loop.start / 1000) ms")
-                continue
-            }
-
-            var at: Int64 = deck.position
+        // Filled from a copy: reading adds to the mix, which reads the deck.
+        var cursor = deck.cursor
+        let produced = cursor.fill(Self.blockFrames, read: { offset, count in
             let got = scratch.withUnsafeMutableBufferPointer { buffer -> Int64 in
                 guard let base = buffer.baseAddress else { return 0 }
-                return ska_audio_read(deck.decoder, base, wanted, &at)
+                return ska_audio_read(deck.decoder, base, Int64(count), nil)
             }
-            if got <= 0 {
-                // The tail ran out before the loop point: start over rather
-                // than fall silent.
-                guard let loop = deck.loop, ska_audio_seek(deck.decoder, loop.start) else { break }
-                deck.position = loop.start
-                continue
-            }
-            deck.position = at + got * 1_000_000 / Int64(deck.rate)
-            add(deck, frames: Int(got), at: produced)
-            produced += Int(got)
+            if got > 0 { add(deck, frames: Int(got), at: offset) }
+            return Int(got)
+        }, seek: { frame in
+            ska_audio_seek_frame(deck.decoder, frame)
+        })
+        let looped = cursor.loops != deck.cursor.loops
+        deck.cursor = cursor
+        if looped, let loop = cursor.loop {
+            Log.info("soundtrack \(deck.name): loop \(cursor.loops), back to frame \(loop.start) (\(deck.milliseconds(loop.start)) ms)")
         }
         // Nothing decoded at all: let the ramp run on so a dead track still
         // fades out of the mix instead of sticking at full gain for ever.
@@ -323,7 +302,6 @@ final class MusicMixer {
             let magnitude = sample == Int16.min ? Int16.max : abs(sample)
             if magnitude > deck.peak { deck.peak = magnitude }
         }
-        guard deck.position > 0 else { return }
         deck.hasReportedPeak = true
         let decibels = deck.peak == 0 ? -Float.infinity : 20 * log10f(Float(deck.peak) / Float(Int16.max))
         Log.info("soundtrack \(deck.name): decoded, peak \(deck.peak) (\(String(format: "%.1f", decibels)) dBFS)")

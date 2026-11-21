@@ -25,6 +25,11 @@ static const int64_t kScratchFrames = 8192;
 /// Give up rather than spin if the codec asks to be tried again this often
 /// with nothing to show.
 static const int kMaxIdleRounds = 64;
+/// How far before a seek's frame decoding starts. An AAC frame is built from
+/// the packet before it as well (the transform overlaps), so a decoder
+/// started cold on the frame's own packet gets its first frames wrong; a few
+/// packets earlier, they are thrown away before the frame is reached.
+static const int64_t kSeekPrerollFrames = 4096;
 
 struct SkaAudioDecoder {
     AMediaExtractor *extractor;
@@ -37,7 +42,7 @@ struct SkaAudioDecoder {
     int16_t *scratch;       // interleaved PCM waiting to be handed out
     int64_t scratchFrames;  // frames in it
     int64_t scratchRead;    // frames already handed out
-    int64_t scratchStartUs; // presentation time of scratch[0]
+    int64_t frame;          // the frame the next read hands out
 
     bool inputDone;
     bool outputDone;
@@ -234,7 +239,6 @@ static bool decodeMore(SkaAudioDecoder *d) {
             if (frames > kScratchFrames) frames = kScratchFrames;
             memcpy(d->scratch, buffer + info.offset, (size_t)(frames * d->channels) * sizeof(int16_t));
             d->scratchFrames = frames;
-            d->scratchStartUs = info.presentationTimeUs;
         }
         bool ended = (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) != 0;
         AMediaCodec_releaseOutputBuffer(d->codec, (size_t)index, false);
@@ -258,9 +262,7 @@ int64_t ska_audio_read(SkaAudioDecoder *d, int16_t *out, int64_t frames, int64_t
         int64_t take = frames - written;
         if (take > available) take = available;
         if (!placed) {
-            if (position_us != NULL) {
-                *position_us = d->scratchStartUs + d->scratchRead * 1000000 / d->sampleRate;
-            }
+            if (position_us != NULL) *position_us = d->frame * 1000000 / d->sampleRate;
             placed = true;
         }
         memcpy(out + written * d->channels,
@@ -268,36 +270,46 @@ int64_t ska_audio_read(SkaAudioDecoder *d, int16_t *out, int64_t frames, int64_t
                (size_t)(take * d->channels) * sizeof(int16_t));
         written += take;
         d->scratchRead += take;
+        d->frame += take;
     }
     return written;
 }
 
-bool ska_audio_seek(SkaAudioDecoder *d, int64_t position_us) {
-    if (d == NULL) return false;
-    if (AMediaExtractor_seekTo(d->extractor, position_us, AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC) != AMEDIA_OK) {
+int64_t ska_audio_frame(const SkaAudioDecoder *d) { return d == NULL ? 0 : d->frame; }
+
+bool ska_audio_seek_frame(SkaAudioDecoder *d, int64_t frame) {
+    if (d == NULL || frame < 0) return false;
+    int64_t from = frame > kSeekPrerollFrames ? frame - kSeekPrerollFrames : 0;
+    if (AMediaExtractor_seekTo(d->extractor, from * 1000000 / d->sampleRate, AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC) != AMEDIA_OK) {
         return false;
     }
+    // The container's time for the packet it landed on is exact, and a
+    // decoder flushed there hands out that packet's frame first: what it
+    // trims after a flush is what it trimmed at the top of the file, where
+    // the count started.
+    int64_t landedUs = AMediaExtractor_getSampleTime(d->extractor);
+    if (landedUs < 0) return false;
     AMediaCodec_flush(d->codec);
     d->inputDone = false;
     d->outputDone = false;
     d->scratchFrames = 0;
     d->scratchRead = 0;
-    d->scratchStartUs = position_us;
+    d->frame = (landedUs * d->sampleRate + 500000) / 1000000;
 
-    // The sync sample is at or before where we asked, so throw away what the
-    // decoder gives back until the stream reaches it. A frame is 1024 frames
-    // of AAC, so this is a handful of buffers at most.
-    for (int round = 0; round < kMaxIdleRounds; round++) {
+    // Count decoded frames off until the frame is reached.
+    while (d->frame < frame) {
         if (!decodeMore(d)) return false;
-        int64_t endUs = d->scratchStartUs + d->scratchFrames * 1000000 / d->sampleRate;
-        if (endUs <= position_us) continue;
-        if (d->scratchStartUs >= position_us) return true;
-        int64_t skip = (position_us - d->scratchStartUs) * d->sampleRate / 1000000;
+        int64_t skip = frame - d->frame;
         if (skip > d->scratchFrames) skip = d->scratchFrames;
         d->scratchRead = skip;
-        return true;
+        d->frame += skip;
     }
-    return false;
+    return true;
+}
+
+bool ska_audio_seek(SkaAudioDecoder *d, int64_t position_us) {
+    if (d == NULL || position_us < 0) return false;
+    return ska_audio_seek_frame(d, (position_us * d->sampleRate + 500000) / 1000000);
 }
 
 void ska_audio_close(SkaAudioDecoder *d) {
