@@ -111,6 +111,8 @@ test('settings: defaults, checks, templates', () => {
   assert.deepStrictEqual(s.appStore.platforms, ['IOS']);
   assert.strictEqual(s.android.releaseName, '{version}');
   assert.strictEqual(s.version.exportPrefix, 'GAME');
+  assert.strictEqual(s.parallel, true);
+  assert.strictEqual(lib.settingsFrom({ project: 'G', playDir: 'P', parallel: false }).parallel, false);
   assert.deepStrictEqual(lib.nightlyProblems(s), ['name', 'repo', 'appStore.externalGroup', 'appStore.team', 'appStore.scheme']);
   assert.throws(() => lib.settingsFrom({ project: 'G', playDir: 'P', appStore: { platforms: ['WATCH_OS'] } }), /unknown platform/);
   assert.strictEqual(lib.fill('-Pgame.versionCode={build} {other}', { build: 9 }), '-Pgame.versionCode=9 {other}');

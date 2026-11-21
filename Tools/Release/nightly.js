@@ -18,8 +18,10 @@
 //                   with --dry-run before it's merged (never for a release;
 //                   NIGHTLY_REF says the same)
 //
-// It works in a throwaway worktree, removed at the end; in the checkout it's
-// run from it only fetches. The App Store Connect writes are the TestFlight
+// Every Apple platform and Android build and upload at the same time, each
+// with its own logs (release.json's "parallel": false runs them one after
+// another). It works in a throwaway worktree, removed at the end; in the
+// checkout it's run from it only fetches. The App Store Connect writes are the TestFlight
 // upload, its What to Test and the External group with --submit; the one
 // Play write is play.js's nightly release. The Build commit is pushed only
 // once an upload succeeded. It needs gh, asc, gplay, Xcode, the NDK,
@@ -29,7 +31,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const lib = require('./lib');
 const stores = require('./stores');
 
@@ -187,6 +189,28 @@ function step(name, argv, { cwd = WT, shell = false } = {}) {
   for (const l of tail) say(`     ${l}`);
   return false;
 }
+// The same, without waiting: the platforms' chains run side by side.
+function stepAsync(name, argv, { cwd = WT, shell = false } = {}) {
+  say(`-- ${name}`);
+  const log = path.join(LOGS, `${name}.log`);
+  const fd = fs.openSync(log, 'w');
+  const [command, ...rest] = shell
+    ? ['bash', '-c', 'set +u; [ -f "$HOME/.swiftly/env.sh" ] && . "$HOME/.swiftly/env.sh"; exec "$@"', 'bash', ...argv]
+    : argv;
+  return new Promise((resolve) => {
+    let error = null;
+    const child = spawn(command, rest, { cwd, env: ENV, stdio: ['ignore', fd, fd] });
+    child.on('error', (e) => { error = e; });
+    child.on('close', (code) => {
+      fs.closeSync(fd);
+      if (code === 0 && !error) return resolve(true);
+      const tail = fs.readFileSync(log, 'utf8').split('\n').filter((l) => l.trim() && !/password/i.test(l)).slice(-15);
+      say(`   ${name} failed${error ? ` (${error.message})` : ''}; the end of ${log}:`);
+      for (const l of tail) say(`     ${l}`);
+      resolve(false);
+    });
+  });
+}
 const commands = (list) => list.map((c, i) => ({ name: c.name ?? `step-${i + 1}`, run: c.run.map((a) => lib.fill(a, VALUES)) }));
 const logTail = (name, n = 3) => {
   try { return fs.readFileSync(path.join(LOGS, `${name}.log`), 'utf8').split('\n').filter((l) => l.trim() && !/password/i.test(l)).slice(-n).join(' '); } catch { return ''; }
@@ -220,20 +244,20 @@ fs.writeFileSync(EXPORT_OPTIONS, `<?xml version="1.0" encoding="UTF-8"?>
 // Every game uploads at once each night: give asc's upload time.
 ENV.ASC_UPLOAD_TIMEOUT ||= '60m';
 
-function apple(platform) {
+async function apple(platform) {
   const P = lib.PLATFORMS[platform];
   const id = P.label.replace(/\W/g, '');
   const archive = path.join(A, `${SLUG}-${id}.xcarchive`);
   const artifact = path.join(A, `${SLUG}-${id}.${P.artifact}`);
   if (!artOK) return 'not built: the art couldn\'t be made';
   const xcflags = (...flags) => flags.map((f) => `--xcodebuild-flag=${f}`);
-  if (!step(`${id}-archive`, ['asc', 'xcode', 'archive', '--project', path.join(WT, S.project), '--scheme', S.appStore.scheme,
+  if (!await stepAsync(`${id}-archive`, ['asc', 'xcode', 'archive', '--project', path.join(WT, S.project), '--scheme', S.appStore.scheme,
     '--configuration', 'Release', '--clean', '--archive-path', archive,
     ...xcflags('-destination', P.destination, '-allowProvisioningUpdates', '-skipMacroValidation', '-skipPackagePluginValidation',
       '-derivedDataPath', path.join(A, `DerivedData-${id}`)), '--output', 'json'])) {
     return `archive failed: ${logTail(`${id}-archive`)}`;
   }
-  if (!step(`${id}-export`, ['asc', 'xcode', 'export', '--archive-path', archive, '--export-options', EXPORT_OPTIONS,
+  if (!await stepAsync(`${id}-export`, ['asc', 'xcode', 'export', '--archive-path', archive, '--export-options', EXPORT_OPTIONS,
     `--${P.artifact}-path`, artifact, ...xcflags('-allowProvisioningUpdates'), '--output', 'json'])) {
     return `export failed: ${logTail(`${id}-export`)}`;
   }
@@ -243,12 +267,18 @@ function apple(platform) {
   const upload = platform === 'MAC_OS'
     ? ['--pkg', artifact, '--platform', platform, '--version', V.version, '--build-number', String(V.build)]
     : ['--ipa', artifact, '--platform', platform];
-  if (!step(`${id}-upload`, ['asc', 'publish', 'testflight', '--app', S.appStore.app, ...upload, '--upload-only', '--wait', '--output', 'json'])) {
+  if (!await stepAsync(`${id}-upload`, ['asc', 'publish', 'testflight', '--app', S.appStore.app, ...upload, '--upload-only', '--wait', '--output', 'json'])) {
     return `upload failed: ${logTail(`${id}-upload`)}`;
   }
   uploaded = true;
-  const info = quiet('asc', ['builds', 'info', '--app', S.appStore.app, '--build-number', String(V.build), '--platform', platform,
-    '--version', V.version, '--output', 'json'], { env: ENV });
+  const info = await new Promise((resolve) => {
+    let stdout = '';
+    const child = spawn('asc', ['builds', 'info', '--app', S.appStore.app, '--build-number', String(V.build), '--platform', platform,
+      '--version', V.version, '--output', 'json'], { env: ENV, stdio: ['ignore', 'pipe', 'ignore'] });
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.on('error', () => resolve({ stdout: '' }));
+    child.on('close', () => resolve({ stdout }));
+  });
   let buildId = '';
   try {
     const d = JSON.parse(info.stdout);
@@ -256,27 +286,25 @@ function apple(platform) {
     buildId = (Array.isArray(data) ? data[0] : data)?.id ?? '';
   } catch { /* reported below */ }
   if (!buildId) return 'uploaded, but its build wasn\'t found to add its notes and the External group';
-  if (!step(`${id}-notes`, ['asc', 'builds', 'test-notes', 'create', '--build-id', buildId, '--locale', 'en-US', '--whats-new', `@file:${NOTES}`])) {
+  if (!await stepAsync(`${id}-notes`, ['asc', 'builds', 'test-notes', 'create', '--build-id', buildId, '--locale', 'en-US', '--whats-new', `@file:${NOTES}`])) {
     return `uploaded, but its What to Test failed: ${logTail(`${id}-notes`)}`;
   }
-  if (!step(`${id}-external`, ['asc', 'builds', 'add-groups', '--build-id', buildId, '--group', S.appStore.externalGroup, '--submit', '--confirm'])) {
+  if (!await stepAsync(`${id}-external`, ['asc', 'builds', 'add-groups', '--build-id', buildId, '--group', S.appStore.externalGroup, '--submit', '--confirm'])) {
     return `uploaded with its notes, but adding the External group failed: ${logTail(`${id}-external`)}`;
   }
   return 'uploaded and submitted to external beta review';
 }
 
-for (const platform of S.appStore.platforms) {
+async function applePlatform(platform) {
   const label = lib.PLATFORMS[platform].label;
-  heading(label);
-  const result = apple(platform);
+  const result = await apple(platform);
   if (!/^(uploaded and submitted|.*dry run, not uploaded$)/.test(result)) failed = true;
-  RESULTS.push([label, result]);
   say(`${label}: ${result}`);
+  return [label, result];
 }
 
 // --- 6. Android ------------------------------------------------------------
 
-heading('Android');
 ENV.ANDROID_NDK_HOME ||= path.join(os.homedir(), 'Library/Android/android-ndk-r30');
 ENV.ANDROID_NDK_ROOT ||= ENV.ANDROID_NDK_HOME;
 ENV.ANDROID_HOME ||= path.join(os.homedir(), 'Library/Android/sdk');
@@ -285,7 +313,7 @@ const NAME = lib.fill(S.android.releaseName, VALUES);
 // The release as the report names it: its name, with the build when the name doesn't hold it.
 const LABEL = NAME.includes(String(V.build)) ? NAME : `${NAME} (${V.build})`;
 
-function android() {
+async function android() {
   if (!artOK) return 'not built: the art couldn\'t be made';
   const build = [
     { name: 'android-vendor', run: [path.join(RUNTIME, 'Vendor/build.sh'), 'android'] },
@@ -293,18 +321,18 @@ function android() {
     ...commands(S.android.art).map((c) => ({ ...c, name: `android-${c.name}` })),
     { name: 'android-shell', run: ['Android/Scripts/build-shell.sh', '--store'] },
   ];
-  for (const c of build) if (!step(c.name, c.run, { shell: true })) return `${c.name.replace(/^android-/, '')} failed: ${logTail(c.name)}`;
+  for (const c of build) if (!await stepAsync(c.name, c.run, { shell: true })) return `${c.name.replace(/^android-/, '')} failed: ${logTail(c.name)}`;
   const properties = S.android.gradleProperties.map((p) => lib.fill(p, VALUES));
-  if (!step('android-bundle', ['./gradlew', '--no-daemon', '--console=plain', 'bundleRelease', ...properties], { cwd: path.join(WT, 'Android/App'), shell: true })) {
+  if (!await stepAsync('android-bundle', ['./gradlew', '--no-daemon', '--console=plain', 'bundleRelease', ...properties], { cwd: path.join(WT, 'Android/App'), shell: true })) {
     return `bundleRelease failed: ${logTail('android-bundle', 4)}`;
   }
   if (!fs.existsSync(AAB)) return 'bundleRelease wrote no bundle';
   const play = (send) => ['node', GUARD, '12', '--', 'node', path.join(WT, S.playDir, 'play.js'), ...lib.playRelease({ aab: AAB, name: NAME, notes: NOTES, send })];
   // Without --send, play.js checks the bundle offline and uploads nothing.
-  if (!step('android-check', play(false))) return `the bundle doesn't check out for Play: ${logTail('android-check')}`;
+  if (!await stepAsync('android-check', play(false))) return `the bundle doesn't check out for Play: ${logTail('android-check')}`;
   const size = `${(fs.statSync(AAB).size / 1048576).toFixed(1)} MB`;
   if (DRY) return `${LABEL} built (${size}) and checked for internal and alpha; dry run, not uploaded`;
-  const sent = step('android-release', play(true));
+  const sent = await stepAsync('android-release', play(true));
   const log = (() => { try { return fs.readFileSync(path.join(LOGS, 'android-release.log'), 'utf8'); } catch { return ''; } })();
   const neverPublished = /had never been published/.test(log)
     ? '; the app had never been published, so every pending change went for review too' : '';
@@ -319,10 +347,25 @@ function android() {
   uploaded = true;
   return `${LABEL} rolled out to internal and alpha and sent for review${neverPublished}`;
 }
-const ANDROID = android();
-if (!/(sent for review|dry run, not uploaded)/.test(ANDROID) || /failed/.test(ANDROID)) failed = true;
-RESULTS.push(['Android', ANDROID]);
-say(`Android: ${ANDROID}`);
+async function androidPlatform() {
+  const result = await android();
+  if (!/(sent for review|dry run, not uploaded)/.test(result) || /failed/.test(result)) failed = true;
+  say(`Android: ${result}`);
+  return ['Android', result];
+}
+
+// Every chain at once, or one after another; the report keeps one order.
+async function main() {
+  const chains = [...S.appStore.platforms.map((p) => () => applePlatform(p)), () => androidPlatform()];
+  if (S.parallel) {
+    heading(`${[...S.appStore.platforms.map((p) => lib.PLATFORMS[p].label), 'Android'].join(', ')}, side by side`);
+    RESULTS.push(...await Promise.all(chains.map((chain) => chain())));
+  } else {
+    for (const chain of chains) {
+      heading(chain === chains[chains.length - 1] ? 'Android' : lib.PLATFORMS[S.appStore.platforms[chains.indexOf(chain)]].label);
+      RESULTS.push(await chain());
+    }
+  }
 
 // --- 7. Push ---------------------------------------------------------------
 
@@ -351,3 +394,6 @@ say(`Logs: ${LOGS}`);
 say('Notes:');
 say(noteLines.map((l) => `  ${l}`).join('\n'));
 process.exitCode = failed ? 1 : 0;
+}
+
+main().catch((error) => { say(`nightly: ${error.stack || error}`); process.exitCode = 1; });

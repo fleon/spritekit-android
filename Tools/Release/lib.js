@@ -191,6 +191,7 @@ function settingsFrom(json) {
   if (s.appStore) s.appStore = { platforms: ['IOS'], ...s.appStore };
   for (const p of s.appStore?.platforms ?? []) if (!PLATFORMS[p]) throw new Error(`release.json: unknown platform ${p} (${Object.keys(PLATFORMS).join(', ')})`);
   s.android = { gradleProperties: [], releaseName: '{version}', art: [], ...(s.android ?? {}) };
+  s.parallel = s.parallel !== false;
   s.art ??= [];
   s.notes ??= {};
   return s;

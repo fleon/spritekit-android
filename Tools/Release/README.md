@@ -55,6 +55,7 @@ require('../../Android/spritekit-android/Tools/Release/version.js');
 | `name`, `repo`, `branch` | For the nightly: the game's name in its report and logs, its GitHub repository, and its default branch (default `main`). |
 | `android` | `gradleProperties` (for `bundleRelease`, the beta switch at least: `["-Pgame.beta=true"]`), `releaseName` (Play's release name, default `{version}`) and `art` (steps that make the Android art, after SDL and before the store shell). |
 | `art` | Steps that make art both platforms need, before either builds; when one fails, neither builds. |
+| `parallel` | `false` builds and uploads the platforms one after another; by default every Apple platform and Android run side by side, each in its own DerivedData and logs. |
 | `notes` | For notes drafted without `--notes`: `tooling` (a regex of paths players never see; PRs touching only those are left out), `fallback` (the line when nothing's left, default `• Fixes and improvements.`), `draft: false` (the fallback alone). |
 | `root`, `submodule` | Rarely: the repository root from the settings file (default `../..`) and the runtime submodule (default `Android/spritekit-android`). |
 
@@ -120,12 +121,14 @@ Tools/Release/nightly.sh --notes notes.txt               # the release (the nigh
 4. **Notes.** This build's changes, `• ` lines in plain words for players:
    `--notes`, else drafted from the PR titles (the `notes` settings).
 5. **Art.** The game's `art` steps.
-6. **Apple.** For each platform, archive and export through `asc`
+6. **Apple.** Every platform in `appStore.platforms` (iOS, tvOS, the Mac
+   Catalyst app), side by side with each other and with Android: archive and
+   export through `asc`
    (`manageAppVersionAndBuildNumber` off, so the number stays), upload to
    TestFlight, set the notes as What to Test (en-US), and add the External
    group with `--submit`, which starts beta review; the Internal group gets
    every build on its own.
-7. **Android.** FreeType and HarfBuzz, SDL, the game's `android.art`, the
+7. **Android**, alongside the Apple platforms. FreeType and HarfBuzz, SDL, the game's `android.art`, the
    store shell (`build-shell.sh --store`) and `bundleRelease` with its
    Gradle properties, signed through 1Password's service account. Then
    `play.js release --track internal --also alpha --rollout
