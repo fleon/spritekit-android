@@ -1337,6 +1337,17 @@ directory, beside its `listing.json` and `play.json`;
 [`Tools/Play/README.md`](Tools/Play/README.md) has the layout, the steps and
 the rules it keeps.
 
+## Strings
+
+`Tools/Strings/strings.js` is every game's strings tool: it checks that each
+language's `.strings` tables have the base's keys, order and placeholders and
+that the type-safe strings layer names only keys the base has, exports
+strings for translators (JSON, CSV or XLIFF) and imports their work back,
+lays translations out as the base, and builds tables from JSON. Each game
+runs it through a two-line `Tools/Strings/strings.js` beside its
+`strings.json`; [`Tools/Strings/README.md`](Tools/Strings/README.md) has the
+settings and commands.
+
 ## Signing
 
 Keystores live in 1Password, never in a repository or a loose file. Each is
