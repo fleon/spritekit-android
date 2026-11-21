@@ -37,6 +37,12 @@ SkaAudioDecoder *ska_audio_open_path(const char *path);
 /// if the asset manager is not reachable or the asset is compressed.
 SkaAudioDecoder *ska_audio_open_asset(const char *path);
 
+/// Whether the APK's assets hold `path`, asked of the same asset manager
+/// `ska_audio_open_asset` opens it with. That one sees every split APK the
+/// app was installed as (a release bundle's install-time asset packs among
+/// them), where SDL's own path lookups read the base APK alone.
+bool ska_audio_has_asset(const char *path);
+
 /// Gives the decoder the app's asset manager, taken from the Java side.
 /// SDL owns the activity, so Swift passes its JNIEnv and activity object
 /// through; without this `ska_audio_open_asset` fails rather than guessing.

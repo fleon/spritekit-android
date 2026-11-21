@@ -137,6 +137,14 @@ SkaAudioDecoder *ska_audio_open_path(const char *path) {
     return finish(d);
 }
 
+bool ska_audio_has_asset(const char *path) {
+    if (gAssets == NULL) return false;
+    AAsset *asset = AAssetManager_open(gAssets, path, AASSET_MODE_STREAMING);
+    if (asset == NULL) return false;
+    AAsset_close(asset);
+    return true;
+}
+
 SkaAudioDecoder *ska_audio_open_asset(const char *path) {
     if (gAssets == NULL) {
         LOGE("no asset manager: call ska_audio_use_asset_manager first");

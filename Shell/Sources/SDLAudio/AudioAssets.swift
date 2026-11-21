@@ -1,3 +1,4 @@
+import CAndroidAudio
 import CAndroidShell
 import Foundation
 import ShellCore
@@ -20,10 +21,15 @@ public enum AudioAssets {
 
     /// Where `name` is: the first of `musicExtensions` the APK holds, or the
     /// first's path when none is there (so the error names a file).
+    ///
+    /// Asked of the asset manager the decoder opens the track with, not
+    /// `SDL_GetPathInfo`: SDL answers that from an index of the base APK
+    /// alone, and a release bundle puts the audio in its `content` asset
+    /// pack, a split APK of its own, so SDL found no track and every one
+    /// fell back to its `.m4a` path.
     public static func music(_ name: String) -> String {
         let paths = musicExtensions.map { "\(root)/Music/\(name).\($0)" }
-        var info = SDL_PathInfo()
-        return paths.first { SDL_GetPathInfo($0, &info) } ?? paths[0]
+        return paths.first { ska_audio_has_asset($0) } ?? paths[0]
     }
 
     public static func sound(_ name: String) -> String {
