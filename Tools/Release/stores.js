@@ -80,8 +80,12 @@ function survey({ root, settings, offline = false, play: known = null }) {
   };
 }
 
-const nameFor = (settings, marketing, code, play) =>
-  (settings.version.patchNames ? lib.patchName(marketing, code, play?.releases ?? []) : marketing);
+// Android's version name: the marketing version without a patch of 0, and
+// with patchNames a patch counting further Play uploads at it.
+function nameFor(settings, marketing, code, play) {
+  const name = lib.androidName(marketing);
+  return settings.version.patchNames ? lib.patchName(name, code, play?.releases ?? []) : name;
+}
 
 function writeBuild(root, settings, text, build) {
   const updated = lib.withBuild(text, build);

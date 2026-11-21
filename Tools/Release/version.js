@@ -15,7 +15,8 @@
 //
 // The Xcode project's CURRENT_PROJECT_VERSION is the build number on both
 // platforms (the Android build reads it as its versionCode), and its
-// MARKETING_VERSION the version name. A new build, on either platform, takes
+// MARKETING_VERSION the version (on Android without a patch of 0: 1.5.0
+// is named 1.5). A new build, on either platform, takes
 // one past the highest any of them has taken: the project's, App Store
 // Connect's (every build and upload, through `asc`) and Play's (every release
 // on every track and every uploaded bundle, through the game's own
