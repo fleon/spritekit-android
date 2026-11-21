@@ -14,7 +14,20 @@ open class SKSpriteNode: SKNode {
     /// uniforms; SpriteKit's own lighting, which this feeds, isn't
     /// implemented (there is no `SKLightNode`).
     open var normalTexture: SKTexture?
-    open var size: CGSize
+    /// The size before the node's scale: what the renderer draws, the
+    /// node's transform scaling it.
+    var unscaledSize: CGSize
+
+    /// SpriteKit's size reads scaled (by the scale's magnitude, so a flip
+    /// keeps it positive) and is set through the scale: what's kept is the
+    /// size before it, or the size as given along an axis scaled to 0.
+    open var size: CGSize {
+        get { CGSize(width: unscaledSize.width * abs(xScale), height: unscaledSize.height * abs(yScale)) }
+        set {
+            unscaledSize = CGSize(width: xScale != 0 ? newValue.width / abs(xScale) : newValue.width,
+                                  height: yScale != 0 ? newValue.height / abs(yScale) : newValue.height)
+        }
+    }
 
     /// Per-node shader attribute values (SKAttribute), keyed by name.
     open var attributeValues: [String: SKAttributeValue] = [:]
@@ -35,7 +48,7 @@ open class SKSpriteNode: SKNode {
     public init(texture: SKTexture?, color: SKColor, size: CGSize) {
         self.texture = texture
         self.color = color
-        self.size = size
+        unscaledSize = size
         super.init()
     }
 
@@ -75,10 +88,10 @@ open class SKSpriteNode: SKNode {
     /// The quad in the node's own coordinates, placed by its anchor point.
     open override var contentFrame: CGRect {
         CGRect(
-            x: -size.width * anchorPoint.x,
-            y: -size.height * anchorPoint.y,
-            width: size.width,
-            height: size.height
+            x: -unscaledSize.width * anchorPoint.x,
+            y: -unscaledSize.height * anchorPoint.y,
+            width: unscaledSize.width,
+            height: unscaledSize.height
         )
     }
 }
