@@ -90,6 +90,11 @@ would want.
   languages (`PreferredLanguages`). Files that import only Foundation must
   see the shim's `NSLocalizedString`, so the game's Android package
   re-exports `SpriteKitShim`.
+- Check the strings with the runtime's `Tools/Strings/strings.js check`,
+  through the game's own `Tools/Strings/strings.js` (its README): every
+  language against the base, and the strings layer's keys. Export and
+  import translations, and lay a translation out as its base, with the same
+  tool.
 
 ## The toolkit
 
