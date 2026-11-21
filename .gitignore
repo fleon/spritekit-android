@@ -23,3 +23,6 @@ Library/.gradle/
 Library/.kotlin/
 Library/build/
 Library/local.properties
+
+# Bytecode Python leaves beside Tools/Pricing when a game runs it.
+__pycache__/
