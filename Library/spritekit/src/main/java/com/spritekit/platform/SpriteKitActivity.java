@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
+import android.content.res.Configuration;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -326,6 +327,8 @@ public class SpriteKitActivity extends SDLActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         holdDebugOrientation();
+        smallestWidthDp = getResources().getConfiguration().smallestScreenWidthDp;
+        if (!orientationHeld) setRequestedOrientation(gameOrientation());
         super.onCreate(savedInstanceState);
         services = new PlatformServices();
         services.add(DeviceServices.SERVICE, new DeviceServices(this, services));
@@ -365,10 +368,50 @@ public class SpriteKitActivity extends SDLActivity {
                 case "portrait": setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT); break;
                 case "landscape": setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE); break;
                 case "flipped": setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE); break;
-                default: break;
+                default: continue;
             }
+            orientationHeld = true;
         }
     }
+
+    /**
+     * The orientations the game allows ({@code spritekit_orientations}, which
+     * a game sets apart for tablets in {@code values-sw600dp}), as the
+     * activity requests them.
+     */
+    private int gameOrientation() {
+        return OrientationPolicy.requestedOrientation(getString(R.string.spritekit_orientations));
+    }
+
+    /**
+     * SDL asks as it makes the window, with its orientations hint: set (by
+     * {@code -Orientation}), it holds; empty, the game's own orientations
+     * stand in for SDL's "every one".
+     */
+    @Override
+    public void setOrientationBis(int w, int h, boolean resizable, String hint) {
+        if (hint != null && !hint.trim().isEmpty()) {
+            orientationHeld = true;
+            super.setOrientationBis(w, h, resizable, hint);
+            return;
+        }
+        if (!orientationHeld) setRequestedOrientation(gameOrientation());
+    }
+
+    /** A fold or unfold can move the device between phone and tablet. */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (newConfig.smallestScreenWidthDp == smallestWidthDp) return;
+        smallestWidthDp = newConfig.smallestScreenWidthDp;
+        if (!orientationHeld) setRequestedOrientation(gameOrientation());
+    }
+
+    /** Whether a launch argument or SDL's hint holds the orientation, over the game's. */
+    private volatile boolean orientationHeld;
+
+    /** The smallest width the game's orientations were last read at. */
+    private int smallestWidthDp;
 
     /** Kept so the dispatcher's callback lives as long as the activity. */
     private Object backCallback;

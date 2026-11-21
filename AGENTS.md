@@ -152,6 +152,9 @@ would want.
 - Build debug for every check, emulator run and pre-merge pass
   (`build-shell.sh --debug`, `assembleDebug`). Build release only to measure
   frame times or to make what goes to Play.
+- A game allows the same orientations on Android as on iOS, phones and
+  tablets apart: its `spritekit_orientations` resources (template README,
+  "Orientations"), with `android:appCategory="game"` in its manifest.
 - The game links its `Source/` folders whole, never file by file; what
   Android leaves out goes in the target's `exclude:`.
 - The runtime is a git submodule at `Android/spritekit-android`. Run
