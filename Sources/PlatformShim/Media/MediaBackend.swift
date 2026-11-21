@@ -57,7 +57,8 @@ public protocol AudioDecoding: AnyObject {
     var channels: Int { get }
     var durationUs: Int64 { get }
     /// Up to `frames` frames of interleaved 16-bit PCM into `out`, and the
-    /// presentation time of the first; 0 frames at the end.
+    /// time of the first (its frame, counted from the file's first, at the
+    /// file's rate); 0 frames at the end.
     func read(into out: UnsafeMutablePointer<Int16>, frames: Int) -> (frames: Int, positionUs: Int64)
     /// Moves to `positionUs`, exactly.
     func seek(to positionUs: Int64) -> Bool

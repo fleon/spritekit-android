@@ -12,16 +12,18 @@
 //
 // This is C rather than Swift because the MediaCodec dance is a buffer
 // ping-pong with three sentinel return values, and because the asset handle
-// comes from JNI. What Swift sees is the five functions below: open, ask the
+// comes from JNI. What Swift sees is the functions below: open, ask the
 // format, pull PCM, seek, close.
 //
-// Positions are in microseconds of presentation time, not frames. That is
-// deliberate. A game's loop points count frames of the master, and an AAC
-// decoder hands back the encoder's priming samples as well, so a frame
-// counter would drift from the master by a constant. Presentation time comes
-// from the container for both "where am I" and "where do I want to be", so
-// that constant cancels: seeking to the loop's start lands where the master
-// says, whatever the codec primed with.
+// Positions are frames of the decoded stream, counted as they are handed
+// out, not the codec's presentation times. A game's loop points count frames
+// of the master, as `AVAudioFile` does on Apple, and the codec's times can't
+// be trusted to say which frame a buffer holds: a decoder that trims the
+// encoder's priming (Android's AAC decoders read it from the file's
+// `iTunSMPB`) drops those frames but keeps the stamps of the packets they
+// came from, so its stamps run ahead of the audio by the priming and jump
+// where a trimmed buffer ends. Only the container's own times are exact, and
+// they are used for one thing: which frame a seek landed on.
 
 typedef struct SkaAudioDecoder SkaAudioDecoder;
 
@@ -47,11 +49,19 @@ int64_t ska_audio_duration_us(const SkaAudioDecoder *decoder);
 
 /// Fills `out` with up to `frames` frames of interleaved 16-bit PCM.
 /// Returns the frames written, or 0 at the end of the stream. `position_us`,
-/// when given, receives the presentation time of the first frame written.
+/// when given, receives the time of the first frame written: its frame
+/// (`ska_audio_frame`) at the file's rate.
 int64_t ska_audio_read(SkaAudioDecoder *decoder, int16_t *out, int64_t frames, int64_t *position_us);
 
-/// Moves to `position_us`, exactly: it seeks to the sync sample at or before
-/// it and then throws away what it decodes until the position is reached.
+/// The frame the next read starts at: 0 once opened, then counted.
+int64_t ska_audio_frame(const SkaAudioDecoder *decoder);
+
+/// Moves to `frame`, exactly: it seeks to a sync sample a little before it,
+/// so the codec has the packets before the frame to decode it from, and then
+/// throws away decoded frames, counted, until the frame is reached.
+bool ska_audio_seek_frame(SkaAudioDecoder *decoder, int64_t frame);
+
+/// `ska_audio_seek_frame` to the frame nearest `position_us`.
 bool ska_audio_seek(SkaAudioDecoder *decoder, int64_t position_us);
 
 void ska_audio_close(SkaAudioDecoder *decoder);

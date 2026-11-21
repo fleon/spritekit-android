@@ -5,9 +5,9 @@ import Foundation
 // buffers a channel apiece, then written out as AAC a second at a time.
 //
 // Reading a WAV is plain Swift (`WAVFile`). AAC goes through the media
-// backend's decoder, positioned by presentation time as the runtime's own
-// soundtrack player positions it, so `framePosition` means what a game's
-// loop points (`MusicLoop`) mean; and the writer encodes through its AAC encoder,
+// backend's decoder, which counts frames as the runtime's own soundtrack
+// player does, so `framePosition` means what a game's loop points
+// (`MusicLoop`) mean; and the writer encodes through its AAC encoder,
 // closing the file when the last reference to it goes, as AVAudioFile does.
 
 public typealias AVAudioFrameCount = UInt32

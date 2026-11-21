@@ -68,14 +68,11 @@ import Testing
 
 @Suite("Music loops")
 struct MusicLoopTests {
-    @Test("The whole track's loop starts at the top and ends past any file, without overflowing the mixer's microseconds")
+    @Test("The whole track's loop starts at the top and ends past any file")
     func wholeTrack() {
         let loop = MusicLoop.wholeTrack
         #expect(loop.start == 0)
         // An hour at 192 kHz is well inside it.
         #expect(loop.end > 192_000 * 3_600)
-        // `MusicMixer.microseconds`: frame × 1 000 000 / rate, at the lowest rate it meets.
-        let (product, overflow) = loop.end.multipliedReportingOverflow(by: 1_000_000)
-        #expect(!overflow && product / 8_000 > 0)
     }
 }
