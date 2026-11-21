@@ -35,6 +35,16 @@
 //                line), else --notes-dir, else ReleaseNotes/<track>/, else
 //                ReleaseNotes/. --mapping <file> uploads an R8 mapping.
 //   tracks       what each track serves, and its testers
+//   versions     what Play has given out, read-only: every release on every
+//                track, the version codes of every uploaded bundle and APK,
+//                and the highest of them all; with --approved <version>,
+//                the production release Google approved for that version
+//                (one whose name names it: "1.5.0", "1002 (1.5.0)"). --json
+//                prints it for scripts (exit 1 when Play can't be read):
+//                { package, highest, releases: [{ track, name, status,
+//                versionCodes }], uploaded: [codes], approved: { name,
+//                status } | null }. The games' version tools and nightly
+//                scripts read Play through this.
 //   status       the live listing and images, then the tracks
 //
 //   --send             make the changes (without it, only plan them)
@@ -97,7 +107,7 @@ const offline = args.includes('--offline');
 const forReview = args.includes('--send-for-review');
 const usage = (why) => { console.error(why); process.exit(2); };
 if (offline && send) usage('--offline reads nothing from Play, so it can send nothing: drop one.');
-const STEPS = ['listing', 'images', 'screenshots', 'product', 'datasafety', 'release', 'tracks', 'status'];
+const STEPS = ['listing', 'images', 'screenshots', 'product', 'datasafety', 'release', 'tracks', 'versions', 'status'];
 const step = args.find((a) => STEPS.includes(a));
 const TRACK = option('--track', 'internal');
 const ARTIFACT = option('--aab') ?? option('--apk');
@@ -538,6 +548,32 @@ function tracksStep() {
   }
 }
 
+// What Play has given out, for the version tools and nightlies: read-only.
+function versionsStep() {
+  readOnly = true;
+  const json = args.includes('--json');
+  const version = option('--approved');
+  const read = (argv) => {
+    const run = gplay(online(...argv, '--output', 'json'));
+    if (run.status !== 0) throw new Error(`gplay ${argv.slice(0, 3).join(' ')}: ${why(run.status, run.err || run.out)}`);
+    return run.out ? JSON.parse(run.out) : {};
+  };
+  if (offline) throw new Error('versions reads Play; it has nothing to show offline.');
+  const releases = lib.releasesIn(read(['tracks', 'list']).tracks);
+  const uploaded = lib.uploadedIn(read(['releases', 'artifacts', 'list']));
+  const highest = Math.max(0, ...releases.flatMap((r) => r.versionCodes), ...uploaded);
+  const found = version ? lib.approvedRelease(releases, version) : null;
+  const approved = found && { name: found.name, status: found.status };
+  if (json) {
+    process.stdout.write(JSON.stringify({ package: PACKAGE, highest, releases, uploaded, ...(version ? { approved } : {}) }, null, 2) + '\n');
+    process.exit(0);
+  }
+  heading('Versions on Play');
+  console.log(`  highest version code: ${highest}`);
+  for (const r of releases) console.log(`  ${String(r.track).padEnd(12)} ${r.name ?? '?'} (${r.status}) ${r.versionCodes.join(', ')}`);
+  if (version) console.log(approved ? `  ${version} is approved: production ${approved.name} (${approved.status})` : `  ${version} has no approved production release`);
+}
+
 function statusStep() {
   readOnly = true;
   heading('Live on Play');
@@ -558,7 +594,7 @@ function statusStep() {
 
 const RUN = {
   listing: listingStep, images: imagesStep, screenshots: screenshotsStep, product: productStep,
-  datasafety: dataSafetyStep, release: releaseStep, tracks: tracksStep, status: statusStep,
+  datasafety: dataSafetyStep, release: releaseStep, tracks: tracksStep, versions: versionsStep, status: statusStep,
 };
 
 try {

@@ -90,7 +90,37 @@ function everPublished(tracks) {
   return (tracks ?? []).some((t) => (t.releases ?? []).some((r) => r.status === 'completed' || r.status === 'inProgress'));
 }
 
+// The statuses of a production release Google approved.
+const APPROVED = ['completed', 'halted', 'inProgress'];
+
+// 1.4 and 1.4.0 are the same version.
+const sameVersion = (a, b) => String(a).replace(/(\.0)+$/, '') === String(b).replace(/(\.0)+$/, '');
+
+// Whether a release's name names `version` in one of its words: "1.5.0",
+// "1002 (1.0.2)" and "1.4" all name 1.4.0 or 1.0.2 as the games name them.
+const namesVersion = (name, version) => String(name ?? '').split(/[\s()]+/).some((word) => word && sameVersion(word, version));
+
+// Every release on every track, from `gplay tracks list`, its codes as numbers.
+function releasesIn(tracks) {
+  return (tracks ?? []).flatMap((t) => (t.releases ?? []).map((r) => ({
+    track: t.track, name: r.name ?? null, status: r.status ?? null, versionCodes: (r.versionCodes ?? []).map(Number).filter(Number.isFinite),
+  })));
+}
+
+// Every version code among the uploaded bundles and APKs, from
+// `gplay releases artifacts list` ({bundles: {bundles: […]}, apks: {apks: […]}}).
+function uploadedIn(artifacts) {
+  return [...(artifacts?.bundles?.bundles ?? []), ...(artifacts?.apks?.apks ?? [])]
+    .map((a) => Number(a.versionCode)).filter(Number.isFinite);
+}
+
+// The production release Google approved for `version`, or null.
+function approvedRelease(releases, version) {
+  return releases.find((r) => r.track === 'production' && APPROVED.includes(r.status) && namesVersion(r.name, version)) ?? null;
+}
+
 module.exports = {
+  APPROVED, sameVersion, namesVersion, releasesIn, uploadedIn, approvedRelease,
   TESTING, LIMITS, KEPT, tracksIn, alsoProblem, cutNotes, overLimits, counted, describe,
   betaIn, nativeSymbols, onlyTallScreenshots, everPublished,
 };
