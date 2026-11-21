@@ -105,6 +105,9 @@ would want.
   data (`ICloudSyncManager`; list each synced key in its owner's
   `syncedKeys`), input and focus, display settings, haptics and rating
   prompts, sharing, Spine rigs, the splash.
+- Store screenshots and recordings go through `Tools/Capture` (README,
+  "Screen captures"): a game keeps its `capture.json`, hooks and shims, never
+  a copy of the capture scripts.
 - A bug or a gap in shared code is fixed here, in a PR on this repository,
   and then the game moves its submodule. Never copy shared code back into a
   game, and never put a game's names, content or reasons into this

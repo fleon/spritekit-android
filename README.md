@@ -1412,6 +1412,20 @@ Center directory, beside its `achievements.json`;
 the rules it keeps. A game that keeps its achievements only in App Store
 Connect needs neither.
 
+## Screen captures
+
+`Tools/Capture` films games for their store pages. `capture.js` shoots a
+game's screens on an emulator or a simulator, in every language, from the
+game's `capture.json` and its own hooks (a patch script that wires launch
+arguments into a scratch copy, never the repository), checks a set against
+Play's and the App Store's rules and draws contact sheets. `apple.js` is the
+simulator, Mac and session plumbing a game's own recording tools bind to it
+(previews, trailers, laid-out screenshots), with `mac-record.swift` for the
+Mac app's window, and `parity-pair.sh` compares one state on an emulator and
+a simulator. Games run them through shims at their old paths;
+[`Tools/Capture/README.md`](Tools/Capture/README.md) has the settings and
+commands.
+
 ## Signing
 
 Keystores live in 1Password, never in a repository or a loose file. Each is
