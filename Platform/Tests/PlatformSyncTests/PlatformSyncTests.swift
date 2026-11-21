@@ -109,14 +109,14 @@ struct SyncManagerTests {
         #expect(phone.manager.bool(forKey: "settings.sound"))
     }
 
-    @Test("Launch arguments for synced keys are taken as changes made here")
+    @Test("Launch arguments for synced keys are read here, and kept out of the cloud")
     func launchArguments() {
         let device = Device(clock: 100)
         device.defaults.setVolatileDomain(["settings.musicEnabled": "NO"], forName: UserDefaults.argumentDomain)
         device.manager.start(syncing: [["settings.musicEnabled": .latest]], adoptingLaunchArguments: true)
 
         #expect(device.manager.object(forKey: "settings.musicEnabled") as? Bool == false)
-        #expect(device.cloud.dictionary(forKey: "settings.musicEnabled")?[SyncEngine.Record.value] as? Bool == false)
+        #expect(device.cloud.dictionary(forKey: "settings.musicEnabled") == nil)
     }
 }
 

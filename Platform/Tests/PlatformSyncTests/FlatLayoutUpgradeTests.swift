@@ -148,6 +148,80 @@ struct FlatLayoutUpgradeTests {
         #expect(manager.object(forKey: "settings.music") as? Bool == false)
         #expect(uploaded.allSatisfy { !($0 is String) })
     }
+
+    /// A device whose saved data and cloud agree that the music is on, at 100.
+    private func musicOn() -> (UserDefaults, MemoryCloud) {
+        let defaults = freshDefaults()
+        let cloud = MemoryCloud()
+        defaults.set(true, forKey: "settings.music")
+        defaults.set(TimeInterval(100), forKey: "sync.settings.music")
+        cloud.set([SyncEngine.Record.value: true, SyncEngine.Record.modifiedAt: TimeInterval(100)], forKey: "settings.music")
+        return (defaults, cloud)
+    }
+
+    @Test("A test run's launch argument stays on the device: never uploaded, and gone the run after")
+    func launchArgumentHeldForTheRun() {
+        let (defaults, cloud) = musicOn()
+        var uploads = 0
+        let recording = RecordingCloud(cloud) { _ in uploads += 1 }
+        defaults.setVolatileDomain(["settings.music": "<false/>"], forName: UserDefaults.argumentDomain)
+        let run = ICloudSyncManager(configuration: .init(defaults: defaults), cloud: recording, now: { 200 })
+        // Under a synced prefix, as Phantom Words syncs its settings.
+        run.start(prefixes: ["settings.": .latest], adoptingLaunchArguments: true)
+
+        #expect(run.bool(forKey: "settings.music") == false)
+        // Another device changes it meanwhile: the run keeps its own value.
+        cloud.set([SyncEngine.Record.value: true, SyncEngine.Record.modifiedAt: TimeInterval(150)], forKey: "settings.music")
+        run.synchronize()
+        #expect(run.bool(forKey: "settings.music") == false)
+        #expect(uploads == 0)
+
+        // The next launch, with no argument: the player's value, and the
+        // cloud's newer change, as if the test run had never been.
+        let next = ICloudSyncManager(configuration: .init(defaults: defaults), cloud: recording, now: { 300 })
+        next.start(prefixes: ["settings.": .latest], adoptingLaunchArguments: true)
+        #expect(next.bool(forKey: "settings.music") == true)
+        #expect(defaults.double(forKey: "sync.settings.music") == 150)
+        #expect(uploads == 0)
+    }
+
+    @Test("A switch flipped in that run is a change of the player's, and syncs")
+    func launchArgumentReleasedBySwitch() {
+        let (defaults, cloud) = musicOn()
+        defaults.setVolatileDomain(["settings.music": "NO"], forName: UserDefaults.argumentDomain)
+        let run = ICloudSyncManager(configuration: .init(defaults: defaults), cloud: cloud, now: { 200 })
+        run.start(syncing: [["settings.music": .latest]], adoptingLaunchArguments: true)
+        #expect(run.bool(forKey: "settings.music") == false)
+        #expect(cloud.dictionary(forKey: "settings.music")?[SyncEngine.Record.value] as? Bool == true)
+
+        run.set(true, forKey: "settings.music")
+        run.set(false, forKey: "settings.music")
+        #expect(cloud.dictionary(forKey: "settings.music")?[SyncEngine.Record.value] as? Bool == false)
+        #expect(cloud.dictionary(forKey: "settings.music")?[SyncEngine.Record.modifiedAt] as? TimeInterval == 200)
+
+        // Kept the run after: it was the player's own change.
+        let next = ICloudSyncManager(configuration: .init(defaults: defaults), cloud: cloud, now: { 300 })
+        next.start(syncing: [["settings.music": .latest]], adoptingLaunchArguments: true)
+        #expect(next.bool(forKey: "settings.music") == false)
+    }
+
+    @Test("A launch argument left in place (not adopted) isn't uploaded either")
+    func launchArgumentNotAdoptedNotUploaded() {
+        let (defaults, cloud) = musicOn()
+        var uploads = 0
+        let recording = RecordingCloud(cloud) { _ in uploads += 1 }
+        let before = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        defaults.setVolatileDomain(before.merging(["settings.music": false]) { $1 }, forName: UserDefaults.argumentDomain)
+        defer {
+            defaults.removeVolatileDomain(forName: UserDefaults.argumentDomain)
+            defaults.setVolatileDomain(before, forName: UserDefaults.argumentDomain)
+        }
+        let manager = ICloudSyncManager(configuration: .init(defaults: defaults), cloud: recording, now: { 200 })
+        manager.start(prefixes: ["settings.": .latest], adoptingLaunchArguments: false)
+
+        #expect(uploads == 0)
+        #expect(cloud.dictionary(forKey: "settings.music")?[SyncEngine.Record.value] as? Bool == true)
+    }
 }
 
 private final class RecordingCloud: CloudKeyValueStore {

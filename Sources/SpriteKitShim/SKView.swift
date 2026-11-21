@@ -379,10 +379,16 @@ extension DrawList {
                 label.transform = label.transform.concatenating(transform)
                 return .label(label)
             case var .effect(effect):
+                // Its contents are in its own space, so they move with it.
                 effect.transform = effect.transform.concatenating(transform)
                 return .effect(effect)
             case var .crop(crop):
+                // Its mask and contents stand where they're drawn, in the
+                // scene's space (`DrawList.collect`), so they move too: a
+                // push would otherwise slide the scene out from round them.
                 crop.transform = crop.transform.concatenating(transform)
+                crop.mask = crop.mask.transformed(by: transform)
+                crop.contents = crop.contents.transformed(by: transform)
                 return .crop(crop)
             }
         }
