@@ -255,6 +255,11 @@ would want.
   the code as it now is; delete the uploads it replaces.
 - Follow-up work on an open pull request goes into that pull request. Once
   it's merged, fixes go in a new one.
+- A pull request that isn't ready for the person to review is a draft:
+  open it with `gh pr create --draft`, and keep it a draft while anything is
+  pending (verification, screenshots, a dry run, a pull request it waits on).
+  Mark it ready for review (`gh pr ready`) only when it's done, and turn it
+  back into a draft (`gh pr ready --undo`) as soon as it isn't.
 - Label a pull request `ready` only when nothing is pending and the change
   has been checked at the size the player sees it; remove the label as soon
   as anyone asks for more. The person merges game pull requests; never merge
