@@ -50,10 +50,10 @@ require('../../Android/spritekit-android/Tools/Release/version.js');
 |---|---|
 | `project` | The Xcode project (`Game.xcodeproj`): its `CURRENT_PROJECT_VERSION` is the build number on both platforms, its `MARKETING_VERSION` the version. |
 | `playDir` | The game's Play directory (`Android/Play`), whose `play.js` reads Play (`versions --json`) and makes the release. |
-| `version` | Optional: `exportPrefix` (default `GAME`: the tool prints `export GAME_VERSION_CODE=…` and `…_VERSION_NAME=…`) and `patchNames` (`true`: the version name counts further Play uploads at one version, `1.1`, `1.1.1`, `1.1.2`, …). |
+| `version` | Optional: `exportPrefix` (default `GAME`: the tool prints `export GAME_VERSION_CODE=…` and `…_VERSION_NAME=…`) and `patchNames` (`true`: the Android version name counts further Play uploads at one version, `1.1`, `1.1.1`, `1.1.2`, …). |
 | `appStore` | `app` (the App Store Connect app ID; without it the version tool reads only Play), and for the nightly `externalGroup` (TestFlight's External group), `team`, `scheme` and `platforms` (default `["IOS"]`; also `TV_OS`, `MAC_OS`). |
 | `name`, `repo`, `branch` | For the nightly: the game's name in its report and logs, its GitHub repository, and its default branch (default `main`). |
-| `android` | `gradleProperties` (for `bundleRelease`, the beta switch at least: `["-Pgame.beta=true"]`), `releaseName` (Play's release name, default `{version}`) and `art` (steps that make the Android art, after SDL and before the store shell). |
+| `android` | `gradleProperties` (for `bundleRelease`, the beta switch at least: `["-Pgame.beta=true"]`), `releaseName` (Play's release name, default `{name}`) and `art` (steps that make the Android art, after SDL and before the store shell). |
 | `art` | Steps that make art both platforms need, before either builds; when one fails, neither builds. |
 | `parallel` | `false` builds and uploads the platforms one after another; by default every Apple platform and Android run side by side, each in its own DerivedData and logs. |
 | `notes` | For notes drafted without `--notes`: `tooling` (a regex of paths players never see; PRs touching only those are left out), `fallback` (the line when nothing's left, default `• Fixes and improvements.`), `draft: false` (the fallback alone). |
@@ -62,7 +62,11 @@ require('../../Android/spritekit-android/Tools/Release/version.js');
 A step is `{ "name": "<log name>", "run": ["<command>", "<arg>", …] }`, run
 in the release worktree. Arguments may name `{runtime}` (the worktree's
 runtime submodule), `{guard}` (its `Tools/guard.js`), `{worktree}`,
-`{build}` and `{version}`; the same are in the environment as
+`{build}`, `{version}` (the Xcode project's `MARKETING_VERSION`) and
+`{name}` (Android's version name: the version without a patch of 0, so
+1.5.0 is 1.5 and 1.4.1 stays, plus the patch count with `patchNames`). A
+game passes `{name}` to its Android build as its `versionName`, among
+`gradleProperties`. The same are in the environment as
 `RELEASE_RUNTIME`, `RELEASE_GUARD`, `RELEASE_WORKTREE`, `RELEASE_BUILD` and
 `RELEASE_VERSION`, with `RELEASE_LOGS` and `RELEASE_DRY_RUN`. A game's own
 logic, such as art cached by its inputs, goes in a script of its own that a

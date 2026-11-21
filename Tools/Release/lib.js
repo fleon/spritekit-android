@@ -70,6 +70,10 @@ const nextBuild = (seen) => highestTaken(seen) + 1;
 const thisBuild = ({ project, appStore = [], play = [] }) =>
   Math.max(Number(project), highestTaken({ project: 0, appStore, play }) + 1);
 
+// Android's version name for a marketing version: a patch of 0 is left
+// off (1.5.0 is 1.5, 1.4.1 stays), as Play shows it to testers and players.
+const androidName = (version) => String(version).replace(/^(\d+\.\d+)\.0$/, '$1');
+
 // A version name with a patch counting further Android uploads at one
 // marketing version (1.1, 1.1.1, 1.1.2, …): Play needs a new code each time
 // while iOS may stay at one build. A release named only by digits at or past
@@ -190,7 +194,7 @@ function settingsFrom(json) {
   s.version = { exportPrefix: 'GAME', patchNames: false, ...(s.version ?? {}) };
   if (s.appStore) s.appStore = { platforms: ['IOS'], ...s.appStore };
   for (const p of s.appStore?.platforms ?? []) if (!PLATFORMS[p]) throw new Error(`release.json: unknown platform ${p} (${Object.keys(PLATFORMS).join(', ')})`);
-  s.android = { gradleProperties: [], releaseName: '{version}', art: [], ...(s.android ?? {}) };
+  s.android = { gradleProperties: [], releaseName: '{name}', art: [], ...(s.android ?? {}) };
   s.parallel = s.parallel !== false;
   s.art ??= [];
   s.notes ??= {};
@@ -215,7 +219,7 @@ function playRelease({ aab, name, notes, send }) {
 
 module.exports = {
   APP_STORE_APPROVED, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor,
-  highestTaken, nextBuild, thisBuild, patchName, ascData, ascBuildNumbers, ascUploadNumbers, appStoreApproved,
+  highestTaken, nextBuild, thisBuild, androidName, patchName, ascData, ascBuildNumbers, ascUploadNumbers, appStoreApproved,
   newPRs, buildInSubject, buildSubject, bulleted, plainTitle, draftNotes, FALLBACK,
   fill, settingsFrom, nightlyProblems, playRelease, sameVersion, namesVersion,
 };

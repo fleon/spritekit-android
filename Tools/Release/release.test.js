@@ -109,7 +109,7 @@ test('settings: defaults, checks, templates', () => {
   const s = lib.settingsFrom({ project: 'Game.xcodeproj', playDir: 'Android/Play', appStore: { app: '1' } });
   assert.strictEqual(s.branch, 'main');
   assert.deepStrictEqual(s.appStore.platforms, ['IOS']);
-  assert.strictEqual(s.android.releaseName, '{version}');
+  assert.strictEqual(s.android.releaseName, '{name}');
   assert.strictEqual(s.version.exportPrefix, 'GAME');
   assert.strictEqual(s.parallel, true);
   assert.strictEqual(lib.settingsFrom({ project: 'G', playDir: 'P', parallel: false }).parallel, false);
@@ -161,6 +161,15 @@ test('version.js: exports for a build now, --next writes one past Play, --offlin
   assert.strictEqual(r.status, 1);
   assert.match(r.stderr, /at least 10/);
   assert.strictEqual(version(root, '--frobnicate').status, 1);
+});
+
+test('Android names leave off a patch of 0', () => {
+  assert.strictEqual(lib.androidName('1.5.0'), '1.5');
+  assert.strictEqual(lib.androidName('1.0.0'), '1.0');
+  assert.strictEqual(lib.androidName('1.4.1'), '1.4.1');
+  assert.strictEqual(lib.androidName('1.10.0'), '1.10');
+  assert.strictEqual(lib.androidName('1.7'), '1.7');
+  assert.strictEqual(lib.androidName('2.0.10'), '2.0.10');
 });
 
 test('version.js: patch names and an export prefix from the settings', () => {
