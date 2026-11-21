@@ -89,9 +89,8 @@ test('the CLI refuses what it must, before reaching Play', () => {
   assert.match(run.text, /Production is only ever a draft/);
   run = play('release', '--aab', '/nowhere.aab', '--track', 'internal', '--rollout');
   assert.match(run.text, /is not there/);
-  run = play('release', '--send-for-review');
-  assert.strictEqual(run.status, 2);
-  assert.match(run.text, /goes with --send/);
+  run = play('release', '--aab', '/nowhere.aab', '--track', 'internal', '--send-for-review');
+  assert.match(run.text, /--send-for-review sends a rolled-out release/);
   run = play('listing', '--offline', '--send');
   assert.strictEqual(run.status, 2);
 });

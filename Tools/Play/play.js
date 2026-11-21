@@ -39,8 +39,9 @@
 //
 //   --send             make the changes (without it, only plan them)
 //   --offline          check the files only, without reading Play
-//   --send-for-review  with --send, on a testing-track release only: send
-//                      the edit for review instead of holding it
+//   --send-for-review  on a testing-track release only: with --send, send
+//                      the edit for review instead of holding it (without
+//                      --send the plan says it would)
 //   --help, -h         print this and stop
 //
 // Nothing here submits for review but the nightly testing build: every
@@ -96,7 +97,6 @@ const offline = args.includes('--offline');
 const forReview = args.includes('--send-for-review');
 const usage = (why) => { console.error(why); process.exit(2); };
 if (offline && send) usage('--offline reads nothing from Play, so it can send nothing: drop one.');
-if (forReview && !send) usage('--send-for-review goes with --send.');
 const STEPS = ['listing', 'images', 'screenshots', 'product', 'datasafety', 'release', 'tracks', 'status'];
 const step = args.find((a) => STEPS.includes(a));
 const TRACK = option('--track', 'internal');
