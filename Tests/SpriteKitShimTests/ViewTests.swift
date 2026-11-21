@@ -301,6 +301,30 @@ struct TransitionTests {
         #expect(close(origin(of: list, at: 1) ?? .zero, CGPoint(x: 150, y: 0)))
     }
 
+    @Test("A crop's mask and contents slide with their scene")
+    func pushMovesCrops() {
+        let log = LoggingScene.Log()
+        let view = view()
+        let a = LoggingScene("A", log: log)
+        let crop = SKCropNode()
+        crop.position = CGPoint(x: 20, y: 0)
+        crop.maskNode = SKSpriteNode(color: .white, size: CGSize(width: 10, height: 10))
+        crop.addChild(SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10)))
+        a.addChild(crop)
+        view.presentScene(a)
+        view.presentScene(scene("B", log: log, colour: .blue), transition: .push(with: .left, duration: 1))
+        let list = view.tick(currentTime: 0, delta: 0.25)
+        guard case let .crop(moved) = list.commands.first else {
+            Issue.record("expected the outgoing scene's crop first")
+            return
+        }
+        // A quarter of the way: the crop, its mask and what it shows all 50
+        // points left of where they stand.
+        #expect(close(CGPoint.zero.applying(moved.transform), CGPoint(x: -30, y: 0)))
+        #expect(close(origin(of: moved.mask) ?? .zero, CGPoint(x: -30, y: 0)))
+        #expect(close(origin(of: moved.contents) ?? .zero, CGPoint(x: -30, y: 0)))
+    }
+
     @Test("The two scenes meet in the view, whatever their anchors")
     func anchors() {
         let log = LoggingScene.Log()

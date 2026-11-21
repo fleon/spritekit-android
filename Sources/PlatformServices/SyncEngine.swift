@@ -79,6 +79,11 @@ public final class SyncEngine: @unchecked Sendable {
     private var syncedKeys: [String: Merge] = [:]
     /// Every key starting with one of these syncs too, as it merges.
     private var syncedPrefixes: [String: Merge] = [:]
+    /// Keys a launch argument holds for this run (`adoptLaunchArguments`).
+    private var held: Set<String> = []
+    /// Where what each held key had saved before the run is kept, beside
+    /// the stamps (so no prefix takes it for a synced key).
+    private var heldKey: String { stamps.key(for: "launchArguments.held") }
     /// Called with the keys whose values here changed because another device
     /// had changed them.
     private let updated: ([String]) -> Void
@@ -110,6 +115,7 @@ public final class SyncEngine: @unchecked Sendable {
         syncedKeys = keys.reduce(into: [:]) { $0.merge($1) { first, _ in first } }
         syncedPrefixes = prefixes
         cloud.externalChanges = { [weak self] in self?.merge() }
+        restoreHeldKeys()
         if adoptingLaunchArguments { adoptLaunchArguments() }
         synchronize()
     }
@@ -147,6 +153,7 @@ public final class SyncEngine: @unchecked Sendable {
     /// Saves `value` (nil removes it) for a key that keeps the latest change.
     public func set(_ value: Any?, forKey key: String) {
         guard !Self.isSame(value, defaults.object(forKey: key)) else { return }
+        release(key)
         let stamp = now()
         saveLocally(value, forKey: key, modifiedAt: stamp)
         cloud.set(Self.record(value, modifiedAt: stamp), forKey: key)
@@ -199,10 +206,17 @@ public final class SyncEngine: @unchecked Sendable {
 
     /// A launch argument (`-settings.musicEnabled "<false/>"`) hides the saved
     /// value for the whole run, so the switches could never change it: take
-    /// each synced key passed that way as a change made here instead.
+    /// each synced key passed that way, named or under a synced prefix, into
+    /// what's saved here, held for the run.
+    ///
+    /// A held key is the run's, not the player's: it neither reaches the
+    /// cloud nor gives way to it, so a test run's switches never turn off
+    /// the player's sound on every device they own. The game changing it
+    /// (a switch) ends the hold and syncs that change as any other. What was
+    /// saved before is kept aside, and the next `start` puts it back.
     public func adoptLaunchArguments() {
         var arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
-        let passed = syncedKeys.filter { $0.value == .latest }.keys.compactMap { key in
+        let passed = arguments.keys.filter { merge(for: $0) == .latest }.sorted().compactMap { key in
             arguments.removeValue(forKey: key).map { (key, Self.launchValue($0)) }
         }
         guard !passed.isEmpty else { return }
@@ -213,8 +227,48 @@ public final class SyncEngine: @unchecked Sendable {
         // replaces it on both.
         defaults.removeVolatileDomain(forName: UserDefaults.argumentDomain)
         defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        var saved = defaults.dictionary(forKey: heldKey) ?? [:]
         for (key, value) in passed {
-            set(value, forKey: key)
+            if saved[key] == nil {
+                saved[key] = Self.record(defaults.object(forKey: key), modifiedAt: localModifiedAt(key))
+            }
+            held.insert(key)
+            // The run's value, under the saved one's stamp: not a change.
+            defaults.set(value, forKey: key)
+        }
+        defaults.set(saved, forKey: heldKey)
+    }
+
+    /// Puts back what the last run's launch arguments held, as it was saved
+    /// before them.
+    private func restoreHeldKeys() {
+        guard let saved = defaults.dictionary(forKey: heldKey) else { return }
+        for (key, record) in saved {
+            let record = record as? [String: Any] ?? [:]
+            let modifiedAt = record[Record.modifiedAt] as? TimeInterval ?? 0
+            if let value = record[Record.value] {
+                defaults.set(value, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+            if modifiedAt > 0 {
+                defaults.set(modifiedAt, forKey: stamps.key(for: key))
+            } else {
+                defaults.removeObject(forKey: stamps.key(for: key))
+            }
+        }
+        defaults.removeObject(forKey: heldKey)
+    }
+
+    /// The game changed a held key itself: from now on it syncs.
+    private func release(_ key: String) {
+        guard held.remove(key) != nil else { return }
+        var saved = defaults.dictionary(forKey: heldKey) ?? [:]
+        saved[key] = nil
+        if saved.isEmpty {
+            defaults.removeObject(forKey: heldKey)
+        } else {
+            defaults.set(saved, forKey: heldKey)
         }
     }
 
@@ -229,8 +283,13 @@ public final class SyncEngine: @unchecked Sendable {
     /// Merges `keys` (every synced key by default) with their copies in the
     /// cloud, then announces what changed here.
     private func merge(_ keys: [String: Merge]? = nil) {
+        // A value a launch argument gives this run (held, or still in the
+        // argument domain, where reads see it over what's saved) is left out:
+        // it would otherwise go up as a change made here.
+        let arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         var changed: [String] = []
         for (key, kind) in keys ?? allSyncedKeys {
+            if kind == .latest, held.contains(key) || arguments[key] != nil { continue }
             if reconcile(key, as: kind) { changed.append(key) }
         }
         guard !changed.isEmpty else { return }
