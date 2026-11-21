@@ -698,6 +698,7 @@ Vendor/build.sh android                     # FreeType + HarfBuzz, both ABIs
 Scripts/build-sdl.sh arm64-v8a              # SDL 3.4.20, staged into the game's App
 Scripts/build-shell.sh --debug arm64-v8a    # the game's AndroidShell library, staged
 Scripts/check-android.sh arm64-v8a          # this runtime alone, cross-compiled
+Scripts/art.sh                              # the game's asset catalogs, packed (below)
 swift test                                  # host tests, on a Mac
 ```
 
@@ -933,6 +934,46 @@ through `AssetIndex`. After changing the packer on purpose,
 Measured 2026-11-17 on a catalog of 304 image sets (122 MB): 5 atlas pages
 and 37 whole, 78 MB of KTX (72 MB as PNGs, 356 MB as RGBA8) in 72 s, at a
 peak of 1 GB.
+
+#### Packing a game's art
+
+A game packs its art with `Scripts/art.sh` (`Tools/Art/pack.js`), through
+its own `Android/Scripts/art.sh`, which runs it with the game's settings
+from `runtime.sh`, as the other scripts do:
+
+```bash
+#!/bin/bash
+# SpriteKit for Android's Scripts/art.sh, with the game's paths (runtime.sh).
+. "$(dirname "$0")/runtime.sh"
+exec "$RUNTIME_DIR/Scripts/art.sh" "$@"
+```
+
+It builds the ASTC encoder if the checkout has none, then runs the packer
+under `Tools/guard.js 12` on the game's catalogs. The settings are paths
+from the game's root:
+
+| Variable | What it says |
+|---|---|
+| `SKA_ART_CATALOGS` | The catalogs, space-separated, in order (default `Assets/Assets.xcassets`). |
+| `SKA_ART_OUT` | Where the pack goes (default `Android/Assets`). |
+| `SKA_ART_PNG` | `1` for PNG pages, which need no encoder (default ASTC). |
+| `SKA_ART_CACHE` | A cache directory, as `--cache`. |
+
+```
+Android/Scripts/art.sh                       # the game's pack, as it ships
+Android/Scripts/art.sh --png                 # PNG pages, quicker, for a look
+Android/Scripts/art.sh --out <dir>           # somewhere else
+Android/Scripts/art.sh --cache <dir>         # copied from <dir> when nothing changed
+```
+
+With a cache, each pack is kept under a hash of everything it is made from:
+every file in each catalog (by its place in the list and its path inside
+it, so the same catalogs in another worktree hash alike), the page format,
+the packer, the compressor and the encoder's pinned release. A run whose
+hash is there copies that pack instead of encoding again; the three most
+recently used are kept. Steps that write into a catalog first (sprite
+sheets, rigs, generated images) stay the game's, and run before it.
+`node --test Tools/Art/pack.test.js` checks it.
 
 ### Text
 

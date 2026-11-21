@@ -125,6 +125,9 @@ would want.
 - A game whose art ships in an install-time asset pack can't be installed as
   a plain release APK (it would launch without its art): install a release on
   a device from the bundle, as Play would.
+- Pack a game's asset catalogs with `Android/Scripts/art.sh` (the runtime's
+  `Scripts/art.sh`, README "Packing a game's art"), its catalogs set in
+  `runtime.sh`; never call the packer by hand from a game's scripts.
 
 ## Signing and stores
 
