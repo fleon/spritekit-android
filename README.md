@@ -392,6 +392,12 @@ decides, it hands in:
   draws it once a size into `DrawnTexture`'s cache and tints it.
   `ShapeSprite` draws rings, pills, discs and outlines the same way, never
   as shape nodes.
+- **Loading spinner** (`LoadingSpinner`): an arc of a ring that reaches all
+  the way round and back every period while it turns, its ends round, in
+  any colour (`color`, which can change while it shows) at the game's
+  `radius` and `thickness`. A shader draws it on one sprite, so it builds
+  no path or texture per frame and looks alike on Apple and Android.
+  `LoadingSpinnerSweep` is its curve alone.
 - **Scenes** (`LoadableScene`, `TransitionManager.show`/`present`,
   `offMainActor`, `BuildGate`): `TransitionManager.sceneSize`, `scaleMode`
   and `duration` are the game's, and `present` takes the game's loading
