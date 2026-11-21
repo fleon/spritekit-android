@@ -1389,6 +1389,18 @@ product on Play. A game runs each through a two-line shim beside its
 `pricing.json`; [`Tools/Pricing/README.md`](Tools/Pricing/README.md) has the
 settings and the rules it keeps.
 
+## Game Center definitions
+
+`Tools/GameCenter/gamecenter.js` keeps a game's Game Center achievements and
+leaderboards in App Store Connect in step with a definitions file in the
+game's repository, through `asc`: it prints a plan, and creates or corrects
+only with `--send`. `Tools/GameCenter/generate-art.js` paints the achievement
+images with Codex. A game runs each through a two-line script in its own Game
+Center directory, beside its `achievements.json`;
+[`Tools/GameCenter/README.md`](Tools/GameCenter/README.md) has the layout and
+the rules it keeps. A game that keeps its achievements only in App Store
+Connect needs neither.
+
 ## Signing
 
 Keystores live in 1Password, never in a repository or a loose file. Each is

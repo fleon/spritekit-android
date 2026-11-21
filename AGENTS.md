@@ -148,6 +148,10 @@ would want.
   the game's shims with its `pricing.json`. A price already set in a store
   stays as it is: commit regenerated price files only when the store takes
   them.
+- Game Center definitions a game keeps in its repository go to App Store
+  Connect through the runtime's `Tools/GameCenter/gamecenter.js` (its
+  README), run through the game's own two-line script: plan first, and send
+  only when asked.
 
 ## Verifying
 
