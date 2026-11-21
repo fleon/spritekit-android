@@ -1308,6 +1308,25 @@ pool's AVDs, state and the debug properties cleared for each new owner in
 frame times describe the host's GPU, not a phone's: measure performance on a
 device.
 
+## Memory guard
+
+`Tools/guard.js` runs a command and kills it, with everything it started, once
+their resident memory together passes a limit in GB, so a runaway script can't
+take the machine down (Node's own heap limit misses typed arrays and native
+libraries). It prints the peak, and exits with the command's code, 137 when it
+killed it, 2 on a bad command line and 127 when the command can't start.
+
+```bash
+node Tools/guard.js 12 -- <command> [args...]
+node --test Tools/guard.test.js
+```
+
+A game keeps a shim at its own `Tools/guard.js`, so `node Tools/guard.js …` in
+its scripts and docs runs this one. The shim requires
+`../Android/spritekit-android/Tools/guard.js`, and when the submodule isn't
+checked out (a fresh worktree) it says so and exits 2 rather than run the
+command unguarded.
+
 ## Google Play
 
 `Tools/Play/play.js` is every game's Google Play tool: the store listing,
