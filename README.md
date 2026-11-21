@@ -1447,6 +1447,18 @@ a simulator. Games run them through shims at their old paths;
 [`Tools/Capture/README.md`](Tools/Capture/README.md) has the settings and
 commands.
 
+## Releases
+
+`Tools/Release/` holds every game's nightly release and its build number.
+`nightly.js` ships one build, when PRs were merged since the last, with one
+build number to TestFlight and to Play's internal and closed testing (through
+`Tools/Play/play.js`); `version.js` works out that number, one past the
+highest the project, App Store Connect and Play have taken, and bumps the
+version once it has an approved release. Each game runs them through small
+shims with its settings in `Tools/Release/release.json`;
+[`Tools/Release/README.md`](Tools/Release/README.md) has the settings, the
+steps and the rules.
+
 ## Signing
 
 Keystores live in 1Password, never in a repository or a loose file. Each is

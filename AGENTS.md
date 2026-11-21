@@ -223,6 +223,11 @@ would want.
   Connect through the runtime's `Tools/GameCenter/gamecenter.js` (its
   README), run through the game's own two-line script: plan first, and send
   only when asked.
+- The nightly release and the shared build number go through the runtime's
+  `Tools/Release/` (`nightly.js`, `version.js`; its README), run through the
+  game's shims with its `Tools/Release/release.json`. What one game needs
+  differently is a setting or a script of the game's own that a step runs,
+  never a copy of the tool.
 
 ## Verifying
 
