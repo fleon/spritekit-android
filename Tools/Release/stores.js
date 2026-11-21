@@ -44,15 +44,15 @@ function playVersions(root, settings, approved) {
 }
 
 // Every build number App Store Connect has taken: builds in any state, and
-// uploads still in flight (asc's next build number, one past them).
+// uploads that went up or failed. An export for App Store Connect (a dry
+// run's too) leaves an upload waiting that never comes, which takes nothing.
 function appStoreBuilds(settings) {
   const app = settings.appStore.app;
   const numbers = lib.ascBuildNumbers(lib.ascData(run('asc', ['builds', 'list', '--app', app, '--paginate', '--processing-state', 'all', '--output', 'json'])));
   try {
-    const next = Number(JSON.parse(run('asc', ['builds', 'next-build-number', '--app', app, '--output', 'json'])).nextBuildNumber);
-    if (Number.isInteger(next) && next > 0) numbers.push(next - 1);
+    numbers.push(...lib.ascUploadNumbers(lib.ascData(run('asc', ['builds', 'uploads', 'list', '--app', app, '--paginate', '--output', 'json']))));
   } catch (error) {
-    console.error(`asc's next build number wasn't read (${error.message}); its builds list stands.`);
+    console.error(`asc's uploads weren't read (${error.message}); its builds list stands.`);
   }
   return numbers;
 }

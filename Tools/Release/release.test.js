@@ -58,6 +58,11 @@ test('App Store Connect: replies a page a line, and approved versions', () => {
   assert.deepStrictEqual(lib.ascData('{"data":[{"id":"a"}]}\n{"data":[{"id":"b"}]}\n'), [{ id: 'a' }, { id: 'b' }]);
   assert.deepStrictEqual(lib.ascData(''), []);
   assert.deepStrictEqual(lib.ascBuildNumbers([{ attributes: { version: '77' } }, { attributes: {} }]), [77]);
+  assert.deepStrictEqual(lib.ascUploadNumbers([
+    { attributes: { cfBundleVersion: '78', state: { state: 'AWAITING_UPLOAD' } } },
+    { attributes: { cfBundleVersion: '77', state: { state: 'COMPLETE' } } },
+    { attributes: { cfBundleVersion: '76', state: { state: 'FAILED' } } },
+  ]), [77, 76]);
   const versions = [
     { attributes: { versionString: '1.5', appVersionState: 'WAITING_FOR_REVIEW' } },
     { attributes: { versionString: '1.4', appVersionState: 'READY_FOR_DISTRIBUTION', appStoreState: 'READY_FOR_SALE' } },

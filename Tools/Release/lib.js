@@ -104,6 +104,12 @@ function ascData(text) {
 // Every build number among `asc builds list`'s builds.
 const ascBuildNumbers = (builds) => builds.map((b) => Number(b.attributes?.version)).filter(Number.isFinite);
 
+// The build numbers of uploads that went up or failed; one still awaiting
+// its file (what an export for App Store Connect leaves) takes no number.
+const ascUploadNumbers = (uploads) => uploads
+  .filter((u) => (u.attributes?.state?.state ?? u.attributes?.state) !== 'AWAITING_UPLOAD')
+  .map((u) => Number(u.attributes?.cfBundleVersion)).filter(Number.isFinite);
+
 // The App Store version Apple approved for `version` (any platform), as
 // "<versionString> <state>", or null. 1.4 and 1.4.0 are the same version.
 function appStoreApproved(versions, version) {
@@ -208,7 +214,7 @@ function playRelease({ aab, name, notes, send }) {
 
 module.exports = {
   APP_STORE_APPROVED, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor,
-  highestTaken, nextBuild, thisBuild, patchName, ascData, ascBuildNumbers, appStoreApproved,
+  highestTaken, nextBuild, thisBuild, patchName, ascData, ascBuildNumbers, ascUploadNumbers, appStoreApproved,
   newPRs, buildInSubject, buildSubject, bulleted, plainTitle, draftNotes, FALLBACK,
   fill, settingsFrom, nightlyProblems, playRelease, sameVersion, namesVersion,
 };

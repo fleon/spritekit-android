@@ -75,8 +75,10 @@ One number for both platforms: the Xcode project's
 past the highest any of them has taken:
 
 - the project's;
-- App Store Connect's: every build in any state, and uploads still in flight
-  (`asc builds list`, `asc builds next-build-number`);
+- App Store Connect's: every build in any state, and every upload that went
+  up or failed (`asc builds list`, `asc builds uploads list`). An export for
+  App Store Connect, a dry run's included, leaves an upload awaiting its file
+  that never comes; it takes no number;
 - Play's: every release on every track and every uploaded bundle or APK,
   read through the game's own `play.js versions --json`, never `gplay`.
 
