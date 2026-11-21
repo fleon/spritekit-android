@@ -235,6 +235,7 @@ function apple(platform) {
     `--${P.artifact}-path`, artifact, ...xcflags('-allowProvisioningUpdates'), '--output', 'json'])) {
     return `export failed: ${logTail(`${id}-export`)}`;
   }
+  if (!fs.existsSync(artifact)) return `the export wrote no ${P.artifact}`;
   const size = `${(fs.statSync(artifact).size / 1048576).toFixed(1)} MB`;
   if (DRY) return `${V.version} (${V.build}) archived and exported (${size}); dry run, not uploaded`;
   const upload = platform === 'MAC_OS'
