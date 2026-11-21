@@ -394,7 +394,7 @@ public struct DrawList {
             return
         }
 
-        if let sprite = node as? SKSpriteNode, sprite.size != .zero {
+        if let sprite = node as? SKSpriteNode, sprite.unscaledSize != .zero {
             // A 9-sliced sprite becomes nine ordinary sprite commands, each
             // with its own frame and sub-rect, so corners keep their size
             // while the edges and middle stretch (see NineSlice.swift).
@@ -514,13 +514,13 @@ public struct DrawList {
     ) -> [(size: CGSize, anchorPoint: CGPoint, textureRect: CGRect)] {
         let textureRect = sprite.texture?.textureRect() ?? CGRect(x: 0, y: 0, width: 1, height: 1)
         guard sprite.isSliced, let art = sprite.texture?.size(), art.width > 0, art.height > 0 else {
-            return [(sprite.size, sprite.anchorPoint, textureRect)]
+            return [(sprite.unscaledSize, sprite.anchorPoint, textureRect)]
         }
         let own = sprite.contentFrame
         let frame = CGRect(x: own.minX * scale.width, y: own.minY * scale.height,
                            width: own.width * scale.width, height: own.height * scale.height)
         let patches = NineSlice.patches(frame: frame, textureSize: art, center: sprite.centerRect, base: own.size)
-        guard patches.count > 1 else { return [(sprite.size, sprite.anchorPoint, textureRect)] }
+        guard patches.count > 1 else { return [(sprite.unscaledSize, sprite.anchorPoint, textureRect)] }
         return patches.map { patch in
             // The transform is the node's, so a patch is placed by giving it
             // an anchor point that lands its own rect where the patch sits.

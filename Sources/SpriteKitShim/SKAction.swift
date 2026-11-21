@@ -440,7 +440,7 @@ public final class SKAction {
             case let .setTexture(texture, resize):
                 if let sprite = node as? SKSpriteNode {
                     sprite.texture = texture
-                    if resize { sprite.size = texture.size() }
+                    if resize { sprite.unscaledSize = texture.size() }
                 }
                 return delta
 
