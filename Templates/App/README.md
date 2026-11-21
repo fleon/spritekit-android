@@ -32,7 +32,7 @@ them changes only its imports.
 
 | Module | Class | What it does |
 | --- | --- | --- |
-| `spritekit` | `SpriteKitActivity` | SDL's activity: launch arguments in debuggable builds, the environment the runtime reads (below), Back on Android 13 and later, the safe area as iOS gives it, links (`gameLink`, held until the shell can take them, a cold start's as `-LaunchLink`), the share sheet (`shareFile`), Paste over a text field (`offerPaste`), the platform channel's JNI |
+| `spritekit` | `SpriteKitActivity` | SDL's activity: launch arguments in debuggable builds, the game's orientations (`OrientationPolicy`, + its test), the environment the runtime reads (below), Back on Android 13 and later, the safe area as iOS gives it, links (`gameLink`, held until the shell can take them, a cold start's as `-LaunchLink`), the share sheet (`shareFile`), Paste over a text field (`offerPaste`), the platform channel's JNI |
 | | `PlatformServices`, `PlatformService` | The channel's Java end: a registry of services by name, dispatching `service.method` calls and queueing events (`post`) |
 | | `DeviceServices` | `device`: haptics, battery saver, audio focus, the status bar, the app's settings page (`openAppSettings`), the battery (`battery`), the connection (`connection`, with the app's `ACCESS_NETWORK_STATE`), JPEG and PNG re-encoding (`jpegToPng`, `pngToJpeg`) |
 | | `AudioFocusPolicy` (+ its test) | When to ask for audio focus, as an ambient iOS session behaves |
@@ -111,7 +111,7 @@ itself.
 | --- | --- |
 | `settings.gradle.kts`, `build.gradle.kts`, `gradle.properties`, `gradlew*`, `gradle/` | The Gradle project and wrapper, including the library's modules from `../spritekit-android/Library`; SDK levels in `gradle.properties` |
 | `app/build.gradle.kts` | The app: the game's assets staged into the APK, version from the Xcode project, the beta flag, signing, Play Games' ID and the licence key (`resValue`), the library modules it uses, and the guards that stop an APK with no native libraries or no art |
-| `app/src/main/AndroidManifest.xml` | GLES 3, the vibrator, SDL's activity settings; the library's entries are merged in |
+| `app/src/main/AndroidManifest.xml` | GLES 3, the vibrator, SDL's activity settings, the game category; the library's entries are merged in |
 | `MainActivity.java` | `SpriteKitActivity`, adding Play Billing (`addServices`) |
 | `res/` | The app's name, a black launch theme with no splash icon, a placeholder launcher icon |
 
@@ -163,7 +163,22 @@ itself.
    the game as `-LaunchLink <link>` (`LaunchLinks.launchLinkArgument`), and
    a running game's to `nativeOpenLink`; either way a new intent becomes the
    activity's (`setIntent`, which a notification tap is read from).
-6. **Play Games' IDs.** The build reads
+6. **Orientations.** Every one by default. A game that allows fewer sets
+   `spritekit_orientations` (the library's `res/values/orientations.xml`)
+   in its own `res/values/orientations.xml`, and apart for tablets in
+   `res/values-sw600dp/`, as its `UISupportedInterfaceOrientations` and
+   `~ipad` variant: the words of SDL's orientations hint, `Portrait`,
+   `PortraitUpsideDown`, `LandscapeLeft`, `LandscapeRight`.
+
+   ```xml
+   <string name="spritekit_orientations" translatable="false">Portrait</string>
+   ```
+
+   `SpriteKitActivity` requests them as it starts and again as a foldable
+   folds or unfolds; `-Orientation` (debug builds) holds over them. The
+   manifest's `android:appCategory="game"` is what keeps Android 16 and
+   later honouring them on a tablet; keep it.
+7. **Play Games' IDs.** The build reads
    `<game>/Tools/Play/PlayGames/PlayGamesAchievements.json` (the project ID,
    and each achievement's and leaderboard's Play ID by its Game Center ID)
    into the APK, and the project ID into `game_services_project_id`, which

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The orientations the game allows, in SDL_HINT_ORIENTATIONS' words
+         (Portrait, PortraitUpsideDown, LandscapeLeft, LandscapeRight),
+         read by SpriteKitActivity. Every one by default; a game sets its
+         own in res/values/orientations.xml, and another for tablets in
+         res/values-sw600dp/, as iOS's UISupportedInterfaceOrientations and
+         its ~ipad variant. Read again as a foldable folds or unfolds. -->
+    <string name="spritekit_orientations" translatable="false">Portrait PortraitUpsideDown LandscapeLeft LandscapeRight</string>
+</resources>
