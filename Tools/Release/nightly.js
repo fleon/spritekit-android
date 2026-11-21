@@ -122,7 +122,9 @@ for (const m of MOVES) say(m);
 
 const A = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `${SLUG.toLowerCase()}-nightly-`));
 const WT = path.join(A, 'worktree');
-const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+const pad = (n) => String(n).padStart(2, '0');
+const now = new Date();
+const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 const LOGS = path.join(os.homedir(), 'Library/Logs', `${SLUG}Nightly`, stamp);
 fs.mkdirSync(LOGS, { recursive: true });
 function cleanup() {
@@ -280,6 +282,8 @@ ENV.ANDROID_NDK_ROOT ||= ENV.ANDROID_NDK_HOME;
 ENV.ANDROID_HOME ||= path.join(os.homedir(), 'Library/Android/sdk');
 const AAB = path.join(WT, 'Android/App/app/build/outputs/bundle/release/app-release.aab');
 const NAME = lib.fill(S.android.releaseName, VALUES);
+// The release as the report names it: its name, with the build when the name doesn't hold it.
+const LABEL = NAME.includes(String(V.build)) ? NAME : `${NAME} (${V.build})`;
 
 function android() {
   if (!artOK) return 'not built: the art couldn\'t be made';
@@ -299,7 +303,7 @@ function android() {
   // Without --send, play.js checks the bundle offline and uploads nothing.
   if (!step('android-check', play(false))) return `the bundle doesn't check out for Play: ${logTail('android-check')}`;
   const size = `${(fs.statSync(AAB).size / 1048576).toFixed(1)} MB`;
-  if (DRY) return `${NAME} (${V.build}) built (${size}) and checked for internal and alpha; dry run, not uploaded`;
+  if (DRY) return `${LABEL} built (${size}) and checked for internal and alpha; dry run, not uploaded`;
   const sent = step('android-release', play(true));
   const log = (() => { try { return fs.readFileSync(path.join(LOGS, 'android-release.log'), 'utf8'); } catch { return ''; } })();
   const neverPublished = /had never been published/.test(log)
@@ -308,12 +312,12 @@ function android() {
     // The internal release may have gone out before the copy to alpha failed.
     if (/^Release: rolled out on internal/m.test(log)) {
       uploaded = true;
-      return `${NAME} (${V.build}) rolled out to internal testing, but copying it to alpha failed: ${logTail('android-release')}`;
+      return `${LABEL} rolled out to internal testing, but copying it to alpha failed: ${logTail('android-release')}`;
     }
     return `the Play release failed: ${logTail('android-release')}`;
   }
   uploaded = true;
-  return `${NAME} (${V.build}) rolled out to internal and alpha and sent for review${neverPublished}`;
+  return `${LABEL} rolled out to internal and alpha and sent for review${neverPublished}`;
 }
 const ANDROID = android();
 if (!/(sent for review|dry run, not uploaded)/.test(ANDROID) || /failed/.test(ANDROID)) failed = true;
