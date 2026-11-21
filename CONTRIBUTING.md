@@ -38,6 +38,12 @@ Open an issue with:
    If you touch `Platform/`, also build it for iOS, tvOS and Mac Catalyst,
    since games use it on Apple platforms too.
 
+   `swift test --package-path Platform` needs the checkout's folder to be
+   named `spritekit-android`: SwiftPM takes the package's name from it. From
+   a worktree with another name, run it in
+   `git worktree add --detach <dir>/spritekit-android HEAD`, and remove that
+   worktree afterwards.
+
 4. **Explain the why** in the pull request: what Apple does, what was
    wrong, and how you checked it.
 
