@@ -101,3 +101,26 @@ test('the help is the header, read without a game', () => {
   assert.match(run.stdout, /^Google Play, driven from a game's repository/);
   assert.match(run.stdout, /--send-for-review/);
 });
+
+test('a release name names its version however a game wrote it', () => {
+  assert.ok(lib.namesVersion('1.5.0', '1.5.0'));
+  assert.ok(lib.namesVersion('1002 (1.0.2)', '1.0.2'));
+  assert.ok(lib.namesVersion('1.4', '1.4.0'));
+  assert.ok(lib.namesVersion('1.5.0 beta', '1.5'));
+  assert.ok(!lib.namesVersion('1.5.1', '1.5'));
+  assert.ok(!lib.namesVersion('11.5.0', '1.5.0'));
+  assert.ok(!lib.namesVersion(null, '1.0'));
+});
+
+test('what Play gave out: releases, uploads and the approved one', () => {
+  const releases = lib.releasesIn([
+    { track: 'production', releases: [{ name: '1002 (1.0.2)', status: 'completed', versionCodes: ['1002'] }, { name: '1.1.0', status: 'draft', versionCodes: ['1010'] }] },
+    { track: 'alpha', releases: [{ name: '1.1.0', status: 'completed', versionCodes: ['1010'] }] },
+  ]);
+  assert.deepStrictEqual(releases[0], { track: 'production', name: '1002 (1.0.2)', status: 'completed', versionCodes: [1002] });
+  assert.deepStrictEqual(lib.uploadedIn({ bundles: { bundles: [{ versionCode: 1011 }] }, apks: {} }), [1011]);
+  assert.deepStrictEqual(lib.uploadedIn({}), []);
+  assert.strictEqual(lib.approvedRelease(releases, '1.0.2').name, '1002 (1.0.2)');
+  // A draft on production, or a release on a testing track, isn't an approval.
+  assert.strictEqual(lib.approvedRelease(releases, '1.1'), null);
+});

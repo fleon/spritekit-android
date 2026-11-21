@@ -31,6 +31,40 @@ process.env.PLAY_DIR = __dirname;
 require('../../Android/spritekit-android/Tools/Play/play.js');
 ```
 
+## Versions
+
+`play.js versions --json [--approved <version>]` reads what Play has given
+out, without changing anything: every release on every track, the codes of
+every uploaded bundle and APK, the highest of them (the next build's code is
+one past it, or past the App Store's), and with `--approved` the production
+release Google approved for that version (its name naming it, `1.5.0` or
+`1002 (1.5.0)`). The games' version tools and nightly scripts read Play
+through it; it exits 1 when Play can't be read.
+
+## Play Games
+
+`games.js` brings a game's Game Center achievements and leaderboards to Play
+Games Services as drafts (`--help` has it all). The game runs it through its
+own two-line `games.js`, with a `games` section in `play.json`:
+
+| Key | What it says |
+|---|---|
+| `source` | Where the achievements come from: `{ "appStoreConnect": "<app id>" }` (Game Center live, with its leaderboards), `{ "gameCenterFile": "<file>" }` (a Game Center definitions file) or `{ "snapshot": "<file>" }` (everything written out, steps and leaderboard ranges too). |
+| `applicationId` | The Play Games project ID, when the mapping file doesn't hold it yet. |
+| `locales` | `"listing"` to name locales through `listing.json`'s map; otherwise App Store Connect's are translated by its table. |
+| `idPrefix` | The prefix taken off IDs for steps rules and icon names (else the ID's last part). |
+| `steps`, `stepsRequired`, `stepsModule` | Steps for incremental achievements: rules (`[{ "match": "<regex>", "steps": <n or "$1">, "max": <cap> }]`), whether an ID none match is an error, or a game file exporting `stepsFor(id, { root })` for anything rules can't say. |
+| `mapping`, `out`, `root` | The mapping file the Android app packs (default `PlayGames/PlayGamesAchievements.json`), where icons and request bodies go (default `PlayGames/Out`), and the repository root (default `../..`), each relative to the Play directory. |
+
+The game's `games.js`:
+
+```js
+#!/usr/bin/env node
+// Play Games for this game: the runtime's Tools/Play/games.js on this directory.
+process.env.PLAY_DIR = __dirname;
+require('../../Android/spritekit-android/Tools/Play/games.js');
+```
+
 ## The nightly testing build
 
 ```bash
@@ -60,5 +94,5 @@ round, the second commit would meet a review already under way. Without
 ## Tests
 
 ```bash
-node --test Tools/Play/play.test.js
+node --test Tools/Play/play.test.js Tools/Play/games.test.js
 ```
