@@ -7,7 +7,8 @@ disagree, the game's file wins. Working on this repository itself, also read
 `CONTRIBUTING.md`.
 
 Read this before writing game code, porting to Android, touching signing or
-releases, or adding something more than one game would want.
+releases, opening a pull request, or adding something more than one game
+would want.
 
 ## Working conventions
 
@@ -142,3 +143,12 @@ releases, or adding something more than one game would want.
 - Changes here: `swift test`, `swift test --package-path Platform`,
   `Scripts/check-android.sh arm64-v8a`, and `Platform/` built for iOS, tvOS
   and Mac Catalyst.
+
+## Pull requests
+
+- A change anyone can see, a bug fix included, shows it in its pull request:
+  screenshots from the real build, and a video wherever motion or timing is
+  the point. Upload them to UploadThing and link them in the description;
+  never commit them to the repository or to a branch. Show each platform the
+  change touches (an Android emulator and an Apple simulator), and keep each
+  image under 5 MB.
