@@ -90,11 +90,6 @@ would want.
   languages (`PreferredLanguages`). Files that import only Foundation must
   see the shim's `NSLocalizedString`, so the game's Android package
   re-exports `SpriteKitShim`.
-- Check the strings with the runtime's `Tools/Strings/strings.js check`,
-  through the game's own `Tools/Strings/strings.js` (its README): every
-  language against the base, and the strings layer's keys. Export and
-  import translations, and lay a translation out as its base, with the same
-  tool.
 
 ## The toolkit
 
@@ -146,6 +141,10 @@ would want.
   run through the game's own two-line `play.js` with its `listing.json` and
   `play.json`: never `gplay` writes of your own, and never a copy of the
   tool in a game. A gap in it is fixed here.
+- Prices go through the runtime's `Tools/Pricing/` (its README), run through
+  the game's shims with its `pricing.json`. A price already set in a store
+  stays as it is: commit regenerated price files only when the store takes
+  them.
 
 ## Verifying
 
