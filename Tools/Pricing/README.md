@@ -91,6 +91,19 @@ require('../../Android/spritekit-android/Tools/Pricing/product.js');
   the login keychain) into memory to sign one token, and never writes or
   prints it.
 
+## App Store Connect's quirks
+
+- An in-app purchase waiting in a draft review submission is one of its
+  items (`inAppPurchaseVersions`). While it's there, its review screenshot
+  and promotional image can't change: take the item out
+  (`asc review items-remove`), change the asset, and add it back
+  (`asc review items add --item-type inAppPurchaseVersions`).
+- Only a purchase that was never approved can be deleted, after it leaves
+  the submission, and its product ID can never be used again.
+- Review screenshots take a documented device size with no alpha (a JPEG of
+  an iPhone capture, for example).
+- The StoreKit sandbox serves the old price for a few minutes after a change.
+
 ## Tests
 
 ```bash

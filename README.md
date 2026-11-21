@@ -1349,6 +1349,27 @@ pool's AVDs, state and the debug properties cleared for each new owner in
 frame times describe the host's GPU, not a phone's: measure performance on a
 device.
 
+## Devices
+
+`Scripts/device-lock.sh` shares the machine's physical test devices between
+sessions, worktrees and games, one run at a time:
+
+```bash
+Scripts/device-lock.sh run <device> <session> [--wait] -- <command...>
+Scripts/device-lock.sh status
+```
+
+`run` takes the device (or waits for it with `--wait`), renews the lock while
+the command runs, and releases it when the command ends; when the device is
+busy it exits 1 without running anything. `acquire`, `wait`, `renew` and
+`release` hold a device by hand. A lock not renewed for 30 minutes is stale.
+The machine lists its devices (`SKA_DEVICES`) and where the locks live
+(`SKA_DEVICE_LOCKS`) in `~/.config/spritekit-android/devices.env`, which is
+also the place for what a session needs to reach each one: device IDs,
+addresses and adb servers stay on the machine, never in a repository.
+[`Docs/Testing.md`](Docs/Testing.md) has the recipes for testing on devices,
+simulators and emulators.
+
 ## Memory guard
 
 `Tools/guard.js` runs a command and kills it, with everything it started, once
