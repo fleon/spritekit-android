@@ -100,6 +100,7 @@ function tables() {
 }
 
 function load(file) {
+  if (!fs.existsSync(file)) die(`no ${rel(file)}`);
   const text = read(file);
   const parsed = lib.parseStrings(text);
   return { file, text, ...parsed, ...lib.withRaw(text, parsed) };
