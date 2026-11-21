@@ -281,9 +281,9 @@ would want.
 - Label a pull request `ready` only when nothing is pending and the change
   has been checked at the size the player sees it; remove the label as soon
   as anyone asks for more.
-- The person merges every pull request, this repository's and the games':
-  merge one only when they say to merge that one. A reply to a question that
-  offered merging is not a yes.
+- The person merges every pull request, this repository's and the games'.
+  Never merge one, and don't ask whether to or offer to: say it's ready for
+  review and leave the merge to them.
 - In the Claude desktop app, after opening a pull request, bind it to the
   session and turn on Auto-fix with comments, without asking; if the switch
   is refused, ask once.
