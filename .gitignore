@@ -13,6 +13,9 @@ Vendor/*
 .swiftpm/
 */.build/
 */.swiftpm/
+# SwiftPM's lockfile for Platform/, a library: each game's own resolution
+# decides the swift-syntax it builds with, so this one is never committed.
+Platform/Package.resolved
 
 # Arm's ASTC encoder, fetched and built by Tools/Art/ASTC/build-astcenc.sh.
 Tools/Art/ASTC/src/
