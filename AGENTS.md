@@ -136,6 +136,10 @@ would want.
   Google Play (builds, versions, purchases, achievements, listings) unless
   the person you work for asks for exactly that: prepare it, and leave the
   submission to them.
+- Google Play goes through the runtime's `Tools/Play/play.js` (its README),
+  run through the game's own two-line `play.js` with its `listing.json` and
+  `play.json`: never `gplay` writes of your own, and never a copy of the
+  tool in a game. A gap in it is fixed here.
 
 ## Verifying
 

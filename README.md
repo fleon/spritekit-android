@@ -1308,6 +1308,16 @@ pool's AVDs, state and the debug properties cleared for each new owner in
 frame times describe the host's GPU, not a phone's: measure performance on a
 device.
 
+## Google Play
+
+`Tools/Play/play.js` is every game's Google Play tool: the store listing,
+images, managed product, Data Safety and releases, the nightly testing build
+among them (to internal testing, copied to closed testing and sent for
+review). Each game runs it through a two-line `play.js` in its own Play
+directory, beside its `listing.json` and `play.json`;
+[`Tools/Play/README.md`](Tools/Play/README.md) has the layout, the steps and
+the rules it keeps.
+
 ## Signing
 
 Keystores live in 1Password, never in a repository or a loose file. Each is
