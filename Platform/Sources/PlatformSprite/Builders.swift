@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 // Builders that make a path or a label from a list of commands, so a
 // node's look reads as one expression.

@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// When a launch splash is done: once its minimum time has passed and the
 /// game has reported every condition it waits for ready, or once its

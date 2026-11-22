@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Who shows focus in a game's view, as its view controller decides: on
 /// Apple TV the remote's focus always shows; elsewhere a gamepad's first

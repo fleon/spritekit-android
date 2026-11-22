@@ -2,12 +2,7 @@ import Foundation
 #if canImport(Darwin)
 import CoreText
 #endif
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Splits `text` into lines no wider than `maxWidth` set with `attributes`
 /// (`.font` at least). CoreText picks the breaks, so scripts without spaces

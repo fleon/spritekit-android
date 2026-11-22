@@ -1,10 +1,6 @@
 import Foundation
 import Testing
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import CoreGraphics
-#endif
 @testable import PlatformRigs
 
 /// A frame of the `tracks` schedule as spine-core 4.2 posed it

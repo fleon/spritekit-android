@@ -1,11 +1,8 @@
 import Foundation
 import PlatformCore
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
+#if !SPRITEKIT_SHIM
 import GameController
-import QuartzCore
-import UIKit
 #endif
 
 /// Plays a game with a gamepad (Xbox, PlayStation or MFi: GameController's

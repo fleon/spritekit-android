@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import CoreGraphics
-#endif
 
 /// Reads a game's debug launch arguments (`-StartLevel x -HideStats YES`)
 /// from `UserDefaults`' argument domain, typed: where a game's debug build

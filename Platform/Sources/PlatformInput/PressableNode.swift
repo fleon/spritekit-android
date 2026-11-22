@@ -1,12 +1,7 @@
 import Foundation
 import Macros
 import PlatformCore
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// How a press is tracked and shown by default. A game sets
 /// `PressableNode.configuration` at launch.

@@ -1,10 +1,6 @@
 import Foundation
 import Testing
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 @testable import PlatformSprite
 
 private func close(_ a: CGRect, _ b: CGRect) -> Bool {

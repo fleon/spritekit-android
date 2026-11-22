@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// One piece of an icon, as SVG path data on the icon's grid (y down from
 /// the top left).

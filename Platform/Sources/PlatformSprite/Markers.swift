@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import QuartzCore
-import SpriteKit
-#endif
 
 /// Debug markers: a line printed to standard output as each moment a
 /// recording might cut to comes (`[marker] scene TitleScene`, and whatever

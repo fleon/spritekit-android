@@ -1,3 +1,4 @@
+#if SPRITEKIT_SHIM
 import Foundation
 
 /// Who the app is, for everything in the runtime that names it: Apple's
@@ -32,3 +33,5 @@ public struct AppIdentity: Sendable, Equatable {
     /// starts.
     nonisolated(unsafe) public static var current = AppIdentity(name: "SpriteKit", bundleIdentifier: "", key: "spritekit")
 }
+
+#endif
