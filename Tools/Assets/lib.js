@@ -17,6 +17,8 @@ const IMAGE_CALLS = [
   String.raw`\bSKTexture\(\s*imageNamed:\s*`,
   String.raw`\bSKSpriteNode\(\s*imageNamed:\s*`,
   String.raw`\bUIImage\(\s*named:\s*`,
+  // The splash's logo: `StudioSplashScene.Style(logo: "Logo", ...)`.
+  String.raw`(?<![\w])(?:StudioSplashScene\.)?Style\(\s*logo:\s*`,
 ];
 const SOUND_CALLS = [
   String.raw`(?<![\w.])playSound\(\s*`,
@@ -112,6 +114,8 @@ function scanSwift(text, enums = {}, calls = {}) {
       const re = new RegExp(pattern, 'g');
       let match;
       while ((match = re.exec(source))) {
+        // A helper's own declaration (`func img(_ name: String)`) names nothing.
+        if (/\bfunc\s+$/.test(source.slice(Math.max(0, match.index - 40), match.index))) continue;
         const line = lineOf(source, match.index);
         const argument = firstArgument(source, re.lastIndex);
         const literal = argument.match(new RegExp(`^${LITERAL}$`));

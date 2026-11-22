@@ -115,3 +115,19 @@ test('an enum the audio configuration lists names all its sounds, and a game\'s 
   assert.deepStrictEqual(found.images.map((i) => i.name), ['Moon']);
   assert.deepStrictEqual(found.unchecked.map((u) => u.expression), ['icon: "Star"']);
 });
+
+test('the splash style\'s logo is an image', () => {
+  const swift = 'let style = StudioSplashScene.Style(\n    logo: "StudioLogo",\n    footer: ["Line"],\n    fontName: "Face"\n)\nlet other = Style(logo: "Mark", footer: [], fontName: "Face")\nlet run = StudioSplashScene.Style(logo: logoName, footer: [], fontName: "Face")';
+  const found = lib.scanSwift(swift);
+  assert.deepStrictEqual(found.images.map((i) => [i.name, i.line]), [['StudioLogo', 1], ['Mark', 6]]);
+  assert.deepStrictEqual(found.unchecked.map((u) => u.expression), ['logoName']);
+});
+
+test('a helper\'s own declaration isn\'t a call', () => {
+  const swift = 'func img(_ name: String) -> SKSpriteNode { sprite(name) }\nfunc  txtr(_ imageName: String) -> SKTexture { SKTexture(imageNamed: imageName) }\nlet a = img("Star")\nlet b = txtr("Moon")';
+  const found = lib.scanSwift(swift, {}, { images: ['img'] });
+  assert.deepStrictEqual(found.images.map((i) => i.name).sort(), ['Moon', 'Star']);
+  // The helpers' bodies pass a variable on, which stays unchecked; their
+  // parameter lists don't.
+  assert.deepStrictEqual(found.unchecked.map((u) => u.expression).sort(), ['imageName', 'name']);
+});
