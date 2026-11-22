@@ -125,7 +125,9 @@ jobs:
           echo "$HOME/.local/share/swiftly/bin" >> "$GITHUB_PATH"
           swift sdk install "$SWIFT_SDK_URL" --checksum "$SWIFT_SDK_SHA256"
           # Links the SDK's sysroot to the NDK's.
-          "$HOME/.swiftpm/swift-sdks/swift-${SWIFT_VERSION}-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh"
+          # (where SwiftPM keeps SDKs differs by host).
+          setup="$(find "$HOME" -path "*/swift-sdks/swift-${SWIFT_VERSION}-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh" | head -1)"
+          "$setup"
           swift sdk list
       - uses: actions/cache@v4
         with:
