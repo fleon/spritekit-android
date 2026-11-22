@@ -9,6 +9,7 @@ struct MacrosPlugin: CompilerPlugin {
         NSCodingUnsupportedMacro.self,
         LocalizedStringsMacro.self, LocalizedCaseMacro.self,
         LaunchArgumentMacro.self,
+        DecodableDefaultsMacro.self,
     ]
 }
 
