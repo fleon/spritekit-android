@@ -201,7 +201,7 @@ struct ConstraintTests {
             node.zRotation = start
             node.constraints = [constraint]
             step()
-            #expect(near(node.zRotation, expected, 0.0001, tolerance), "from \(start) to \(expected)")
+            #expect(near(node.zRotation, expected, 0.0001), "from \(start) to \(expected)")
         }
 
         // Off by more than half a turn: brought round once, no more.
@@ -210,29 +210,29 @@ struct ConstraintTests {
         for (start, expected) in [(3.0, 3.0), (3 + 2 * CGFloat.pi, 3.7413), (1.0, 2.7413)] as [(CGFloat, CGFloat)] {
             node.zRotation = start
             step()
-            #expect(near(node.zRotation, expected, 0.0001, tolerance), "from \(start)")
+            #expect(near(node.zRotation, expected, 0.0001), "from \(start)")
         }
         target.position = CGPoint(x: -10, y: 1)
         for start in [-3.0, -3 - 2 * CGFloat.pi] {
             node.zRotation = start
             step()
-            #expect(near(node.zRotation, 2.5419, 0.0001, tolerance), "from \(start)")
+            #expect(near(node.zRotation, 2.5419, 0.0001), "from \(start)")
         }
         // Nothing unwrapped: several turns round comes back within one.
         target.position = CGPoint(x: 10, y: 0)
         for (start, expected) in [(14.0, 0.5), (-14.0, -0.5), (0.2, 0.2), (2 * CGFloat.pi + 0.2, 0.5)] as [(CGFloat, CGFloat)] {
             node.zRotation = start
             step()
-            #expect(near(node.zRotation, expected, 0.0001, tolerance), "from \(start)")
+            #expect(near(node.zRotation, expected, 0.0001), "from \(start)")
         }
         // Straight down is −π/2, not 3π/2; just past it, a turn round.
         node.constraints = [.orient(to: target, offset: SKRange(constantValue: 0))]
         target.position = CGPoint(x: 0, y: -10)
         step()
-        #expect(near(node.zRotation, -1.5708, 0.0001, tolerance))
+        #expect(near(node.zRotation, -1.5708, 0.0001))
         target.position = CGPoint(x: -0.01, y: -10)
         step()
-        #expect(near(node.zRotation, 4.7114, 0.0001, tolerance))
+        #expect(near(node.zRotation, 4.7114, 0.0001))
 
         // In a rotated parent, toward the target as the parent sees it.
         let parent = SKNode()
@@ -245,7 +245,7 @@ struct ConstraintTests {
         scene.addChild(origin)
         child.constraints = [.orient(to: origin, offset: SKRange(constantValue: 0))]
         step()
-        #expect(near(child.zRotation, 1.5708, 0.0001, tolerance))
+        #expect(near(child.zRotation, 1.5708, 0.0001))
     }
 
     @Test("A node's constraints run in order; disabled ones are skipped")
