@@ -907,7 +907,18 @@ through `SKRenderer` and pinned in host tests:
 - **Warps:** each cell subdivided bilinearly, levels past 3 drawn as 3, two
   triangles a cell (`WarpGeometryTests`, against measured pixels).
 - **Nodes:** `calculateAccumulatedFrame()` includes hidden and transparent
-  descendants; a scaled 9-slice keeps its caps.
+  descendants and leaves out those with an empty frame; a scaled 9-slice
+  keeps its caps.
+- **Touches:** a touch goes to the node at the point, or to its nearest
+  ancestor with `isUserInteractionEnabled` (the scene by default), as the
+  view walks up from `atPoint(_:)`; nothing takes it when none does. In
+  `nodes(at:)`, nodes whose own content holds the point (a sprite's whole
+  quad, transparent texels included; a plain node only at its position)
+  come before those only a descendant's frame holds, each group by
+  accumulated zPosition and then later in tree order, whatever
+  `ignoresSiblingOrder` says. A node that takes no touches still stops
+  them, and an override of `contains(_:)` isn't consulted
+  (`TouchRoutingTests`).
 - **Constraints:** applied after the actions each frame, before
   `didApplyConstraints()`; nodes take turns in the order they were given
   constraints or entered the scene, not in tree order, and each set after
