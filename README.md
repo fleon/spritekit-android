@@ -407,17 +407,32 @@ decides, it hands in:
   `CGPath` for `ShapeSprite`, a crop mask or a route (`ArcDirection` as
   UIKit names it: `.clockwise` is a rising angle); `label(.font(weight,
   size), .text(…), …)` makes an `SKLabelNode` in `Typography`'s face, or a
-  named one (`.fontNamed`). `rectInScene(for:scene:)` is what a node draws,
+  named one (`.fontNamed`); its `.vAlign(.center)`, `.top` and `.bottom`
+  align the font's text band at `.position` by its metrics (`.band(…)` to
+  choose one), the label on its baseline. `rectInScene(for:scene:)` is what a node draws,
   in the scene's space, and holds through rotation (`boundingRect(_:in:)`).
 - **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
   string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
-- **Text** (`wrappedLines`, CoreText's breaks on both platforms;
-  `capitalsOffset`, `centerCapitals`, `TextBlockNode`, hung from its
-  first line's top or, with `anchor: .firstBaseline`, from its baseline,
-  lines spaced by `Typography` or by the font's own ascender and
-  descender): `Typography` holds the game's font and line height, and `Typography.follow(_:base:)` sets
-  them by the current language (`ScriptedLanguage`: a script's own face and
-  line height). `FontRegistry.register(fontFiles:)` registers the game's
+- **Text** (`wrappedLines`, CoreText's breaks on both platforms): labels
+  are aligned by their font's metrics, never by their ink. SpriteKit's
+  `.center`, `.top` and `.bottom` place the box round the glyphs in the
+  string, so "pqyg" sits higher than "MAP" and a Thai line with marks moves
+  again. `label.centerVertically(on:)` (or `align(.top, at:)`, `.bottom`)
+  sets the label on `.baseline` and moves it so a band of its font is
+  centred on the point, the same baseline for every string in that font
+  and size. `TextBand.capitals` (baseline to cap height) suits scripts
+  with capitals; `.line` (descender to ascender) suits Thai, Lao, Khmer
+  and Burmese, whose marks stack above and below and whose typical line's
+  ink centres on it. `UIFont.baseline(_:at:band:)` gives the y for
+  layout code. `capitalsOffset` and `centerCapitals`, which measured each
+  string's ink, are deprecated. `TextBlockNode` sets every line on its
+  baseline, evenly spaced: hung from its first line's top (each line's
+  band centred in its height) or, with `anchor: .firstBaseline`, from its
+  first baseline, lines spaced by `Typography` or by the font's own
+  ascender and descender. `Typography` holds the game's font, line height
+  and text band, and `Typography.follow(_:base:)` sets them by the current
+  language (`ScriptedLanguage`: a script's own face, line height and
+  `textBand`, by default `TextBand.forLanguage` of its code). `FontRegistry.register(fontFiles:)` registers the game's
   font files once each.
 - **Icons** (`SVGPath`, `IconDrawing`, `IconPart`): a game's enum of icons
   lists each one's path data, stroked or filled, on a grid; `node(size:color:)`

@@ -64,6 +64,13 @@ would want.
   prefixed where two owners share a node.
 - Add a node at its z-position (and position) with `addChild(_:z:at:)`, and
   build paths and labels with `path(...)` and `label(...)`.
+- Text labels never use SpriteKit's `.center`, `.top` or `.bottom`
+  vertical alignment: those align the ink of the letters in the string, so
+  a descender (q, p, y, g, Q) or a Thai mark moves the line. Set labels on
+  `.baseline` and align them by the font's metrics with the toolkit:
+  `centerVertically(on:)` or `align(_:at:band:)`, `label(... .vAlign(.center))`,
+  `TextBlockNode`. The language picks the band (`TextBand`), so never
+  special-case letters.
 - Use `@NSCodingUnsupported` (from `Macros`) on node subclasses instead of a
   hand-written `init?(coder:)`; `inherit: .size` or `.plain` writes the
   pass-through `init(size:)` or `init()`.
@@ -118,8 +125,9 @@ would want.
   debug messages, JSON keys.
 - The strings layer uses `@LocalizedStrings` (from `Macros`).
 - Let `wrappedLines` (CoreText's breaks on both platforms) break lines, and
-  set a wrapped paragraph as a `TextBlockNode` (`anchor: .firstBaseline`
-  for lines on their baselines), never a game's own `wrapText`.
+  set a wrapped paragraph as a `TextBlockNode` (every line on its
+  baseline; `anchor: .firstBaseline` to hang it from the first), never a
+  game's own `wrapText`.
 - On Android the runtime reads the tables in the APK, in the device's
   languages (`PreferredLanguages`). Files that import only Foundation must
   see the shim's `NSLocalizedString`, so the game's Android package
