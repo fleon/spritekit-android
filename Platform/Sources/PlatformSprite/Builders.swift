@@ -1,5 +1,8 @@
 import Foundation
 import SpriteKitShim
+#if canImport(UIKit) && !SPRITEKIT_SHIM
+import UIKit
+#endif
 
 // Builders that make a path or a label from a list of commands, so a
 // node's look reads as one expression.
@@ -12,7 +15,7 @@ public nonisolated enum ArcDirection: Sendable {
 }
 
 /// One step of `path(_:)`. Shapes (`circle`, `ellipse`, `rect`,
-/// `roundedRect`) are closed subpaths of their own; the rest continue the
+/// `roundedRect`, `continuousRoundedRect`) are closed subpaths of their own; the rest continue the
 /// current one.
 public nonisolated enum PathCommand {
     case moveTo(_ x: CGFloat, _ y: CGFloat)
@@ -34,8 +37,13 @@ public nonisolated enum PathCommand {
     case circle(_ center: (CGFloat, CGFloat), _ radius: CGFloat)
     case ellipse(_ rect: CGRect)
     case rect(_ rect: CGRect)
-    /// The radius at most half the rect's shorter side.
+    /// The radius at most half the rect's shorter side. CoreGraphics'
+    /// circular corners.
     case roundedRect(_ rect: CGRect, _ cornerRadius: CGFloat)
+    /// UIKit's continuous corners, as `UIBezierPath(roundedRect:cornerRadius:)`
+    /// draws them: UIKit's own on Apple, the same curve elsewhere
+    /// (`ContinuousCorners`).
+    case continuousRoundedRect(_ rect: CGRect, _ cornerRadius: CGFloat)
     case close
 }
 
@@ -74,6 +82,12 @@ public nonisolated func path(_ commands: [PathCommand]) -> CGPath {
             } else {
                 path.addRect(frame)
             }
+        case .continuousRoundedRect(let frame, let cornerRadius):
+            #if canImport(UIKit) && !SPRITEKIT_SHIM
+            path.addPath(UIBezierPath(roundedRect: frame, cornerRadius: max(0, cornerRadius)).cgPath)
+            #else
+            ContinuousCorners.addRoundedRect(to: path, in: frame, cornerRadius: cornerRadius)
+            #endif
         case .close:
             path.closeSubpath()
         }
