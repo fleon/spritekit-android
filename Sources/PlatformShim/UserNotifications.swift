@@ -773,8 +773,7 @@ open class UNUserNotificationCenter: NSObject {
     /// What's scheduled, as far as Swift knows: the answer where Java has
     /// none (no channel, or no notifications service behind it).
     private var scheduled: [UNNotificationRequest] = []
-    private var nextRequest = 1
-    private var authorizationWaiters: [Int: @Sendable (Bool, Error?) -> Void] = [:]
+    private let authorizations = RequestTable<Bool>(ifAbandoned: false)
     /// Taps that came before there was a delegate to hear them.
     private var heldResponses: [UNNotificationResponse] = []
 
@@ -803,19 +802,12 @@ open class UNUserNotificationCenter: NSObject {
     // MARK: Authorization
 
     open func requestAuthorization(options: UNAuthorizationOptions = [], completionHandler: @escaping @Sendable (Bool, Error?) -> Void) {
-        let request = nextRequest
-        nextRequest += 1
-        guard let answer = channel?.call("notifications.request", ["options": Self.names(of: options), "request": request]) else {
+        authorizations.send(start: { request in
             // Nothing to ask: the player stays undecided.
-            completionHandler(false, nil)
-            return
-        }
-        updateStatus(answer)
-        if let granted = answer.bool("granted") {
-            completionHandler(granted, nil)
-        } else {
-            authorizationWaiters[request] = completionHandler
-        }
+            guard let answer = channel?.call("notifications.request", ["options": Self.names(of: options), "request": request]) else { return false }
+            updateStatus(answer)
+            return answer.bool("granted")
+        }, then: { completionHandler($0, nil) })
     }
 
     @MainActor
@@ -968,8 +960,8 @@ open class UNUserNotificationCenter: NSObject {
         switch event {
         case "status":
             updateStatus(body)
-            guard let request = body.int("request"), let waiter = authorizationWaiters.removeValue(forKey: request) else { return }
-            waiter(body.bool("granted") ?? false, nil)
+            guard let request = body.int("request") else { return }
+            authorizations.finish(id: request, body.bool("granted") ?? false)
         case "willPresent":
             guard let notification = NotificationCodec.decodeNotification(body),
                   let request = body["request"] as? PlatformChannel.Message else { return }

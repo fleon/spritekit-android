@@ -91,10 +91,9 @@ public final class PlayGamesAchievements: AchievementsBackend {
     private let channel: PlatformChannel
     private let mapping: PlayGamesMapping
     private var answered: (() -> Void)?
-    private var nextRequest = 1
-    private var loadWaiters: [CheckedContinuation<[String: Double], Never>] = []
-    private var reportWaiters: [Int: CheckedContinuation<Bool, Never>] = [:]
-    private var playerWaiters: [CheckedContinuation<(name: String, photo: Data?)?, Never>] = []
+    private let loads = SharedCall<[String: Double]>(ifAbandoned: [:])
+    private let reports = RequestTable<Bool>(ifAbandoned: false)
+    private let players = SharedCall<(name: String, photo: Data?)?>(ifAbandoned: nil)
 
     public private(set) var isSignedIn = false
     /// Whether Play Games can run on this device (Google Play services there
@@ -132,11 +131,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
     @MainActor
     public func load() async -> [String: Double] {
         guard isSignedIn else { return [:] }
-        return await withCheckedContinuation { continuation in
-            let first = loadWaiters.isEmpty
-            loadWaiters.append(continuation)
-            if first { channel.call("games.loadAchievements") }
-        }
+        return await loads.join { channel.call("games.loadAchievements") }
     }
 
     @MainActor
@@ -151,11 +146,9 @@ public final class PlayGamesAchievements: AchievementsBackend {
             items.append(item)
         }
         guard !items.isEmpty else { return true }
-        let request = nextRequest
-        nextRequest += 1
-        return await withCheckedContinuation { continuation in
-            reportWaiters[request] = continuation
+        return await reports.send { request in
             channel.call("games.report", ["items": items, "request": request])
+            return nil
         }
     }
 
@@ -173,11 +166,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
     @MainActor
     public func localPlayer() async -> (name: String, photo: Data?)? {
         guard isSignedIn else { return nil }
-        return await withCheckedContinuation { (continuation: CheckedContinuation<(name: String, photo: Data?)?, Never>) in
-            let first = playerWaiters.isEmpty
-            playerWaiters.append(continuation)
-            if first { channel.call("games.player") }
-        }
+        return await players.join { channel.call("games.player") }
     }
 
     private func handle(_ event: String, _ body: PlatformChannel.Message) {
@@ -206,12 +195,10 @@ public final class PlayGamesAchievements: AchievementsBackend {
                     held[id] = mapping.percent(unlocked: item.bool("unlocked") ?? false, currentSteps: item.int("currentSteps") ?? 0, of: entry)
                 }
             }
-            let waiters = loadWaiters
-            loadWaiters = []
-            for waiter in waiters { waiter.resume(returning: held) }
+            loads.finish(held)
         case "reported":
-            guard let request = body.int("request"), let waiter = reportWaiters.removeValue(forKey: request) else { return }
-            waiter.resume(returning: body.bool("ok") ?? false)
+            guard let request = body.int("request") else { return }
+            reports.finish(id: request, body.bool("ok") ?? false)
         case "identity":
             guard isSignedIn, let id = body["id"] as? String, !id.isEmpty else { return }
             identity = (id, body["name"] as? String ?? "")
@@ -222,9 +209,7 @@ public final class PlayGamesAchievements: AchievementsBackend {
             if body.bool("ok") == true, let name = body["name"] as? String {
                 player = (name, (body["photo"] as? String).flatMap { Data(base64Encoded: $0) })
             }
-            let waiters = playerWaiters
-            playerWaiters = []
-            for waiter in waiters { waiter.resume(returning: player) }
+            players.finish(player)
         default:
             break
         }

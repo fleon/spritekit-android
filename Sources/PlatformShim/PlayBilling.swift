@@ -89,8 +89,9 @@ public final class PlayBilling: BillingBackend {
     private var prices: [String: String] = [:]
     private var changed: (() -> Void)?
     private var acknowledging: Set<String> = []
-    private var purchaseWaiters: [String: [CheckedContinuation<BillingResult, Never>]] = [:]
-    private var restoreWaiters: [CheckedContinuation<Bool, Never>] = []
+    /// Purchases under way, by product.
+    private var purchases: [String: SharedCall<BillingResult>] = [:]
+    private let restores = SharedCall<Bool>(ifAbandoned: false)
     /// Purchases Play said were already owned: the next query settles them.
     private var awaitingOwned: Set<String> = []
 
@@ -191,20 +192,14 @@ public final class PlayBilling: BillingBackend {
     @MainActor
     public func purchase(_ productID: String) async -> BillingResult {
         if ownedProducts.contains(productID) { return .purchased }
-        return await withCheckedContinuation { continuation in
-            let first = purchaseWaiters[productID, default: []].isEmpty
-            purchaseWaiters[productID, default: []].append(continuation)
-            if first { channel.call("billing.purchase", ["productId": productID]) }
-        }
+        let purchase = purchases[productID] ?? SharedCall(ifAbandoned: .failed)
+        purchases[productID] = purchase
+        return await purchase.join { channel.call("billing.purchase", ["productId": productID]) }
     }
 
     @MainActor
     public func restore() async -> Bool {
-        await withCheckedContinuation { continuation in
-            let first = restoreWaiters.isEmpty
-            restoreWaiters.append(continuation)
-            if first { channel.call("billing.restore") }
-        }
+        await restores.join { channel.call("billing.restore") }
     }
 
     // MARK: - Events
@@ -301,7 +296,7 @@ public final class PlayBilling: BillingBackend {
         case "owned":
             // Bought already (on another device, or before a reinstall):
             // the query decides, and the game grants it if it is so.
-            awaitingOwned.formUnion(product.map { [$0] } ?? Array(purchaseWaiters.keys))
+            awaitingOwned.formUnion(product.map { [$0] } ?? Array(purchases.keys))
             channel.call("billing.restore")
         default:
             finish(product, .failed)
@@ -397,18 +392,15 @@ public final class PlayBilling: BillingBackend {
     }
 
     private func finishPurchases(of product: String, _ result: BillingResult) {
-        guard let waiters = purchaseWaiters.removeValue(forKey: product) else { return }
-        for waiter in waiters { waiter.resume(returning: result) }
+        purchases.removeValue(forKey: product)?.finish(result)
     }
 
     private func finishPurchases(_ result: BillingResult) {
-        for product in Array(purchaseWaiters.keys) { finishPurchases(of: product, result) }
+        for product in Array(purchases.keys) { finishPurchases(of: product, result) }
     }
 
     private func finishRestores(owning: Bool) {
-        let waiters = restoreWaiters
-        restoreWaiters = []
-        for waiter in waiters { waiter.resume(returning: owning) }
+        restores.finish(owning)
     }
 
     private static func parse(_ body: PlatformChannel.Message) -> [Purchase] {
