@@ -265,8 +265,21 @@ public extension CGPath {
             addRect(rect, transform: transform)
             return
         }
-        let rounded = UIBezierPath(roundedRect: rect, cornerRadius: radius)
-        append(contentsOf: rounded.cgPath.elements.map { $0.applying(transform) })
+        // A circle's arcs, as CoreGraphics draws them (UIKit's continuous
+        // corners are `UIBezierPath`'s alone).
+        let r = radius
+        let rounded = CGPath()
+        rounded.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+        rounded.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        rounded.append(.arc(center: CGPoint(x: rect.maxX - r, y: rect.minY + r), radius: r, start: -.pi / 2, end: 0, clockwise: true))
+        rounded.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+        rounded.append(.arc(center: CGPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r, start: 0, end: .pi / 2, clockwise: true))
+        rounded.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+        rounded.append(.arc(center: CGPoint(x: rect.minX + r, y: rect.maxY - r), radius: r, start: .pi / 2, end: .pi, clockwise: true))
+        rounded.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        rounded.append(.arc(center: CGPoint(x: rect.minX + r, y: rect.minY + r), radius: r, start: .pi, end: .pi * 1.5, clockwise: true))
+        rounded.closeSubpath()
+        append(contentsOf: rounded.elements.map { $0.applying(transform) })
     }
 
     /// CoreGraphics measures `clockwise` in its own y-up space, where a

@@ -209,10 +209,9 @@ public enum PathRasteriser {
     /// `UIBezierPath.addArc(clockwise:)` is defined in UIKit's y-down space,
     /// where the angle grows clockwise on screen. A path drawn there and used
     /// in SpriteKit's y-up space therefore sweeps with the angle **rising**
-    /// when `clockwise` is true — which is what the game's own two call sites
-    /// expect: the loading spinner's arc grows from nothing as its end angle
-    /// rises, and `UIBezierPath(roundedRect:)`'s corners join up only this
-    /// way round.
+    /// when `clockwise` is true — which is what UIKit's callers expect: a
+    /// spinner's arc grows from nothing as its end angle rises, and the
+    /// shim's `CGPath(roundedRect:…)` corners join up only this way round.
     private static func appendArc(
         centre: CGPoint,
         radius: CGFloat,

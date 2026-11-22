@@ -84,6 +84,18 @@ public final class CGPath: @unchecked Sendable {
     }
 }
 
+/// The corners of a rect, as `UIBezierPath(roundedRect:byRoundingCorners:cornerRadii:)`
+/// takes them (y down).
+public struct UIRectCorner: OptionSet, Sendable {
+    public let rawValue: UInt
+    public init(rawValue: UInt) { self.rawValue = rawValue }
+    public static let topLeft = UIRectCorner(rawValue: 1 << 0)
+    public static let topRight = UIRectCorner(rawValue: 1 << 1)
+    public static let bottomLeft = UIRectCorner(rawValue: 1 << 2)
+    public static let bottomRight = UIRectCorner(rawValue: 1 << 3)
+    public static let allCorners = UIRectCorner(rawValue: ~0)
+}
+
 /// UIKit's path builder, as the game's `path(_:)` and `shape(_:)` helpers use it.
 public final class UIBezierPath: @unchecked Sendable {
     private let storage = CGPath()
@@ -126,27 +138,20 @@ public final class UIBezierPath: @unchecked Sendable {
         close()
     }
 
+    /// UIKit's continuous corners (`ContinuousCorners`), not a circle's.
     public convenience init(roundedRect rect: CGRect, cornerRadius: CGFloat) {
         self.init()
-        let r = min(cornerRadius, min(rect.width, rect.height) / 2)
-        guard r > 0 else {
-            append(UIBezierPath(rect: rect))
-            return
-        }
-        move(to: CGPoint(x: rect.minX + r, y: rect.minY))
-        addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
-        addArc(withCenter: CGPoint(x: rect.maxX - r, y: rect.minY + r), radius: r,
-               startAngle: -.pi / 2, endAngle: 0, clockwise: true)
-        addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
-        addArc(withCenter: CGPoint(x: rect.maxX - r, y: rect.maxY - r), radius: r,
-               startAngle: 0, endAngle: .pi / 2, clockwise: true)
-        addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
-        addArc(withCenter: CGPoint(x: rect.minX + r, y: rect.maxY - r), radius: r,
-               startAngle: .pi / 2, endAngle: .pi, clockwise: true)
-        addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
-        addArc(withCenter: CGPoint(x: rect.minX + r, y: rect.minY + r), radius: r,
-               startAngle: .pi, endAngle: .pi * 1.5, clockwise: true)
-        close()
+        ContinuousCorners.addRoundedRect(to: storage, in: rect, cornerRadius: cornerRadius)
+    }
+
+    /// The corners in `corners` continuous, as UIKit draws them, the rest
+    /// square. UIKit reads only `cornerRadii.width`.
+    public convenience init(roundedRect rect: CGRect, byRoundingCorners corners: UIRectCorner, cornerRadii: CGSize) {
+        self.init()
+        ContinuousCorners.addRoundedRect(
+            to: storage, in: rect, corners: ContinuousCorners.Corners(rawValue: corners.rawValue),
+            cornerRadius: cornerRadii.width
+        )
     }
 
     public convenience init(cgPath: CGPath) {

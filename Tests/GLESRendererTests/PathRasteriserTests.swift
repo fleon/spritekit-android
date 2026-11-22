@@ -257,7 +257,7 @@ final class PathRasteriserTests: XCTestCase {
 
     // MARK: Helpers
 
-    /// `UIBezierPath(roundedRect:cornerRadius:)` as the shim records it,
+    /// `CGPath(roundedRect:cornerWidth:cornerHeight:)` as the shim records it,
     /// which is what the rasteriser meets on a device.
     private static func shimRoundedRect(_ rect: CGRect, radius r: CGFloat) -> [PathElement] {
         [
