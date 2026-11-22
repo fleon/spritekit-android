@@ -7,6 +7,7 @@ import SwiftSyntaxMacros
 struct MacrosPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
         NSCodingUnsupportedMacro.self,
+        LaunchArgumentMacro.self,
     ]
 }
 

@@ -133,7 +133,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlatformCoreTests",
-            dependencies: ["PlatformCore"],
+            dependencies: ["PlatformCore", "Macros"],
             swiftSettings: settings
         ),
         // Sound effects and the soundtrack: one manager over
