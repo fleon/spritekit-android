@@ -10,8 +10,7 @@ import SpriteKitShim
 /// Every backend talks through `PlatformChannel.shared`, which the shell
 /// installs. `install` makes each backend the game asks for and hands it to
 /// the receiver the game names (its Game Center manager, its store, its
-/// sync manager, `GKLeaderboard.backend`), so nothing here knows the
-/// game's managers. With no channel (a host build) only simulated purchases
+/// sync manager), so nothing here knows the game's managers. With no channel (a host build) only simulated purchases
 /// are made, and the managers keep the backends they start with, which keep
 /// everything on the device.
 public enum AndroidPlatformServices {
@@ -27,7 +26,10 @@ public enum AndroidPlatformServices {
         /// service). With none, sign-in still starts if a cloud is asked
         /// for, which needs it.
         public var achievements: ((AchievementsBackend) -> Void)?
-        /// Receives Play Games' leaderboards (`GKLeaderboard.backend`).
+        /// Receives Play Games' leaderboards: the Game Center manager's
+        /// `leaderboardService` (`.toolkit`), and `GKLeaderboard.backend`
+        /// where the game calls GameKit's leaderboards itself (README,
+        /// "Leaderboards").
         public var leaderboards: ((LeaderboardsBackend) -> Void)?
         /// Told the Play Games player now signed in, or nil
         /// (`GKLocalPlayer.local.update`).

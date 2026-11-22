@@ -529,9 +529,10 @@ replace its values with records its earlier builds can't read.
 `AndroidPlatformServices.install(_:)` puts a game's managers on Google Play
 and the device, once, before its launch work starts them. It makes each
 backend the configuration asks for and hands it to the receiver the game
-names: Play Games' achievements to its Game Center manager, the
-leaderboards to `GKLeaderboard.backend`, the signed-in player to
-`GKLocalPlayer.local`, Saved Games to its sync manager (flushed as the game
+names: Play Games' achievements and leaderboards to its Game Center
+manager (`.toolkit(gameCenter:)`, or `GKLeaderboard.backend` for a game
+that calls GameKit's leaderboards itself: see "Leaderboards"), the
+signed-in player to `GKLocalPlayer.local`, Saved Games to its sync manager (flushed as the game
 leaves the front, synchronized as it comes back), Play Billing or simulated
 purchases to its store. Play Games needs the mapping packed in the APK
 (`PlayGamesMapping.bundled()`); without it achievements and saved data stay
@@ -1268,6 +1269,25 @@ signatures, on `GKLeaderboard.backend`: `PlayGamesLeaderboards`
 at launch beside its achievements, or by default `LocalLeaderboards`, which
 has none. `LeaderboardsBackend` itself is in `PlatformServices`, so Apple
 builds share it (`PlatformGameCenter` puts GameKit behind it).
+
+`.toolkit(gameCenter:)` hands Play's leaderboards to the game's
+`GameCenterManager` (`leaderboardService`), which is where a game on the
+toolkit submits scores and opens leaderboards (`submitScore(_:context:to:)`,
+`showLeaderboards(_:)`); it can't set `GKLeaderboard.backend`, which lives in
+`Modules/GameKit`, a module `Platform/` never imports. A game that calls
+GameKit's leaderboards itself (`GKLeaderboard`, `GKAccessPoint`,
+`GKGameCenterViewController`) hands them there too, in its Android
+controller, which imports `GameKit`:
+
+```swift
+var services = AndroidPlatformServices.Configuration.toolkit(gameCenter: .shared)
+let toManager = services.leaderboards
+services.leaderboards = { board in
+    toManager?(board)
+    MainActor.assumeIsolated { GKLeaderboard.backend = board }   // installed on the main thread
+}
+AndroidPlatformServices.install(services)
+```
 
 - `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:)`, and the
   instance `submitScore(_:context:player:)`, each with a completion handler
