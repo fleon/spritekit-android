@@ -412,8 +412,10 @@ decides, it hands in:
 - **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
   string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
 - **Text** (`wrappedLines`, CoreText's breaks on both platforms;
-  `capitalsOffset`, `centerCapitals`, `TextBlockNode`): `Typography` holds
-  the game's font and line height, and `Typography.follow(_:base:)` sets
+  `capitalsOffset`, `centerCapitals`, `TextBlockNode`, hung from its
+  first line's top or, with `anchor: .firstBaseline`, from its baseline,
+  lines spaced by `Typography` or by the font's own ascender and
+  descender): `Typography` holds the game's font and line height, and `Typography.follow(_:base:)` sets
   them by the current language (`ScriptedLanguage`: a script's own face and
   line height). `FontRegistry.register(fontFiles:)` registers the game's
   font files once each.

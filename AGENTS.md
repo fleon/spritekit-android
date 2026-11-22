@@ -117,7 +117,9 @@ would want.
 - Don't localize internal identifiers: asset names, sound names, action keys,
   debug messages, JSON keys.
 - The strings layer uses `@LocalizedStrings` (from `Macros`).
-- Let `wrappedLines` (CoreText's breaks on both platforms) break lines.
+- Let `wrappedLines` (CoreText's breaks on both platforms) break lines, and
+  set a wrapped paragraph as a `TextBlockNode` (`anchor: .firstBaseline`
+  for lines on their baselines), never a game's own `wrapText`.
 - On Android the runtime reads the tables in the APK, in the device's
   languages (`PreferredLanguages`). Files that import only Foundation must
   see the shim's `NSLocalizedString`, so the game's Android package

@@ -96,40 +96,99 @@ extension SKLabelNode {
     }
 }
 
-/// A multi-line label block, in `Typography`'s font and line height. The
-/// node's origin is the top of the first line; `height` is the block's full
-/// height.
+/// A multi-line label block, in `Typography`'s font and line height unless
+/// given its own. With `anchor: .top` (the default) the node's origin is
+/// the top of the first line; with `.firstBaseline` it is the first line's
+/// baseline, every line set on its baseline below it. `height` is the
+/// block's full height.
 public final class TextBlockNode: SKNode {
+    /// Where the block hangs from its origin.
+    public enum Anchor {
+        /// The top of the first line; each line centred in its own height.
+        case top
+        /// The first line's baseline.
+        case firstBaseline
+    }
+
+    /// How far apart lines are, before `lineSpacing`.
+    public enum LineHeight {
+        /// The font size times `Typography.lineHeightRatio`.
+        case typography
+        /// The font's own ascender to descender.
+        case font
+    }
+
     public let height: CGFloat
     public let width: CGFloat
+    /// The font the lines are set in.
+    public let font: UIFont
+    /// From one line's baseline to the next: the line height and its
+    /// spacing.
+    public let lineAdvance: CGFloat
+    /// The lines, top first.
+    public let lines: [SKLabelNode]
 
-    public init(
+    public convenience init(
         _ text: String,
         maxWidth: CGFloat,
         weight: UIFont.Weight,
         fontSize: CGFloat,
         color: UIColor,
         alignment: SKLabelHorizontalAlignmentMode = .center,
-        lineSpacing: CGFloat = 0
+        lineSpacing: CGFloat = 0,
+        anchor: Anchor = .top,
+        lineHeight: LineHeight = .typography
     ) {
-        let font = Typography.font(weight, fontSize)
-        let lines = wrappedLines(text, maxWidth: maxWidth, font: font)
-        let lineHeight = fontSize * Typography.lineHeightRatio() + lineSpacing
-        height = CGFloat(lines.count) * lineHeight - lineSpacing
-        width = lines.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
-        super.init()
-        for (index, line) in lines.enumerated() {
+        self.init(
+            text, maxWidth: maxWidth, font: Typography.font(weight, fontSize), color: color,
+            alignment: alignment, lineSpacing: lineSpacing, anchor: anchor, lineHeight: lineHeight
+        )
+    }
+
+    public init(
+        _ text: String,
+        maxWidth: CGFloat,
+        font: UIFont,
+        color: UIColor,
+        alignment: SKLabelHorizontalAlignmentMode = .center,
+        lineSpacing: CGFloat = 0,
+        anchor: Anchor = .top,
+        lineHeight: LineHeight = .typography
+    ) {
+        let fontSize = font.pointSize
+        let texts = wrappedLines(text, maxWidth: maxWidth, font: font)
+        let ownHeight = switch lineHeight {
+        case .typography: fontSize * Typography.lineHeightRatio()
+        case .font: font.ascender - font.descender
+        }
+        lineAdvance = ownHeight + lineSpacing
+        height = CGFloat(texts.count) * lineAdvance - lineSpacing
+        width = texts.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        self.font = font
+        lines = texts.enumerated().map { index, line in
             let label = SKLabelNode()
             label.fontName = font.fontName
             label.fontSize = fontSize
             label.text = line
             label.fontColor = color
             label.horizontalAlignmentMode = alignment
-            label.verticalAlignmentMode = .center
-            label.position = pt(0, -lineHeight * (CGFloat(index) + 0.5) + lineSpacing / 2)
-            addChild(label)
+            switch anchor {
+            case .top:
+                label.verticalAlignmentMode = .center
+                label.position = pt(0, -lineAdvance * (CGFloat(index) + 0.5) + lineSpacing / 2)
+            case .firstBaseline:
+                label.verticalAlignmentMode = .baseline
+                label.position = pt(0, -lineAdvance * CGFloat(index))
+            }
+            return label
         }
+        super.init()
+        lines.forEach(addChild)
     }
+
+    /// The last line's baseline, below the origin (zero or less) with
+    /// `anchor: .firstBaseline`.
+    public var lastBaselineY: CGFloat { lines.last?.position.y ?? 0 }
 
     @available(*, unavailable)
     public required init?(coder aDecoder: NSCoder) {
