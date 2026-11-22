@@ -738,10 +738,19 @@ open class SKShapeNode: SKNode {
     // The game builds shapes through its own `shape(_:)` helper and assigns
     // `path`, so no convenience initialisers are needed here.
 
+    /// The path's bounds, grown by a visible stroke's half width, its glow
+    /// and, antialiased, the 1.2 points of SpriteKit's soft edge (measured
+    /// on a Mac, macOS 27.2: a 10 by 20 rect stroked 4 wide reads 16.4 by
+    /// 26.4). A clear stroke, or one of no width, adds nothing.
     open override var contentFrame: CGRect {
         guard let path else { return .zero }
-        return path.boundingBox.insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
+        let bounds = path.boundingBox
+        guard lineWidth > 0, strokeColor.alpha > 0 else { return bounds }
+        let reach = lineWidth / 2 + glowWidth + (isAntialiased ? Self.softEdge : 0)
+        return bounds.insetBy(dx: -reach, dy: -reach)
     }
+
+    private static let softEdge: CGFloat = 1.2
 }
 
 #endif
