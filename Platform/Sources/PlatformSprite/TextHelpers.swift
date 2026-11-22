@@ -161,8 +161,9 @@ public final class TextBlockNode: SKNode {
         case .typography: fontSize * Typography.lineHeightRatio()
         case .font: font.ascender - font.descender
         }
-        lineAdvance = ownHeight + lineSpacing
-        height = CGFloat(texts.count) * lineAdvance - lineSpacing
+        let advance = ownHeight + lineSpacing
+        lineAdvance = advance
+        height = CGFloat(texts.count) * advance - lineSpacing
         width = texts.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
         self.font = font
         lines = texts.enumerated().map { index, line in
@@ -175,10 +176,10 @@ public final class TextBlockNode: SKNode {
             switch anchor {
             case .top:
                 label.verticalAlignmentMode = .center
-                label.position = pt(0, -lineAdvance * (CGFloat(index) + 0.5) + lineSpacing / 2)
+                label.position = pt(0, -advance * (CGFloat(index) + 0.5) + lineSpacing / 2)
             case .firstBaseline:
                 label.verticalAlignmentMode = .baseline
-                label.position = pt(0, -lineAdvance * CGFloat(index))
+                label.position = pt(0, -advance * CGFloat(index))
             }
             return label
         }
