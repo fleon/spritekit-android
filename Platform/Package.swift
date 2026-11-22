@@ -59,7 +59,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-syntax.git", from: "509.0.0"),
     ],
     targets: [
-        // `@NSCodingUnsupported`, for nodes only ever made in code.
+        // `@NSCodingUnsupported`, for nodes only ever made in code, and
+        // `@Stored`, `@Synced` and `@SyncedKeys`, for saved values.
         .macro(
             name: "MacrosPlugin",
             dependencies: [
@@ -67,7 +68,13 @@ let package = Package(
                 .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
             ]
         ),
-        .target(name: "Macros", dependencies: ["MacrosPlugin"]),
+        .target(
+            name: "Macros",
+            dependencies: [
+                "MacrosPlugin",
+                .product(name: "PlatformServices", package: "spritekit-android"),
+            ]
+        ),
         // The shorthands and small pieces every game's code leans on:
         // geometry, timing curves and eased actions, seeded randomness.
         // `PlatformServices` (the render-scale governor, the service
@@ -180,7 +187,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlatformSyncTests",
-            dependencies: ["PlatformSync"],
+            dependencies: ["PlatformSync", "Macros"],
             swiftSettings: settings
         ),
         // Android's wiring: Play Games, Play Billing, Saved Games and the
