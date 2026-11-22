@@ -22,6 +22,36 @@ public nonisolated struct TimingCurve: Sendable {
     /// A long, soft landing.
     public static let quintOut = TimingCurve { 1 - pow(1 - $0, 5) }
 
+    // Robert Penner's easings, as easings.net names them: `in` speeds up,
+    // `out` slows down, `inOut` does both, meeting half way at half time.
+
+    /// t²
+    public static let quadIn = TimingCurve { $0 * $0 }
+    /// 1 − (1 − t)²
+    public static let quadOut = TimingCurve { 1 - (1 - $0) * (1 - $0) }
+    public static let quadInOut = inOut(power: 2)
+    /// t³, the same curve as `easeIn`.
+    public static let cubicIn = easeIn
+    /// 1 − (1 − t)³, the same curve as `easeOut`.
+    public static let cubicOut = easeOut
+    /// Penner's cubic in-out (`easeInOut` is CSS's, a softer bezier).
+    public static let cubicInOut = inOut(power: 3)
+    public static let quintIn = TimingCurve { pow($0, 5) }
+    public static let quintInOut = inOut(power: 5)
+    /// 1 − cos(πt / 2)
+    public static let sineIn = TimingCurve { 1 - cos($0 * .pi / 2) }
+    /// sin(πt / 2)
+    public static let sineOut = TimingCurve { sin($0 * .pi / 2) }
+    /// (1 − cos(πt)) / 2
+    public static let sineInOut = TimingCurve { (1 - cos($0 * .pi)) / 2 }
+
+    /// tⁿ to half way, then its mirror: 2ⁿ⁻¹tⁿ, and 1 − (2 − 2t)ⁿ / 2.
+    private static func inOut(power: CGFloat) -> TimingCurve {
+        TimingCurve { time in
+            time < 0.5 ? pow(2, power - 1) * pow(time, power) : 1 - pow(2 - 2 * time, power) / 2
+        }
+    }
+
     /// Overshoots the destination before settling back.
     public static let backOut = TimingCurve { time in
         let overshoot: CGFloat = 1.70158
