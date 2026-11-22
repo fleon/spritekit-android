@@ -11,15 +11,13 @@ import PackageDescription
 // tests, against this repository's shim, which `SPRITEKIT_SHIM` selects. So a
 // source file here imports
 //
-//     #if SPRITEKIT_SHIM
 //     import SpriteKitShim
-//     #else
-//     import SpriteKit
-//     import UIKit
-//     #endif
 //
-// and never the module-name targets in Modules/, which collide with Apple's
-// frameworks.
+// which is SpriteKit, CoreGraphics and UIKit themselves on Apple platforms
+// (the shim's passthrough), and never the module-name targets in Modules/,
+// which collide with Apple's frameworks. `#if SPRITEKIT_SHIM` is left for
+// what really differs (an Apple framework the shim has no stand-in for, or
+// Android's own wiring).
 //
 // A game adds this package to its Xcode project as a local package
 // (`<submodule>/Platform`) and to its Android package by path; it reaches
@@ -84,7 +82,7 @@ let package = Package(
             name: "PlatformCore",
             dependencies: [
                 .product(name: "PlatformServices", package: "spritekit-android"),
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             swiftSettings: settings
         ),
@@ -96,7 +94,7 @@ let package = Package(
             dependencies: [
                 "PlatformCore",
                 "Macros",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             exclude: ["LICENSE"],
             swiftSettings: settings
@@ -110,7 +108,7 @@ let package = Package(
             dependencies: [
                 "PlatformCore",
                 "Macros",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             swiftSettings: settings
         ),
@@ -120,7 +118,7 @@ let package = Package(
             name: "PlatformDisplay",
             dependencies: [
                 "PlatformCore",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             swiftSettings: settings
         ),
@@ -167,7 +165,7 @@ let package = Package(
             name: "PlatformDevice",
             dependencies: [
                 .product(name: "PlatformServices", package: "spritekit-android"),
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
@@ -252,7 +250,7 @@ let package = Package(
             name: "PlatformSprite",
             dependencies: [
                 "PlatformCore",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             swiftSettings: settings
         ),
@@ -261,7 +259,7 @@ let package = Package(
             dependencies: [
                 "PlatformSprite",
                 "Macros",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             swiftSettings: settings
         ),
@@ -273,7 +271,7 @@ let package = Package(
             dependencies: [
                 "PlatformSprite",
                 .product(name: "PlatformServices", package: "spritekit-android"),
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
@@ -300,7 +298,7 @@ let package = Package(
             name: "PlatformShare",
             dependencies: [
                 "PlatformSprite",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
@@ -309,7 +307,7 @@ let package = Package(
             name: "PlatformShareTests",
             dependencies: [
                 "PlatformShare",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
@@ -324,7 +322,7 @@ let package = Package(
             name: "MacrosUsageTests",
             dependencies: [
                 "Macros",
-                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android"),
             ],
             swiftSettings: settings
         ),

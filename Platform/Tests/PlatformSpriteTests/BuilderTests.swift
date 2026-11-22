@@ -1,10 +1,6 @@
 import Foundation
 import Testing
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 @testable import PlatformSprite
 
 private func close(_ a: CGRect, _ b: CGRect) -> Bool {
@@ -112,8 +108,10 @@ struct LabelBuilderTests {
         #expect(made.fontSize == 18)
         #expect(made.text == "Hello")
         #expect(made.horizontalAlignmentMode == .left)
-        #expect(made.verticalAlignmentMode == .center)
-        #expect(made.position == pt(3, 4))
+        // Centred by the font's capitals, on its baseline.
+        let metrics = FontBandMetrics(fontNamed: "Face-Bold", size: 18)
+        #expect(made.verticalAlignmentMode == .baseline)
+        #expect(made.position == pt(3, 4 - metrics.capHeight / 2))
         #expect(made.zPosition == 2)
         #expect(made.alpha == 0.5)
         #expect(made.name == "greeting")

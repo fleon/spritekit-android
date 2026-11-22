@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// The rounded corners of iPhone displays, so round buttons in a screen's
 /// corners can stand concentric with them.

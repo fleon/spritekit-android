@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// What holds a game's view at launch, before its first scene
 /// (`StudioSplashLaunch`): what an Android controller's surface hands its

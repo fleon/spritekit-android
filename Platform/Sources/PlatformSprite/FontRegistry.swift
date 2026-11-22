@@ -2,11 +2,7 @@ import Foundation
 #if canImport(Darwin)
 import CoreText
 #endif
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// Registers a game's own font files with CoreText, each once a process
 /// (registering a file twice fails, and logs on Apple). The file names are

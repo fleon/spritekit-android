@@ -40,7 +40,7 @@ public final class RenderScaleController: NSObject, SKViewDelegate {
     private var lastFrame: TimeInterval?
     /// What the view draws at now.
     private var applied: Rung?
-    private var observers: [NSObjectProtocol] = []
+    private let observers = ObserverBag()
 
     /// Takes over as `view`'s delegate, handing every frame on to the one
     /// it had.
@@ -52,12 +52,8 @@ public final class RenderScaleController: NSObject, SKViewDelegate {
         governs = choices.governs
         super.init()
         view.delegate = self
-        observers = DisplaySettings.observeChoices { [weak self] in self?.choicesDidChange() }
+        observers.add(DisplaySettings.observeChoices { [weak self] in self?.choicesDidChange() })
         applyRate(governor.rate)
-    }
-
-    deinit {
-        observers.forEach(NotificationCenter.default.removeObserver)
     }
 
     public func view(_ view: SKView, shouldRenderAtTime time: TimeInterval) -> Bool {

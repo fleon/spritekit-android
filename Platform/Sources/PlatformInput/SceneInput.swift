@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 #if os(iOS)
 import UIKit.UIGestureRecognizerSubclass
 #endif

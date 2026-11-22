@@ -15,14 +15,17 @@ extension AndroidPlatformServices.Configuration {
     /// hand them: Play Games' achievements and leaderboards to
     /// `gameCenter`, Saved Games under `ICloudSyncManager` (`syncsSavedData`),
     /// Play Billing to `store` for its configured products, and audio focus
-    /// to `audio`. A manager left nil gets nothing. Set anything else (the
-    /// player for GameKit's `GKLocalPlayer`, the status bar, diagnostics)
-    /// on the result before `AndroidPlatformServices.install`.
+    /// to `audio`, and with `statusBar` the settings' switch
+    /// (`StatusBarSetting`) to the status bar. A manager left nil gets
+    /// nothing. Set anything else (the player for GameKit's
+    /// `GKLocalPlayer`, diagnostics) on the result before
+    /// `AndroidPlatformServices.install`.
     public static func toolkit(
         gameCenter: GameCenterManager?,
         syncsSavedData: Bool = true,
         store: StoreManager? = nil,
-        audio: AudioManager? = .shared
+        audio: AudioManager? = .shared,
+        statusBar: Bool = false
     ) -> Self {
         var services = Self()
         if let gameCenter {
@@ -40,7 +43,17 @@ extension AndroidPlatformServices.Configuration {
                 MainActor.assumeIsolated { audio.audioFocusDidChange(otherAudio: otherAudio, interrupted: interrupted) }
             }
         }
+        if statusBar {
+            services.statusBar = .setting
+        }
         return services
+    }
+}
+
+extension AndroidPlatformServices.StatusBar {
+    /// The settings' switch, `StatusBarSetting`.
+    public static var setting: Self {
+        .init(isVisible: { MainActor.assumeIsolated { StatusBarSetting.isVisible } }, changed: StatusBarSetting.didChange)
     }
 }
 

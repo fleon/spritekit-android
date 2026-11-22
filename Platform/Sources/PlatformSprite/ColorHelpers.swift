@@ -1,11 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-import simd
-#endif
 
 /// `0xRRGGBB` as a colour.
 public func hex(_ hex: UInt32) -> UIColor {

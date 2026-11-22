@@ -1,10 +1,6 @@
 import Foundation
 import PlatformCore
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// Moves focus between a scene's controls (`SceneControls`) for the Apple
 /// TV remote and gamepads (`GamepadInput`): a swipe, a press on the
