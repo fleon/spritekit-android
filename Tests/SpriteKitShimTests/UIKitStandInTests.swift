@@ -71,13 +71,15 @@ struct UIKitStandInTests {
         var scene: UIWindowScene? = UIWindowScene(screen: screen, interfaceOrientation: .portrait)
         let window = UIWindow(bounds: screen.bounds)
         window.windowScene = scene
-        let listed = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        #expect(listed.contains { $0 === scene })
-        // What game code reads next: the key window, the screen, the orientation.
-        let found = listed.first { $0 === scene }
-        #expect(found?.keyWindow === window)
-        #expect(found?.screen === screen)
-        #expect(found?.interfaceOrientation == .portrait)
+        do {
+            let listed = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            #expect(listed.contains { $0 === scene })
+            // What game code reads next: the key window, the screen, the orientation.
+            let found = listed.first { $0 === scene }
+            #expect(found?.keyWindow === window)
+            #expect(found?.screen === screen)
+            #expect(found?.interfaceOrientation == .portrait)
+        }
         scene = nil
         #expect(!UIApplication.shared.connectedScenes.contains { ($0 as? UIWindowScene)?.screen === screen })
     }
