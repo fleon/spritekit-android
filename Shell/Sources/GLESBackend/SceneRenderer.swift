@@ -1018,16 +1018,19 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     }
 
     /// An effect node's `CIGaussianBlur` (`EffectBlur`), over the pixels just
-    /// drawn into `handle`: across into a target lent for it, then up back
-    /// into `handle`, which then composites (or is kept) blurred. `sigma`
-    /// is in the node's points, so the blur spreads as far in points at
-    /// every density, as SpriteKit's does.
+    /// drawn into `handle`, which then composites (or is kept) blurred:
+    /// across into a target lent for it, then up back. A wide blur first
+    /// halves the picture into lent targets, blurs the smallest, and
+    /// stretches it back into `handle`. `sigma` is in the node's points, so
+    /// the blur spreads as far in points at every density, as SpriteKit's
+    /// does.
     private func blur(_ handle: RenderTargetHandle, texture: EffectTexture, sigma: CGFloat) {
-        guard blurProgram != 0, let kernel = EffectBlur(sigma: Double(sigma * texture.density)),
-              let across = targets.transient(width: handle.width, height: handle.height, stencil: false) else { return }
+        guard blurProgram != 0, defaultProgram != 0, let kernel = EffectBlur(sigma: Double(sigma * texture.density)) else { return }
         let quad = compositeQuad(bounds: texture.bounds, transform: .identity, alpha: 1, shader: nil, blendMode: .replace)
         let pairs = kernel.packedPairs
-        func pass(from source: RenderTargetHandle, into destination: RenderTargetHandle, step: SIMD2<Float>) {
+        // Every target here shows the texture's bounds whole, whatever its
+        // size, so one quad and one projection draw into each.
+        func bind(_ destination: RenderTargetHandle) {
             target = Target(
                 framebuffer: destination.framebuffer,
                 widthInPixels: destination.width,
@@ -1036,6 +1039,13 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 fragSpace: texture.contentsSpace
             )
             bindTarget()
+        }
+        func copy(_ source: RenderTargetHandle, into destination: RenderTargetHandle) {
+            bind(destination)
+            draw(quad, projection: texture.projection, time: 0, texture: source.texture)
+        }
+        func pass(from source: RenderTargetHandle, into destination: RenderTargetHandle, step: SIMD2<Float>) {
+            bind(destination)
             useProgram(blurProgram)
             glUniform2f(uniformLocation(blurProgram, "u_blur_step"), step.x, step.y)
             glUniform1f(uniformLocation(blurProgram, "u_blur_centre"), kernel.centre)
@@ -1045,8 +1055,16 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             }
             draw(quad, projection: texture.projection, time: 0, overrideProgram: blurProgram, texture: source.texture)
         }
-        pass(from: handle, into: across, step: SIMD2(1 / Float(handle.width), 0))
-        pass(from: across, into: handle, step: SIMD2(0, 1 / Float(handle.height)))
+        var picture = handle
+        for size in kernel.halvings(width: handle.width, height: handle.height) {
+            guard let half = targets.transient(width: size.width, height: size.height, stencil: false) else { return }
+            copy(picture, into: half)
+            picture = half
+        }
+        guard let across = targets.transient(width: picture.width, height: picture.height, stencil: false) else { return }
+        pass(from: picture, into: across, step: SIMD2(1 / Float(picture.width), 0))
+        pass(from: across, into: picture, step: SIMD2(0, 1 / Float(picture.height)))
+        if picture != handle { copy(picture, into: handle) }
     }
 
     /// `SKCropNode`: the mask into the stencil, then the contents where it

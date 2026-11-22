@@ -4,7 +4,8 @@
 // 3, 6 and 12:
 //
 // - the blur's sigma is half the radius in points at every scale: 3, 6 and
-//   12 px at 2x, 4.5, 8.9 and 18 px at 3x;
+//   12 px at 2x, 4.5, 8.9 and 18 px at 3x; still a Gaussian at radius 50
+//   and 100, at 2x and 3x (`wideBlursAt2x`, `wideBlursAt3x`);
 // - it spreads past the node's contents unclipped, as far as three sigmas
 //   reach, centred on them;
 // - `calculateAccumulatedFrame()` stays the contents' frame;
@@ -114,8 +115,75 @@ func kernelShape() throws {
     #expect(kernel.packedPairs.count == EffectBlur.maximumPairs * 2)
     // A blur too small to move a pixel is none.
     #expect(EffectBlur(sigma: 0) == nil)
-    // A very wide one is cut at the most pairs a pass takes.
-    #expect(try #require(EffectBlur(sigma: 200)).pairs.count == EffectBlur.maximumPairs)
+    // A wider one runs over a halved copy rather than past the most pairs
+    // a pass takes: 3 × 150 texels is past 128 three times over, so a
+    // quarter-size copy, its kernel still reaching three sigmas.
+    let wide = try #require(EffectBlur(sigma: 150))
+    #expect(wide.downsample == 4)
+    #expect(wide.pairs.count <= EffectBlur.maximumPairs)
+    #expect(wide.halvings(width: 901, height: 300).map { [$0.width, $0.height] } == [[451, 150], [226, 75]])
+    #expect(try #require(EffectBlur(sigma: 42)).downsample == 1)
+}
+
+/// The blur's alpha across a black half-plane whose edge is at texel
+/// `edge` of a row `width` texels wide, at `sigma` texels.
+private func edgeProfile(sigma: Double, width: Int, edge: Int) throws -> [Float] {
+    let kernel = try #require(EffectBlur(sigma: sigma))
+    let height = 3
+    var pixels = [Float](repeating: 0, count: width * height * 4)
+    for y in 0..<height { for x in 0..<edge { pixels[(y * width + x) * 4 + 3] = 255 } }
+    let out = kernel.blurred(pixels, width: width, height: height)
+    return (0..<width).map { out[(width + $0) * 4 + 3] }
+}
+
+@Test("Wide blurs stay SpriteKit's Gaussian on a 2x Mac", arguments: [
+    // Alpha every 5 pt from x = 120 to 360 pt across a black half-plane
+    // whose edge is at 200 pt, blurred at radius 20, 50 and 100 in a 2x
+    // SKView (`texture(from:)`).
+    (20.0, [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 253, 249, 236, 213, 173, 125, 77, 38, 17, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    (50.0, [255, 255, 254, 254, 253, 251, 249, 245, 240, 234, 225, 214, 200, 184, 166, 147, 126, 106, 87, 69, 53, 40, 29, 20, 13, 9, 6, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    (100.0, [241, 238, 234, 230, 225, 220, 214, 208, 200, 193, 184, 176, 167, 157, 147, 137, 127, 117, 107, 97, 87, 78, 69, 61, 54, 47, 40, 34, 29, 24, 21, 17, 14, 11, 9, 7, 6, 5, 4, 3, 2, 2, 1, 1, 1, 0, 0, 0, 0]),
+] as [(Double, [Float])])
+func wideBlursAt2x(radius: Double, apple: [Float]) throws {
+    // Sigma is half the radius in points: `radius` pixels at 2x.
+    let edge = 700
+    let profile = try edgeProfile(sigma: radius, width: 1400, edge: edge)
+    for (index, expected) in apple.enumerated() {
+        let x = edge + (120 + index * 5 - 200) * 2
+        #expect(abs(profile[x] - expected) <= 2, "radius \(radius), \(120 + index * 5) pt: \(profile[x]) against \(expected)")
+    }
+}
+
+@Test("Wide blurs stay SpriteKit's Gaussian on a 3x iPhone", arguments: [
+    // The same at 3x, read off an iPhone 17 Pro simulator's screen: black
+    // bands 120 pt tall on white, so each row is the across profile times
+    // the blur of the band's height at its middle, divided out here.
+    (20.0, [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 253, 248, 236, 211, 172, 123, 74, 38, 15, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    (50.0, [251, 251, 250, 250, 249, 247, 245, 241, 236, 230, 221, 209, 196, 180, 162, 143, 123, 103, 85, 67, 52, 39, 28, 20, 13, 9, 5, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    (100.0, [186, 184, 181, 178, 174, 170, 165, 160, 154, 148, 142, 135, 128, 121, 114, 106, 98, 90, 82, 75, 67, 60, 53, 47, 41, 36, 31, 26, 22, 19, 15, 13, 10, 8, 7, 5, 4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0]),
+] as [(Double, [Float])])
+func wideBlursAt3x(radius: Double, apple: [Float]) throws {
+    let sigmaPoints = radius / 2
+    let band = Float(erf(60 / (sigmaPoints * 2.0.squareRoot())))
+    let edge = 1000
+    let profile = try edgeProfile(sigma: radius * 1.5, width: 2000, edge: edge)
+    for (index, expected) in apple.enumerated() {
+        let x = edge + (120 + index * 5 - 200) * 3 + 1
+        #expect(abs(profile[x] * band - expected) <= 2, "radius \(radius), \(120 + index * 5) pt: \(profile[x] * band) against \(expected)")
+    }
+}
+
+@Test("The texture reaches as far as the blur spreads: nothing clipped, no empty band", arguments: [8.0, 40.0, 75.0, 150.0])
+func textureAndBlurAgree(sigma: Double) throws {
+    // The contents end at the texture's reach short of its edge, as
+    // `effectBounds` lays it out: three sigmas.
+    let reach = Int((3 * sigma).rounded(.up))
+    let profile = try edgeProfile(sigma: sigma, width: 2 * reach + 40, edge: reach + 40)
+    // Next to nothing reaches the texture's last texel, so the texture
+    // clips nothing that shows...
+    #expect(profile[profile.count - 1] <= 1.5)
+    // ...and the blur still reaches most of the way there.
+    #expect(profile[reach + 40 + Int(2.5 * sigma)] >= 1)
 }
 
 @Test("A blurred edge falls off as SpriteKit's does")
