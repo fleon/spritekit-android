@@ -407,8 +407,8 @@ decides, it hands in:
   `CGPath` for `ShapeSprite`, a crop mask or a route (`ArcDirection` as
   UIKit names it: `.clockwise` is a rising angle; `.roundedRect` has
   CoreGraphics' circular corners, `.continuousRoundedRect` UIKit's
-  continuous ones, UIKit's own on Apple and the same curve elsewhere,
-  `ContinuousCorners`); `label(.font(weight,
+  continuous ones, UIKit's own on Apple and elsewhere the shim's
+  `ContinuousCorners`, which its `UIBezierPath` draws with too); `label(.font(weight,
   size), .text(…), …)` makes an `SKLabelNode` in `Typography`'s face, or a
   named one (`.fontNamed`); its `.vAlign(.center)`, `.top` and `.bottom`
   make an `AlignedLabelNode`, which aligns the font's text band at its

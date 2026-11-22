@@ -41,8 +41,8 @@ public nonisolated enum PathCommand {
     /// circular corners.
     case roundedRect(_ rect: CGRect, _ cornerRadius: CGFloat)
     /// UIKit's continuous corners, as `UIBezierPath(roundedRect:cornerRadius:)`
-    /// draws them: UIKit's own on Apple, the same curve elsewhere
-    /// (`ContinuousCorners`).
+    /// draws them: UIKit's own on Apple, the shim's `ContinuousCorners`
+    /// elsewhere, which its `UIBezierPath` draws with too.
     case continuousRoundedRect(_ rect: CGRect, _ cornerRadius: CGFloat)
     case close
 }
@@ -86,7 +86,7 @@ public nonisolated func path(_ commands: [PathCommand]) -> CGPath {
             #if canImport(UIKit) && !SPRITEKIT_SHIM
             path.addPath(UIBezierPath(roundedRect: frame, cornerRadius: max(0, cornerRadius)).cgPath)
             #else
-            ContinuousCorners.addRoundedRect(to: path, in: frame, cornerRadius: cornerRadius)
+            ContinuousCorners.addRoundedRect(to: path, in: frame, cornerRadius: max(0, cornerRadius))
             #endif
         case .close:
             path.closeSubpath()
