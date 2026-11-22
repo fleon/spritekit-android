@@ -7,7 +7,8 @@
 #                 summary comment when there are any (none otherwise);
 #   code-review   Claude Code's /code-review (the official code-review
 #                 plugin), its correctness bug hunt, as inline comments.
-# Neither is a required check.
+# With no findings, neither posts anything; each run's summary page shows
+# what it reviewed. Neither is a required check.
 #
 # This repository runs it on its own pull requests, and every game on the
 # runtime calls it, rather than keeping a copy (Templates/Workflows/
@@ -177,9 +178,12 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           plugins: code-review@claude-plugins-official
           # The skill's own allowed tools aren't enough headless: --comment
-          # posts only through the inline comment tool named here.
+          # posts only through the inline comment tool named here. Like the
+          # house-rules review, it says nothing when it finds nothing; the
+          # run's summary page shows what it reviewed.
           claude_args: |
             --model claude-opus-5-5 --effort high
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Skill,Task,Agent,Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(git log:*),Bash(git blame:*),Bash(git show:*),Bash(git diff:*)"
+            --append-system-prompt "If the review finds no issues, post nothing to the pull request: no summary, no top-level comment, no inline comment. Post only findings, each as an inline comment."
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Skill,Task,Agent,Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(git log:*),Bash(git blame:*),Bash(git show:*),Bash(git diff:*)"
           display_report: true
           prompt: /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
