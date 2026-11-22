@@ -36,3 +36,23 @@ Sources/GameCompat/Android/AndroidGameController.swift
    else `GameHost` asks has a default in `AndroidGameHost`; a game writes its
    own where it differs (Back, keys, links, a scene told its safe area in
    `didLayout(_:)`, a `layout` of its own that calls `surface.layout`).
+
+## How it's kept compiling
+
+Two pull request checks build this template around a stand-in game,
+`Templates/Check`, whose `Source/` has the least a game has: the title
+scene and splash style the controller names, and an Apple view controller,
+app delegate and scene delegate, the files `exclude:` leaves out.
+
+- `Scripts/check-template.sh` fills the placeholders with neutral values,
+  cross-compiles this package for Android, packages the APK with
+  `Templates/App/base` and the CI launches it on an emulator ("Game template
+  on an emulator").
+- `Scripts/check-template-apple.sh` builds the same `Source/` for the iOS
+  Simulator against `Platform/` and Apple's SpriteKit, its view controller
+  launching through `StudioSplashScene.launch` ("Game template on iOS").
+
+```bash
+Scripts/check-template.sh x86_64         # Android: needs what build-shell.sh does
+Scripts/check-template-apple.sh          # iOS: needs Xcode
+```
