@@ -26,8 +26,8 @@ test('the project: the app target is the last value; a bump leaves other targets
 
 test('the minor goes up with as many parts as the version has', () => {
   assert.strictEqual(lib.bumpMinor('1.7'), '1.8');
-  assert.strictEqual(lib.bumpMinor('1.4.1'), '1.5.0');
-  assert.strictEqual(lib.bumpMinor('1.5.0'), '1.6.0');
+  assert.strictEqual(lib.bumpMinor('1.4.1'), '1.5');
+  assert.strictEqual(lib.bumpMinor('1.5.0'), '1.6');
   assert.strictEqual(lib.bumpMinor('2.9'), '2.10');
   assert.throws(() => lib.bumpMinor('7'), /x\.y/);
 });

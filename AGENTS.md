@@ -286,9 +286,10 @@ would want.
 - A production release on Play is two uploads of one commit: the non-beta
   build to production as a draft the person rolls out, and the beta build to
   every testing track. Never promote a testing build to production.
-- A game moves to the next minor version (x.y.z to x.(y+1).0) once its
-  current version has an approved release on either store; until then each
-  build keeps the version and takes only the next build number.
+- A game moves to the next minor version, with no patch (x.y.z to x.(y+1):
+  1.4.1 to 1.5, never 1.5.0), once its current version has an approved
+  release on either store; until then each build keeps the version and takes
+  only the next build number.
 - Google Play goes through the runtime's `Tools/Play/play.js` (its README),
   run through the game's own two-line `play.js` with its `listing.json` and
   `play.json`: never `gplay` writes of your own, and never a copy of the

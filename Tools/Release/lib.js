@@ -44,15 +44,14 @@ function withVersion(text, from, to) {
     (value.replace(/"/g, '').trim() === from ? `MARKETING_VERSION = ${to};` : line));
 }
 
-// The next minor version, with as many parts as this one: 1.7 → 1.8,
-// 1.4.1 → 1.5.0.
+// The next minor version, with no patch: 1.7 → 1.8, 1.4.1 → 1.5.
 function bumpMinor(version) {
   const parts = String(version).split('.');
   const [major, minor] = parts.map(Number);
   if (parts.length < 2 || parts.length > 3 || !Number.isInteger(major) || !Number.isInteger(minor)) {
     throw new Error(`MARKETING_VERSION isn't x.y or x.y.z: ${version}`);
   }
-  return parts.length === 2 ? `${major}.${minor + 1}` : `${major}.${minor + 1}.0`;
+  return `${major}.${minor + 1}`;
 }
 
 // --- Build numbers --------------------------------------------------------
