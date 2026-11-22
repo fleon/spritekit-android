@@ -176,14 +176,21 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The marketplace named outright: without it the action skips
+          # marketplace setup and looks in the CLI's own, older copy, which
+          # has no code-review plugin.
+          plugin_marketplaces: https://github.com/anthropics/claude-plugins-official.git
           plugins: code-review@claude-plugins-official
           # The skill's own allowed tools aren't enough headless: --comment
           # posts only through the inline comment tool named here. Like the
           # house-rules review, it says nothing when it finds nothing; the
-          # run's summary page shows what it reviewed.
+          # run's summary page shows what it reviewed. The appended prompt
+          # also points it at AGENTS.md (it looks for CLAUDE.md), and keeps
+          # the house-rules job's comments, posted as the same account, from
+          # reading as "Claude has already commented", which would stop it.
           claude_args: |
             --model claude-opus-5-5 --effort high
-            --append-system-prompt "If the review finds no issues, post nothing to the pull request: no summary, no top-level comment, no inline comment. Post only findings, each as an inline comment."
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Skill,Task,Agent,Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(git log:*),Bash(git blame:*),Bash(git show:*),Bash(git diff:*)"
+            --append-system-prompt "This repository keeps its rules in AGENTS.md, not CLAUDE.md: wherever the review looks for CLAUDE.md files, use AGENTS.md (and the files it points to, such as Android/spritekit-android/AGENTS.md in a game) in their place. A separate house-rules review posts as the same account at the same time; its comments (a summary headed 'Claude review (house rules)', and its inline comments) don't count as Claude having already commented, so never stop because of them. If the review finds no issues, post nothing to the pull request: no summary, no top-level comment, no inline comment. Post only findings, each as an inline comment."
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Skill,Task,Agent,Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(git log:*),Bash(git blame:*),Bash(git show:*),Bash(git diff:*)"
           display_report: true
           prompt: /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
