@@ -7,6 +7,7 @@ import SwiftSyntaxMacros
 struct MacrosPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
         NSCodingUnsupportedMacro.self,
+        LocalizedStringsMacro.self, LocalizedCaseMacro.self,
     ]
 }
 
@@ -17,9 +18,15 @@ public struct NSCodingUnsupportedMacro: MemberMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         let inherited = try passThroughInits(node, declaration)
+        // A public or open class's required initializer is public too, as
+        // Swift asks of one a subclass elsewhere must override.
+        let isPublic = declaration.modifiers.contains {
+            $0.name.tokenKind == .keyword(.public) || $0.name.tokenKind == .keyword(.open)
+        }
+        let access = isPublic ? "public " : ""
         let initDecl: DeclSyntax =
             """
-            required init?(coder aDecoder: NSCoder) {
+            \(raw: access)required init?(coder aDecoder: NSCoder) {
                 fatalError("init(coder:) has not been implemented")
             }
             """

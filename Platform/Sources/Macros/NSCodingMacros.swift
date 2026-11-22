@@ -2,6 +2,7 @@
 ///
 /// Use this macro on classes that inherit from `NSCoding`-conforming types (like `SKNode`)
 /// but are only instantiated programmatically and don't support decoding from archives.
+/// On a `public` or `open` class the initializer is `public`.
 ///
 /// Example:
 /// ```swift

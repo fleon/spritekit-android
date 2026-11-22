@@ -106,6 +106,29 @@ test('reads the keys a strings layer names', () => {
   assert.deepStrictEqual(lib.layerKeys('K.a = s("one")\nK.b = s("two")', { pattern: 's\\("([^"]+)"\\)' }), ['one', 'two']);
 });
 
+test('reads the keys a @LocalizedStrings layer names', () => {
+  const swift = `@LocalizedStrings
+enum LocalizedString {
+    @L("title.play", "Play", comment: "Title button")
+    case play
+    @L( "score.format", "Score: %d") case score(Int)
+    @L("quote.\\"mark\\"") case quote
+    @L(.custom) case kind(Kind)
+
+    private var customKey: String {
+        switch self {
+        case .kind: return "kind.small"
+        default: return ""
+        }
+    }
+}`;
+  assert.deepStrictEqual(lib.layerKeys(swift), ['title.play', 'score.format', 'quote."mark"', 'kind.small']);
+  assert.deepStrictEqual(lib.layerKeys(swift, { property: 'key' }), ['title.play', 'score.format', 'quote."mark"']);
+  assert.deepStrictEqual(lib.layerKeys(swift, { property: 'customKey' }), ['kind.small', 'title.play', 'score.format', 'quote."mark"']);
+  assert.deepStrictEqual(lib.layerKeys(swift, { pattern: 'return "([^"]+)"' }), ['kind.small']);
+  assert.strictEqual(lib.layerKeys('enum E { case a }', { property: 'key' }), null);
+});
+
 test('reads a .stringsdict\'s top-level keys', () => {
   const xml = `<plist version="1.0"><dict>
     <key>words.format</key><dict><key>NSStringLocalizedFormatKey</key><string>%#@w@</string><key>w</key><dict><key>one</key><string>%d word</string></dict></dict>
