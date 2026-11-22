@@ -10,6 +10,7 @@ import Foundation
 import SpriteKitShim
 import Testing
 @testable import PlatformSprite
+import PlatformTestSupport
 
 private final class CoreTextProvider: TextProvider, @unchecked Sendable {
     private func font(_ key: FontKey) -> CTFont { CTFontCreateWithName(key.name as CFString, key.size, nil) }
@@ -64,7 +65,10 @@ private func label(_ text: String, font: String) -> SKLabelNode {
 
 /// Where the label's first line draws its baseline, in its parent.
 private func drawnBaseline(_ label: SKLabelNode) -> CGFloat? {
-    label.layout.flatMap { $0.lines.first }.map { label.position.y + $0.origin.y }
+    if let aligned = label as? AlignedLabelNode {
+        return drawnBaseline(aligned.textNode).map { label.position.y + $0 * label.yScale }
+    }
+    return label.layout.flatMap { $0.lines.first }.map { label.position.y + $0.origin.y }
 }
 
 private func spread(_ values: [CGFloat]) -> CGFloat { (values.max() ?? 0) - (values.min() ?? 0) }
@@ -144,8 +148,11 @@ struct TextBandTests {
             }
             let baselines = try labels.map { try #require(drawnBaseline($0)) }
             #expect(spread(baselines) == 0, "\(mode): \(baselines)")
-            #expect(labels[0].verticalAlignmentMode == .baseline)
-            #expect(labels[0].position == pt(5, Fixture.metrics(Fixture.thai).baseline(mode, at: 50, band: .line)))
+            #expect(labels[0].verticalAlignmentMode == mode && labels[0].position == pt(5, 50))
+            // Drawn where a baseline label put at the band's baseline draws.
+            let placed = label(Fixture.samples[0], font: Fixture.thai)
+            placed.position = pt(5, Fixture.metrics(Fixture.thai).baseline(mode, at: 50, band: .line))
+            #expect(near(try #require(drawnBaseline(labels[0])), try #require(drawnBaseline(placed))))
         }
         // A baseline label is left where it's put.
         let plain = PlatformSprite.label(.fontNamed(Fixture.thai, Fixture.size), .text("pq"), .position(5, 50))

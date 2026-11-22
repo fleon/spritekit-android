@@ -75,9 +75,13 @@ would want.
   vertical alignment: those align the ink of the letters in the string, so
   a descender (q, p, y, g, Q) or a Thai mark moves the line. Set labels on
   `.baseline` and align them by the font's metrics with the toolkit:
-  `centerVertically(on:)` or `align(_:at:band:)`, `label(... .vAlign(.center))`,
-  `TextBlockNode`. The language picks the band (`TextBand`), so never
-  special-case letters.
+  `label(... .vAlign(.center))` (an `AlignedLabelNode`), `TextBlockNode`,
+  or `centerVertically(on:)` / `align(_:at:band:)`. The language picks the
+  band (`TextBand`), so never special-case letters. A `label(...)` aligned
+  `.center`, `.top` or `.bottom` keeps its band at its `position`: set
+  `position` (or move, scale or resize it) any time after the builder.
+  On a plain `SKLabelNode`, `centerVertically(on:)` and `align` are
+  one-shot: call them after its last `position`, font or scale change.
 - Use `@NSCodingUnsupported` (from `Macros`) on node subclasses instead of a
   hand-written `init?(coder:)`; `inherit: .size` or `.plain` writes the
   pass-through `init(size:)` or `init()`, and `.requiredPlain` the
