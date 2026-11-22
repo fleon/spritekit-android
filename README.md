@@ -585,7 +585,7 @@ holds the view until the first scene. `AndroidGameHost` answers the
 `GameHost` members every game answers alike from the surface (layout, the
 scene sized to `sceneSize(for:)` then `didLayout(_:)`, `didAppear`,
 `captureFrame`, `debugSummary`), `AudioManager.shared` (`useAudio`),
-`-FixedFrameStep` in a debug build, and `DisplaySettingsHost`; Back, keys
+`-FixedFrameStep` in a debug build (`0.0333` or `1/30`), and `DisplaySettingsHost`; Back, keys
 and links go untaken until the game writes its own.
 `AndroidPlatformServices.Configuration.toolkit(gameCenter:syncsSavedData:store:audio:)`
 hands the toolkit's managers their Play backends (achievements and

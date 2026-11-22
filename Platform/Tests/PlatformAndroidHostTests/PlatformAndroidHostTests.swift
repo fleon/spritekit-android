@@ -90,7 +90,7 @@ struct GameHostSurfaceTests {
         #expect(GameHostSurface.safeArea(insets, defaults: defaults) == insets)
     }
 
-    @Test("A launch number reads as a number or text, and only when positive")
+    @Test("A launch number reads as a number, text or a fraction, and only when positive")
     func launchNumber() throws {
         let defaults = try #require(UserDefaults(suiteName: "GameHostSurfaceTests.numbers"))
         defer { defaults.removePersistentDomain(forName: "GameHostSurfaceTests.numbers") }
@@ -103,6 +103,30 @@ struct GameHostSurfaceTests {
         #expect(GameHostSurface.launchNumber("Step", defaults: defaults) == nil)
         defaults.set("zero", forKey: "Step")
         #expect(GameHostSurface.launchNumber("Step", defaults: defaults) == nil)
+        defaults.set("1/60", forKey: "Step")
+        #expect(GameHostSurface.launchNumber("Step", defaults: defaults) == 1.0 / 60)
+        defaults.set(" 1 / 30 ", forKey: "Step")
+        #expect(GameHostSurface.launchNumber("Step", defaults: defaults) == 1.0 / 30)
+        defaults.set("1/0", forKey: "Step")
+        #expect(GameHostSurface.launchNumber("Step", defaults: defaults) == nil)
+        defaults.set(-0.5, forKey: "Step")
+        #expect(GameHostSurface.launchNumber("Step", defaults: defaults) == nil)
+    }
+
+    @Test("The default fixed frame step takes a plain number or a fraction")
+    func fixedFrameStep() {
+        let key = "FixedFrameStep"
+        let defaults = UserDefaults.standard
+        let saved = defaults.object(forKey: key)
+        defer { defaults.set(saved, forKey: key) }
+        defaults.removeObject(forKey: key)
+        #expect(Controller.fixedFrameStep == nil)
+        defaults.set("0.0333", forKey: key)
+        #expect(Controller.fixedFrameStep == 0.0333)
+        defaults.set("1/60", forKey: key)
+        #expect(Controller.fixedFrameStep == 1.0 / 60)
+        defaults.set("0/60", forKey: key)
+        #expect(Controller.fixedFrameStep == nil)
     }
 
     @Test("The launch holds the view until it lets go; then the scene follows the view")

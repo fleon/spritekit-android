@@ -49,8 +49,8 @@ extension AndroidGameHost {
         AudioManager.shared.use(backend)
     }
 
-    /// `-FixedFrameStep 0.0333` (debug builds): the clock moves on exactly
-    /// this much a frame, for a parity capture.
+    /// `-FixedFrameStep 0.0333` or `1/30` (debug builds): the clock moves
+    /// on exactly this much a frame, for a parity capture.
     public static var fixedFrameStep: TimeInterval? { GameHostSurface.launchNumber("FixedFrameStep") }
 
     public static var holdsFrameClock: Bool { false }

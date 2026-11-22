@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformCore
 import PlatformDisplay
 import PlatformShim
 import PlatformSprite
@@ -99,13 +100,15 @@ public final class GameHostSurface {
     }
 
     /// A positive number given as a launch argument (`-FixedFrameStep
-    /// 0.0333`, `-RenderScale 0.85`), as a number or text; nil when it isn't
-    /// given, isn't positive, or in a release build.
+    /// 0.0333` or `1/30`, `-RenderScale 0.85`), as a number or as text read
+    /// by `LaunchArgumentReader.fraction`; nil when it isn't given, isn't
+    /// positive, or in a release build.
     public static func launchNumber(_ key: String, defaults: UserDefaults = .standard) -> Double? {
         #if DEBUG
-        guard let value = defaults.object(forKey: key) else { return nil }
-        let number = (value as? NSNumber)?.doubleValue ?? Double("\(value)".trimmingCharacters(in: .whitespaces))
-        return number.flatMap { $0 > 0 ? $0 : nil }
+        if let number = defaults.object(forKey: key) as? NSNumber {
+            return number.doubleValue > 0 ? number.doubleValue : nil
+        }
+        return LaunchArgumentReader(defaults: defaults, enabled: true).fraction(key)
         #else
         return nil
         #endif
