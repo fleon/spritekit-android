@@ -59,7 +59,7 @@ public struct NSCodingUnsupportedMacro: MemberMacro {
                 """
             case "requiredPlain":
                 return """
-                \(raw: access)required override init() {
+                \(raw: access)required init() {
                     super.init()
                 }
                 """

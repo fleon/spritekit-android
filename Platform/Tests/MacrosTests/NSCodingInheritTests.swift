@@ -66,11 +66,34 @@ final class NSCodingInheritTests: XCTestCase {
             expandedSource: """
             final class Tile: PieceNode {
 
-                required override init() {
+                required init() {
                     super.init()
                 }
 
                 required init?(coder aDecoder: NSCoder) {
+                    fatalError("init(coder:) has not been implemented")
+                }
+            }
+            """,
+            macros: macros
+        )
+    }
+
+    func testRequiredPlainKeepsAPublicClassPublic() {
+        assertMacroExpansion(
+            """
+            @NSCodingUnsupported(inherit: .requiredPlain)
+            open class Tile: PieceNode {
+            }
+            """,
+            expandedSource: """
+            open class Tile: PieceNode {
+
+                public required init() {
+                    super.init()
+                }
+
+                public required init?(coder aDecoder: NSCoder) {
                     fatalError("init(coder:) has not been implemented")
                 }
             }
