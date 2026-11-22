@@ -145,3 +145,49 @@ test('a helper\'s own declaration isn\'t a call', () => {
   // parameter lists don't.
   assert.deepStrictEqual(found.unchecked.map((u) => u.expression).sort(), ['imageName', 'name']);
 });
+
+test('a call entry can name a labelled parameter, read wherever it stands', () => {
+  const swift = [
+    'let a = Piece(asset: "Rook")',
+    'let b = Piece(size: sz(2, 2), asset: "Knight", tint: .red)',
+    'let c = Piece(asset: Kind.queen)',
+    'let d = Piece(asset: "Pawn\\(rank)")',
+    'let e = Piece(size: 3)',
+    'let f = Piece(frame: Frame(asset: "Inner"), asset: "Outer")',
+    'let g = Foo(image: "Flag", scale: 2)',
+    'let h = badge(icon: "Star")',
+    'let i = mark(_: "Dot")',
+    'let j = mark("Ring")',
+  ].join('\n');
+  const enums = { Kind: { queen: 'Queen' } };
+  const found = lib.scanSwift(swift, enums, { images: ['Piece(asset:)', 'Foo(image:)', 'badge(icon:)', 'mark(_:)'] });
+  assert.deepStrictEqual(found.images.map((i) => [i.name, i.line]), [
+    ['Rook', 1], ['Knight', 2], ['Queen', 3], ['Outer', 6], ['Flag', 7], ['Star', 8], ['Ring', 10],
+  ]);
+  // A run-time name is unchecked without its label; `Piece(size:)` has no
+  // asset: and names nothing; `mark(_: "Dot")` isn't Swift.
+  assert.deepStrictEqual(found.unchecked.map((u) => [u.expression, u.prefix]), [['"Pawn\\(rank)"', 'Pawn'], ['_: "Dot"', '']]);
+});
+
+test('a call entry it can\'t read is an error', () => {
+  assert.throws(() => lib.ownCall('Piece(asset)'), /can't read "Piece\(asset\)"/);
+  assert.throws(() => lib.ownCall('Piece(size:asset:)'), /name or name\(label:\)/);
+  assert.deepStrictEqual(lib.ownCall('Piece(asset:)').label, 'asset');
+  const root = scratchGame();
+  fs.writeFileSync(path.join(root, 'Tools/Assets/assets.json'), JSON.stringify({ catalogs: ['Assets.xcassets'], calls: { images: ['Piece(asset'] } }));
+  const run = spawnSync(process.execPath, [path.join(__dirname, 'assets.js'), '--dir', path.join(root, 'Tools/Assets'), 'check'], { encoding: 'utf8' });
+  assert.strictEqual(run.status, 2);
+  assert.match(run.stderr, /assets: assets.json calls: can't read "Piece\(asset"/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('the CLI checks a labelled call\'s names', () => {
+  const root = scratchGame();
+  fs.writeFileSync(path.join(root, 'Source/Board.swift'), 'let p = Piece(size: 2, asset: "Button")\nlet q = Piece(asset: "Gone")');
+  fs.writeFileSync(path.join(root, 'Tools/Assets/assets.json'), JSON.stringify({ catalogs: ['Assets.xcassets'], sounds: ['Audio'], calls: { images: ['Piece(asset:)'] } }));
+  const run = spawnSync(process.execPath, [path.join(__dirname, 'assets.js'), '--dir', path.join(root, 'Tools/Assets'), 'check', '--json'], { encoding: 'utf8' });
+  assert.strictEqual(run.status, 1, run.stderr);
+  const report = JSON.parse(run.stdout);
+  assert.deepStrictEqual(report.images.missing.map((m) => [m.name, m.file, m.line]), [['Gone', 'Source/Board.swift', 2], ['Logo', 'Source/Menu.swift', 14]]);
+  fs.rmSync(root, { recursive: true, force: true });
+});

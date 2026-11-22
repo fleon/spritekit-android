@@ -58,6 +58,9 @@ const sources = resolve(settings.sources, 'Source');
 const catalogs = resolve(settings.catalogs, []);
 const soundDirs = resolve(settings.sounds, []);
 const ignore = new Set(settings.ignore ?? []);
+for (const entry of [...(settings.calls?.images ?? []), ...(settings.calls?.sounds ?? [])]) {
+  try { lib.ownCall(entry); } catch (error) { die(error.message); }
+}
 const rel = (file) => path.relative(ROOT, file);
 
 function swiftFiles(dir) {
