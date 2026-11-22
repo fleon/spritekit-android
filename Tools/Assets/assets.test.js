@@ -99,6 +99,20 @@ test('the CLI reports what\'s missing and exits 1, and reports counts', () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('a report bigger than a pipe holds reaches the reader whole', () => {
+  // A pipe holds 64 KB on macOS; leaving with process.exit() while stdout
+  // still has the rest queued cut the JSON there.
+  const root = scratchGame();
+  const names = Array.from({ length: 3000 }, (_, i) => `txtr("Missing${String(i).padStart(5, '0')}")`);
+  fs.writeFileSync(path.join(root, 'Source/Many.swift'), names.join('\n'));
+  const run = spawnSync(process.execPath, [path.join(__dirname, 'assets.js'), '--dir', path.join(root, 'Tools/Assets'), 'check', '--json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  assert.strictEqual(run.status, 1, run.stderr);
+  assert.ok(run.stdout.length > 256 * 1024, `only ${run.stdout.length} bytes`);
+  const report = JSON.parse(run.stdout);
+  assert.strictEqual(report.images.missing.length, 3001);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('with nothing missing it exits 0', () => {
   const root = scratchGame();
   fs.writeFileSync(path.join(root, 'Tools/Assets/assets.json'), JSON.stringify({ catalogs: ['Assets.xcassets'], sounds: ['Audio'], ignore: ['Logo'] }));

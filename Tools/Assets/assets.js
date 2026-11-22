@@ -132,4 +132,6 @@ if (flag('--json')) {
     for (const u of unchecked) console.log(`unchecked ${u.kind.slice(0, -1)} ${u.expression} at ${u.file}:${u.line}`);
   }
 }
-process.exit(report.images.missing.length + report.sounds.missing.length > 0 ? 1 : 0);
+// Not process.exit(): a pipe takes the report a buffer at a time, and
+// leaving now would drop whatever is still queued.
+process.exitCode = report.images.missing.length + report.sounds.missing.length > 0 ? 1 : 0;
