@@ -228,9 +228,11 @@ would want.
 
 ## Devices, simulators and emulators
 
-- Smoke tests, play-throughs and behaviour checks run on the real devices.
-  Simulators and emulators are for what needs a matching resolution (parity
-  captures, PR screenshots); shut them down when that's done.
+- Use the real devices only for what a build, the tests and simulator or
+  emulator captures can't show: touch feel, timing on hardware, audio,
+  performance. Simulators and emulators are for behaviour checks and what
+  needs a matching resolution (parity captures, PR screenshots); shut them
+  down when that's done.
 - Emulators come only from the pool (`Scripts/emulators.sh`, README
   "Emulators"): release the slot as soon as its step ends. Count the booted
   simulators first (`xcrun simctl list devices booted`) and keep to four
@@ -339,9 +341,12 @@ would want.
   it's merged, fixes go in a new one.
 - A pull request that isn't ready for the person to review is a draft:
   open it with `gh pr create --draft`, and keep it a draft while anything is
-  pending (verification, screenshots, a dry run, a pull request it waits on).
-  Mark it ready for review (`gh pr ready`) only when it's done, and turn it
-  back into a draft (`gh pr ready --undo`) as soon as it isn't.
+  pending (local verification, screenshots, a dry run, a pull request it
+  waits on). CI isn't pending in this sense: mark it ready for review
+  (`gh pr ready`) as soon as the work and the local checks are done, with CI
+  still running, so the person can merge when it passes; if CI then fails,
+  fix it. Turn it back into a draft (`gh pr ready --undo`) as soon as it
+  isn't done.
 - Label a pull request `ready` only when nothing is pending and the change
   has been checked at the size the player sees it; remove the label as soon
   as anyone asks for more.
@@ -351,8 +356,13 @@ would want.
 - In the Claude desktop app, after opening a pull request, bind it to the
   session and turn on Auto-fix with comments, without asking; if the switch
   is refused, ask once.
-- Stacked branches are rebased onto their parent, never merged into it; force
-  push only with `--force-with-lease=<branch>:<old sha>`.
+- Branch off the default branch. When a change depends on an open pull
+  request, wait for that one to merge rather than stacking on it: a pull
+  request based on a branch that has since merged merges into that dead
+  branch, not the default one. Where stacking can't be avoided, name the
+  parent in the description and retarget to the default branch the moment
+  the parent merges. Stacked branches are rebased onto their parent, never
+  merged into it; force push only with `--force-with-lease=<branch>:<old sha>`.
 - Claude reviews a pull request once it's ready (`.github/workflows/
   claude-review.yml`): a game calls that workflow from its own
   `.github/workflows/claude-review.yml` (`Templates/Workflows`), never a
