@@ -1,15 +1,12 @@
 import Foundation
 import Testing
 @testable import SpriteKitShim
+import RuntimeTestSupport
 
 // The view surface: the camera the scene is drawn from, transitions between
 // scenes, and the delegate the frame loop asks before each frame. All of it
 // is the view turning scenes into one frame's DrawList, so none of it needs
 // a device.
-
-private func close(_ a: CGPoint, _ b: CGPoint, _ tolerance: CGFloat = 0.0001) -> Bool {
-    abs(a.x - b.x) < tolerance && abs(a.y - b.y) < tolerance
-}
 
 /// Where the first sprite command in `list` puts its node's origin.
 private func origin(of list: DrawList, at index: Int = 0) -> CGPoint? {
@@ -55,9 +52,9 @@ struct CameraTests {
             scene.camera = camera
             scene.addChild(marker(at: CGPoint(x: 300, y: -40)))
             let list = view.tick(currentTime: 0, delta: 0)
-            #expect(close(origin(of: list) ?? .zero, CGPoint(x: scene.viewVisibleFrame.midX, y: scene.viewVisibleFrame.midY)))
+            #expect(near(origin(of: list) ?? .zero, CGPoint(x: scene.viewVisibleFrame.midX, y: scene.viewVisibleFrame.midY), 0.0001))
             // And it is the middle of the view, in the view's own points.
-            #expect(close(scene.convertPoint(toView: CGPoint(x: 300, y: -40)), CGPoint(x: 100, y: 50)))
+            #expect(near(scene.convertPoint(toView: CGPoint(x: 300, y: -40)), CGPoint(x: 100, y: 50), 0.0001))
         }
     }
 
@@ -72,14 +69,14 @@ struct CameraTests {
         scene.addChild(marker(at: CGPoint(x: 70, y: 50)))
         // Twice as much shows, so 20 points off the camera is 10 on screen.
         var list = view.tick(currentTime: 0, delta: 0)
-        #expect(close(origin(of: list) ?? .zero, CGPoint(x: 110, y: 50)))
+        #expect(near(origin(of: list) ?? .zero, CGPoint(x: 110, y: 50), 0.0001))
 
         camera.setScale(1)
         camera.zRotation = .pi / 2
         // Turned a quarter left, the camera sees the scene a quarter right:
         // a point to the camera's right draws below the middle.
         list = view.tick(currentTime: 0, delta: 0)
-        #expect(close(origin(of: list) ?? .zero, CGPoint(x: 100, y: 30)))
+        #expect(near(origin(of: list) ?? .zero, CGPoint(x: 100, y: 30), 0.0001))
     }
 
     @Test("What hangs off the camera stays put on the screen")
@@ -95,7 +92,7 @@ struct CameraTests {
             camera.setScale(CGFloat(scale))
             camera.zRotation = CGFloat(turn)
             let list = view.tick(currentTime: 0, delta: 0)
-            #expect(close(origin(of: list) ?? .zero, CGPoint(x: 20, y: 90)))
+            #expect(near(origin(of: list) ?? .zero, CGPoint(x: 20, y: 90), 0.0001))
         }
     }
 
@@ -109,10 +106,10 @@ struct CameraTests {
         scene.camera = camera
         // The view's middle is the camera; its top left corner is half the
         // view's size away, halved again by the zoom, and y counts down.
-        #expect(close(scene.convertPoint(fromView: CGPoint(x: 100, y: 50)), CGPoint(x: 1000, y: 1000)))
-        #expect(close(scene.convertPoint(fromView: CGPoint(x: 0, y: 0)), CGPoint(x: 950, y: 1025)))
+        #expect(near(scene.convertPoint(fromView: CGPoint(x: 100, y: 50)), CGPoint(x: 1000, y: 1000), 0.0001))
+        #expect(near(scene.convertPoint(fromView: CGPoint(x: 0, y: 0)), CGPoint(x: 950, y: 1025), 0.0001))
         for point in [CGPoint(x: 3, y: 97), CGPoint(x: 140, y: 12)] {
-            #expect(close(scene.convertPoint(toView: scene.convertPoint(fromView: point)), point))
+            #expect(near(scene.convertPoint(toView: scene.convertPoint(fromView: point)), point, 0.0001))
         }
     }
 
@@ -297,8 +294,8 @@ struct TransitionTests {
         let list = view.tick(currentTime: 0, delta: 0.25)
         // Moving left: the old scene a quarter off to the left, the new one
         // three quarters off to the right.
-        #expect(close(origin(of: list, at: 0) ?? .zero, CGPoint(x: -50, y: 0)))
-        #expect(close(origin(of: list, at: 1) ?? .zero, CGPoint(x: 150, y: 0)))
+        #expect(near(origin(of: list, at: 0) ?? .zero, CGPoint(x: -50, y: 0), 0.0001))
+        #expect(near(origin(of: list, at: 1) ?? .zero, CGPoint(x: 150, y: 0), 0.0001))
     }
 
     @Test("A crop's mask and contents slide with their scene")
@@ -320,9 +317,9 @@ struct TransitionTests {
         }
         // A quarter of the way: the crop, its mask and what it shows all 50
         // points left of where they stand.
-        #expect(close(CGPoint.zero.applying(moved.transform), CGPoint(x: -30, y: 0)))
-        #expect(close(origin(of: moved.mask) ?? .zero, CGPoint(x: -30, y: 0)))
-        #expect(close(origin(of: moved.contents) ?? .zero, CGPoint(x: -30, y: 0)))
+        #expect(near(CGPoint.zero.applying(moved.transform), CGPoint(x: -30, y: 0), 0.0001))
+        #expect(near(origin(of: moved.mask) ?? .zero, CGPoint(x: -30, y: 0), 0.0001))
+        #expect(near(origin(of: moved.contents) ?? .zero, CGPoint(x: -30, y: 0), 0.0001))
     }
 
     @Test("The two scenes meet in the view, whatever their anchors")
@@ -338,7 +335,7 @@ struct TransitionTests {
         let list = view.tick(currentTime: 0, delta: 0.1)
         // A's marker is at its origin, the view's middle — which is (100, 50)
         // in B's coordinates.
-        #expect(close(origin(of: list) ?? .zero, CGPoint(x: 100, y: 50)))
+        #expect(near(origin(of: list) ?? .zero, CGPoint(x: 100, y: 50), 0.0001))
     }
 
     @Test("The pause flags decide which scenes run while it plays")
@@ -437,7 +434,7 @@ struct TransitionTests {
         // Aspect fill on a wider view fills its width and loses some height,
         // shared top and bottom.
         let shown = scene.viewVisibleFrame
-        #expect(close(shown.origin, CGPoint(x: 0, y: 50.0 / 3), 1e-9))
+        #expect(near(shown.origin, CGPoint(x: 0, y: 50.0 / 3), 1e-9))
         #expect(abs(shown.width - 200) < 1e-9 && abs(shown.height - 200.0 / 3) < 1e-9)
     }
 }

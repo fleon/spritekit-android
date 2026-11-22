@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import SpriteKitShim
+import RuntimeTestSupport
 
 // How actions spend a frame's time, pinned to SpriteKit's own: each case was
 // run through `SKRenderer` on a Mac at exactly these frame times, and the
@@ -9,10 +10,6 @@ import Testing
 @MainActor
 private func ticks(_ node: SKNode, _ deltas: [TimeInterval]) {
     for delta in deltas { node.tickActions(delta) }
-}
-
-private func near(_ a: CGFloat, _ b: CGFloat, _ tolerance: CGFloat = 1e-6) -> Bool {
-    abs(a - b) < tolerance
 }
 
 @Suite("Actions: SpriteKit's timing")

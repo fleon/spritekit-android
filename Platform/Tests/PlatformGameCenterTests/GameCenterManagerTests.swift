@@ -1,16 +1,10 @@
 import Foundation
 import Testing
 @testable import PlatformGameCenter
+import PlatformTestSupport
 
 // The manager over fake services: sign-in, catching up, reporting only what
 // moved, moments, banners, resets, and leaderboards.
-
-nonisolated private func scratchDefaults() -> UserDefaults {
-    let name = UUID().uuidString
-    let defaults = UserDefaults(suiteName: name)!
-    defaults.removePersistentDomain(forName: name)
-    return defaults
-}
 
 /// Lets the manager's tasks run.
 private func settle() async {

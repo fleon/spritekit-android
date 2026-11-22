@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import SpriteKitShim
+import RuntimeTestSupport
 
 // Two things a game's play needs of the shim: 9-slicing, which walls and
 // raised tiles need before anything drawn with them looks right, and touch
@@ -71,12 +72,8 @@ struct NineSliceTests {
         )
         // Rows run bottom to top, columns left to right, and the unit rects
         // tile 0...1 the same way the frames tile the frame.
-        func near(_ a: CGRect, _ b: CGRect) -> Bool {
-            abs(a.minX - b.minX) < 1e-9 && abs(a.minY - b.minY) < 1e-9
-                && abs(a.width - b.width) < 1e-9 && abs(a.height - b.height) < 1e-9
-        }
-        #expect(near(patches[0].unit, CGRect(x: 0, y: 0, width: 0.3, height: 0.3)))
-        #expect(near(patches[4].unit, center))
+        #expect(near(patches[0].unit, CGRect(x: 0, y: 0, width: 0.3, height: 0.3), 1e-9))
+        #expect(near(patches[4].unit, center, 1e-9))
         #expect(abs(patches[8].unit.maxX - 1) < 1e-9)
         #expect(abs(patches[8].unit.maxY - 1) < 1e-9)
     }

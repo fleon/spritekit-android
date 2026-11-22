@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import PlatformStore
+import PlatformTestSupport
 
 // The manager over simulated and fake stores: what's owned and kept,
 // prices, purchase dates and deadlines, consumables.
@@ -8,13 +9,6 @@ import Testing
 private let unlock = "com.example.game.unlock"
 private let pack = "com.example.game.pack"
 private let products: [StoreProduct] = [.nonConsumable(unlock), .consumable(pack)]
-
-private func scratchDefaults() -> UserDefaults {
-    let name = UUID().uuidString
-    let defaults = UserDefaults(suiteName: name)!
-    defaults.removePersistentDomain(forName: name)
-    return defaults
-}
 
 private final class FakeBilling: BillingBackend {
     var prices: [String: String] = [:]

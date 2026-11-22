@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import PlatformShim
+import RuntimeTestSupport
 
 // User defaults under launch arguments, as Apple keeps them. Measured on a
 // Mac (macOS 27.2) with a tool launched as `tool -k fromArg`:
@@ -15,13 +16,6 @@ import Testing
 // The suite below runs those cases on the host, against Apple's own
 // Foundation, and the shim's pieces against them. The argument domain is
 // the process's, so the suite runs alone and puts it back.
-
-private func scratchDefaults() -> (UserDefaults, String) {
-    let name = "saved-defaults-" + UUID().uuidString
-    let defaults = UserDefaults(suiteName: name)!
-    defaults.removePersistentDomain(forName: name)
-    return (defaults, name)
-}
 
 /// Runs `body` with `arguments` as the argument domain, then restores it.
 private func withArguments(_ arguments: [String: Any], in defaults: UserDefaults, _ body: () throws -> Void) rethrows {
@@ -62,7 +56,7 @@ private final class CorelibsVolatileDefaults: UserDefaults {
 struct SavedDefaultsTests {
     @Test("Apple saves a value set under an argument and keeps reading the argument")
     func appleKeepsDomainsApart() throws {
-        let (defaults, name) = scratchDefaults()
+        let (defaults, name) = scratchSuite(prefix: "saved-defaults-")
         try withArguments(["k": "fromArg"], in: defaults) {
             defaults.set("written", forKey: "k")
             #expect(defaults.string(forKey: "k") == "fromArg")
@@ -83,7 +77,7 @@ struct SavedDefaultsTests {
 
     @Test("What's saved holds the app's values, a key under an argument included, and no arguments")
     func storedValues() throws {
-        let (defaults, name) = scratchDefaults()
+        let (defaults, name) = scratchSuite(prefix: "saved-defaults-")
         defaults.set("plain", forKey: "plain")
         try withArguments(["k": "fromArg", "onlyArgument": "x"], in: defaults) {
             defaults.set("written", forKey: "k")

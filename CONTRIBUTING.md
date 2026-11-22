@@ -38,6 +38,10 @@ Open an issue with:
    If you touch `Platform/`, also build it for iOS, tvOS and Mac Catalyst,
    since games use it on Apple platforms too.
 
+   Host tests take their scratch defaults (`scratchDefaults`,
+   `scratchSuite`) and tolerances (`near`) from `RuntimeTestSupport`, or
+   `PlatformTestSupport` in `Platform/`, rather than a copy of their own.
+
    `swift test --package-path Platform` needs the checkout's folder to be
    named `spritekit-android`: SwiftPM takes the package's name from it. From
    a worktree with another name, run it in

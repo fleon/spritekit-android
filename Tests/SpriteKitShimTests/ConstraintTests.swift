@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import SpriteKitShim
+import RuntimeTestSupport
 
 // SpriteKit's constraints, pinned to SpriteKit's own: each case was run
 // through `SKRenderer` on a Mac (macOS 27.2), a scene of nodes like these
@@ -31,8 +32,8 @@ private func makeScene() -> (Scene, () -> Void) {
     return (scene, { frame(renderer, &clock) })
 }
 
-private func near(_ a: CGFloat, _ b: CGFloat, _ tolerance: CGFloat = 0.001) -> Bool { abs(a - b) < tolerance }
-private func near(_ a: CGPoint, _ x: CGFloat, _ y: CGFloat) -> Bool { near(a.x, x) && near(a.y, y) }
+/// SpriteKit's positions, as measured, to three places.
+private let tolerance: CGFloat = 0.001
 
 @Suite("Constraints: SpriteKit's")
 @MainActor
@@ -47,16 +48,16 @@ struct ConstraintTests {
         #expect(node.position.x == 0)
         node.run(.moveBy(x: 100, y: 0, duration: 1))
         step()
-        #expect(near(node.position.x, 10))
+        #expect(near(node.position.x, 10, tolerance))
         #expect(scene.log == ["update 0.0", "constrained 10.0"])
         step()
-        #expect(near(node.position.x, 20))
+        #expect(near(node.position.x, 20, tolerance))
 
         node.removeAllActions()
         node.position.x = -5
         #expect(node.position.x == -5)
         step()
-        #expect(near(node.position.x, 10))
+        #expect(near(node.position.x, 10, tolerance))
     }
 
     @Test("Positions in the reference node's space")
@@ -75,7 +76,7 @@ struct ConstraintTests {
         constraint.referenceNode = reference
         node.constraints = [constraint]
         step()
-        #expect(near(node.position, 50, 0))
+        #expect(near(node.position, 50, 0, tolerance))
     }
 
     @Test("Not in a scene, or in a paused one: left alone; a paused node is not")
@@ -93,7 +94,7 @@ struct ConstraintTests {
         scene.addChild(paused)
         paused.constraints = [.positionX(SKRange(upperLimit: 5))]
         step()
-        #expect(near(paused.position.x, 5))
+        #expect(near(paused.position.x, 5, tolerance))
 
         let inPaused = SKNode()
         inPaused.position.x = 15
@@ -122,18 +123,18 @@ struct ConstraintTests {
         scene.addChild(node)
         node.constraints = [.distance(SKRange(lowerLimit: 10, upperLimit: 20), to: target)]
         step()
-        #expect(near(node.position, 50, 30))
+        #expect(near(node.position, 50, 30, tolerance))
         node.position = CGPoint(x: 52, y: 49)
         step()
-        #expect(near(node.position, 58.944, 45.528))
+        #expect(near(node.position, 58.944, 45.528, tolerance))
         node.position = CGPoint(x: 50, y: 50)
         step()
-        #expect(near(node.position, 50, 50))
+        #expect(near(node.position, 50, 50, tolerance))
 
         node.constraints = [.distance(SKRange(upperLimit: 10), to: CGPoint(x: 0, y: 0))]
         node.position = CGPoint(x: 30, y: 40)
         step()
-        #expect(near(node.position, 6, 8))
+        #expect(near(node.position, 6, 8, tolerance))
 
         let other = SKNode()
         other.position = CGPoint(x: 20, y: 0)
@@ -141,7 +142,7 @@ struct ConstraintTests {
         node.constraints = [.distance(SKRange(upperLimit: 10), to: CGPoint(x: 0, y: 0), in: other)]
         node.position = CGPoint(x: 30, y: 40)
         step()
-        #expect(near(node.position, 22.425, 9.701))
+        #expect(near(node.position, 22.425, 9.701, tolerance))
 
         // A target in a scaled parent, and a node in one: each in its parent's space.
         let holder = SKNode()
@@ -159,8 +160,8 @@ struct ConstraintTests {
         holder.addChild(sibling)
         sibling.constraints = [.distance(SKRange(lowerLimit: 20), to: held)]
         step()
-        #expect(near(far.position, 35, 0))
-        #expect(near(sibling.position, -10, 0))
+        #expect(near(far.position, 35, 0, tolerance))
+        #expect(near(sibling.position, -10, 0, tolerance))
     }
 
     @Test("Rotation clamped as it is, unwrapped")
@@ -171,13 +172,13 @@ struct ConstraintTests {
         scene.addChild(node)
         node.constraints = [.zRotation(SKRange(lowerLimit: -1, upperLimit: 1))]
         step()
-        #expect(near(node.zRotation, 1))
+        #expect(near(node.zRotation, 1, tolerance))
         node.zRotation = 7
         step()
-        #expect(near(node.zRotation, 1))
+        #expect(near(node.zRotation, 1, tolerance))
         node.zRotation = -4
         step()
-        #expect(near(node.zRotation, -1))
+        #expect(near(node.zRotation, -1, tolerance))
     }
 
     @Test("Orienting toward a node or point, within an offset")
@@ -200,7 +201,7 @@ struct ConstraintTests {
             node.zRotation = start
             node.constraints = [constraint]
             step()
-            #expect(near(node.zRotation, expected, 0.0001), "from \(start) to \(expected)")
+            #expect(near(node.zRotation, expected, 0.0001, tolerance), "from \(start) to \(expected)")
         }
 
         // Off by more than half a turn: brought round once, no more.
@@ -209,29 +210,29 @@ struct ConstraintTests {
         for (start, expected) in [(3.0, 3.0), (3 + 2 * CGFloat.pi, 3.7413), (1.0, 2.7413)] as [(CGFloat, CGFloat)] {
             node.zRotation = start
             step()
-            #expect(near(node.zRotation, expected, 0.0001), "from \(start)")
+            #expect(near(node.zRotation, expected, 0.0001, tolerance), "from \(start)")
         }
         target.position = CGPoint(x: -10, y: 1)
         for start in [-3.0, -3 - 2 * CGFloat.pi] {
             node.zRotation = start
             step()
-            #expect(near(node.zRotation, 2.5419, 0.0001), "from \(start)")
+            #expect(near(node.zRotation, 2.5419, 0.0001, tolerance), "from \(start)")
         }
         // Nothing unwrapped: several turns round comes back within one.
         target.position = CGPoint(x: 10, y: 0)
         for (start, expected) in [(14.0, 0.5), (-14.0, -0.5), (0.2, 0.2), (2 * CGFloat.pi + 0.2, 0.5)] as [(CGFloat, CGFloat)] {
             node.zRotation = start
             step()
-            #expect(near(node.zRotation, expected, 0.0001), "from \(start)")
+            #expect(near(node.zRotation, expected, 0.0001, tolerance), "from \(start)")
         }
         // Straight down is −π/2, not 3π/2; just past it, a turn round.
         node.constraints = [.orient(to: target, offset: SKRange(constantValue: 0))]
         target.position = CGPoint(x: 0, y: -10)
         step()
-        #expect(near(node.zRotation, -1.5708, 0.0001))
+        #expect(near(node.zRotation, -1.5708, 0.0001, tolerance))
         target.position = CGPoint(x: -0.01, y: -10)
         step()
-        #expect(near(node.zRotation, 4.7114, 0.0001))
+        #expect(near(node.zRotation, 4.7114, 0.0001, tolerance))
 
         // In a rotated parent, toward the target as the parent sees it.
         let parent = SKNode()
@@ -244,7 +245,7 @@ struct ConstraintTests {
         scene.addChild(origin)
         child.constraints = [.orient(to: origin, offset: SKRange(constantValue: 0))]
         step()
-        #expect(near(child.zRotation, 1.5708, 0.0001))
+        #expect(near(child.zRotation, 1.5708, 0.0001, tolerance))
     }
 
     @Test("A node's constraints run in order; disabled ones are skipped")
@@ -257,23 +258,23 @@ struct ConstraintTests {
         let atLeast = SKConstraint.positionX(SKRange(lowerLimit: 50))
         node.constraints = [atMost, atLeast]
         step()
-        #expect(near(node.position.x, 50))
+        #expect(near(node.position.x, 50, tolerance))
         node.position.x = 100
         node.constraints = [atLeast, atMost]
         step()
-        #expect(near(node.position.x, 10))
+        #expect(near(node.position.x, 10, tolerance))
         atMost.enabled = false
         node.position.x = 100
         node.constraints = [atMost]
         step()
-        #expect(near(node.position.x, 100))
+        #expect(near(node.position.x, 100, tolerance))
 
         let both = SKNode()
         both.position = CGPoint(x: 100, y: -100)
         scene.addChild(both)
         both.constraints = [.positionX(SKRange(upperLimit: 5), y: SKRange(lowerLimit: 7))]
         step()
-        #expect(near(both.position, 5, 7))
+        #expect(near(both.position, 5, 7, tolerance))
 
         // An inverted range holds its lower limit.
         let inverted = SKNode()
@@ -282,7 +283,7 @@ struct ConstraintTests {
         for start: CGFloat in [5, 15] {
             inverted.position.x = start
             step()
-            #expect(near(inverted.position.x, 10))
+            #expect(near(inverted.position.x, 10, tolerance))
         }
     }
 
@@ -306,68 +307,68 @@ struct ConstraintTests {
         #expect(near(bAfter { scene, a, b, _ in
             scene.addChild(b); scene.addChild(a)
             a.constraints = [holdA()]; b.constraints = [follow(a)]
-        }, 50))
+        }, 50, tolerance))
         #expect(near(bAfter { scene, a, b, _ in
             scene.addChild(a); scene.addChild(b)
             b.constraints = [follow(a)]; a.constraints = [holdA()]
-        }, 100))
+        }, 100, tolerance))
         // Set before entering: the order they enter.
         #expect(near(bAfter { scene, a, b, _ in
             b.constraints = [follow(a)]; a.constraints = [holdA()]
             scene.addChild(a); scene.addChild(b)
-        }, 50))
+        }, 50, tolerance))
         #expect(near(bAfter { scene, a, b, _ in
             a.constraints = [holdA()]; b.constraints = [follow(a)]
             scene.addChild(b); scene.addChild(a)
-        }, 100))
+        }, 100, tolerance))
         // Set again before a pass: where it first was.
         #expect(near(bAfter { scene, a, b, _ in
             scene.addChild(a); scene.addChild(b)
             a.constraints = [holdA()]; b.constraints = [follow(a)]; a.constraints = [holdA()]
-        }, 50))
+        }, 50, tolerance))
         // Set again after one: to the end.
         #expect(near(bAfter { scene, a, b, step in
             scene.addChild(a); scene.addChild(b)
             b.constraints = [follow(a)]; a.constraints = [holdA()]
             step(); a.position.x = 100
             b.constraints = [follow(a)]
-        }, 50))
+        }, 50, tolerance))
         #expect(near(bAfter { scene, a, b, _ in
             scene.addChild(a); scene.addChild(b)
             b.constraints = []; a.constraints = [holdA()]
             b.constraints?.append(follow(a))
-        }, 50))
+        }, 50, tolerance))
         // Set again after a pass, or appended to: the earlier turn is kept.
         #expect(near(bAfter { scene, a, b, step in
             scene.addChild(a); scene.addChild(b)
             a.constraints = [holdA()]; b.constraints = [follow(a)]
             step(); a.position.x = 100; b.position.x = 200
             a.constraints = [holdA()]
-        }, 50))
+        }, 50, tolerance))
         #expect(near(bAfter { scene, a, b, step in
             scene.addChild(a); scene.addChild(b)
             a.constraints = [holdA()]; b.constraints = [follow(a)]
             step(); a.position.x = 100; b.position.x = 200
             a.constraints?.append(.zRotation(SKRange(lowerLimit: -10, upperLimit: 10)))
-        }, 50))
+        }, 50, tolerance))
         // Out and back in: to the end.
         #expect(near(bAfter { scene, a, b, step in
             scene.addChild(a); scene.addChild(b)
             b.constraints = [follow(a)]; a.constraints = [holdA()]
             step(); a.position.x = 100
             b.removeFromParent(); scene.addChild(b)
-        }, 50))
+        }, 50, tolerance))
         // A subtree entering at once: tree order.
         #expect(near(bAfter { scene, a, b, _ in
             let holder = SKNode(); holder.addChild(a); holder.addChild(b)
             b.constraints = [follow(a)]; a.constraints = [holdA()]
             scene.addChild(holder)
-        }, 50))
+        }, 50, tolerance))
         #expect(near(bAfter { scene, a, b, _ in
             let holder = SKNode(); holder.addChild(b); holder.addChild(a)
             a.constraints = [holdA()]; b.constraints = [follow(a)]
             scene.addChild(holder)
-        }, 100))
+        }, 100, tolerance))
     }
 
     /// Followers and a pinned node, positions reset before each pass:
@@ -385,11 +386,11 @@ struct ConstraintTests {
             b.constraints = [pin(100)]; c.constraints = [follow(b)]; a.constraints = [pin(0)]
             b.position.x = 200; c.position.x = 0
             step()
-            #expect(near(c.position.x, 100))
+            #expect(near(c.position.x, 100, tolerance))
             b.constraints = [pin(100)]
             b.position.x = 200; c.position.x = 0
             step()
-            #expect(near(c.position.x, 100))
+            #expect(near(c.position.x, 100, tolerance))
         }
         // a follows b, b pinned: a's second turn, after b's, sees b pinned.
         do {
@@ -399,12 +400,12 @@ struct ConstraintTests {
             a.constraints = [follow(b)]; b.constraints = [pin(50)]
             a.position.x = 0; b.position.x = 200
             step()
-            #expect(near(a.position.x, 200))
+            #expect(near(a.position.x, 200, tolerance))
             a.constraints = [follow(b)]
             for _ in 0..<2 {
                 a.position.x = 0; b.position.x = 200
                 step()
-                #expect(near(a.position.x, 50))
+                #expect(near(a.position.x, 50, tolerance))
             }
         }
         // a follows c, b follows a, c pinned at 10: a, b, c, then a, b, a
@@ -421,23 +422,23 @@ struct ConstraintTests {
                 return (a.position.x, b.position.x)
             }
             var seen = pass()
-            #expect(near(seen.0, 300) && near(seen.1, 300))
+            #expect(near(seen.0, 300, tolerance) && near(seen.1, 300, tolerance))
             a.constraints = [follow(c)]
             seen = pass()
-            #expect(near(seen.0, 10) && near(seen.1, 300))
+            #expect(near(seen.0, 10, tolerance) && near(seen.1, 300, tolerance))
             b.constraints = [follow(a)]
             seen = pass()
-            #expect(near(seen.0, 10) && near(seen.1, 10))
+            #expect(near(seen.0, 10, tolerance) && near(seen.1, 10, tolerance))
             a.constraints = [follow(c)]
             seen = pass()
-            #expect(near(seen.0, 10) && near(seen.1, 10))
+            #expect(near(seen.0, 10, tolerance) && near(seen.1, 10, tolerance))
             // None takes no turn away: set again, a's earlier turns still run.
             a.constraints = nil
             seen = pass()
-            #expect(near(seen.0, 0) && near(seen.1, 0))
+            #expect(near(seen.0, 0, tolerance) && near(seen.1, 0, tolerance))
             a.constraints = [follow(c)]
             seen = pass()
-            #expect(near(seen.0, 10) && near(seen.1, 10))
+            #expect(near(seen.0, 10, tolerance) && near(seen.1, 10, tolerance))
         }
     }
 
@@ -462,8 +463,8 @@ struct ConstraintTests {
             step()
             return child.position.x
         }
-        #expect(near(childInScene(parentFirst: false), -70))
-        #expect(near(childInScene(parentFirst: true), -20))
+        #expect(near(childInScene(parentFirst: false), -70, tolerance))
+        #expect(near(childInScene(parentFirst: true), -20, tolerance))
     }
 
     @Test("SKRange's limits")

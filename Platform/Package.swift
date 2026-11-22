@@ -122,6 +122,12 @@ let package = Package(
             ],
             swiftSettings: settings
         ),
+        // What the host tests share (scratch defaults, `near`); no product.
+        .target(
+            name: "PlatformTestSupport",
+            path: "Tests/PlatformTestSupport",
+            swiftSettings: [v5]
+        ),
         .testTarget(
             name: "PlatformRigsTests",
             dependencies: ["PlatformRigs"],
@@ -187,7 +193,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlatformSyncTests",
-            dependencies: ["PlatformSync", "Macros"],
+            dependencies: ["PlatformSync", "Macros", "PlatformTestSupport"],
             swiftSettings: settings
         ),
         // Android's wiring: Play Games, Play Billing, Saved Games and the
@@ -257,6 +263,7 @@ let package = Package(
         .testTarget(
             name: "PlatformSpriteTests",
             dependencies: [
+                "PlatformTestSupport",
                 "PlatformSprite",
                 "Macros",
                 .product(name: "SpriteKitShim", package: "spritekit-android"),
@@ -278,7 +285,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlatformGameCenterTests",
-            dependencies: ["PlatformGameCenter"],
+            dependencies: ["PlatformGameCenter", "PlatformTestSupport"],
             swiftSettings: settings
         ),
         // In-app purchases: what's owned and since when, prices, buying,
@@ -314,7 +321,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlatformStoreTests",
-            dependencies: ["PlatformStore"],
+            dependencies: ["PlatformStore", "PlatformTestSupport"],
             swiftSettings: settings
         ),
         // Expanded by the compiler, under the games' settings.
