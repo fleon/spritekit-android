@@ -415,6 +415,13 @@ decides, it hands in:
   draws it once a size into `DrawnTexture`'s cache and tints it.
   `ShapeSprite` draws rings, pills, discs and outlines the same way, never
   as shape nodes.
+- **Gradients** (`DrawnTexture.linearGradient`, `radialGradient`,
+  `GradientStop`): linear and radial gradients through any number of stops
+  (or two colours, or a glow fading to clear), drawn by CoreGraphics on
+  Apple and the shim's bitmap context on Android into `DrawnTexture`'s
+  cache, keyed by everything they draw, at the screen's density. Colours
+  mix as CoreGraphics mixes them (in sRGB), not in linear light as Core
+  Image's gradient filters do.
 - **Loading spinner** (`LoadingSpinner`): an arc of a ring that reaches all
   the way round and back every period while it turns, its ends round, in
   any colour (`color`, which can change while it shows) at the game's
