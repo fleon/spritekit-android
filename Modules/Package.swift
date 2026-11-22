@@ -15,6 +15,14 @@ import PackageDescription
 //               --triple aarch64-unknown-linux-android23
 let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
+let shim = Target.Dependency.product(name: "SpriteKitShim", package: "spritekit-android")
+let platform = Target.Dependency.product(name: "PlatformShim", package: "spritekit-android")
+let services = Target.Dependency.product(name: "PlatformServices", package: "spritekit-android")
+
+/// A module-name target: `Sources/<name>`, in Swift 5 with the shim's define.
+func module(_ name: String, _ dependencies: [Target.Dependency]) -> Target {
+    .target(name: name, dependencies: dependencies, path: "Sources/\(name)", swiftSettings: [v5, shimDefine])
+}
 
 let package = Package(
     name: "SpriteKitAndroidModules",
@@ -42,70 +50,32 @@ let package = Package(
         .package(path: ".."),
     ],
     targets: [
-        .target(name: "SpriteKit",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), "simd"],
-                path: "Sources/SpriteKit", swiftSettings: [v5, shimDefine]),
-        .target(name: "UIKit",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), "simd"],
-                path: "Sources/UIKit", swiftSettings: [v5, shimDefine]),
-        .target(name: "CoreText",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/CoreText", swiftSettings: [v5, shimDefine]),
-        .target(name: "CoreGraphics",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/CoreGraphics", swiftSettings: [v5, shimDefine]),
-        .target(name: "CoreImage",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/CoreImage", swiftSettings: [v5, shimDefine]),
-        .target(name: "QuartzCore",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/QuartzCore", swiftSettings: [v5, shimDefine]),
-        .target(name: "StoreKit",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), .product(name: "PlatformShim", package: "spritekit-android")],
-                path: "Sources/StoreKit", swiftSettings: [v5, shimDefine]),
-        .target(name: "CryptoKit",
-                dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
-                path: "Sources/CryptoKit", swiftSettings: [v5, shimDefine]),
-        .target(name: "Security",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), .product(name: "PlatformShim", package: "spritekit-android")],
-                path: "Sources/Security", swiftSettings: [v5, shimDefine]),
+        module("SpriteKit", [shim, "simd"]),
+        module("UIKit", [shim, "simd"]),
+        module("CoreText", [shim]),
+        module("CoreGraphics", [shim]),
+        module("CoreImage", [shim]),
+        module("QuartzCore", [shim]),
+        module("StoreKit", [shim, platform]),
+        module("CryptoKit", [platform]),
+        module("Security", [shim, platform]),
         // Two a game may import to describe the player and the network.
-        .target(name: "GameKit",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android"), .product(name: "PlatformShim", package: "spritekit-android")],
-                path: "Sources/GameKit", swiftSettings: [v5, shimDefine]),
+        module("GameKit", [shim, platform]),
         // Empty: the SpriteKit template's unused `import GameplayKit`.
-        .target(name: "GameplayKit",
-                path: "Sources/GameplayKit", swiftSettings: [v5, shimDefine]),
-        .target(name: "Network",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/Network", swiftSettings: [v5, shimDefine]),
+        module("GameplayKit", []),
+        module("Network", [shim]),
         // The three a game writing video and audio files imports.
-        .target(name: "Metal",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/Metal", swiftSettings: [v5, shimDefine]),
-        .target(name: "CoreVideo",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/CoreVideo", swiftSettings: [v5, shimDefine]),
-        .target(name: "AVFoundation",
-                dependencies: [
-                    .product(name: "SpriteKitShim", package: "spritekit-android"),
-                    .product(name: "PlatformShim", package: "spritekit-android"),
-                ],
-                path: "Sources/AVFoundation", swiftSettings: [v5, shimDefine]),
-        .target(name: "os",
-                dependencies: [.product(name: "PlatformServices", package: "spritekit-android")],
-                path: "Sources/os", swiftSettings: [v5, shimDefine]),
+        module("Metal", [shim]),
+        module("CoreVideo", [shim]),
+        module("AVFoundation", [shim, platform]),
+        module("os", [services]),
         // Not a passthrough: Android has no Accelerate, so this one has the
         // free-function spelling of the SIMD maths in it. It also re-exports
         // the shim, whose matrix types `SKUniform` takes.
-        .target(name: "simd",
-                dependencies: [.product(name: "SpriteKitShim", package: "spritekit-android")],
-                path: "Sources/simd", swiftSettings: [v5, shimDefine]),
+        module("simd", [shim]),
         // Local notifications (`UNUserNotificationCenter`), from the
         // platform layer.
-        .target(name: "UserNotifications",
-                dependencies: [.product(name: "PlatformShim", package: "spritekit-android")],
-                path: "Sources/UserNotifications", swiftSettings: [v5, shimDefine]),
+        module("UserNotifications", [platform]),
         // Compile-only checks, built with the rest by Scripts/check-android.sh:
         // game code calling GameKit in each language mode a game may use,
         // which must compile here as it does against Apple's.

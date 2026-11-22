@@ -1,18 +1,12 @@
 import Foundation
 import Testing
 @testable import PlatformShim
+import RuntimeTestSupport
 
 // The merge the game's saved data depends on, run on the host with two
 // devices and a cloud between them. Every case here is one the game relies
 // on: levels cleared pool rather than overwrite, a reset on one device
 // empties the other, a settings switch follows the latest change.
-
-/// A fresh defaults suite per test, so one cannot see another's keys.
-private func scratchDefaults(_ name: String = UUID().uuidString) -> UserDefaults {
-    let defaults = UserDefaults(suiteName: name)!
-    defaults.removePersistentDomain(forName: name)
-    return defaults
-}
 
 @Suite("Sync: values that keep the latest change")
 struct LatestMergeTests {

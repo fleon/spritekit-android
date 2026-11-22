@@ -2,6 +2,7 @@
 import AppKit
 import Testing
 @testable import SpriteKitShim
+import RuntimeTestSupport
 
 // `UIBezierPath`'s arcs, `apply(_:)` and `reversing()` on Android rest on
 // `PathGeometry`; here each is measured against CoreGraphics (arcs,
@@ -14,15 +15,14 @@ private func same(_ ours: [PathElement], _ apple: [PathElement]) -> Bool {
     var apple = apple
     if case .move? = apple.last, apple.count > 1, case .close = apple[apple.count - 2] { apple.removeLast() }
     guard ours.count == apple.count else { return false }
-    func near(_ a: CGPoint, _ b: CGPoint) -> Bool { abs(a.x - b.x) < 1e-9 && abs(a.y - b.y) < 1e-9 }
     for (a, b) in zip(ours, apple) {
         switch (a, b) {
         case let (.move(p), .move(q)), let (.line(p), .line(q)):
-            guard near(p, q) else { return false }
+            guard near(p, q, 1e-9) else { return false }
         case let (.quadCurve(p, c), .quadCurve(q, d)):
-            guard near(p, q), near(c, d) else { return false }
+            guard near(p, q, 1e-9), near(c, d, 1e-9) else { return false }
         case let (.curve(p, c1, c2), .curve(q, d1, d2)):
-            guard near(p, q), near(c1, d1), near(c2, d2) else { return false }
+            guard near(p, q, 1e-9), near(c1, d1, 1e-9), near(c2, d2, 1e-9) else { return false }
         case (.close, .close):
             break
         default:

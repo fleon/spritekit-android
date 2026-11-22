@@ -1,14 +1,7 @@
 import Foundation
 import Testing
 @testable import PlatformSync
-
-/// A fresh defaults suite per device, so one cannot see another's keys.
-private func scratchDefaults() -> UserDefaults {
-    let name = UUID().uuidString
-    let defaults = UserDefaults(suiteName: name)!
-    defaults.removePersistentDomain(forName: name)
-    return defaults
-}
+import PlatformTestSupport
 
 /// One device: its own defaults and cloud copy, and a clock.
 private final class Device {

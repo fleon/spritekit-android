@@ -1,17 +1,12 @@
 import Foundation
 import Testing
 @testable import PlatformShim
+import RuntimeTestSupport
 
 // The backends with no store behind them: none at all, and the simulated
 // one. (What a game keeps about what's owned is its own, and tested with it.)
 
 private let fullGameID = "com.example.game.fullgame"
-
-private func scratchDefaults(_ name: String = UUID().uuidString) -> UserDefaults {
-    let defaults = UserDefaults(suiteName: name)!
-    defaults.removePersistentDomain(forName: name)
-    return defaults
-}
 
 @Suite("Billing backends")
 struct BillingBackendTests {

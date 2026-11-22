@@ -2,10 +2,7 @@ import Foundation
 import Testing
 import SpriteKitShim
 @testable import PlatformSprite
-
-private func close(_ a: CGRect, _ b: CGRect) -> Bool {
-    abs(a.minX - b.minX) < 1e-3 && abs(a.minY - b.minY) < 1e-3 && abs(a.width - b.width) < 1e-3 && abs(a.height - b.height) < 1e-3
-}
+import PlatformTestSupport
 
 struct NodeHelperTests {
     private enum ActionKey: String {
@@ -52,10 +49,10 @@ struct NodeHelperTests {
         scene.addChild(holder)
         let box = SKSpriteNode(color: .white, size: sz(10, 20))
         holder.addChild(box)
-        #expect(close(rectInScene(for: box, scene: scene), rect(90, -5, 20, 10)))
-        #expect(close(rectInScene(rect(0, 0, 10, 20), for: holder, scene: scene), rect(80, 0, 20, 10)))
+        #expect(near(rectInScene(for: box, scene: scene), rect(90, -5, 20, 10), 1e-3))
+        #expect(near(rectInScene(rect(0, 0, 10, 20), for: holder, scene: scene), rect(80, 0, 20, 10), 1e-3))
         let loose = SKSpriteNode(color: .white, size: sz(4, 6))
-        #expect(close(rectInScene(for: loose, scene: scene), rect(-2, -3, 4, 6)))
+        #expect(near(rectInScene(for: loose, scene: scene), rect(-2, -3, 4, 6), 1e-3))
     }
 }
 
@@ -63,22 +60,22 @@ struct PathBuilderTests {
     @Test func arcsTurnAsUIKitNamesThem() {
         // `.clockwise` rises from 0 to a quarter turn: the short way.
         let short = path(.arc((0, 0), 10, 0, .pi / 2, .clockwise))
-        #expect(close(short.boundingBoxOfPath, rect(0, 0, 10, 10)))
+        #expect(near(short.boundingBoxOfPath, rect(0, 0, 10, 10), 1e-3))
         let long = path(.arc((0, 0), 10, 0, .pi / 2, .counterClockwise))
-        #expect(close(long.boundingBoxOfPath, rect(-10, -10, 20, 20)))
+        #expect(near(long.boundingBoxOfPath, rect(-10, -10, 20, 20), 1e-3))
     }
 
     @Test func shapesAreTheirOwnSubpaths() {
-        #expect(close(path(.circle((5, 5), 5)).boundingBoxOfPath, rect(0, 0, 10, 10)))
-        #expect(close(path(.ellipse(rect(0, 0, 4, 2))).boundingBoxOfPath, rect(0, 0, 4, 2)))
+        #expect(near(path(.circle((5, 5), 5)).boundingBoxOfPath, rect(0, 0, 10, 10), 1e-3))
+        #expect(near(path(.ellipse(rect(0, 0, 4, 2))).boundingBoxOfPath, rect(0, 0, 4, 2), 1e-3))
         let both = path([.rect(rect(0, 0, 2, 2)), .roundedRect(rect(10, 10, 10, 20), 4)])
-        #expect(close(both.boundingBoxOfPath, rect(0, 0, 20, 30)))
+        #expect(near(both.boundingBoxOfPath, rect(0, 0, 20, 30), 1e-3))
     }
 
     @Test func roundedRectKeepsItsRadiusWithinTheSides() {
         // CoreGraphics would trap on a radius past half the shorter side.
-        #expect(close(path(.roundedRect(rect(0, 0, 10, 20), 100)).boundingBoxOfPath, rect(0, 0, 10, 20)))
-        #expect(close(path(.roundedRect(rect(0, 0, 10, 20), 0)).boundingBoxOfPath, rect(0, 0, 10, 20)))
+        #expect(near(path(.roundedRect(rect(0, 0, 10, 20), 100)).boundingBoxOfPath, rect(0, 0, 10, 20), 1e-3))
+        #expect(near(path(.roundedRect(rect(0, 0, 10, 20), 0)).boundingBoxOfPath, rect(0, 0, 10, 20), 1e-3))
     }
 
     @Test func linesAndCurvesContinueTheSubpath() {

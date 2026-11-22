@@ -84,21 +84,27 @@ let package = Package(
             path: "Sources/PlatformShim",
             swiftSettings: [v5, shimDefine]
         ),
+        // What the host tests share (scratch defaults, `near`); no product.
+        .target(
+            name: "RuntimeTestSupport",
+            path: "Tests/RuntimeTestSupport",
+            swiftSettings: [v5]
+        ),
         .testTarget(
             name: "PlatformShimTests",
-            dependencies: ["PlatformShim", "SpriteKitShim"],
+            dependencies: ["PlatformShim", "SpriteKitShim", "RuntimeTestSupport"],
             path: "Tests/PlatformShimTests",
             swiftSettings: [v5, shimDefine, testIsolation]
         ),
         .testTarget(
             name: "SpriteKitShimTests",
-            dependencies: ["SpriteKitShim"],
+            dependencies: ["SpriteKitShim", "RuntimeTestSupport"],
             path: "Tests/SpriteKitShimTests",
             swiftSettings: [v5, shimDefine, testIsolation]
         ),
         .testTarget(
             name: "GLESRendererTests",
-            dependencies: ["GLESRenderer"],
+            dependencies: ["GLESRenderer", "RuntimeTestSupport"],
             path: "Tests/GLESRendererTests",
             swiftSettings: [v5, shimDefine, testIsolation]
         ),
