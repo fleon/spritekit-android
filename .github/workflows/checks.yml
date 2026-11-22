@@ -2,7 +2,8 @@
 # tests, Platform/ built for each Apple platform and its tests run on Mac
 # Catalyst against Apple's SpriteKit, the runtime cross-compiled
 # for both Android ABIs, the Android library, the game templates built into
-# an APK that's run on an emulator, the tools' tests and shellcheck.
+# an APK that's run on an emulator (and the stand-in game they're built
+# around, for iOS), the tools' tests and shellcheck.
 #
 # A pull request runs only the jobs whose files it changes (`changes`); a
 # push to main runs them all. `Checks passed` is the one check main requires:
@@ -43,6 +44,7 @@ jobs:
       android: ${{ github.event_name != 'pull_request' || steps.filter.outputs.android == 'true' }}
       library: ${{ github.event_name != 'pull_request' || steps.filter.outputs.library == 'true' }}
       template: ${{ github.event_name != 'pull_request' || steps.filter.outputs.template == 'true' }}
+      template-apple: ${{ github.event_name != 'pull_request' || steps.filter.outputs.template-apple == 'true' }}
       tools: ${{ github.event_name != 'pull_request' || steps.filter.outputs.tools == 'true' }}
       shell: ${{ github.event_name != 'pull_request' || steps.filter.outputs.shell == 'true' }}
     steps:
@@ -64,7 +66,7 @@ jobs:
               - 'Platform/**'
               - 'Vendor/build.sh'
               - 'Vendor/versions.sh'
-            apple:
+            apple: &apple
               - *ci
               - 'Package.swift'
               - 'Sources/**'
@@ -95,6 +97,10 @@ jobs:
               - 'Scripts/signing.sh'
               - 'Tools/Art/**'
               - 'Tools/guard.js'
+            template-apple:
+              - *apple
+              - 'Templates/Check/**'
+              - 'Scripts/check-template-apple.sh'
             tools:
               - *ci
               - 'Tools/**'
@@ -323,9 +329,27 @@ jobs:
             screen.png
           if-no-files-found: ignore
 
+  template-apple:
+    name: Game template on iOS
+    needs: changes
+    if: needs.changes.outputs.template-apple == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      # Named spritekit-android, which Platform/ reaches the runtime by.
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+      # The stand-in game's Source/, which the template job compiles for
+      # Android, built for iOS against Apple's SpriteKit.
+      - name: Build
+        run: Scripts/check-template-apple.sh
+
   passed:
     name: Checks passed
-    needs: [changes, tools, shellcheck, host, apple, catalyst, android, library, template]
+    needs: [changes, tools, shellcheck, host, apple, catalyst, android, library, template, template-apple]
     if: always()
     runs-on: ubuntu-latest
     steps:

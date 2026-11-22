@@ -65,7 +65,8 @@ Open an issue with:
    tools' tests, and
    `Scripts/check-template.sh`, which builds the game templates into an APK
    around a stand-in game (`Templates/Check`) and launches it on an
-   emulator. `Checks passed` must be green to merge.
+   emulator, and `Scripts/check-template-apple.sh`, which builds that game's
+   `Source/` for iOS. `Checks passed` must be green to merge.
 
 4. **Explain the why** in the pull request: what Apple does, what was
    wrong, and how you checked it.
