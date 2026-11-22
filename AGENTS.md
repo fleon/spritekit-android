@@ -148,6 +148,8 @@ would want.
 - Store screenshots and recordings go through `Tools/Capture` (README,
   "Screen captures"): a game keeps its `capture.json`, hooks and shims, never
   a copy of the capture scripts.
+- Scenes play sounds and music with `PlatformAudio`'s `playSound`,
+  `playMusic` and `stopMusic`, never a game's own wrappers of them.
 - Keep `AudioManager`'s default of pausing the music while another app plays
   audio (`stepsAsideForOtherAudio`); no game turns it off.
 - On Android, saved data syncs through Play Games Saved Games, the
