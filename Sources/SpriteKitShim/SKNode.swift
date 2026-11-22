@@ -123,8 +123,8 @@ open class SKNode {
     /// point is in the parent's space and not the node's. As measured on a
     /// Mac, hidden nodes answer too and the far edges are open (unlike
     /// `nodes(at:)`'s). `open`, as in SpriteKit: games narrow a button's hit
-    /// area by overriding it. As there, `nodes(at:)` and `atPoint(_:)` don't
-    /// consult an override.
+    /// area by overriding it. As there, `nodes(at:)`, `atPoint(_:)` and touch
+    /// delivery don't consult an override.
     open func contains(_ point: CGPoint) -> Bool {
         calculateAccumulatedFrame().contains(point)
     }
@@ -185,7 +185,8 @@ open class SKNode {
 
     /// The union of this node's and its descendants' frames, in the
     /// **parent's** coordinates (the node's own transform applied), hidden
-    /// and transparent descendants included — SpriteKit's, as measured on the
+    /// and transparent descendants included, and a descendant whose frame has
+    /// no area (an empty node) left out — SpriteKit's, as measured on the
     /// Mac (`SceneSupportTests`). The game leans on both: a dropdown finds
     /// its anchor by subtracting the anchor's position, and a sample is
     /// fitted by its icon's frame with the icon's scale in it.
@@ -194,14 +195,13 @@ open class SKNode {
     }
 
     /// What this node and its descendants draw, in its **own** coordinates:
-    /// the box an effect node's texture covers, and the box a touch is hit
-    /// against (with what is hidden left out, as nothing hidden is drawn or
-    /// touched).
+    /// the box an effect node's texture covers (with what is hidden left out,
+    /// as nothing hidden is drawn).
     func accumulatedContents(includingHidden: Bool) -> CGRect {
         var total: CGRect? = contentFrame == .zero ? nil : contentFrame
         for child in children where includingHidden || !child.isHidden {
             let childFrame = child.accumulatedContents(includingHidden: includingHidden).applying(child.localTransform)
-            guard childFrame != .zero else { continue }
+            guard !childFrame.isEmpty else { continue }
             total = total.map { $0.union(childFrame) } ?? childFrame
         }
         return total ?? .zero

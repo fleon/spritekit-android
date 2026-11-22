@@ -40,9 +40,12 @@ open class SKScene: SKNode {
     var constrained: [ConstrainedNode] = []
     var pendingConstrained: [ConstrainedNode] = []
 
+    /// A scene takes touches by default, as SpriteKit's does, so a touch on
+    /// nothing that does reaches it.
     public init(size: CGSize) {
         self.size = size
         super.init()
+        isUserInteractionEnabled = true
     }
 
     /// A 1 × 1 scene, as SpriteKit's `SKScene()` is (measured on a Mac).
@@ -51,6 +54,7 @@ open class SKScene: SKNode {
     public override init() {
         size = CGSize(width: 1, height: 1)
         super.init()
+        isUserInteractionEnabled = true
     }
 
     /// Called once the scene is in a view.

@@ -282,6 +282,42 @@ struct AccumulatedFrameTests {
         root.addChild(clear)
         #expect(root.calculateAccumulatedFrame() == CGRect(x: -200, y: -5, width: 420, height: 20))
     }
+
+    /// SpriteKit on the Mac: a child whose frame has no area (an empty
+    /// node, a sprite zero points wide) adds nothing, wherever it stands; a
+    /// node with nothing else keeps its own position.
+    @Test("A child with an empty frame adds nothing to it")
+    func emptyChildren() {
+        func empty(at position: CGPoint) -> SKNode {
+            let node = SKNode()
+            node.position = position
+            return node
+        }
+        let lone = SKNode()
+        lone.position = CGPoint(x: 30, y: 40)
+        lone.addChild(empty(at: CGPoint(x: 10, y: 10)))
+        #expect(lone.calculateAccumulatedFrame() == CGRect(x: 30, y: 40, width: 0, height: 0))
+
+        let sprite = SKSpriteNode(color: .red, size: CGSize(width: 20, height: 20))
+        sprite.addChild(empty(at: CGPoint(x: 50, y: 0)))
+        #expect(sprite.calculateAccumulatedFrame() == CGRect(x: -10, y: -10, width: 20, height: 20))
+
+        let group = SKNode()
+        let sliver = SKSpriteNode(color: .red, size: CGSize(width: 0, height: 10))
+        sliver.position = CGPoint(x: 50, y: 0)
+        group.addChild(sliver)
+        group.addChild(SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10)))
+        #expect(group.calculateAccumulatedFrame() == CGRect(x: -5, y: -5, width: 10, height: 10))
+
+        // A child that holds something counts, wherever it stands.
+        let holder = SKNode()
+        holder.position = CGPoint(x: 50, y: 0)
+        holder.addChild(SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10)))
+        let outer = SKNode()
+        outer.addChild(holder)
+        outer.addChild(SKSpriteNode(color: .red, size: CGSize(width: 10, height: 10)))
+        #expect(outer.calculateAccumulatedFrame() == CGRect(x: -5, y: -5, width: 60, height: 10))
+    }
 }
 
 @Suite("Scenes: slicing")

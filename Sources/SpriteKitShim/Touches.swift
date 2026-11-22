@@ -6,26 +6,26 @@ import Foundation
 // SKNode's class body (SKNode.swift), because a method declared in an
 // extension dispatches statically and could not be overridden.
 //
-// What the game relies on, and what is therefore reproduced here:
+// Which node a touch goes to is SpriteKit's own rule, read from its view on
+// a Mac (iOS's `touchesBegan` and the Mac's `mouseDown` share it) and pinned
+// in `TouchRoutingTests`:
 //
-//   - A node with `isUserInteractionEnabled` receives touches that land on
-//     it, and the topmost such node wins — by accumulated zPosition, the
-//     same order the draw list uses, so what is drawn over something else
-//     also takes the tap.
-//   - An interactive node is hit over everything it draws, children
-//     included: every one of the game's buttons is a plain `SKNode` whose
-//     art hangs off it, so hit-testing the node's own quad would never find
-//     one.
+//   - The view asks the scene for the node at the touch (`atPoint(_:)`,
+//     whose order is `nodes(at:)`'s), then walks up from it to the first
+//     node with `isUserInteractionEnabled`, the scene included (a scene
+//     takes touches by default). If none does, the touch goes nowhere.
+//   - So a node that doesn't take touches still stops them: drawn over a
+//     control, it hands the touch to its own ancestors, not to the control.
+//     And a control is hit over everything it draws, children included, as
+//     each child walks up to it.
 //   - A touch that begins on a node stays with that node until it ends or is
-//     cancelled, wherever it travels. A button node depends on this: it
-//     tracks whether the finger is still inside itself.
+//     cancelled, wherever it travels.
 //   - `location(in:)` answers in any node's coordinates, not only the one
 //     handling the touch.
 //
 // What is deliberately not here: UIKit's responder chain. SpriteKit's own
-// delivery is not a responder chain either — an unhandled touch does not
-// walk up to the parent node — so a node that takes touches and ignores a
-// phase swallows it, exactly as on iOS.
+// delivery is not a responder chain either: once a node has the touch, a
+// phase it ignores is swallowed, exactly as on iOS.
 
 public enum UITouchPhase: Int, Sendable {
     case began, moved, ended, cancelled
@@ -109,15 +109,19 @@ public extension SKNode {
     /// SpriteKit measures it on a Mac: the frame counts hidden descendants
     /// and its edges are closed (a zero-size node is found at its own
     /// position), while a hidden or transparent node and everything under
-    /// it is skipped.
+    /// it is skipped. Nodes whose own content holds the point (a sprite's
+    /// quad, transparent texels included; a plain node's position) come
+    /// first, then those only their descendants' frames hold; each group by
+    /// accumulated z, the later in tree order first on a tie, whether or not
+    /// the view ignores sibling order.
     func nodes(at point: CGPoint) -> [SKNode] {
-        var found: [(node: SKNode, z: CGFloat, order: Int)] = []
+        var found: [Hit] = []
         if !isHidden, alpha > 0 {
-            collectHits(at: point, z: zPosition, into: &found)
+            for child in children {
+                child.collectHits(at: point, z: 0, into: &found)
+            }
         }
-        return found
-            .sorted { $0.z == $1.z ? $0.order > $1.order : $0.z > $1.z }
-            .map(\.node)
+        return found.sorted(by: Hit.isAbove).map(\.node)
     }
 
     /// The topmost node at `point` (in this node's coordinates), or this node
@@ -126,46 +130,52 @@ public extension SKNode {
         nodes(at: point).first ?? self
     }
 
-    /// Depth-first, carrying accumulated z so the result can be ordered the
-    /// way the frame is drawn, and tree order so ties break as `DrawList`'s
-    /// stable sort breaks them.
-    private func collectHits(
-        at point: CGPoint,
-        z: CGFloat,
-        into found: inout [(node: SKNode, z: CGFloat, order: Int)]
-    ) {
-        for child in children where !child.isHidden && child.alpha > 0 {
-            let depth = z + child.zPosition
-            let frame = child.calculateAccumulatedFrame()
-            if frame.minX <= point.x, point.x <= frame.maxX, frame.minY <= point.y, point.y <= frame.maxY {
-                found.append((child, depth, found.count))
-            }
-            child.collectHits(at: child.convert(point, from: self), z: depth, into: &found)
+    /// Depth-first in tree order, as SpriteKit walks it: `point` is in the
+    /// parent's coordinates, and a node whose accumulated frame misses it is
+    /// skipped with everything under it.
+    private func collectHits(at point: CGPoint, z: CGFloat, into found: inout [Hit]) {
+        guard !isHidden, alpha > 0, calculateAccumulatedFrame().holds(point) else { return }
+        let local = point.applying(localTransform.inverted())
+        let depth = z + zPosition
+        found.append(Hit(node: self, z: depth, order: found.count, drawn: contentFrame.holds(local)))
+        for child in children {
+            child.collectHits(at: local, z: depth, into: &found)
         }
     }
 
-    /// The topmost node at `point` (in this node's coordinates) that takes
-    /// touches, looking at everything each one draws rather than only its own
-    /// quad. Nil when nothing there does.
-    func interactiveNode(at point: CGPoint) -> SKNode? {
-        var best: (node: SKNode, z: CGFloat, order: Int)?
-        var counter = 0
-        func walk(_ node: SKNode, point: CGPoint, z: CGFloat) {
-            guard !node.isHidden, node.alpha > 0 else { return }
-            let depth = z + node.zPosition
-            counter += 1
-            if node.isUserInteractionEnabled, node !== self,
-               node.accumulatedContents(includingHidden: false).contains(point) {
-                if best == nil || depth > best!.z || (depth == best!.z && counter > best!.order) {
-                    best = (node, depth, counter)
-                }
-            }
-            for child in node.children {
-                walk(child, point: child.convert(point, from: node), z: depth)
-            }
+    /// The node a touch at `point` (in this node's coordinates) goes to, as
+    /// SpriteKit's view picks it: the node there, or its nearest ancestor
+    /// that takes touches. Nil when none of them does.
+    internal func touchTarget(at point: CGPoint) -> SKNode? {
+        var node: SKNode? = atPoint(point)
+        while let current = node, !current.isUserInteractionEnabled {
+            node = current.parent
         }
-        walk(self, point: point, z: 0)
-        return best?.node
+        return node
+    }
+}
+
+/// One node under a point, with what SpriteKit orders it by.
+private struct Hit {
+    let node: SKNode
+    /// Its accumulated zPosition.
+    let z: CGFloat
+    /// Its place in tree order.
+    let order: Int
+    /// Whether its own content, not only a descendant's, holds the point.
+    let drawn: Bool
+
+    static func isAbove(_ a: Hit, _ b: Hit) -> Bool {
+        if a.drawn != b.drawn { return a.drawn }
+        if a.z != b.z { return a.z > b.z }
+        return a.order > b.order
+    }
+}
+
+private extension CGRect {
+    /// Containment with every edge closed, as SpriteKit hit-tests.
+    func holds(_ point: CGPoint) -> Bool {
+        minX <= point.x && point.x <= maxX && minY <= point.y && point.y <= maxY
     }
 }
 
@@ -178,7 +188,8 @@ public extension SKScene {
     /// mode.
     ///
     /// Returns the node that took it, for a caller that wants to know a tap
-    /// was consumed.
+    /// was consumed: nil when nothing there takes touches, the scene
+    /// included, and the touch goes nowhere.
     @discardableResult
     func deliverTouch(
         phase: UITouchPhase,
@@ -195,7 +206,7 @@ public extension SKScene {
             let event = UIEvent(touches: [touch])
             // As UIKit does, the window sees the event before anything in it.
             view?.window?.sendEvent(event)
-            let target = interactiveNode(at: location) ?? self
+            guard let target = touchTarget(at: location) else { return nil }
             activeTouches[identifier] = ActiveTouch(touch: touch, target: target)
             target.touchesBegan([touch], with: event)
             return target
