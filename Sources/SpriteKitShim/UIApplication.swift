@@ -40,4 +40,31 @@ public final class UIApplication: @unchecked Sendable {
         NotificationCenter.default.post(name: Self.didBecomeActiveNotification, object: self)
     }
 }
+
+public extension UIApplication {
+    /// The scenes the app shows: on Android the one window scene the game's
+    /// surface made (`GameHostSurface`), while it's kept.
+    @MainActor var connectedScenes: Set<UIScene> { ConnectedScenes.live }
+}
+
+/// The window scenes made so far, held weakly: a scene is listed while its
+/// maker keeps it, as UIKit lists a scene until it disconnects.
+@MainActor
+enum ConnectedScenes {
+    private final class Weak {
+        weak var scene: UIScene?
+        init(_ scene: UIScene) { self.scene = scene }
+    }
+
+    private static var scenes: [Weak] = []
+
+    static func add(_ scene: UIScene) {
+        scenes.removeAll { $0.scene == nil }
+        scenes.append(Weak(scene))
+    }
+
+    static var live: Set<UIScene> {
+        Set(scenes.compactMap(\.scene))
+    }
+}
 #endif

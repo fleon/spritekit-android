@@ -65,6 +65,37 @@ struct UIKitStandInTests {
         #expect(scene.windows.isEmpty)
     }
 
+    @Test("The app lists the window scene its surface keeps, and lets it go with it")
+    func connectedScenes() {
+        let screen = UIScreen(bounds: CGRect(x: 0, y: 0, width: 402, height: 874), nativeScale: 3)
+        var scene: UIWindowScene? = UIWindowScene(screen: screen, interfaceOrientation: .portrait)
+        let window = UIWindow(bounds: screen.bounds)
+        window.windowScene = scene
+        do {
+            let listed = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            #expect(listed.contains { $0 === scene })
+            // What game code reads next: the key window, the screen, the orientation.
+            let found = listed.first { $0 === scene }
+            #expect(found?.keyWindow === window)
+            #expect(found?.screen === screen)
+            #expect(found?.interfaceOrientation == .portrait)
+        }
+        scene = nil
+        #expect(!UIApplication.shared.connectedScenes.contains { ($0 as? UIWindowScene)?.screen === screen })
+    }
+
+    @Test("A scene is in front while the app is")
+    func activationState() {
+        let scene = UIWindowScene(screen: UIScreen(bounds: CGRect(x: 0, y: 0, width: 10, height: 10), nativeScale: 1))
+        #expect(scene.activationState == .foregroundActive)
+        UIApplication.shared.resignActive()
+        #expect(scene.activationState == .background)
+        UIApplication.shared.becomeActive()
+        #expect(scene.activationState == .foregroundActive)
+        #expect(UIScene.ActivationState.unattached.rawValue == -1)
+        #expect(UIScene.ActivationState.background.rawValue == 2)
+    }
+
     @Test("An empty image has no size; a symbol nobody packed is nil")
     func images() {
         #expect(UIImage().size == .zero)
