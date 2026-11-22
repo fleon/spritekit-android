@@ -11,6 +11,7 @@ struct MacrosPlugin: CompilerPlugin {
         LaunchArgumentMacro.self,
         DecodableDefaultsMacro.self,
         StoredMacro.self, SyncedMacro.self, SyncedKeyMacro.self, SyncedKeysMacro.self,
+        SingletonMacro.self,
     ]
 }
 
