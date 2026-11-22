@@ -73,7 +73,9 @@ would want.
   `sprite("Asset", size: ...)`, `tinted("Asset", color)`, `sliced(...)`.
 - Don't use `SKShapeNode` except as an `SKCropNode`'s mask: draw rings, pills,
   discs and outlines with `ShapeSprite`, and icons from path data with
-  `SVGPath` / `IconDrawing`, into cached textures tinted per use.
+  `SVGPath` / `IconDrawing`, into cached textures tinted per use. Gradient
+  textures come from `DrawnTexture.linearGradient` / `radialGradient`, never
+  a game's own CoreGraphics or Core Image helper.
 - Lay out from `SceneLayout` (the visible and safe rects), never from the
   scene's size, so every screen works on phones and tablets, upright and in
   landscape.
