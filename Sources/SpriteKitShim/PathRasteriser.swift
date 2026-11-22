@@ -1,3 +1,4 @@
+#if SPRITEKIT_SHIM
 import Foundation
 
 /// Turns a recorded `CGPath` into 8-bit coverage.
@@ -809,3 +810,5 @@ public enum PathRasteriser {
         if tail > 0 { row[lastPixel] += tail * weight }
     }
 }
+
+#endif

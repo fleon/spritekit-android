@@ -14,6 +14,8 @@ would want.
 
 - Keep edits minimal and localized; avoid unrelated refactors.
 - Prefer `private` and `fileprivate` for internal state and helper methods.
+- A type with one shared instance is `@Singleton` (`Macros`), not a
+  hand-written `static let shared` and `private init() {}`.
 - Keep comments concise and only for non-obvious behaviour.
 - Match the existing naming and formatting of the file you're editing.
 - Avoid force unwraps; prefer `guard let` and safe defaults.
@@ -64,16 +66,28 @@ would want.
   prefixed where two owners share a node.
 - Add a node at its z-position (and position) with `addChild(_:z:at:)`, and
   build paths and labels with `path(...)` and `label(...)`.
+- Text labels never use SpriteKit's `.center`, `.top` or `.bottom`
+  vertical alignment: those align the ink of the letters in the string, so
+  a descender (q, p, y, g, Q) or a Thai mark moves the line. Set labels on
+  `.baseline` and align them by the font's metrics with the toolkit:
+  `centerVertically(on:)` or `align(_:at:band:)`, `label(... .vAlign(.center))`,
+  `TextBlockNode`. The language picks the band (`TextBand`), so never
+  special-case letters.
 - Use `@NSCodingUnsupported` (from `Macros`) on node subclasses instead of a
   hand-written `init?(coder:)`; `inherit: .size` or `.plain` writes the
   pass-through `init(size:)` or `init()`.
+- Block observers of `NotificationCenter` go in an `ObserverBag`
+  (`PlatformCore`), kept as a property: it removes them when it goes or on
+  `removeAll()`, with no token arrays or `deinit` of your own.
 - Buttons, switches and tiles subclass `PressableNode` (`PlatformInput`),
   which tracks the touch, focus and activation; a control keeps only its look.
 - Asset-backed images go through `PlatformSprite`'s helpers: `txtr("Asset")`,
   `sprite("Asset", size: ...)`, `tinted("Asset", color)`, `sliced(...)`.
 - Don't use `SKShapeNode` except as an `SKCropNode`'s mask: draw rings, pills,
   discs and outlines with `ShapeSprite`, and icons from path data with
-  `SVGPath` / `IconDrawing`, into cached textures tinted per use.
+  `SVGPath` / `IconDrawing`, into cached textures tinted per use. Gradient
+  textures come from `DrawnTexture.linearGradient` / `radialGradient`, never
+  a game's own CoreGraphics or Core Image helper.
 - Lay out from `SceneLayout` (the visible and safe rects), never from the
   scene's size, so every screen works on phones and tablets, upright and in
   landscape.
@@ -112,7 +126,10 @@ would want.
 - Don't localize internal identifiers: asset names, sound names, action keys,
   debug messages, JSON keys.
 - The strings layer uses `@LocalizedStrings` (from `Macros`).
-- Let `wrappedLines` (CoreText's breaks on both platforms) break lines.
+- Let `wrappedLines` (CoreText's breaks on both platforms) break lines, and
+  set a wrapped paragraph as a `TextBlockNode` (every line on its
+  baseline; `anchor: .firstBaseline` to hang it from the first), never a
+  game's own `wrapText`.
 - On Android the runtime reads the tables in the APK, in the device's
   languages (`PreferredLanguages`). Files that import only Foundation must
   see the shim's `NSLocalizedString`, so the game's Android package
@@ -132,8 +149,8 @@ would want.
   data (`ICloudSyncManager`; list each synced key in its owner's
   `syncedKeys`, which `@SyncedKeys` builds; hear another device's keys
   with `observeUpdates`, never by reading its `userInfo`), input and
-  focus, display settings, haptics and rating prompts, sharing, Spine rigs,
-  the splash.
+  focus, display settings and the status bar switch (`StatusBarSetting`),
+  haptics and rating prompts, sharing, Spine rigs, the splash.
 - Saved values are properties: `@Stored("key")` over user defaults,
   `@Synced("key", merge:)` over `ICloudSyncManager`, a key with no property
   of its own marked `@SyncedKey`. A `Codable` type whose properties fall back
@@ -144,6 +161,8 @@ would want.
 - Store screenshots and recordings go through `Tools/Capture` (README,
   "Screen captures"): a game keeps its `capture.json`, hooks and shims, never
   a copy of the capture scripts.
+- Scenes play sounds and music with `PlatformAudio`'s `playSound`,
+  `playMusic` and `stopMusic`, never a game's own wrappers of them.
 - Keep `AudioManager`'s default of pausing the music while another app plays
   audio (`stepsAsideForOtherAudio`); no game turns it off.
 - On Android, saved data syncs through Play Games Saved Games, the

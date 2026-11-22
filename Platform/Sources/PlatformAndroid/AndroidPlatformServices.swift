@@ -10,8 +10,7 @@ import SpriteKitShim
 /// Every backend talks through `PlatformChannel.shared`, which the shell
 /// installs. `install` makes each backend the game asks for and hands it to
 /// the receiver the game names (its Game Center manager, its store, its
-/// sync manager, `GKLeaderboard.backend`), so nothing here knows the
-/// game's managers. With no channel (a host build) only simulated purchases
+/// sync manager), so nothing here knows the game's managers. With no channel (a host build) only simulated purchases
 /// are made, and the managers keep the backends they start with, which keep
 /// everything on the device.
 public enum AndroidPlatformServices {
@@ -27,7 +26,10 @@ public enum AndroidPlatformServices {
         /// service). With none, sign-in still starts if a cloud is asked
         /// for, which needs it.
         public var achievements: ((AchievementsBackend) -> Void)?
-        /// Receives Play Games' leaderboards (`GKLeaderboard.backend`).
+        /// Receives Play Games' leaderboards: the Game Center manager's
+        /// `leaderboardService` (`.toolkit`), and `GKLeaderboard.backend`
+        /// where the game calls GameKit's leaderboards itself (README,
+        /// "Leaderboards").
         public var leaderboards: ((LeaderboardsBackend) -> Void)?
         /// Told the Play Games player now signed in, or nil
         /// (`GKLocalPlayer.local.update`).
@@ -98,15 +100,10 @@ public enum AndroidPlatformServices {
         public fileprivate(set) var leaderboards: PlayGamesLeaderboards?
         public fileprivate(set) var cloud: PlaySavedGamesCloud?
         public fileprivate(set) var billing: BillingBackend?
-        fileprivate var observers: [NSObjectProtocol] = []
-        fileprivate let center: NotificationCenter
+        fileprivate let observers: ObserverBag
 
         fileprivate init(center: NotificationCenter) {
-            self.center = center
-        }
-
-        deinit {
-            for observer in observers { center.removeObserver(observer) }
+            observers = ObserverBag(center: center)
         }
     }
 
@@ -149,17 +146,8 @@ public enum AndroidPlatformServices {
             games.signInChanged = { cloud.signInChanged($0) }
             receive(cloud)
             // Android may end a backgrounded app without a word.
-            let center = configuration.notificationCenter
-            installed.observers.append(center.addObserver(
-                forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil
-            ) { _ in
-                cloud.flush()
-            })
-            installed.observers.append(center.addObserver(
-                forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil
-            ) { _ in
-                cloud.synchronize()
-            })
+            installed.observers.observe(UIApplication.didEnterBackgroundNotification) { _ in cloud.flush() }
+            installed.observers.observe(UIApplication.willEnterForegroundNotification) { _ in cloud.synchronize() }
         }
         if let receive = configuration.leaderboards {
             let leaderboards = PlayGamesLeaderboards(channel: channel, mapping: mapping)
@@ -211,7 +199,7 @@ public enum AndroidPlatformServices {
         }
         if let statusBar = configuration.statusBar {
             let show = { _ = channel.call("device.statusBar", ["visible": statusBar.isVisible()]) }
-            installed.observers.append(center.addObserver(forName: statusBar.changed, object: nil, queue: nil) { _ in show() })
+            installed.observers.observe(statusBar.changed) { _ in show() }
             show()
         }
     }

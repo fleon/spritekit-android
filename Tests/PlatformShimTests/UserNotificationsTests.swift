@@ -573,6 +573,53 @@ struct UserNotificationsEqualityTests {
         #expect(UNNotificationSound.criticalSoundNamed(name, withAudioVolume: 1) != .criticalSoundNamed(name))
     }
 
+    @Test("Content is equal field by field, its userInfo as a dictionary; equal content hashes alike")
+    func content() {
+        func make(_ change: (UNMutableNotificationContent) -> Void = { _ in }) -> UNNotificationContent {
+            let content = UNMutableNotificationContent()
+            content.title = "T"
+            content.body = "B"
+            content.badge = 3
+            content.sound = .default
+            content.userInfo = ["level": 4, "tags": ["a", "b"]]
+            change(content)
+            return content.copy() as! UNNotificationContent
+        }
+        #expect(make() == make())
+        #expect(make().hash == make().hash)
+        #expect(make() != make { $0.subtitle = "S" })
+        #expect(make() != make { $0.badge = 4 })
+        #expect(make() != make { $0.sound = .defaultCritical })
+        #expect(make() != make { $0.userInfo = ["level": 5, "tags": ["a", "b"]] })
+        #expect(make() != make { $0.relevanceScore = 0.5 })
+        #expect(make() != make { $0.interruptionLevel = .timeSensitive })
+        let mutable = UNMutableNotificationContent()
+        #expect(mutable == UNNotificationContent())
+        #expect(Set([make(), make(), make { $0.title = "U" }]).count == 2)
+    }
+
+    @Test("Requests and triggers are equal field by field, and hash alike when equal")
+    func requestsAndTriggers() {
+        func request(_ id: String = "r", seconds: TimeInterval = 60) -> UNNotificationRequest {
+            UNNotificationRequest(identifier: id, content: UNNotificationContent(),
+                                  trigger: UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false))
+        }
+        #expect(request() == request() && request().hash == request().hash)
+        #expect(request() != request("s"))
+        #expect(request() != request(seconds: 61))
+        #expect(UNNotificationRequest(identifier: "r", content: UNNotificationContent(), trigger: nil)
+            == UNNotificationRequest(identifier: "r", content: UNNotificationContent(), trigger: nil))
+        #expect(request() != UNNotificationRequest(identifier: "r", content: UNNotificationContent(), trigger: nil))
+        var date = DateComponents()
+        date.hour = 9
+        let morning = UNCalendarNotificationTrigger(dateMatching: date, repeats: true)
+        #expect(morning == UNCalendarNotificationTrigger(dateMatching: date, repeats: true))
+        #expect(morning.hash == UNCalendarNotificationTrigger(dateMatching: date, repeats: true).hash)
+        #expect(morning != UNCalendarNotificationTrigger(dateMatching: date, repeats: false))
+        #expect(UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: true) != UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false))
+        #expect(!morning.isEqual(UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: true)))
+    }
+
     @Test("Icons are equal by kind and name")
     func icons() {
         #expect(UNNotificationActionIcon(systemImageName: "star") == UNNotificationActionIcon(systemImageName: "star"))

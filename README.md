@@ -50,7 +50,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 
 | Module | What it saves you writing |
 | --- | --- |
-| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches |
+| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches, notification observers removed together (`ObserverBag`) |
 | `PlatformSprite` | A texture cache and sprite helpers, path and label builders, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
 | `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
@@ -61,7 +61,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 | `PlatformDevice` | Haptics, rating prompts at the right moment, play time |
 | `PlatformShare` | The share sheet, pasteboard, the App Store review page, feedback mail |
 | `PlatformRigs` | Spine 4.2 skeletons posed and drawn in SpriteKit (Spine Runtimes License, see below) |
-| `Macros` | `@NSCodingUnsupported` for node subclasses (`inherit:` for pass-through inits); `@LocalizedStrings` for the type-safe strings layer; `@LaunchArgument` for debug switches; `@Stored`, `@Synced` and `@SyncedKeys` for saved values; `@DecodableDefaults` for `Codable` types with defaults |
+| `Macros` | `@NSCodingUnsupported` for node subclasses (`inherit:` for pass-through inits); `@LocalizedStrings` for the type-safe strings layer; `@LaunchArgument` for debug switches; `@Stored`, `@Synced` and `@SyncedKeys` for saved values; `@DecodableDefaults` for `Codable` types with defaults; `@Singleton` for a type's one `shared` instance |
 
 "Shared platform code" below describes each one in detail.
 
@@ -154,8 +154,8 @@ Package.swift        PlatformServices, SpriteKitShim, GLESRenderer,
 Sources/
   PlatformServices/  Plain Foundation, on every platform: the protocols a
                      game's audio, achievements, leaderboards, purchases and
-                     synced saved data stand on, the sync engine's merge and
-                     the render scale governor.
+                     synced saved data stand on, the sync engine's merge,
+                     the render scale governor and `ObserverBag`.
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
                      camera, SKRenderer, the UIKit / CoreGraphics /
@@ -234,15 +234,13 @@ SpriteKit, UIKit and services; on Android, and on a Mac host for its tests,
 against the shim, which `SPRITEKIT_SHIM` selects there. Its sources import
 
 ```swift
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 ```
 
-and never `Modules/`, whose targets collide with Apple's frameworks. It
+which on Apple platforms is the shim's passthrough (it re-exports SpriteKit,
+CoreGraphics and UIKit, and compiles nothing else), and never `Modules/`,
+whose targets collide with Apple's frameworks. `#if SPRITEKIT_SHIM` is kept
+for what really differs between the two. It
 reaches this package as `..`, so a game's graph holds one
 `spritekit-android`.
 
@@ -369,7 +367,9 @@ sound's duration; `skipIfPlaying`, `variants`), `playEffect(_:repeats:
 variants:onFinish:)` and `stopEffect(_:fadeDuration:)` for sounds on voices
 of their own, `playMusic(_:loop:)` (the track already playing keeps going,
 another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
-`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`;
+`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`
+(the free functions `playSound`, `playMusic`, `stopMusic`, `pauseMusic` and
+`resumeMusic` are the same calls on `shared`, for a scene's one-liners);
 `AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
 switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
 unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
@@ -396,25 +396,54 @@ decides, it hands in:
   values are the keys (`case pulse = "logo.pulse"`: a prefix still keeps
   two owners apart on one node), at no cost over a string.
   `xConstraint`/`yConstraint` hold a node's x or y.
+- **Observers** (`ObserverBag`, in `PlatformServices`, which `PlatformCore`
+  re-exports): `observers.observe(name, object:, queue:) { … }` adds a
+  block observer and keeps its token; the bag removes them all on
+  `removeAll()` or when it goes, so an owner keeps one as a property and
+  writes no `deinit`. Foundation's `NotificationCenter` on every platform.
 - **Builders**: `path(.moveTo(…), .lineTo(…), .roundedRect(…), …)` makes a
   `CGPath` for `ShapeSprite`, a crop mask or a route (`ArcDirection` as
   UIKit names it: `.clockwise` is a rising angle); `label(.font(weight,
   size), .text(…), …)` makes an `SKLabelNode` in `Typography`'s face, or a
-  named one (`.fontNamed`). `rectInScene(for:scene:)` is what a node draws,
+  named one (`.fontNamed`); its `.vAlign(.center)`, `.top` and `.bottom`
+  align the font's text band at `.position` by its metrics (`.band(…)` to
+  choose one), the label on its baseline. `rectInScene(for:scene:)` is what a node draws,
   in the scene's space, and holds through rotation (`boundingRect(_:in:)`).
 - **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
   string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
-- **Text** (`wrappedLines`, CoreText's breaks on both platforms;
-  `capitalsOffset`, `centerCapitals`, `TextBlockNode`): `Typography` holds
-  the game's font and line height, and `Typography.follow(_:base:)` sets
-  them by the current language (`ScriptedLanguage`: a script's own face and
-  line height). `FontRegistry.register(fontFiles:)` registers the game's
+- **Text** (`wrappedLines`, CoreText's breaks on both platforms): labels
+  are aligned by their font's metrics, never by their ink. SpriteKit's
+  `.center`, `.top` and `.bottom` place the box round the glyphs in the
+  string, so "pqyg" sits higher than "MAP" and a Thai line with marks moves
+  again. `label.centerVertically(on:)` (or `align(.top, at:)`, `.bottom`)
+  sets the label on `.baseline` and moves it so a band of its font is
+  centred on the point, the same baseline for every string in that font
+  and size. `TextBand.capitals` (baseline to cap height) suits scripts
+  with capitals; `.line` (descender to ascender) suits Thai, Lao, Khmer
+  and Burmese, whose marks stack above and below and whose typical line's
+  ink centres on it. `UIFont.baseline(_:at:band:)` gives the y for
+  layout code. `capitalsOffset` and `centerCapitals`, which measured each
+  string's ink, are deprecated. `TextBlockNode` sets every line on its
+  baseline, evenly spaced: hung from its first line's top (each line's
+  band centred in its height) or, with `anchor: .firstBaseline`, from its
+  first baseline, lines spaced by `Typography` or by the font's own
+  ascender and descender. `Typography` holds the game's font, line height
+  and text band, and `Typography.follow(_:base:)` sets them by the current
+  language (`ScriptedLanguage`: a script's own face, line height and
+  `textBand`, by default `TextBand.forLanguage` of its code). `FontRegistry.register(fontFiles:)` registers the game's
   font files once each.
 - **Icons** (`SVGPath`, `IconDrawing`, `IconPart`): a game's enum of icons
   lists each one's path data, stroked or filled, on a grid; `node(size:color:)`
   draws it once a size into `DrawnTexture`'s cache and tints it.
   `ShapeSprite` draws rings, pills, discs and outlines the same way, never
   as shape nodes.
+- **Gradients** (`DrawnTexture.linearGradient`, `radialGradient`,
+  `GradientStop`): linear and radial gradients through any number of stops
+  (or two colours, or a glow fading to clear), drawn by CoreGraphics on
+  Apple and the shim's bitmap context on Android into `DrawnTexture`'s
+  cache, keyed by everything they draw, at the screen's density. Colours
+  mix as CoreGraphics mixes them (in sRGB), not in linear light as Core
+  Image's gradient filters do.
 - **Loading spinner** (`LoadingSpinner`): an arc of a ring that reaches all
   the way round and back every period while it turns, its ends round, in
   any colour (`color`, which can change while it shows) at the game's
@@ -530,9 +559,10 @@ replace its values with records its earlier builds can't read.
 `AndroidPlatformServices.install(_:)` puts a game's managers on Google Play
 and the device, once, before its launch work starts them. It makes each
 backend the configuration asks for and hands it to the receiver the game
-names: Play Games' achievements to its Game Center manager, the
-leaderboards to `GKLeaderboard.backend`, the signed-in player to
-`GKLocalPlayer.local`, Saved Games to its sync manager (flushed as the game
+names: Play Games' achievements and leaderboards to its Game Center
+manager (`.toolkit(gameCenter:)`, or `GKLeaderboard.backend` for a game
+that calls GameKit's leaderboards itself: see "Leaderboards"), the
+signed-in player to `GKLocalPlayer.local`, Saved Games to its sync manager (flushed as the game
 leaves the front, synchronized as it comes back), Play Billing or simulated
 purchases to its store. Play Games needs the mapping packed in the APK
 (`PlayGamesMapping.bundled()`); without it achievements and saved data stay
@@ -606,7 +636,13 @@ touch let go); sounds and haptics go in `playFeedback`, or once for every
 control in `PressableNode.feedback`. Defaults are `PressConfiguration`'s.
 A control that can't subclass it (a sprite, or one a game hands touches its
 own way) holds a `PressTracker`, the same state machine, or calls
-`pressBegan(at:)`, `pressMoved(to:)` and `pressEnded(at:)` itself.
+`pressBegan(at:)`, `pressMoved(to:)` and `pressEnded(at:)` itself. A game
+whose scene hands touches out sets `handlesTouches = false` on its controls
+(or `PressConfiguration.handlesTouches` for all of them), so SpriteKit gives
+the touches to the scene rather than the control. A touch's end that
+arrives before its late start (handed out a frame after touch-down)
+completes the tap as the start comes, within `lateBeganWindow`, with no
+`cancelPress()` needed.
 
 `KeyboardControllable` (keys by HID usage; the remote's Back and Android's
 back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene
@@ -636,6 +672,14 @@ view's delegate; the game calls `apply()` as each scene change starts,
 display members (`displayChoices`, `observeDisplayChoices`, `isMeasured`,
 `setRunning`, `noteAutoChosen`, `pinnedRenderScale`) from
 `DisplaySettings`, so it needn't write them.
+
+`StatusBarSetting` is the settings' status bar switch: `isVisible`, saved
+on the device under `settings.statusBarVisible` (the key, the default of
+hidden and a save hook for syncing are its `Configuration`'s), posting
+`didChange`. On Apple the game's view controller answers
+`prefersStatusBarHidden` with `StatusBarSetting.isHidden` and calls
+`StatusBarSetting.follow(self)` once; on Android
+`.toolkit(..., statusBar: true)` shows and hides the bar as it changes.
 
 ### Spine rigs (`PlatformRigs`)
 
@@ -1269,6 +1313,25 @@ signatures, on `GKLeaderboard.backend`: `PlayGamesLeaderboards`
 at launch beside its achievements, or by default `LocalLeaderboards`, which
 has none. `LeaderboardsBackend` itself is in `PlatformServices`, so Apple
 builds share it (`PlatformGameCenter` puts GameKit behind it).
+
+`.toolkit(gameCenter:)` hands Play's leaderboards to the game's
+`GameCenterManager` (`leaderboardService`), which is where a game on the
+toolkit submits scores and opens leaderboards (`submitScore(_:context:to:)`,
+`showLeaderboards(_:)`); it can't set `GKLeaderboard.backend`, which lives in
+`Modules/GameKit`, a module `Platform/` never imports. A game that calls
+GameKit's leaderboards itself (`GKLeaderboard`, `GKAccessPoint`,
+`GKGameCenterViewController`) hands them there too, in its Android
+controller, which imports `GameKit`:
+
+```swift
+var services = AndroidPlatformServices.Configuration.toolkit(gameCenter: .shared)
+let toManager = services.leaderboards
+services.leaderboards = { board in
+    toManager?(board)
+    MainActor.assumeIsolated { GKLeaderboard.backend = board }   // installed on the main thread
+}
+AndroidPlatformServices.install(services)
+```
 
 - `GKLeaderboard.submitScore(_:context:player:leaderboardIDs:)`, and the
   instance `submitScore(_:context:player:)`, each with a completion handler

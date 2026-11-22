@@ -1,10 +1,6 @@
 import Foundation
 import PlatformCore
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// How many frames a second the game draws, and how many of the screen's
 /// pixels (`Graphics`), kept on this device (screens and GPUs differ). Each

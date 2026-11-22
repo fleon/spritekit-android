@@ -1,11 +1,7 @@
 import CoreText
 import Foundation
 import Testing
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 @testable import PlatformSprite
 
 @Suite(.serialized)

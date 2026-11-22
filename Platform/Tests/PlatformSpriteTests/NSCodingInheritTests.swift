@@ -1,11 +1,7 @@
 import Foundation
 import Macros
 import Testing
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 @NSCodingUnsupported(inherit: .size)
 private final class SampleScene: SKScene {

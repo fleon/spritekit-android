@@ -178,18 +178,9 @@ open class UNNotificationSound: NSObject, NSCopying {
 
     open func copy(with zone: NSZone? = nil) -> Any { self }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNNotificationSound else { return false }
-        return other.name == name && other.isCritical == isCritical && other.criticalVolume == criticalVolume
-    }
-
-    open override var hash: Int {
-        var hasher = Hasher()
-        hasher.combine(name)
-        hasher.combine(isCritical)
-        hasher.combine(criticalVolume)
-        return hasher.finalize()
-    }
+    private var equalityFields: [AnyHashable] { [name, isCritical, criticalVolume] }
+    open override func isEqual(_ object: Any?) -> Bool { sameFields(self, object) { $0.equalityFields } }
+    open override var hash: Int { hashFields(equalityFields) }
 }
 
 /// How insistently a notification asks for attention (Apple's raw values).
@@ -286,19 +277,20 @@ open class UNNotificationContent: NSObject, NSCopying, NSMutableCopying {
     open func copy(with zone: NSZone? = nil) -> Any { UNNotificationContent(fields: fields) }
     open func mutableCopy(with zone: NSZone? = nil) -> Any { UNMutableNotificationContent(fields: fields) }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNNotificationContent else { return false }
-        let a = fields, b = other.fields
-        return a.title == b.title && a.subtitle == b.subtitle && a.body == b.body
-            && a.badge == b.badge && a.sound == b.sound
-            && a.threadIdentifier == b.threadIdentifier && a.categoryIdentifier == b.categoryIdentifier
-            && a.targetContentIdentifier == b.targetContentIdentifier
-            && NSDictionary(dictionary: a.userInfo).isEqual(to: b.userInfo)
-            && a.interruptionLevel == b.interruptionLevel && a.relevanceScore == b.relevanceScore
-            && a.filterCriteria == b.filterCriteria
+    /// Every field but `userInfo`, whose values aren't hashable: it is
+    /// compared as Apple compares it, through `NSDictionary`.
+    private var equalityFields: [AnyHashable] {
+        [fields.title, fields.subtitle, fields.body, fields.badge, fields.sound, fields.threadIdentifier,
+         fields.categoryIdentifier, fields.targetContentIdentifier, fields.interruptionLevel.rawValue,
+         fields.relevanceScore, fields.filterCriteria]
     }
 
-    open override var hash: Int { fields.title.hashValue ^ fields.body.hashValue }
+    open override func isEqual(_ object: Any?) -> Bool {
+        sameFields(self, object) { $0.equalityFields }
+            && NSDictionary(dictionary: fields.userInfo).isEqual(to: (object as? UNNotificationContent)?.fields.userInfo ?? [:])
+    }
+
+    open override var hash: Int { hashFields(equalityFields) }
 }
 
 open class UNMutableNotificationContent: UNNotificationContent {
@@ -397,12 +389,9 @@ open class UNCalendarNotificationTrigger: UNNotificationTrigger {
         return calendar.nextDate(after: date, matching: matching, matchingPolicy: .nextTimePreservingSmallerComponents)
     }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNCalendarNotificationTrigger else { return false }
-        return other.repeats == repeats && other.dateComponents == dateComponents
-    }
-
-    open override var hash: Int { dateComponents.hashValue }
+    private var equalityFields: [AnyHashable] { [repeats, dateComponents] }
+    open override func isEqual(_ object: Any?) -> Bool { sameFields(self, object) { $0.equalityFields } }
+    open override var hash: Int { hashFields(equalityFields) }
 }
 
 open class UNTimeIntervalNotificationTrigger: UNNotificationTrigger {
@@ -425,12 +414,9 @@ open class UNTimeIntervalNotificationTrigger: UNNotificationTrigger {
         return Date().addingTimeInterval(timeInterval)
     }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNTimeIntervalNotificationTrigger else { return false }
-        return other.repeats == repeats && other.timeInterval == timeInterval
-    }
-
-    open override var hash: Int { timeInterval.hashValue }
+    private var equalityFields: [AnyHashable] { [repeats, timeInterval] }
+    open override func isEqual(_ object: Any?) -> Bool { sameFields(self, object) { $0.equalityFields } }
+    open override var hash: Int { hashFields(equalityFields) }
 }
 
 // MARK: - Requests, notifications, responses, settings
@@ -453,12 +439,9 @@ open class UNNotificationRequest: NSObject, NSCopying {
 
     open func copy(with zone: NSZone? = nil) -> Any { self }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNNotificationRequest else { return false }
-        return other.identifier == identifier && other.content == content && other.trigger == trigger
-    }
-
-    open override var hash: Int { identifier.hashValue }
+    private var equalityFields: [AnyHashable] { [identifier, content, trigger] }
+    open override func isEqual(_ object: Any?) -> Bool { sameFields(self, object) { $0.equalityFields } }
+    open override var hash: Int { hashFields(equalityFields) }
 }
 
 open class UNNotification: NSObject {
@@ -559,12 +542,9 @@ open class UNNotificationActionIcon: NSObject, NSCopying {
 
     open func copy(with zone: NSZone? = nil) -> Any { self }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNNotificationActionIcon else { return false }
-        return other.imageName == imageName && other.isTemplate == isTemplate
-    }
-
-    open override var hash: Int { imageName.hashValue }
+    private var equalityFields: [AnyHashable] { [imageName, isTemplate] }
+    open override func isEqual(_ object: Any?) -> Bool { sameFields(self, object) { $0.equalityFields } }
+    open override var hash: Int { hashFields(equalityFields) }
 }
 
 /// A button a notification of a category offers. Kept for the game to read
@@ -599,18 +579,9 @@ open class UNNotificationAction: NSObject, NSCopying {
 
     open func copy(with zone: NSZone? = nil) -> Any { self }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNNotificationAction else { return false }
-        return other.identifier == identifier && other.title == title && other.options == options
-    }
-
-    open override var hash: Int {
-        var hasher = Hasher()
-        hasher.combine(identifier)
-        hasher.combine(title)
-        hasher.combine(options.rawValue)
-        return hasher.finalize()
-    }
+    private var equalityFields: [AnyHashable] { [identifier, title, options.rawValue] }
+    open override func isEqual(_ object: Any?) -> Bool { sameFields(self, object) { $0.equalityFields } }
+    open override var hash: Int { hashFields(equalityFields) }
 }
 
 /// An action that asks for a line of text. As on Apple, it equals a plain
@@ -705,21 +676,14 @@ open class UNNotificationCategory: NSObject, NSCopying {
 
     open func copy(with zone: NSZone? = nil) -> Any { self }
 
-    open override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? UNNotificationCategory else { return false }
-        return other.identifier == identifier && other.actions == actions
-            && other.intentIdentifiers == intentIdentifiers && other.options == options
-            && other.hiddenPreviewsBodyPlaceholder == hiddenPreviewsBodyPlaceholder
-            && other.categorySummaryFormat == categorySummaryFormat
+    private var equalityFields: [AnyHashable] {
+        [identifier, actions, intentIdentifiers, options.rawValue, hiddenPreviewsBodyPlaceholder, categorySummaryFormat]
     }
 
+    open override func isEqual(_ object: Any?) -> Bool { sameFields(self, object) { $0.equalityFields } }
+
     open override var hash: Int {
-        var hasher = Hasher()
-        hasher.combine(identifier)
-        hasher.combine(actions)
-        hasher.combine(intentIdentifiers)
-        hasher.combine(options.rawValue)
-        return hasher.finalize()
+        hashFields(equalityFields)
     }
 }
 
@@ -1158,4 +1122,21 @@ enum NotificationCodec {
         }
         return safe
     }
+}
+
+// MARK: - Equality
+
+// Apple's notification objects are values: one equals another of its class
+// (or a subclass) whose fields are equal, and hashes those fields.
+
+/// Whether `object` is a `T` with the same `fields` as `value`.
+private func sameFields<T>(_ value: T, _ object: Any?, _ fields: (T) -> [AnyHashable]) -> Bool {
+    guard let other = object as? T else { return false }
+    return fields(value) == fields(other)
+}
+
+private func hashFields(_ fields: [AnyHashable]) -> Int {
+    var hasher = Hasher()
+    for field in fields { hasher.combine(field) }
+    return hasher.finalize()
 }

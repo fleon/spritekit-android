@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import UIKit
-#endif
 
 /// A game's Game Center: signs the player in at launch, reports
 /// achievements, sends scores and opens the dashboard and leaderboards. It
