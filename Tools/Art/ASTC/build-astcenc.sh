@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 #
-# Builds Arm's ASTC encoder, which xcassets-art.js compresses the runtime's
-# packed pages with. Homebrew has no formula for it, so this fetches the
+# Builds Arm's ASTC encoder, which compress.js compresses the runtime's
+# packed pages with; compress.js runs this itself the first time a checkout
+# needs the encoder. Homebrew has no formula for it, so this fetches the
 # pinned release's source, checks its hash and builds the host's binary into
 # Tools/Art/ASTC/out/astcenc (src/ and out/ are gitignored).
 #
 #   Tools/Art/ASTC/build-astcenc.sh
 #
-# Needs cmake and a C++ compiler (Xcode's command line tools).
+# Needs cmake, ninja and a C++ compiler (Xcode's command line tools).
 set -euo pipefail
+
+for tool in cmake ninja c++; do
+    if ! command -v "$tool" >/dev/null; then
+        echo "build-astcenc.sh: needs $tool (brew install cmake ninja; xcode-select --install for c++)" >&2
+        exit 1
+    fi
+done
 
 VERSION="5.7.1"
 SHA256="37ff3928c4c156fb3ac0d1adb5df144ff9c5cdbc8a8e1ffeb20229cc7f35c767"
