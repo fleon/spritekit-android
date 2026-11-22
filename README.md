@@ -955,7 +955,8 @@ through `SKRenderer` and pinned in host tests:
   definitions show their first texture, and automapping keeps a group's
   centre rule.
 - **Paths and contexts:** checked against CoreGraphics' own API, every blend
-  mode included.
+  mode included; `setLineDash(phase:lengths:)` strokes in dashes as
+  CoreGraphics does, the pattern scaled with the context (`LineDashTests`).
 - **Core Image:** `CILinearGradient` and `CIRadialGradient` mix
   premultiplied colour in linear light and encode sRGB as written (black to
   white is 188 half way); pixels take their centre's colour; a fractional
@@ -967,12 +968,11 @@ through `SKRenderer` and pinned in host tests:
   Core Image keeps the fraction.
 - **Effect node blur:** an `SKEffectNode`'s `CIGaussianBlur` blurs by a
   sigma of half its radius in points at every scale (2x Mac, 3x iPhone),
-  still a Gaussian at radius 100, unclipped: the texture reaches three sigmas past the contents, while
-  `calculateAccumulatedFrame()` stays the contents' frame. Premultiplied
-  colour mixes as stored, and the picture is the same rasterized or not
-  (`EffectBlurTests`). Any other filter is kept, not drawn.
-  mode included; `setLineDash(phase:lengths:)` strokes in dashes as
-  CoreGraphics does, the pattern scaled with the context (`LineDashTests`).
+  still a Gaussian at radius 100, unclipped: the texture reaches three
+  sigmas past the contents, while `calculateAccumulatedFrame()` stays the
+  contents' frame. Premultiplied colour mixes as stored, and the picture is
+  the same rasterized or not (`EffectBlurTests`). Any other filter is kept,
+  not drawn.
 
 A change to the shim's behaviour comes with a test of this kind.
 
