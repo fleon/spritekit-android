@@ -74,7 +74,15 @@ use_swiftly() {
 }
 
 SWIFT_SDK="swift-6.4.2-RELEASE_android"
+# SwiftPM keeps installed SDKs in ~/.swiftpm on a Mac and under the XDG config
+# folder on Linux.
 SWIFT_SDK_BUNDLE="$HOME/.swiftpm/swift-sdks/$SWIFT_SDK.artifactbundle"
+for sdks in "$HOME/.swiftpm/swift-sdks" "${XDG_CONFIG_HOME:-$HOME/.config}/swiftpm/swift-sdks"; do
+    if [ -d "$sdks/$SWIFT_SDK.artifactbundle" ]; then
+        SWIFT_SDK_BUNDLE="$sdks/$SWIFT_SDK.artifactbundle"
+        break
+    fi
+done
 
 # Where the Swift runtime .so files for an ABI live inside the SDK bundle.
 swift_sdk_lib_dir() {

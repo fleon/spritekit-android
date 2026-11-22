@@ -40,6 +40,7 @@ runs:
         # Links the SDK's sysroot to the NDK's (where SwiftPM keeps SDKs
         # differs by host).
         setup="$(find "$HOME" -path "*/swift-sdks/swift-${{ inputs.swift-version }}-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh" | head -1)"
+        echo "Swift SDK at ${setup%/swift-android/scripts/*}"
         ANDROID_NDK_HOME="$ANDROID_NDK_HOME" "$setup"
     - uses: actions/cache@v4
       with:

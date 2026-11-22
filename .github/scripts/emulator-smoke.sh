@@ -25,8 +25,8 @@ for ((i = 1; i <= seconds; i++)); do
         shown="$i"
         break
     fi
-    if adb logcat -d | grep -qE "FATAL EXCEPTION|Fatal signal"; then
-        echo "the app crashed" >&2
+    if adb logcat -d | grep -qE "FATAL EXCEPTION|Fatal signal|Couldn't load library"; then
+        echo "the app crashed, or its native library didn't load" >&2
         break
     fi
     sleep 1
