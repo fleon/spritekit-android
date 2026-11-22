@@ -142,7 +142,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PlatformCoreTests",
-            dependencies: ["PlatformCore"],
+            dependencies: ["PlatformCore", "Macros"],
             swiftSettings: settings
         ),
         // Sound effects and the soundtrack: one manager over
@@ -260,6 +260,7 @@ let package = Package(
             name: "PlatformSpriteTests",
             dependencies: [
                 "PlatformSprite",
+                "Macros",
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
