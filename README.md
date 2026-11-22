@@ -648,6 +648,14 @@ display members (`displayChoices`, `observeDisplayChoices`, `isMeasured`,
 `setRunning`, `noteAutoChosen`, `pinnedRenderScale`) from
 `DisplaySettings`, so it needn't write them.
 
+`StatusBarSetting` is the settings' status bar switch: `isVisible`, saved
+on the device under `settings.statusBarVisible` (the key, the default of
+hidden and a save hook for syncing are its `Configuration`'s), posting
+`didChange`. On Apple the game's view controller answers
+`prefersStatusBarHidden` with `StatusBarSetting.isHidden` and calls
+`StatusBarSetting.follow(self)` once; on Android
+`.toolkit(..., statusBar: true)` shows and hides the bar as it changes.
+
 ### Spine rigs (`PlatformRigs`)
 
 A port of spine-core 4.2's runtime, played and drawn in SpriteKit. Use of
