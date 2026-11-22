@@ -56,6 +56,33 @@ swift_triple() {
     esac
 }
 
+# SDL and the text stack (FreeType, HarfBuzz) for an ABI, built the first
+# time a checkout needs them: both live in the gitignored Vendor/, so every
+# fresh clone and worktree starts without them. The builds' output goes to
+# stderr, so a script's stdout stays its own.
+# For a game's build, SDL also counts as missing when it isn't staged into
+# the game's jniLibs (a cleaned App), which build-sdl.sh redoes
+# incrementally; `--unstaged` (the runtime's own checks, with no game) asks
+# for the build alone.
+ensure_sdl() { # abi [--unstaged]
+    local abi="$1"
+    if [ -d "$VENDOR_DIR/sdl3/$abi/include" ]; then
+        [ "${2:-}" = --unstaged ] || [ -f "$JNI_LIBS/$abi/libSDL3.so" ] && return 0
+    fi
+    echo "==> no SDL for $abi in this checkout or the game: building it (Scripts/build-sdl.sh $abi)" >&2
+    "$RUNTIME_DIR/Scripts/build-sdl.sh" "$abi" >&2
+    [ -d "$VENDOR_DIR/sdl3/$abi/include" ] || { echo "building SDL for $abi failed: see its output above" >&2; exit 1; }
+}
+
+ensure_text() { # abi
+    local abi="$1" prefix
+    prefix="$VENDOR_DIR/out/$(vendor_triple "$abi")"
+    [ -d "$prefix/lib/pkgconfig" ] && return 0
+    echo "==> no FreeType/HarfBuzz for $abi in this checkout: building them (Vendor/build.sh $abi)" >&2
+    "$VENDOR_DIR/build.sh" "$abi" >&2
+    [ -d "$prefix/lib/pkgconfig" ] || { echo "building FreeType/HarfBuzz for $abi failed: see its output above" >&2; exit 1; }
+}
+
 require_ndk() {
     : "${ANDROID_NDK_HOME:=$HOME/Library/Android/android-ndk-r30}"
     if [ ! -d "$ANDROID_NDK_HOME" ]; then

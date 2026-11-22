@@ -8,7 +8,7 @@
 #   Scripts/check-android.sh             # arm64-v8a
 #   Scripts/check-android.sh x86_64
 #
-# Needs Vendor/build.sh android and Scripts/build-sdl.sh for the ABI first.
+# Builds SDL and FreeType/HarfBuzz for the ABI first if the checkout has none.
 
 . "$(dirname "$0")/config.sh"
 require_ndk
@@ -18,8 +18,8 @@ abi="${1:-arm64-v8a}"
 triple="$(swift_triple "$abi")"
 sdl="$VENDOR_DIR/sdl3/$abi"
 text="$VENDOR_DIR/out/$(vendor_triple "$abi")"
-[ -d "$sdl/include" ] || { echo "no SDL for $abi — run Scripts/build-sdl.sh $abi first" >&2; exit 1; }
-[ -d "$text/lib/pkgconfig" ] || { echo "no FreeType/HarfBuzz for $abi — run Vendor/build.sh android first" >&2; exit 1; }
+ensure_sdl "$abi" --unstaged
+ensure_text "$abi"
 export PKG_CONFIG_PATH="$text/lib/pkgconfig"
 
 for package in "$RUNTIME_DIR" "$RUNTIME_DIR/Modules" "$RUNTIME_DIR/Shell" "$RUNTIME_DIR/Platform"; do

@@ -5,9 +5,10 @@
 # config.sh and stage it, with exactly the runtime libraries it needs, into
 # the game's Gradle project's jniLibs.
 #
-# Needs Scripts/build-sdl.sh to have run first: the shell compiles against
-# SDL's headers and links its .so, and Vendor/build.sh android, because the
-# renderer links the text stack for the glyph atlas.
+# The shell compiles against SDL's headers and links its .so, and the
+# renderer links the text stack (FreeType, HarfBuzz) for the glyph atlas: a
+# checkout without them builds them first (Scripts/build-sdl.sh,
+# Vendor/build.sh), for just the ABIs asked for.
 #
 #   Scripts/build-shell.sh --debug          # both ABIs, unoptimised: checks, emulator runs, pre-merge
 #   Scripts/build-shell.sh                  # both ABIs, optimised, with DEBUG: frame-time measurements
@@ -48,20 +49,14 @@ done
 for abi in "${targets[@]}"; do
     triple="$(swift_triple "$abi")"
     prefix="$VENDOR_DIR/sdl3/$abi"
-    if [ ! -d "$prefix/include" ]; then
-        echo "no SDL for $abi — run Scripts/build-sdl.sh first" >&2
-        exit 1
-    fi
+    ensure_sdl "$abi"
 
     # FreeType and HarfBuzz, found through pkg-config exactly as Text/ finds
     # them. Without this the shell fails to resolve CTextShaping and
     # says so in a way that reads like a missing module rather than a missing
     # build step.
     text_prefix="$VENDOR_DIR/out/$(vendor_triple "$abi")"
-    if [ ! -d "$text_prefix/lib/pkgconfig" ]; then
-        echo "no FreeType/HarfBuzz for $abi — run Vendor/build.sh android first" >&2
-        exit 1
-    fi
+    ensure_text "$abi"
     export PKG_CONFIG_PATH="$text_prefix/lib/pkgconfig"
 
     echo "==> building AndroidShell for $abi ($triple, $CONFIG$([ "$DEBUG_DEFINE" = 1 ] && [ "$CONFIG" = release ] && echo ", DEBUG"))"
