@@ -278,6 +278,15 @@ let package = Package(
             dependencies: ["PlatformStore"],
             swiftSettings: settings
         ),
+        // Expanded by the compiler, under the games' settings.
+        .testTarget(
+            name: "MacrosUsageTests",
+            dependencies: [
+                "Macros",
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
         .testTarget(
             name: "MacrosTests",
             dependencies: [
