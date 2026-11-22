@@ -308,6 +308,28 @@ final class BitmapContextTests: XCTestCase {
         assertNear(Int(pixel(image, 39, 20).a), 0, accuracy: 8, "clear at the rim")
     }
 
+    func testARadialGradientFollowsAStretchingTransform() throws {
+        // Squashed to half its height, the circle is an ellipse twice as
+        // wide as it is tall, as CoreGraphics draws it.
+        let context = BitmapContext(width: 40, height: 40)
+        let gradient = try XCTUnwrap(Gradient(
+            colours: [.white, SKColor(white: 1, alpha: 0)], locations: [0, 1]
+        ))
+        context.translateBy(x: 20, y: 20)
+        context.scaleBy(x: 1, y: 0.5)
+        context.drawRadialGradient(
+            gradient,
+            startCenter: .zero, startRadius: 0,
+            endCenter: .zero, endRadius: 20,
+            options: []
+        )
+
+        let image = try XCTUnwrap(context.makeImage())
+        assertNear(Int(pixel(image, 30, 20).a), 128, accuracy: 16, "half way out across")
+        assertNear(Int(pixel(image, 20, 25).a), 128, accuracy: 16, "half way out down, at half the distance")
+        XCTAssertEqual(pixel(image, 20, 32).a, 0, "beyond the ellipse's height")
+    }
+
     func testAGradientIsCutByTheClip() throws {
         let context = BitmapContext(width: 20, height: 20)
         context.clip(to: CGRect(x: 0, y: 0, width: 10, height: 20))

@@ -1,10 +1,6 @@
 import Foundation
 import PlatformCore
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 extension SKNode {
     private static let hidesFocusKey = "scene_controls.hides_focus"

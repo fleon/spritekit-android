@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import CoreGraphics
-#endif
 @testable import PlatformRigs
 
 /// A small synthetic skeleton (Fixtures/RigTest.json) that exercises every

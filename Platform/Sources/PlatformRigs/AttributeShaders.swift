@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// SpriteKit keeps each attribute's values in one buffer per shader, at each
 /// node's place among all the vertices a frame draws, and grows it when a

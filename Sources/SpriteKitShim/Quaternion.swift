@@ -1,3 +1,4 @@
+#if SPRITEKIT_SHIM
 import Foundation
 
 /// simd's `simd_quatf`, as much as a tumbling object needs of one: an
@@ -55,4 +56,6 @@ public typealias simd_quatf = Quaternion
 public func simd_normalize(_ q: Quaternion) -> Quaternion { q.normalized }
 public func simd_mul(_ a: Quaternion, _ b: Quaternion) -> Quaternion { a * b }
 public func simd_act(_ q: Quaternion, _ v: SIMD3<Float>) -> SIMD3<Float> { q.act(v) }
+#endif
+
 #endif

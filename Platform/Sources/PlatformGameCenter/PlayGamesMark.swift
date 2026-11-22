@@ -1,11 +1,6 @@
 import Foundation
 import PlatformSprite
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Google Play Games' mark, a play triangle holding a gamepad, for a game's
 /// Game Center button where the service behind it is Play Games (Android).

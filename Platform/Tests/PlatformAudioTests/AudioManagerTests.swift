@@ -318,3 +318,32 @@ private extension RecordingAudioBackend.Call {
         if case let .music(_, _, volume, _) = self { volume } else { nil }
     }
 }
+
+@MainActor
+@Suite(.serialized)
+struct ShortcutTests {
+    @Test func shortcutsPlayOnTheSharedManagerWhileTheirSettingIsOn() {
+        let store = MemorySettings()
+        let backend = RecordingAudioBackend()
+        AudioManager.configure(AudioConfiguration(sounds: AudioConfiguration.sounds(Sound.self), settings: store.settings))
+        AudioManager.shared.use(backend)
+        backend.clear()
+
+        playSound(Sound.tap)
+        playSound("Step")
+        playMusic(Track.menu)
+        #expect(backend.calls.contains(.sound(name: "Tap", rate: 1)))
+        #expect(backend.calls.contains(.sound(name: "Step", rate: 1)))
+        #expect(backend.track == "Menu")
+
+        backend.clear()
+        AudioManager.isSoundEnabled = false
+        #expect(playSound(Sound.tap) == nil)
+        #expect(!backend.calls.contains { if case .sound = $0 { true } else { false } })
+        stopMusic()
+        #expect(backend.track == nil)
+
+        AudioManager.shared.use(NullAudioBackend())
+        AudioManager.configure(AudioConfiguration(sounds: [], settings: .init(read: { _ in nil }, write: { _, _ in })))
+    }
+}
