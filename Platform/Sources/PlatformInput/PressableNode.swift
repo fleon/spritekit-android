@@ -153,6 +153,9 @@ open class PressableNode: SKNode, Focusable {
     public var onFocus: (() -> Void)?
     /// How far a touch may stray off `hitFrame` and still count.
     public var touchSlop = PressableNode.configuration.touchSlop
+    /// How long `flashPress()` shows the press on this control; nil takes
+    /// `PressConfiguration.flashDuration`.
+    public var flashDuration: TimeInterval?
     /// Whether it fires as the touch lifts (the default) or as it lands.
     public var trigger: PressTracker.Trigger {
         get { tracker.trigger }
@@ -328,13 +331,14 @@ open class PressableNode: SKNode, Focusable {
         perform(source)
     }
 
-    /// Shows a press and lets it go, without a touch (a key, a demo).
-    public func flashPress() {
+    /// Shows a press and lets it go, without a touch (a key, a demo), for
+    /// `flashDuration`. A subclass may flash its own way.
+    open func flashPress() {
         TouchOrigin.record(self)
         removeAction(forKey: ActionKey.flash)
         showPressed(true)
         run(.sequence([
-            .wait(forDuration: Self.configuration.flashDuration),
+            .wait(forDuration: flashDuration ?? Self.configuration.flashDuration),
             .run { [weak self] in
                 guard let self, !tracker.isPressed else { return }
                 showPressed(false)

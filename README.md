@@ -632,7 +632,9 @@ follows one touch from down to up (pressed while the finger is on its
 lifts on it, or as it lands with `trigger = .touchDown`), ignores a second
 finger, drops a cancelled touch, takes no press or focus while disabled
 (still swallowing its touches), and is `Focusable`: the remote's click, a
-gamepad's A or a key fire it through `activate`, with the press flashed.
+gamepad's A or a key fire it through `activate`, with the press flashed
+(`flashPress()`, for the control's `flashDuration` or the configuration's;
+a subclass may override it).
 Its look is the subclass's: by default a press shrinks `pressScaleNode`, a
 disabled control fades and focus fades `focusRing`, and `showPressed`,
 `showEnabled` and `showFocused` replace those. Firing runs `onTap`, or a

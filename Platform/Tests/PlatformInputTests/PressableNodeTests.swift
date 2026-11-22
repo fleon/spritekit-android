@@ -270,6 +270,36 @@ struct PressableNodeTests {
         #expect(control.knob.action(forKey: "pressable.press") != nil)
         #expect(control.action(forKey: "pressable.press") == nil)
     }
+
+    @Test func aFlashLastsTheControlsDurationOrTheConfigurations() {
+        let control = Square()
+        control.flashPress()
+        #expect(control.flashDuration == nil)
+        #expect(control.action(forKey: "pressable.flash")?.duration == PressableNode.configuration.flashDuration)
+        #expect(control.shown == [true])
+
+        control.flashDuration = 0.5
+        control.flashPress()
+        #expect(control.action(forKey: "pressable.flash")?.duration == 0.5)
+    }
+
+    @Test func aSubclassFlashesItsOwnWay() {
+        final class Flashing: PressableNode {
+            var flashes = 0
+            override init() {
+                super.init()
+                addChild(SKSpriteNode(color: .red, size: sz(40, 40)))
+            }
+            required init?(coder aDecoder: NSCoder) { fatalError() }
+            override func flashPress() { flashes += 1 }
+        }
+        let control = Flashing()
+        var taps = 0
+        control.onTap = { taps += 1 }
+        #expect(control.activate())
+        #expect(control.flashes == 1 && taps == 1)
+        #expect(control.action(forKey: "pressable.flash") == nil)
+    }
 }
 
 // MARK: A scene that hands out touches itself
