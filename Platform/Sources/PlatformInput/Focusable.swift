@@ -91,4 +91,9 @@ extension SKNode {
         }
         run(.sequence([fade, pulse]), withKey: key)
     }
+
+    /// `fadeFocusRing(_:withKey:)` by `key`'s raw value.
+    public func fadeFocusRing<Key: RawRepresentable>(_ focused: Bool, withKey key: Key) where Key.RawValue == String {
+        fadeFocusRing(focused, withKey: key.rawValue)
+    }
 }
