@@ -90,7 +90,7 @@ public final class PlayBilling: BillingBackend {
     private var changed: (() -> Void)?
     private var acknowledging: Set<String> = []
     /// Purchases under way, by product.
-    private var purchases: [String: SharedCall<BillingResult>] = [:]
+    private var buying: [String: SharedCall<BillingResult>] = [:]
     private let restores = SharedCall<Bool>(ifAbandoned: false)
     /// Purchases Play said were already owned: the next query settles them.
     private var awaitingOwned: Set<String> = []
@@ -192,8 +192,8 @@ public final class PlayBilling: BillingBackend {
     @MainActor
     public func purchase(_ productID: String) async -> BillingResult {
         if ownedProducts.contains(productID) { return .purchased }
-        let purchase = purchases[productID] ?? SharedCall(ifAbandoned: .failed)
-        purchases[productID] = purchase
+        let purchase = buying[productID] ?? SharedCall(ifAbandoned: .failed)
+        buying[productID] = purchase
         return await purchase.join { channel.call("billing.purchase", ["productId": productID]) }
     }
 
@@ -296,7 +296,7 @@ public final class PlayBilling: BillingBackend {
         case "owned":
             // Bought already (on another device, or before a reinstall):
             // the query decides, and the game grants it if it is so.
-            awaitingOwned.formUnion(product.map { [$0] } ?? Array(purchases.keys))
+            awaitingOwned.formUnion(product.map { [$0] } ?? Array(buying.keys))
             channel.call("billing.restore")
         default:
             finish(product, .failed)
@@ -392,11 +392,11 @@ public final class PlayBilling: BillingBackend {
     }
 
     private func finishPurchases(of product: String, _ result: BillingResult) {
-        purchases.removeValue(forKey: product)?.finish(result)
+        buying.removeValue(forKey: product)?.finish(result)
     }
 
     private func finishPurchases(_ result: BillingResult) {
-        for product in Array(purchases.keys) { finishPurchases(of: product, result) }
+        for product in Array(buying.keys) { finishPurchases(of: product, result) }
     }
 
     private func finishRestores(owning: Bool) {
