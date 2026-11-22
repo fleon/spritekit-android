@@ -112,7 +112,8 @@ struct LabelBuilderTests {
         #expect(made.verticalAlignmentMode == .center)
         #expect(made.position == pt(3, 4))
         #expect(aligned.textNode.verticalAlignmentMode == .baseline)
-        #expect(aligned.textNode.position == pt(0, -metrics.capHeight / 2))
+        // Its node SpriteKit's padding below the baseline it draws on.
+        #expect(aligned.textNode.position == pt(0, -metrics.capHeight / 2 - SKLabelNode.baselinePadding))
         #expect(made.zPosition == 2)
         #expect(made.alpha == 0.5)
         #expect(made.name == "greeting")

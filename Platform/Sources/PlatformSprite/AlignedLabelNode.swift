@@ -10,8 +10,9 @@ import SpriteKitShim
 /// `label(... .vAlign(.center))` makes one.
 ///
 /// Its text draws in a child label set on its baseline, offset by the
-/// font's metrics (`TextBand`), so SpriteKit's `.center`, `.top` and
-/// `.bottom`, which align the string's ink, are never used:
+/// font's metrics (`TextBand`) and SpriteKit's `baselinePadding`, so
+/// SpriteKit's `.center`, `.top` and `.bottom`, which align the string's
+/// ink, are never used:
 /// `verticalAlignmentMode` here names the band's alignment, and `.baseline`
 /// sets the baseline at `position`. The text's properties (`text`,
 /// `fontName`, `fontSize`, `fontColor`, `color`, `colorBlendFactor`, …)
@@ -137,9 +138,10 @@ public final class AlignedLabelNode: SKLabelNode {
         return textNode.frame.applying(transform)
     }
 
-    /// Sets the text's baseline so the band sits `alignment` at the origin.
+    /// Sets the text's baseline so the band sits `alignment` at the origin,
+    /// the child taking off SpriteKit's `baselinePadding`.
     private func realign() {
         let metrics = FontBandMetrics(fontNamed: textNode.fontName, size: textNode.fontSize)
-        textNode.position = pt(0, metrics.baseline(alignment, at: 0, band: band ?? Typography.textBand()))
+        textNode.position = pt(0, metrics.labelY(alignment, at: 0, band: band ?? Typography.textBand()) * textNode.yScale)
     }
 }
