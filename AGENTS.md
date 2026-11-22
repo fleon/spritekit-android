@@ -350,3 +350,8 @@ would want.
   is refused, ask once.
 - Stacked branches are rebased onto their parent, never merged into it; force
   push only with `--force-with-lease=<branch>:<old sha>`.
+- Claude reviews a pull request once it's ready (`.github/workflows/
+  claude-review.yml`): a game calls that workflow from its own
+  `.github/workflows/claude-review.yml` (`Templates/Workflows`), never a
+  copy, with `CLAUDE_CODE_OAUTH_TOKEN` as an Actions secret. Its comments
+  are advisory; answer each one, by a fix or a reply.
