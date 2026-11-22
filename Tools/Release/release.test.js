@@ -24,7 +24,7 @@ test('the project: the app target is the last value; a bump leaves other targets
   assert.match(bumped, /MARKETING_VERSION = 1\.0;/);
 });
 
-test('the minor goes up with as many parts as the version has', () => {
+test('the minor goes up to x.(y+1).0, written without its patch of 0', () => {
   assert.strictEqual(lib.bumpMinor('1.7'), '1.8');
   assert.strictEqual(lib.bumpMinor('1.4.1'), '1.5');
   assert.strictEqual(lib.bumpMinor('1.5.0'), '1.6');
