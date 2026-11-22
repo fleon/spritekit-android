@@ -57,6 +57,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     private var cropCompositeProgram: GLuint = 0
     /// A shape as a crop's mask: its coverage, cut at half.
     private var shapeMaskProgram: GLuint = 0
+    /// One pass of an effect node's Gaussian blur (`EffectBlur`).
+    private var blurProgram: GLuint = 0
 
     private let glyphPages = GlyphPages(atlas: TextEngine.shared.atlas)
     /// The atlas's colour pages (emoji), RGBA.
@@ -484,6 +486,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         )
         if shapeMaskProgram == 0 { Log.error("the shape mask program did not link") }
 
+        blurProgram = device.createProgram(
+            vertex: ShaderTranslator.spriteVertexShader(),
+            fragment: ShaderTranslator.blurFragmentShader
+        )
+        if blurProgram == 0 { Log.error("the effect blur program did not link") }
+
         // The art is premultiplied, so this is the blend for it.
         setBlend(.alpha)
         glDisable(GLenum(GL_DEPTH_TEST))
@@ -595,6 +603,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         if maskProgram != 0 { device.deleteProgram(maskProgram) }
         if cropCompositeProgram != 0 { device.deleteProgram(cropCompositeProgram) }
         if shapeMaskProgram != 0 { device.deleteProgram(shapeMaskProgram) }
+        if blurProgram != 0 { device.deleteProgram(blurProgram) }
         if alongSamplerName != 0 { glDeleteSamplers(1, &alongSamplerName) }
         alongSamplerName = 0
         // A new context relinks every program, and GL reuses names, so a
@@ -833,11 +842,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 for batch in batches { draw(batch, projection: projection, time: time) }
 
             case let .effect(bounds, transform, shader, alpha, blendMode,
-                             rasterize, owner, generation, digest, contents):
+                             rasterize, owner, generation, digest, contents, blur):
                 drawEffect(
                     bounds: bounds, transform: transform, shader: shader, alpha: alpha,
                     blendMode: blendMode, rasterize: rasterize, owner: owner,
-                    generation: generation, digest: digest, contents: contents,
+                    generation: generation, digest: digest, contents: contents, blur: blur,
                     projection: projection, time: time
                 )
 
@@ -890,14 +899,15 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         generation: UInt64,
         digest: UInt64,
         contents: [SpriteBatcher.Pass],
+        blur: CGFloat,
         projection: [Float],
         time: Float
     ) {
-        // An effect node that neither shades nor caches nor fades composites
-        // to exactly what drawing its children in place does, so it costs
-        // nothing. This is the common case: a game may wrap a whole layer in
-        // one and only turn its shader on now and then.
-        guard shader != nil || rasterize || alpha < 0.999 else {
+        // An effect node that neither shades, caches, fades nor blurs
+        // composites to exactly what drawing its children in place does, so
+        // it costs nothing. This is the common case: a game may wrap a whole
+        // layer in one and only turn its shader on now and then.
+        guard shader != nil || rasterize || alpha < 0.999 || blur > 0 else {
             // The contents are in the effect node's own space (`DrawList`),
             // so they are carried by its transform, as the composite would.
             draw(contents, projection: Self.concatenate(projection, transform), time: time)
@@ -908,7 +918,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
         // target need it again after all.
         let contents = contents.isEmpty && skippedRaster.contains(owner) ? rasterContents[owner] ?? [] : contents
 
-        if drawingScreen, blursBandsOnly, !rasterize, let shader, drawBandBlur(
+        if drawingScreen, blursBandsOnly, !rasterize, blur == 0, let shader, drawBandBlur(
             bounds: bounds, transform: transform, shader: shader, alpha: alpha, blendMode: blendMode,
             contents: contents, projection: projection, time: time
         ) {
@@ -982,6 +992,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             clearOffscreen(stencil: stencil)
             let deferredBefore = cache.deferredPages
             draw(contents, projection: texture.projection, time: time)
+            if blur > 0 { self.blur(handle, texture: texture, sigma: blur) }
             // A page left out while it decodes: the kept pixels lack it, so
             // they are drawn again rather than kept.
             if rasterize, cache.deferredPages != deferredBefore { targets.markStale(.init(owner: owner)) }
@@ -1004,6 +1015,56 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             bounds: bounds, transform: transform, alpha: alpha, shader: shader, blendMode: blendMode
         )
         draw(quad, projection: projection, time: time, fragSpace: space, texture: handle.texture)
+    }
+
+    /// An effect node's `CIGaussianBlur` (`EffectBlur`), over the pixels just
+    /// drawn into `handle`, which then composites (or is kept) blurred:
+    /// across into a target lent for it, then up back. A wide blur first
+    /// halves the picture into lent targets, blurs the smallest, and
+    /// stretches it back into `handle`. `sigma` is in the node's points, so
+    /// the blur spreads as far in points at every density, as SpriteKit's
+    /// does.
+    private func blur(_ handle: RenderTargetHandle, texture: EffectTexture, sigma: CGFloat) {
+        guard blurProgram != 0, defaultProgram != 0, let kernel = EffectBlur(sigma: Double(sigma * texture.density)) else { return }
+        let quad = compositeQuad(bounds: texture.bounds, transform: .identity, alpha: 1, shader: nil, blendMode: .replace)
+        let pairs = kernel.packedPairs
+        // Every target here shows the texture's bounds whole, whatever its
+        // size, so one quad and one projection draw into each.
+        func bind(_ destination: RenderTargetHandle) {
+            target = Target(
+                framebuffer: destination.framebuffer,
+                widthInPixels: destination.width,
+                heightInPixels: destination.height,
+                visible: texture.bounds,
+                fragSpace: texture.contentsSpace
+            )
+            bindTarget()
+        }
+        func copy(_ source: RenderTargetHandle, into destination: RenderTargetHandle) {
+            bind(destination)
+            draw(quad, projection: texture.projection, time: 0, texture: source.texture)
+        }
+        func pass(from source: RenderTargetHandle, into destination: RenderTargetHandle, step: SIMD2<Float>) {
+            bind(destination)
+            useProgram(blurProgram)
+            glUniform2f(uniformLocation(blurProgram, "u_blur_step"), step.x, step.y)
+            glUniform1f(uniformLocation(blurProgram, "u_blur_centre"), kernel.centre)
+            glUniform1i(uniformLocation(blurProgram, "u_blur_count"), GLint(kernel.pairs.count))
+            pairs.withUnsafeBufferPointer {
+                glUniform4fv(uniformLocation(blurProgram, "u_blur_pairs[0]"), GLsizei(pairs.count / 4), $0.baseAddress)
+            }
+            draw(quad, projection: texture.projection, time: 0, overrideProgram: blurProgram, texture: source.texture)
+        }
+        var picture = handle
+        for size in kernel.halvings(width: handle.width, height: handle.height) {
+            guard let half = targets.transient(width: size.width, height: size.height, stencil: false) else { return }
+            copy(picture, into: half)
+            picture = half
+        }
+        guard let across = targets.transient(width: picture.width, height: picture.height, stencil: false) else { return }
+        pass(from: picture, into: across, step: SIMD2(1 / Float(picture.width), 0))
+        pass(from: across, into: picture, step: SIMD2(0, 1 / Float(picture.height)))
+        if picture != handle { copy(picture, into: handle) }
     }
 
     /// `SKCropNode`: the mask into the stencil, then the contents where it
@@ -1224,7 +1285,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     }
                     draw(batch, projection: projection, time: time, overrideProgram: maskProgram)
                 }
-            case let .effect(_, _, _, _, _, _, _, _, _, contents):
+            case let .effect(_, _, _, _, _, _, _, _, _, contents, _):
                 drawMask(contents, projection: projection, time: time)
             case let .crop(_, _, contents):
                 drawMask(contents, projection: projection, time: time)
@@ -1807,8 +1868,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             switch pass {
             case .crop:
                 return false
-            case let .effect(_, _, shader, alpha, _, rasterize, _, _, _, contents):
-                if !rasterize, shader != nil || alpha < 0.999 { return false }
+            case let .effect(_, _, shader, alpha, _, rasterize, _, _, _, contents, blur):
+                if !rasterize, shader != nil || alpha < 0.999 || blur > 0 { return false }
                 if !rasterize, !drawsAnywhere(contents) { return false }
             case .batches, .label, .shape, .coverage:
                 continue
@@ -2176,11 +2237,11 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
             switch pass {
             case .batches, .coverage:
                 return pass
-            case let .effect(bounds, transform, shader, alpha, blendMode, rasterize, owner, generation, digest, contents):
+            case let .effect(bounds, transform, shader, alpha, blendMode, rasterize, owner, generation, digest, contents, blur):
                 return .effect(
                     bounds: bounds, transform: transform, shader: shader, alpha: alpha, blendMode: blendMode,
                     rasterize: rasterize, owner: owner, generation: generation, digest: digest,
-                    contents: resolveCoverage(contents)
+                    contents: resolveCoverage(contents), blur: blur
                 )
             case let .crop(transform, mask, contents):
                 return .crop(transform: transform, mask: resolveCoverage(mask), contents: resolveCoverage(contents))
@@ -2235,7 +2296,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     vertexBytes += batch.vertices.count * MemoryLayout<Float>.size
                     indexCount += batch.indices.count
                 }
-            case let .effect(bounds, _, _, _, _, _, _, _, _, contents):
+            case let .effect(bounds, _, _, _, _, _, _, _, _, contents, _):
                 measure(contents, vertexBytes: &vertexBytes, indexCount: &indexCount)
                 if bounds.width > 0, bounds.height > 0 {
                     vertexBytes += 4 * Self.vertexStride
@@ -2264,7 +2325,7 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                     batches[index].streamFirstVertex = writer.lastFirstVertex
                 }
                 return .batches(batches)
-            case let .effect(bounds, transform, shader, alpha, blendMode, rasterize, owner, generation, digest, contents):
+            case let .effect(bounds, transform, shader, alpha, blendMode, rasterize, owner, generation, digest, contents, blur):
                 if rasterize, !(contents.isEmpty && skippedRaster.contains(owner)) { rasterContents[owner] = contents }
                 let staged = write(contents, into: &writer)
                 if bounds.width > 0, bounds.height > 0 {
@@ -2277,7 +2338,8 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
                 }
                 return .effect(
                     bounds: bounds, transform: transform, shader: shader, alpha: alpha, blendMode: blendMode,
-                    rasterize: rasterize, owner: owner, generation: generation, digest: digest, contents: staged
+                    rasterize: rasterize, owner: owner, generation: generation, digest: digest, contents: staged,
+                    blur: blur
                 )
             case let .crop(transform, mask, contents):
                 return .crop(transform: transform, mask: write(mask, into: &writer), contents: write(contents, into: &writer))

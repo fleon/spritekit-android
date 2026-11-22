@@ -964,8 +964,13 @@ through `SKRenderer` and pinned in host tests:
   Core Image's own margin (6 each side at sigma 2); an unknown filter name
   gives an empty image (`CoreImageTests`, against Core Image's own output).
   A bitmap cropped off whole pixels keeps every pixel it reaches, where
-  Core Image keeps the fraction. `SKEffectNode.filter` is kept, not yet
-  drawn.
+  Core Image keeps the fraction.
+- **Effect node blur:** an `SKEffectNode`'s `CIGaussianBlur` blurs by a
+  sigma of half its radius in points at every scale (2x Mac, 3x iPhone),
+  still a Gaussian at radius 100, unclipped: the texture reaches three sigmas past the contents, while
+  `calculateAccumulatedFrame()` stays the contents' frame. Premultiplied
+  colour mixes as stored, and the picture is the same rasterized or not
+  (`EffectBlurTests`). Any other filter is kept, not drawn.
   mode included; `setLineDash(phase:lengths:)` strokes in dashes as
   CoreGraphics does, the pattern scaled with the context (`LineDashTests`).
 
@@ -979,7 +984,11 @@ A change to the shim's behaviour comes with a test of this kind.
   from the top left, as Metal's does, so shaders written for SpriteKit land
   the right way up.
 - **Effect and crop nodes** composite through render targets; a draw counts
-  the pixels of the target it lands in, as on Metal. `shouldRasterize` keeps
+  the pixels of the target it lands in, as on Metal. An effect node's
+  Gaussian blur is two passes over its texture (`EffectBlur`), across then
+  up, before it composites or is kept; a blur wider than a pass's 128
+  texels runs over a copy halved as often as it takes, then stretched
+  back, as Core Image does at large radii. `shouldRasterize` keeps
   its pixels until what Apple's SpriteKit redraws for changes: the subtree
   (a digest of transforms and textures), the node's own transform, alpha or
   shader, a write to `shouldRasterize`, or any write to a uniform its shaders

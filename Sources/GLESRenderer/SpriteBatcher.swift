@@ -90,7 +90,11 @@ public struct SpriteBatcher {
             owner: ObjectIdentifier,
             generation: UInt64,
             digest: UInt64,
-            contents: [Pass]
+            contents: [Pass],
+            /// The Gaussian blur the texture is drawn through first, as a
+            /// sigma in the node's own points (0 for none); `bounds` reaches
+            /// as far as it spreads.
+            blur: CGFloat
         )
         /// Draw `contents` clipped to `mask`.
         case crop(transform: CGAffineTransform, mask: [Pass], contents: [Pass])
@@ -132,11 +136,11 @@ public struct SpriteBatcher {
     }
 
     /// Whether an effect node composites to exactly what drawing its
-    /// children in place does: no shader, no cache and no fade. Its
+    /// children in place does: no shader, cache, fade or blur. Its
     /// contents then join the batches around them (`add`), as the renderer
     /// would draw them in place anyway.
     public static func passesThrough(_ effect: DrawList.Effect) -> Bool {
-        effect.shader == nil && !effect.shouldRasterize && effect.alpha >= 0.999
+        effect.shader == nil && !effect.shouldRasterize && effect.alpha >= 0.999 && effect.blurSigma == 0
     }
 
     /// `commands`, carried by `transform`, onto `passes`, merging sprites
@@ -190,7 +194,8 @@ public struct SpriteBatcher {
                     digest: effect.contentsDigest,
                     contents: effect.shouldRasterize && rasterIsFresh?(effect.owner, effect.rasterGeneration, effect.contentsDigest) == true
                         ? []
-                        : self.passes(for: effect.contents, tessellatingShapes: tessellating)
+                        : self.passes(for: effect.contents, tessellatingShapes: tessellating),
+                    blur: effect.blurSigma
                 ))
 
             case let .crop(crop):
@@ -403,7 +408,7 @@ public extension SpriteBatcher.Pass {
     var quadCount: Int {
         switch self {
         case let .batches(batches): return batches.reduce(0) { $0 + $1.quadCount }
-        case let .effect(_, _, _, _, _, _, _, _, _, contents): return contents.reduce(0) { $0 + $1.quadCount }
+        case let .effect(_, _, _, _, _, _, _, _, _, contents, _): return contents.reduce(0) { $0 + $1.quadCount }
         case let .crop(_, _, contents): return contents.reduce(0) { $0 + $1.quadCount }
         case .label, .shape: return 0
         case let .coverage(staged): return staged.parts.reduce(0) { $0 + $1.run.quadCount }
