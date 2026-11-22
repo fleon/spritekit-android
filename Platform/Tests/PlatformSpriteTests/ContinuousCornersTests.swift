@@ -33,8 +33,8 @@ struct ContinuousCornersTests {
         #expect(same(found[0], [CGPoint(x: 146.51285961907357, y: 0), CGPoint(x: 157.51716029684988, y: 0), CGPoint(x: 169.3628178584504, y: 3.745569392350802)]))
         #expect(same(found[1], [CGPoint(x: 187.75710983002548, y: 10.440544150405918), CGPoint(x: 200, y: 27.925203343417653), CGPoint(x: 200, y: 47.5)]))
         // Leaving the short side onto the bottom.
-        #expect(same(found[3], [CGPoint(x: 200, y: 72.07479665658234), CGPoint(x: 187.75710983002548, y: 89.55945584959409), CGPoint(x: 169.3628178584504, y: 96.2544306076492)]))
-        #expect(same(found[4], [CGPoint(x: 157.51716029684988, y: 100), CGPoint(x: 146.51285961907357, y: 100), CGPoint(x: 124.50425826352087, y: 100)]))
+        #expect(same(found[2], [CGPoint(x: 200, y: 72.07479665658234), CGPoint(x: 187.75710983002548, y: 89.55945584959409), CGPoint(x: 169.3628178584504, y: 96.2544306076492)]))
+        #expect(same(found[3], [CGPoint(x: 157.51716029684988, y: 100), CGPoint(x: 146.51285961907357, y: 100), CGPoint(x: 124.50425826352087, y: 100)]))
     }
 
     @Test func aRadiusOfHalfTheSideOrMoreOrASquareIsCircular() {
