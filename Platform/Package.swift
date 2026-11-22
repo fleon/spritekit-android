@@ -220,6 +220,7 @@ let package = Package(
             name: "PlatformSpriteTests",
             dependencies: [
                 "PlatformSprite",
+                "Macros",
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
