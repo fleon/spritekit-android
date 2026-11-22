@@ -78,7 +78,9 @@ would want.
   special-case letters.
 - Use `@NSCodingUnsupported` (from `Macros`) on node subclasses instead of a
   hand-written `init?(coder:)`; `inherit: .size` or `.plain` writes the
-  pass-through `init(size:)` or `init()`.
+  pass-through `init(size:)` or `init()`, and `.requiredPlain` the
+  `required override init()` a subclass of a base with a required `init()`
+  needs.
 - Block observers of `NotificationCenter` go in an `ObserverBag`
   (`PlatformCore`), kept as a property: it removes them when it goes or on
   `removeAll()`, with no token arrays or `deinit` of your own.

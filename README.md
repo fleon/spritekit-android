@@ -61,7 +61,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 | `PlatformDevice` | Haptics, rating prompts at the right moment, play time |
 | `PlatformShare` | The share sheet, pasteboard, the App Store review page, feedback mail |
 | `PlatformRigs` | Spine 4.2 skeletons posed and drawn in SpriteKit (Spine Runtimes License, see below) |
-| `Macros` | `@NSCodingUnsupported` for node subclasses (`inherit:` for pass-through inits); `@LocalizedStrings` for the type-safe strings layer; `@LaunchArgument` for debug switches; `@Stored`, `@Synced` and `@SyncedKeys` for saved values; `@DecodableDefaults` for `Codable` types with defaults; `@Singleton` for a type's one `shared` instance |
+| `Macros` | `@NSCodingUnsupported` for node subclasses (`inherit:` for pass-through inits, `.requiredPlain` where the base's `init()` is required); `@LocalizedStrings` for the type-safe strings layer; `@LaunchArgument` for debug switches; `@Stored`, `@Synced` and `@SyncedKeys` for saved values; `@DecodableDefaults` for `Codable` types with defaults; `@Singleton` for a type's one `shared` instance |
 
 "Shared platform code" below describes each one in detail.
 
