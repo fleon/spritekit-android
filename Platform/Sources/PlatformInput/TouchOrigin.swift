@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Where the player last touched, or the control they last pressed without
 /// a touch (the remote, a gamepad, a keyboard shortcut), in window points.

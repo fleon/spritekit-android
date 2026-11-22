@@ -1,10 +1,6 @@
 import Foundation
 import PlatformCore
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// A control the Apple TV remote, gamepads and the Mac's pointer can rest
 /// on (`SceneControls`); it shows when it has focus, each its own way.

@@ -1,10 +1,6 @@
 import Foundation
 import Macros
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// Draws one of a rig's attachments (a mesh, or a region as its quad) as its
 /// own triangles, in the order Spine draws them.

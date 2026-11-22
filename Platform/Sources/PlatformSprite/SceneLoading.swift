@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// A scene a loading screen builds on a background thread before it shows:
 /// `load()` does what showing it would otherwise start with, laid out for

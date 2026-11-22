@@ -1,11 +1,6 @@
 import Foundation
 import Macros
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Plays a Spine rig (`RigData`, posed by `RigPose`) in SpriteKit: every mesh
 /// draws as its own triangles (`RigMeshNode`), every region too as its quad

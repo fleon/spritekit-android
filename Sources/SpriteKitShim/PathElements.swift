@@ -1,3 +1,4 @@
+#if SPRITEKIT_SHIM
 import Foundation
 
 #if canImport(CoreGraphics) && canImport(Darwin)
@@ -55,3 +56,5 @@ public extension CGPath {
         #endif
     }
 }
+
+#endif

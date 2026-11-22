@@ -1,4 +1,5 @@
 import Foundation
+import PlatformServices
 
 /// What `ICloudKeyValueStore` keeps its values in: iCloud's key-value store
 /// on Apple platforms, or one in memory for a test.
@@ -31,7 +32,7 @@ nonisolated public final class ICloudKeyValueStore: CloudKeyValueStore, @uncheck
 
     private let store: FlatKeyValueStore
     private let layout: Layout
-    private var observer: NSObjectProtocol?
+    private let observers = ObserverBag()
 
     /// Over any store; whoever owns it calls `externalChanges` as news comes.
     public init(store: FlatKeyValueStore, layout: Layout = .records) {
@@ -42,19 +43,11 @@ nonisolated public final class ICloudKeyValueStore: CloudKeyValueStore, @uncheck
     #if !SPRITEKIT_SHIM
     public convenience init(_ store: NSUbiquitousKeyValueStore = .default, layout: Layout = .records) {
         self.init(store: store, layout: layout)
-        observer = NotificationCenter.default.addObserver(
-            forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-            object: store,
-            queue: .main
-        ) { [weak self] _ in
+        observers.observe(NSUbiquitousKeyValueStore.didChangeExternallyNotification, object: store, queue: .main) { [weak self] _ in
             self?.externalChanges?()
         }
     }
     #endif
-
-    deinit {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
-    }
 
     public func dictionary(forKey key: String) -> [String: Any]? {
         guard case let .flat(stamps, legacy) = layout else { return store.object(forKey: key) as? [String: Any] }

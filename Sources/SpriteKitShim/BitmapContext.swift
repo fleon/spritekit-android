@@ -697,18 +697,20 @@ public final class BitmapContext {
         endRadius: CGFloat,
         options: GradientOptions
     ) {
-        let scale = transformScale
-        let c0 = startCenter.applying(state.ctm)
-        let c1 = endCenter.applying(state.ctm)
-        let r0 = startRadius * scale
-        let r1 = endRadius * scale
-        let cdx = c1.x - c0.x, cdy = c1.y - c0.y
-        let dr = r1 - r0
+        // Solved in user space, each pixel's centre taken back through the
+        // CTM, so a transform that stretches one way (an ellipse) draws as
+        // CoreGraphics draws it.
+        guard transformScale > 0 else { return }
+        let inverse = state.ctm.inverted()
+        let c0 = startCenter, r0 = startRadius
+        let cdx = endCenter.x - c0.x, cdy = endCenter.y - c0.y
+        let dr = endRadius - r0
         let a = cdx * cdx + cdy * cdy - dr * dr
 
         paintEverywhere { x, y in
-            let px = CGFloat(x) + 0.5 - c0.x
-            let py = CGFloat(y) + 0.5 - c0.y
+            let user = CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5).applying(inverse)
+            let px = user.x - c0.x
+            let py = user.y - c0.y
             let b = px * cdx + py * cdy + r0 * dr
             let c = px * px + py * py - r0 * r0
             let t: CGFloat

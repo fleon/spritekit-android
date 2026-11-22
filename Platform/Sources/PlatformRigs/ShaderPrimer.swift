@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// SpriteKit turns each shader's GLSL into Metal the first time it draws,
 /// on the main thread, a millisecond or so apiece: a screen that slides in

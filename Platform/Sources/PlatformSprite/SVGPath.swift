@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import CoreGraphics
-#endif
 
 /// Builds a CGPath from SVG path data (every command, arcs included), in the
 /// SVG's own coordinates (y down). Icons (`IconDrawing`) are drawn from it.

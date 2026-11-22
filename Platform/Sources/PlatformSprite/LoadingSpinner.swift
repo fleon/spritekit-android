@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// How far round a `LoadingSpinner`'s arc reaches through each period.
 public nonisolated enum LoadingSpinnerSweep {

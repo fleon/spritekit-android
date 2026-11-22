@@ -5,9 +5,10 @@ import PackageDescription
 // platform layer.
 //
 // On Apple platforms SpriteKitShim is a no-op that re-exports the real
-// SpriteKit, so a game's presentation code compiles unchanged on both sides.
-// On Android it provides its own implementation of the SpriteKit surface the
-// games use.
+// SpriteKit, CoreGraphics and UIKit, so code that builds on both sides (the
+// toolkit in Platform/) imports it alone. On Android, and on a Mac host for
+// the tests, it provides its own implementation of the SpriteKit surface the
+// games use, which `SPRITEKIT_SHIM` selects.
 //
 // This package builds and tests on macOS as well as cross-compiling, so the
 // layer can be developed with a normal edit-test loop rather than only on a
@@ -21,7 +22,10 @@ import PackageDescription
 // out as a submodule named `spritekit-android` (a package's identity is its
 // directory's name, so the name matters: manifests here refer to this
 // package as "spritekit-android").
-let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM")
+// Where the shim stands in for Apple's frameworks, as in Platform/: a native
+// macOS build is the host the tests run on; iPhone, iPad, Apple TV and the
+// Mac app (Catalyst) build the passthrough.
+let shimDefine = SwiftSetting.define("SPRITEKIT_SHIM", .when(platforms: [.android, .linux, .macOS]))
 let v5 = SwiftSetting.swiftLanguageMode(.v5)
 // SpriteKit's nodes and UIKit's views are main-actor isolated, as on Apple
 // (they descend from `UIResponder`), so the tests that build scenes run on

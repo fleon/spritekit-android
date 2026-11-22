@@ -1,11 +1,6 @@
 import Foundation
 import PlatformSprite
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Game Center's mark, four overlapping translucent bubbles, each a vertical
 /// gradient, for a game's Game Center button where the service behind it is
