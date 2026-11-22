@@ -49,6 +49,7 @@ let package = Package(
         .library(name: "PlatformDevice", targets: ["PlatformDevice"]),
         .library(name: "PlatformSync", targets: ["PlatformSync"]),
         .library(name: "PlatformAndroid", targets: ["PlatformAndroid"]),
+        .library(name: "PlatformAndroidHost", targets: ["PlatformAndroidHost"]),
         .library(name: "PlatformSprite", targets: ["PlatformSprite"]),
         .library(name: "PlatformGameCenter", targets: ["PlatformGameCenter"]),
         .library(name: "PlatformStore", targets: ["PlatformStore"]),
@@ -199,6 +200,37 @@ let package = Package(
             dependencies: [
                 "PlatformAndroid",
                 .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        // What a game's Android controller stands on: the view, window and
+        // screen laid out as the shell reports them (`GameHostSurface`),
+        // `GameHost`'s common members (`AndroidGameHost`) and the toolkit's
+        // managers handed to Play (`AndroidPlatformServices.Configuration
+        // .toolkit`). All `SPRITEKIT_SHIM`, and its dependencies only on the
+        // shim, so Apple builds compile it empty.
+        .target(
+            name: "PlatformAndroidHost",
+            dependencies: [
+                .target(name: "PlatformAndroid", condition: onShim),
+                .target(name: "PlatformAudio", condition: onShim),
+                .target(name: "PlatformDisplay", condition: onShim),
+                .target(name: "PlatformSprite", condition: onShim),
+                .target(name: "PlatformGameCenter", condition: onShim),
+                .target(name: "PlatformStore", condition: onShim),
+                .target(name: "PlatformSync", condition: onShim),
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
+            ],
+            swiftSettings: settings
+        ),
+        .testTarget(
+            name: "PlatformAndroidHostTests",
+            dependencies: [
+                "PlatformAndroidHost",
+                "PlatformAndroid",
+                .product(name: "PlatformShim", package: "spritekit-android", condition: onShim),
+                .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
         ),

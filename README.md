@@ -190,7 +190,8 @@ Platform/            The platform code games share, on Apple platforms and
                      debug markers), `PlatformDevice` (haptics, rating
                      prompts, play time), `PlatformSync` (synced saved
                      data), `PlatformAndroid` (Android's Play and device
-                     wiring), `PlatformInput` (focus for the remote,
+                     wiring), `PlatformAndroidHost` (what a game's Android
+                     controller stands on), `PlatformInput` (focus for the remote,
                      gamepads and the pointer; keyboard and Menu protocols),
                      `PlatformDisplay` (frame-rate and graphics settings
                      with Auto), `PlatformGameCenter` (sign-in,
@@ -214,6 +215,9 @@ Library/             Android-only Java: the Gradle library modules a
 Templates/App/       The Android app a game copies: the Gradle project,
                      its manifest and a `MainActivity` over the library
                      (Templates/App/README.md).
+Templates/Game/      The game's Swift package for Android: its
+                     `Package.swift`, its entry and a controller over
+                     `AndroidGameHost` (Templates/Game/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -415,6 +419,18 @@ decides, it hands in:
   852 points, turned for landscape) and scale to fit the view, so the
   splash keeps its proportions on a phone, a tablet, a window, a TV and
   Android. `StudioSplashGate` is its timing alone.
+  `StudioSplashScene.launch(in:style:waitingFor:firstScene:)`
+  (`StudioSplashLaunch`) is the whole launch, the same from an iOS view
+  controller and an Android controller: it presents the splash on the
+  view's first real size, fits it in `layout(_:)` (true while it holds the
+  view) and starts its clock in `start()`. Its waits are named conditions
+  run as the view appears (`.until` an async call returns, `.callback`,
+  `.reported` by the game through `ready(_:)`, and `PlatformGameCenter`'s
+  `.gameCenter(manager)`, the sign-in's first answer), every one bounded by
+  the style's `maximumDuration`. The first scene is `.built` behind the
+  splash, made `.whenReady`, or the game's own `.handOff`;
+  `preloadsLogo` holds the splash until its logo's texture is in.
+  `StudioSplashLaunchSteps` is its order alone.
 - **Localization** (`Localizer`): the player's pick, else the device's
   language among the game's (`LocalizationLanguage`), its strings read from
   the bundle's `.lproj` with a content table keyed by its text; on Android
@@ -484,6 +500,24 @@ on the device. It also sets the device's hooks (haptics, battery saver as
 Low Power Mode, audio focus, and on request the status bar, battery,
 connection and image codecs). Its sources are all `SPRITEKIT_SHIM`, so Apple
 builds compile it empty.
+
+`PlatformAndroidHost` is what a game's controller stands on, likewise
+Android's alone. `GameHostSurface` owns the view, the window, its window
+scene (kept: the window's reference is weak) and the screen, and copies each
+layout into them, the idiom and `DisplaySettings.screenMaximum`, with
+`-SafeAreaInsets` in a debug build; its `launch` (a `StudioSplashLaunch`)
+holds the view until the first scene. `AndroidGameHost` answers the
+`GameHost` members every game answers alike from the surface (layout, the
+scene sized to `sceneSize(for:)` then `didLayout(_:)`, `didAppear`,
+`captureFrame`, `debugSummary`), `AudioManager.shared` (`useAudio`),
+`-FixedFrameStep` in a debug build, and `DisplaySettingsHost`; Back, keys
+and links go untaken until the game writes its own.
+`AndroidPlatformServices.Configuration.toolkit(gameCenter:syncsSavedData:store:audio:)`
+hands the toolkit's managers their Play backends (achievements and
+leaderboards, Saved Games under `ICloudSyncManager`, Play Billing for the
+store's products, audio focus), and `DisplaySettings.Configuration
+.withLaunchSplash` keeps Auto from measuring the splash and reads
+`-RenderScale`.
 ### Input: focus, gamepads, keys (`PlatformInput`)
 
 Focus is how the Apple TV remote, gamepads and the Mac's pointer reach a
@@ -642,12 +676,14 @@ holds:
   its own only where its folder can't be.
 - **A controller** adopting `GameHost`: the Android counterpart of the game's
   view controller and app delegate (launch work in the Apple order, the
-  first scene, layout, Back, keys, links).
+  first scene, layout, Back, keys, links). Over `AndroidGameHost` it writes
+  only what's the game's own.
 - **The managers' bodies**: the game's audio, store, Game Center, iCloud and
   haptics managers, their public API kept name for name, over
   `PlatformShim`'s backends.
 - **An entry target** that exports `SDL_main` and calls `Shell.start`, and a
-  dynamic library product named `AndroidShell` (the library SDL loads):
+  dynamic library product named `AndroidShell` (the library SDL loads).
+  `Templates/Game` has all three to copy:
 
 ```swift
 @_cdecl("SDL_main")
@@ -661,7 +697,7 @@ nonisolated public func SDL_main(
         game: MyGameController.self
     )
 }
-extension MyGameController: GameHost {}
+extension MyGameController: GameHost {}  // and AndroidGameHost, in its own file
 ```
 
 `AppIdentity` names the app wherever the runtime needs a name: `CFBundleName`
