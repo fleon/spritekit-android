@@ -155,6 +155,26 @@ struct FocusNavigatorTests {
     }
 }
 
+// MARK: Focus rings
+
+struct FocusRingTests {
+    private enum ActionKey: String {
+        case ring = "owner.ring"
+    }
+
+    @Test func aRingFadesUnderAnEnumKeysRawValue() {
+        let ring = SKNode()
+        ring.alpha = 0
+        ring.fadeFocusRing(true, withKey: ActionKey.ring)
+        #expect(ring.hasAction(forKey: "owner.ring"))
+
+        ring.fadeFocusRing(false, withKey: ActionKey.ring)
+        #expect(ring.hasAction(forKey: ActionKey.ring))
+        ring.removeAction(forKey: "owner.ring")
+        #expect(!ring.hasAction(forKey: ActionKey.ring))
+    }
+}
+
 // MARK: Gamepads
 
 /// A clock the tests move by hand.
