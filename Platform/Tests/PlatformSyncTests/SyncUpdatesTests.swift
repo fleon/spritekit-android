@@ -23,10 +23,10 @@ struct SyncUpdatesTests {
         }
         post(["settings.sound"])
         // The observer runs on the main queue: let it.
-        await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
+        for _ in 0 ..< 200 where heard.isEmpty { try? await Task.sleep(nanoseconds: 5_000_000) }
         NotificationCenter.default.removeObserver(token)
         post(["settings.music"])
-        await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
+        try? await Task.sleep(nanoseconds: 50_000_000)
         #expect(heard == [["settings.sound"]])
     }
 }
