@@ -511,7 +511,8 @@ nothing.
 `SyncEngine`: user defaults stay the store here, `set` saves a value where
 the latest change wins (nil removes it), `insert` and `resetSet` keep a set
 every device adds to, and the keys another device changed are posted as
-`didUpdateLocalData`. `start(syncing:prefixes:)` names what syncs: each
+`didUpdateLocalData`: `observeUpdates { keys in }` hears them (keep its
+token), and `updatedKeys(in:)` reads them from a notification. `start(syncing:prefixes:)` names what syncs: each
 owner's `syncedKeys`, and prefixes for keys made as play goes on. The
 cloud is `ICloudKeyValueStore` on Apple platforms (over
 `NSUbiquitousKeyValueStore`, one record a key, or `.flat`: values under

@@ -130,8 +130,10 @@ would want.
   ask it `isUnlocked` rather than checking products), Game Center and Play
   Games (`GameCenterManager`; name the button by `.service`), synced saved
   data (`ICloudSyncManager`; list each synced key in its owner's
-  `syncedKeys`, which `@SyncedKeys` builds), input and focus, display
-  settings, haptics and rating prompts, sharing, Spine rigs, the splash.
+  `syncedKeys`, which `@SyncedKeys` builds; hear another device's keys
+  with `observeUpdates`, never by reading its `userInfo`), input and
+  focus, display settings, haptics and rating prompts, sharing, Spine rigs,
+  the splash.
 - Saved values are properties: `@Stored("key")` over user defaults,
   `@Synced("key", merge:)` over `ICloudSyncManager`, a key with no property
   of its own marked `@SyncedKey`. A `Codable` type whose properties fall back

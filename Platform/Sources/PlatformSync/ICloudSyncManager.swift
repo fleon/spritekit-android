@@ -43,6 +43,24 @@ nonisolated public final class ICloudSyncManager: @unchecked Sendable {
     public static let didUpdateLocalData = Notification.Name("ICloudSyncManager.didUpdateLocalData")
     public static let updatedKeysUserInfoKey = "updatedKeys"
 
+    /// The keys a `didUpdateLocalData` notification says changed; none for
+    /// any other notification.
+    public static func updatedKeys(in notification: Notification) -> Set<String> {
+        let keys = notification.userInfo?[updatedKeysUserInfoKey]
+        return (keys as? Set<String>) ?? Set(keys as? [String] ?? [])
+    }
+
+    /// Runs `updated` on the main actor with the keys each time another
+    /// device's changes reach this one. Keep the token for as long as it
+    /// should run, and hand it to `NotificationCenter.removeObserver` to
+    /// stop it.
+    public static func observeUpdates(_ updated: @escaping @MainActor (Set<String>) -> Void) -> NSObjectProtocol {
+        NotificationCenter.default.addObserver(forName: didUpdateLocalData, object: nil, queue: .main) { notification in
+            let keys = updatedKeys(in: notification)
+            MainActor.assumeIsolated { updated(keys) }
+        }
+    }
+
     /// The layout `shared` keeps on this device. Set it, and `cloud`, before
     /// `start`; setting it once `shared` has started merges again with it.
     nonisolated(unsafe) public static var configuration = Configuration() {
