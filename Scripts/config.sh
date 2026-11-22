@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared settings for the Android shell's build scripts.
 #
 # Everything the scripts need to agree on lives here: the pinned SDL version,
@@ -73,7 +74,15 @@ use_swiftly() {
 }
 
 SWIFT_SDK="swift-6.4.2-RELEASE_android"
+# SwiftPM keeps installed SDKs in ~/.swiftpm on a Mac and under the XDG config
+# folder on Linux.
 SWIFT_SDK_BUNDLE="$HOME/.swiftpm/swift-sdks/$SWIFT_SDK.artifactbundle"
+for sdks in "$HOME/.swiftpm/swift-sdks" "${XDG_CONFIG_HOME:-$HOME/.config}/swiftpm/swift-sdks"; do
+    if [ -d "$sdks/$SWIFT_SDK.artifactbundle" ]; then
+        SWIFT_SDK_BUNDLE="$sdks/$SWIFT_SDK.artifactbundle"
+        break
+    fi
+done
 
 # Where the Swift runtime .so files for an ABI live inside the SDK bundle.
 swift_sdk_lib_dir() {
@@ -92,7 +101,10 @@ ndk_lib_dir() {
         x86_64)    triple="x86_64-linux-android" ;;
         *) return 1 ;;
     esac
-    echo "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/$triple"
+    # darwin-x86_64 on a Mac, linux-x86_64 on Linux: an NDK ships one.
+    local prebuilt
+    prebuilt="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 1 -maxdepth 1 -type d | head -1)"
+    echo "$prebuilt/sysroot/usr/lib/$triple"
 }
 
 # The NDK ships llvm-readelf and llvm-strip as symlinks, so this must not

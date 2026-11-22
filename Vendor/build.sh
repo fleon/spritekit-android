@@ -141,7 +141,7 @@ build_one() { # label  <extra cmake args...>
     echo "  harfbuzz $HARFBUZZ_VERSION"
 
     write_pc "$prefix"
-    ls "$prefix/lib" | grep -E '\.a$' | sed 's/^/  /'
+    for lib in "$prefix"/lib/*.a; do echo "  ${lib##*/}"; done
 }
 
 build_android() { # abi  triple

@@ -41,6 +41,10 @@ DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
 
 die() { echo "signing.sh: $*" >&2; exit 1; }
 
+# The debug keystore already in place is all a debug build needs: no
+# 1Password (a CI runner, or a contributor without the vault).
+[ "${1:-}" = debug ] && [ -f "$DEBUG_KEYSTORE" ] && exit 0
+
 command -v op >/dev/null || die "the 1Password CLI isn't installed (brew install --cask 1password-cli)"
 
 # Reads go through the service account when there is one.

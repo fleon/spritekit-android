@@ -1,6 +1,11 @@
-# The checks CONTRIBUTING.md asks of every change, on every pull request and
-# every push to main: the host tests, Platform/ built for each Apple platform,
-# the runtime cross-compiled for Android, and the tools' own tests.
+# The checks CONTRIBUTING.md asks of every change, and a few more: the host
+# tests, Platform/ built for each Apple platform, the runtime cross-compiled
+# for both Android ABIs, the Android library, the game templates built into
+# an APK that's run on an emulator, the tools' tests and shellcheck.
+#
+# A pull request runs only the jobs whose files it changes (`changes`); a
+# push to main runs them all. `Checks passed` is the one check main requires:
+# it waits on the rest and passes when none failed, skipped ones included.
 name: Checks
 
 on:
@@ -25,8 +30,82 @@ env:
   XCODE_VERSION: 27.2
 
 jobs:
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      host: ${{ github.event_name != 'pull_request' || steps.filter.outputs.host == 'true' }}
+      apple: ${{ github.event_name != 'pull_request' || steps.filter.outputs.apple == 'true' }}
+      android: ${{ github.event_name != 'pull_request' || steps.filter.outputs.android == 'true' }}
+      library: ${{ github.event_name != 'pull_request' || steps.filter.outputs.library == 'true' }}
+      template: ${{ github.event_name != 'pull_request' || steps.filter.outputs.template == 'true' }}
+      tools: ${{ github.event_name != 'pull_request' || steps.filter.outputs.tools == 'true' }}
+      shell: ${{ github.event_name != 'pull_request' || steps.filter.outputs.shell == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            ci: &ci
+              - '.github/**'
+            host:
+              - *ci
+              - 'Package.swift'
+              - 'Sources/**'
+              - 'Tests/**'
+              - 'Text/**'
+              - 'Platform/**'
+              - 'Vendor/build.sh'
+              - 'Vendor/versions.sh'
+            apple:
+              - *ci
+              - 'Package.swift'
+              - 'Sources/**'
+              - 'Platform/**'
+            android: &android
+              - *ci
+              - 'Package.swift'
+              - 'Sources/**'
+              - 'Modules/**'
+              - 'Shell/**'
+              - 'Text/**'
+              - 'Platform/**'
+              - 'Vendor/build.sh'
+              - 'Vendor/versions.sh'
+              - 'Scripts/config.sh'
+              - 'Scripts/build-sdl.sh'
+              - 'Scripts/check-android.sh'
+            library: &library
+              - *ci
+              - 'Library/**'
+              - 'Scripts/config.sh'
+            template:
+              - *android
+              - *library
+              - 'Templates/**'
+              - 'Scripts/build-shell.sh'
+              - 'Scripts/check-template.sh'
+              - 'Scripts/signing.sh'
+              - 'Tools/Art/**'
+              - 'Tools/guard.js'
+            tools:
+              - *ci
+              - 'Tools/**'
+            shell:
+              - *ci
+              - '**/*.sh'
+              - '.shellcheckrc'
+
   tools:
     name: Tools tests
+    needs: changes
+    if: needs.changes.outputs.tools == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -42,8 +121,22 @@ jobs:
       - name: Pricing tests
         run: python3 -m unittest discover -s Tools/Pricing
 
+  shellcheck:
+    name: shellcheck
+    needs: changes
+    if: needs.changes.outputs.shell == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # Warnings and errors; .shellcheckrc says what's left out and why.
+      - name: shellcheck
+        run: shellcheck -x -S warning $(git ls-files '*.sh')
+
   host:
     name: Host tests
+    needs: changes
+    if: needs.changes.outputs.host == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
@@ -69,9 +162,13 @@ jobs:
         run: swift test
       - name: swift test --package-path Platform
         run: swift test --package-path Platform
+      - name: swift test --package-path Text
+        run: PKG_CONFIG_PATH="$PWD/Vendor/out/host/lib/pkgconfig" swift test --package-path Text
 
   apple:
     name: Platform on ${{ matrix.name }}
+    needs: changes
+    if: needs.changes.outputs.apple == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     strategy:
@@ -100,49 +197,116 @@ jobs:
           exit "${PIPESTATUS[0]}"
 
   android:
-    name: Android (arm64-v8a)
+    name: Android (${{ matrix.abi }})
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      ANDROID_NDK_HOME: ${{ github.workspace }}/../android-ndk-r30
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
     steps:
       - uses: actions/checkout@v4
-      - name: Install cmake and ninja
-        run: sudo apt-get update -q && sudo apt-get install -yq ninja-build cmake binutils-gold libcurl4-openssl-dev
-      - name: Android NDK
-        run: |
-          curl -fsSL -o ndk.zip "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
-          unzip -q ndk.zip -d "$(dirname "$ANDROID_NDK_HOME")"
-          rm ndk.zip
-          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"
-      - name: Swift and its Android SDK
-        run: |
-          curl -fsSL -O "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
-          tar -zxf "swiftly-$(uname -m).tar.gz"
-          ./swiftly init --assume-yes --quiet-shell-followup --skip-install
-          . "$HOME/.local/share/swiftly/env.sh"
-          swiftly install --use --assume-yes "$SWIFT_VERSION"
-          echo "$HOME/.local/share/swiftly/bin" >> "$GITHUB_PATH"
-          swift sdk install "$SWIFT_SDK_URL" --checksum "$SWIFT_SDK_SHA256"
-          # Links the SDK's sysroot to the NDK's.
-          # (where SwiftPM keeps SDKs differs by host).
-          setup="$(find "$HOME" -path "*/swift-sdks/swift-${SWIFT_VERSION}-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh" | head -1)"
-          "$setup"
-          swift sdk list
+      - uses: ./.github/actions/android-toolchain
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+          swift-sdk-url: ${{ env.SWIFT_SDK_URL }}
+          swift-sdk-sha256: ${{ env.SWIFT_SDK_SHA256 }}
+          ndk-version: ${{ env.NDK_VERSION }}
       - uses: actions/cache@v4
         with:
-          path: |
-            Vendor/src/*.tar.xz
-            Vendor/out/aarch64-linux-android
-            Vendor/out/x86_64-linux-android
-          key: vendor-android-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('Vendor/versions.sh', 'Vendor/build.sh') }}
-      - name: FreeType and HarfBuzz for Android
-        run: '[ -d Vendor/out/aarch64-linux-android/lib/pkgconfig ] || Vendor/build.sh android'
-      - uses: actions/cache@v4
-        with:
-          path: Vendor/sdl3/arm64-v8a
-          key: sdl-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('Scripts/config.sh', 'Scripts/build-sdl.sh') }}
+          path: Vendor/sdl3/${{ matrix.abi }}
+          key: sdl-${{ matrix.abi }}-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('Scripts/config.sh', 'Scripts/build-sdl.sh') }}
       - name: SDL
-        run: '[ -d Vendor/sdl3/arm64-v8a/include ] || Scripts/build-sdl.sh arm64-v8a'
+        run: '[ -d Vendor/sdl3/${{ matrix.abi }}/include ] || Scripts/build-sdl.sh ${{ matrix.abi }}'
       - name: Cross-compile
-        run: Scripts/check-android.sh arm64-v8a
+        run: Scripts/check-android.sh ${{ matrix.abi }}
+
+  library:
+    name: Android library
+    needs: changes
+    if: needs.changes.outputs.library == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      # The library compiles SDL's Java from the pinned checkout in place.
+      - name: SDL's Java
+        run: |
+          . Scripts/config.sh
+          git clone -q --depth 1 --branch "$SDL_TAG" "$SDL_REPO" Vendor/SDL
+      - name: Build and test
+        working-directory: Library
+        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest
+
+  template:
+    name: Game template on an emulator
+    needs: changes
+    if: needs.changes.outputs.template == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/android-toolchain
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+          swift-sdk-url: ${{ env.SWIFT_SDK_URL }}
+          swift-sdk-sha256: ${{ env.SWIFT_SDK_SHA256 }}
+          ndk-version: ${{ env.NDK_VERSION }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: gradle/actions/setup-gradle@v4
+      # What signing.sh's debug step would fetch from 1Password on a Mac.
+      - name: Debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      - name: Build the APK
+        run: Scripts/check-template.sh x86_64
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Launch it on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: .github/scripts/emulator-smoke.sh .build/template-check/Android/App/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: template-emulator
+          path: |
+            logcat.txt
+            screen.png
+          if-no-files-found: ignore
+
+  passed:
+    name: Checks passed
+    needs: [changes, tools, shellcheck, host, apple, android, library, template]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every check passed or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          ! jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<< "$NEEDS" >/dev/null
