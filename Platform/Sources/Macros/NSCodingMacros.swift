@@ -35,6 +35,9 @@ public macro NSCodingUnsupported() =
 public enum InheritedInit {
     /// `override init()`, as `SKNode` has it.
     case plain
+    /// `required override init()`, for a subclass of a class whose `init()`
+    /// is `required` (a family of nodes its base makes by type).
+    case requiredPlain
     /// `override init(size: CGSize)`, as `SKScene` has it.
     case size
 }

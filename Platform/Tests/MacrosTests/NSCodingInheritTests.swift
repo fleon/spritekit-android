@@ -55,4 +55,46 @@ final class NSCodingInheritTests: XCTestCase {
             macros: macros
         )
     }
+
+    func testRequiredPlainOverridesARequiredInit() {
+        assertMacroExpansion(
+            """
+            @NSCodingUnsupported(inherit: .requiredPlain)
+            final class Tile: PieceNode {
+            }
+            """,
+            expandedSource: """
+            final class Tile: PieceNode {
+
+                required override init() {
+                    super.init()
+                }
+
+                required init?(coder aDecoder: NSCoder) {
+                    fatalError("init(coder:) has not been implemented")
+                }
+            }
+            """,
+            macros: macros
+        )
+    }
+
+    func testPlainAndRequiredPlainTogetherIsAnError() {
+        assertMacroExpansion(
+            """
+            @NSCodingUnsupported(inherit: .plain, .requiredPlain)
+            final class Tile: PieceNode {
+            }
+            """,
+            expandedSource: """
+            final class Tile: PieceNode {
+            }
+            """,
+            diagnostics: [DiagnosticSpec(
+                message: "@NSCodingUnsupported takes `.plain` or `.requiredPlain`, not both: each writes `init()`",
+                line: 1, column: 1
+            )],
+            macros: macros
+        )
+    }
 }

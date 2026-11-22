@@ -42,6 +42,10 @@ public struct NSCodingUnsupportedMacro: MemberMacro {
         guard let arguments = node.arguments?.as(LabeledExprListSyntax.self) else { return [] }
         let access = declaration.modifiers.contains { ["public", "open"].contains($0.name.text) } ? "public " : ""
         var seen = Set<String>()
+        let names = arguments.map { $0.expression.trimmedDescription.split(separator: ".").last.map(String.init) ?? "" }
+        if names.contains("plain"), names.contains("requiredPlain") {
+            throw NSCodingUnsupportedError(description: "@NSCodingUnsupported takes `.plain` or `.requiredPlain`, not both: each writes `init()`")
+        }
         return try arguments.compactMap { argument -> DeclSyntax? in
             let name = argument.expression.trimmedDescription.split(separator: ".").last.map(String.init) ?? ""
             guard seen.insert(name).inserted else { return nil }
@@ -52,6 +56,12 @@ public struct NSCodingUnsupportedMacro: MemberMacro {
                     super.init()
                 }
                 """
+            case "requiredPlain":
+                return """
+                \(raw: access)required override init() {
+                    super.init()
+                }
+                """
             case "size":
                 return """
                 \(raw: access)override init(size: CGSize) {
@@ -59,7 +69,7 @@ public struct NSCodingUnsupportedMacro: MemberMacro {
                 }
                 """
             default:
-                throw NSCodingUnsupportedError(description: "@NSCodingUnsupported passes through `.plain` or `.size`, not \(argument.expression.trimmedDescription)")
+                throw NSCodingUnsupportedError(description: "@NSCodingUnsupported passes through `.plain`, `.requiredPlain` or `.size`, not \(argument.expression.trimmedDescription)")
             }
         }
     }

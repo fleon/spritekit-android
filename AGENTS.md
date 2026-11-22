@@ -66,7 +66,9 @@ would want.
   build paths and labels with `path(...)` and `label(...)`.
 - Use `@NSCodingUnsupported` (from `Macros`) on node subclasses instead of a
   hand-written `init?(coder:)`; `inherit: .size` or `.plain` writes the
-  pass-through `init(size:)` or `init()`.
+  pass-through `init(size:)` or `init()`, and `.requiredPlain` the
+  `required override init()` a subclass of a base with a required `init()`
+  needs.
 - Buttons, switches and tiles subclass `PressableNode` (`PlatformInput`),
   which tracks the touch, focus and activation; a control keeps only its look.
 - Asset-backed images go through `PlatformSprite`'s helpers: `txtr("Asset")`,
