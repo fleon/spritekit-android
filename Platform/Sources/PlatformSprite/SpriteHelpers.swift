@@ -197,6 +197,18 @@ extension SKNode {
         return rect(min(start.x, end.x), min(start.y, end.y), abs(end.x - start.x), abs(end.y - start.y))
     }
 
+    /// `bounds`, in this node's space, as the box round its four corners in
+    /// `node`'s space: unlike `convertRect`, it holds through rotation.
+    public func boundingRect(_ bounds: CGRect, in node: SKNode) -> CGRect {
+        let corners = [
+            pt(bounds.minX, bounds.minY), pt(bounds.maxX, bounds.minY),
+            pt(bounds.minX, bounds.maxY), pt(bounds.maxX, bounds.maxY),
+        ].map { convert($0, to: node) }
+        guard let minX = corners.map(\.x).min(), let maxX = corners.map(\.x).max(),
+              let minY = corners.map(\.y).min(), let maxY = corners.map(\.y).max() else { return bounds }
+        return rect(minX, minY, maxX - minX, maxY - minY)
+    }
+
     /// What this node covers, in `node`'s space, as it rests at its own
     /// scale of 1 (entrances grow nodes in from smaller): its
     /// `restingBounds`, or else everything it draws.
@@ -215,4 +227,19 @@ extension SKNode {
         ).standardized
         return parent.convertRect(rest, to: node)
     }
+}
+
+/// Everything `node` draws (its accumulated frame), in `scene`'s space: the
+/// box round its corners, so it holds through rotation and scale between
+/// them. A node with no parent answers its own frame.
+public func rectInScene(for node: SKNode, scene: SKNode) -> CGRect {
+    let frame = node.calculateAccumulatedFrame()
+    guard let parent = node.parent else { return frame }
+    return parent.boundingRect(frame, in: scene)
+}
+
+/// `localRect`, in `node`'s space, in `scene`'s space, as the box round its
+/// corners.
+public func rectInScene(_ localRect: CGRect, for node: SKNode, scene: SKNode) -> CGRect {
+    node.boundingRect(localRect, in: scene)
 }

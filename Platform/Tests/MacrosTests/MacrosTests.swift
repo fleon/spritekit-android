@@ -22,4 +22,23 @@ final class MacrosTests: XCTestCase {
             macros: ["NSCodingUnsupported": NSCodingUnsupportedMacro.self]
         )
     }
+
+    func testAnOpenClassTakesAPublicInitializer() {
+        assertMacroExpansion(
+            """
+            @NSCodingUnsupported
+            open class Node: SKNode {
+            }
+            """,
+            expandedSource: """
+            open class Node: SKNode {
+
+                public required init?(coder aDecoder: NSCoder) {
+                    fatalError("init(coder:) has not been implemented")
+                }
+            }
+            """,
+            macros: ["NSCodingUnsupported": NSCodingUnsupportedMacro.self]
+        )
+    }
 }

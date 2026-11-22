@@ -50,18 +50,18 @@ IDs, achievement IDs, constants), and the module does the rest.
 
 | Module | What it saves you writing |
 | --- | --- |
-| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, seeded randomness you can replay, a launch-argument reader for debug switches |
-| `PlatformSprite` | A texture cache and sprite helpers, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
+| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches |
+| `PlatformSprite` | A texture cache and sprite helpers, path and label builders, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
 | `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
 | `PlatformGameCenter` | Sign-in, achievements and leaderboards that catch up from saved progress (GameKit, or Play Games) |
 | `PlatformSync` | Saved data synced across a player's devices (iCloud's key-value store, or Play's Saved Games), with sets that merge instead of overwrite |
-| `PlatformInput` | Focus for the Apple TV remote, gamepads and the Mac's pointer; keyboard and Menu handling |
+| `PlatformInput` | Focus for the Apple TV remote, gamepads and the Mac's pointer; a pressable control base that follows a tap and takes focus; keyboard and Menu handling |
 | `PlatformDisplay` | Frame-rate and graphics settings, with an Auto mode that picks a render scale for the device |
 | `PlatformDevice` | Haptics, rating prompts at the right moment, play time |
 | `PlatformShare` | The share sheet, pasteboard, the App Store review page, feedback mail |
 | `PlatformRigs` | Spine 4.2 skeletons posed and drawn in SpriteKit (Spine Runtimes License, see below) |
-| `Macros` | `@NSCodingUnsupported` for node subclasses |
+| `Macros` | `@NSCodingUnsupported` for node subclasses; `@LocalizedStrings` for the type-safe strings layer |
 
 "Shared platform code" below describes each one in detail.
 
@@ -190,7 +190,8 @@ Platform/            The platform code games share, on Apple platforms and
                      debug markers), `PlatformDevice` (haptics, rating
                      prompts, play time), `PlatformSync` (synced saved
                      data), `PlatformAndroid` (Android's Play and device
-                     wiring), `PlatformInput` (focus for the remote,
+                     wiring), `PlatformAndroidHost` (what a game's Android
+                     controller stands on), `PlatformInput` (focus for the remote,
                      gamepads and the pointer; keyboard and Menu protocols),
                      `PlatformDisplay` (frame-rate and graphics settings
                      with Auto), `PlatformGameCenter` (sign-in,
@@ -214,6 +215,9 @@ Library/             Android-only Java: the Gradle library modules a
 Templates/App/       The Android app a game copies: the Gradle project,
                      its manifest and a `MainActivity` over the library
                      (Templates/App/README.md).
+Templates/Game/      The game's Swift package for Android: its
+                     `Package.swift`, its entry and a controller over
+                     `AndroidGameHost` (Templates/Game/README.md).
 ```
 
 `Modules` is a package of its own because a target named `CoreGraphics`
@@ -287,7 +291,13 @@ Play Games' mark in its own greens (`PlayGamesMark`: the path data and
 colours, and `node(size:manager:isButton:)` drawing it on the button's
 centre). Where Play Games can't run (no Google Play services, a build
 without it) the button hides itself (`hidesButton(for:)`); Game Center's
-button on Apple is never hidden by it. Each game keeps its own button.
+button on Apple is never hidden by it. Where the service is Game Center, it
+wears Game Center's four bubbles (`GameCenterMark`: their geometry and
+gradients, `draw(in:rect:)`, and `texture(size:)` and `node(size:)` drawn
+once a size into `DrawnTexture`'s cache). Both marks stand on a 24-unit grid
+centred on the button, so `GameServiceMark.node(size:manager:isButton:)`
+gives the platform's own with no platform check in the game. Each game keeps
+its own button.
 
 ### Sharing (`PlatformShare`)
 
@@ -379,6 +389,19 @@ decides, it hands in:
   slice table), `SpriteArt.scale` sizes art drawn at a scale of its own,
   and `SpriteArt.whenForgetting` hooks a game's own caches of assets'
   textures (lit shaders' normal maps) onto `forgetTextures`.
+- **Nodes and actions** (in `PlatformCore`): `addChild(_:z:at:)` sets a
+  node's z-position (and position) as it adds it, and returns it.
+  `run(_:withKey:)`, `action(forKey:)`, `removeAction(forKey:)` and
+  `hasAction(forKey:)` take an owner's `enum ActionKey: String`, whose raw
+  values are the keys (`case pulse = "logo.pulse"`: a prefix still keeps
+  two owners apart on one node), at no cost over a string.
+  `xConstraint`/`yConstraint` hold a node's x or y.
+- **Builders**: `path(.moveTo(…), .lineTo(…), .roundedRect(…), …)` makes a
+  `CGPath` for `ShapeSprite`, a crop mask or a route (`ArcDirection` as
+  UIKit names it: `.clockwise` is a rising angle); `label(.font(weight,
+  size), .text(…), …)` makes an `SKLabelNode` in `Typography`'s face, or a
+  named one (`.fontNamed`). `rectInScene(for:scene:)` is what a node draws,
+  in the scene's space, and holds through rotation (`boundingRect(_:in:)`).
 - **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
   string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
 - **Text** (`wrappedLines`, CoreText's breaks on both platforms;
@@ -415,11 +438,36 @@ decides, it hands in:
   852 points, turned for landscape) and scale to fit the view, so the
   splash keeps its proportions on a phone, a tablet, a window, a TV and
   Android. `StudioSplashGate` is its timing alone.
+  `StudioSplashScene.launch(in:style:waitingFor:firstScene:)`
+  (`StudioSplashLaunch`) is the whole launch, the same from an iOS view
+  controller and an Android controller: it presents the splash on the
+  view's first real size, fits it in `layout(_:)` (true while it holds the
+  view) and starts its clock in `start()`. Its waits are named conditions
+  run as the view appears (`.until` an async call returns, `.callback`,
+  `.reported` by the game through `ready(_:)`, and `PlatformGameCenter`'s
+  `.gameCenter(manager)`, the sign-in's first answer), every one bounded by
+  the style's `maximumDuration`. The first scene is `.built` behind the
+  splash, made `.whenReady`, or the game's own `.handOff`;
+  `preloadsLogo` holds the splash until its logo's texture is in.
+  `StudioSplashLaunchSteps` is its order alone.
 - **Localization** (`Localizer`): the player's pick, else the device's
   language among the game's (`LocalizationLanguage`), its strings read from
   the bundle's `.lproj` with a content table keyed by its text; on Android
   from the APK's `lproj/`, through the shim's `.strings` parser, so the
   player's pick holds there too.
+- **The strings layer** (`@LocalizedStrings` and `@L`, in `Macros`): an
+  enum whose cases each carry their key, English fallback and translator
+  comment (`@L("levels.completed", "%d of %d", comment: "…") case
+  completed(Int, Int)`) gets `key`, `fallback`, `comment` and `localized`,
+  one switch apiece. `localized` is `NSLocalizedString` (with a `table:`
+  and `bundle:`), or the enum's own `lookup` (`lookup: .custom`, for a
+  `Localizer`), then `String(format:)` or `localizedStringWithFormat`
+  (`formatting:`, per enum or per case) with the associated values in
+  order. A key built at run time is `@L(.custom)`, read from the enum's
+  `customKey` and `customFallback`; `formatting: .custom` hands the looked-up
+  string to its `customLocalized(_:)`. The compiler flags a case without
+  `@L`, a fallback whose placeholders don't match the associated values, and
+  a key used twice; generated members carry the enum's `nonisolated`.
 - **Debugging** (`Markers`, `FrameLog`; `LaunchArgumentReader` in
   `PlatformCore`): the arguments are the game's; the reader answers fixed
   values in a release build. `@LaunchArgument("Key")` (`Macros`) writes a
@@ -491,6 +539,24 @@ on the device. It also sets the device's hooks (haptics, battery saver as
 Low Power Mode, audio focus, and on request the status bar, battery,
 connection and image codecs). Its sources are all `SPRITEKIT_SHIM`, so Apple
 builds compile it empty.
+
+`PlatformAndroidHost` is what a game's controller stands on, likewise
+Android's alone. `GameHostSurface` owns the view, the window, its window
+scene (kept: the window's reference is weak) and the screen, and copies each
+layout into them, the idiom and `DisplaySettings.screenMaximum`, with
+`-SafeAreaInsets` in a debug build; its `launch` (a `StudioSplashLaunch`)
+holds the view until the first scene. `AndroidGameHost` answers the
+`GameHost` members every game answers alike from the surface (layout, the
+scene sized to `sceneSize(for:)` then `didLayout(_:)`, `didAppear`,
+`captureFrame`, `debugSummary`), `AudioManager.shared` (`useAudio`),
+`-FixedFrameStep` in a debug build, and `DisplaySettingsHost`; Back, keys
+and links go untaken until the game writes its own.
+`AndroidPlatformServices.Configuration.toolkit(gameCenter:syncsSavedData:store:audio:)`
+hands the toolkit's managers their Play backends (achievements and
+leaderboards, Saved Games under `ICloudSyncManager`, Play Billing for the
+store's products, audio focus), and `DisplaySettings.Configuration
+.withLaunchSplash` keeps Auto from measuring the splash and reads
+`-RenderScale`.
 ### Input: focus, gamepads, keys (`PlatformInput`)
 
 Focus is how the Apple TV remote, gamepads and the Mac's pointer reach a
@@ -523,6 +589,23 @@ remote's way back. `playScript` plays `GamepadScript` steps on a pretend
 pad for test runs, and `showVirtualGamepad` puts up Apple's on-screen one.
 Timings and thresholds are `GamepadConfiguration`'s and
 `FocusConfiguration`'s (`FocusNavigator.configuration`).
+
+`PressableNode` is the base for a game's buttons, switches and tiles. It
+follows one touch from down to up (pressed while the finger is on its
+`hitFrame`, grown by `touchSlop`; let go while it strays off; firing as it
+lifts on it, or as it lands with `trigger = .touchDown`), ignores a second
+finger, drops a cancelled touch, takes no press or focus while disabled
+(still swallowing its touches), and is `Focusable`: the remote's click, a
+gamepad's A or a key fire it through `activate`, with the press flashed.
+Its look is the subclass's: by default a press shrinks `pressScaleNode`, a
+disabled control fades and focus fades `focusRing`, and `showPressed`,
+`showEnabled` and `showFocused` replace those. Firing runs `onTap`, or a
+subclass's `perform(_:)` (a switch flips there; `PressSource` says where a
+touch let go); sounds and haptics go in `playFeedback`, or once for every
+control in `PressableNode.feedback`. Defaults are `PressConfiguration`'s.
+A control that can't subclass it (a sprite, or one a game hands touches its
+own way) holds a `PressTracker`, the same state machine, or calls
+`pressBegan(at:)`, `pressMoved(to:)` and `pressEnded(at:)` itself.
 
 `KeyboardControllable` (keys by HID usage; the remote's Back and Android's
 back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene
@@ -649,12 +732,14 @@ holds:
   its own only where its folder can't be.
 - **A controller** adopting `GameHost`: the Android counterpart of the game's
   view controller and app delegate (launch work in the Apple order, the
-  first scene, layout, Back, keys, links).
+  first scene, layout, Back, keys, links). Over `AndroidGameHost` it writes
+  only what's the game's own.
 - **The managers' bodies**: the game's audio, store, Game Center, iCloud and
   haptics managers, their public API kept name for name, over
   `PlatformShim`'s backends.
 - **An entry target** that exports `SDL_main` and calls `Shell.start`, and a
-  dynamic library product named `AndroidShell` (the library SDL loads):
+  dynamic library product named `AndroidShell` (the library SDL loads).
+  `Templates/Game` has all three to copy:
 
 ```swift
 @_cdecl("SDL_main")
@@ -668,7 +753,7 @@ nonisolated public func SDL_main(
         game: MyGameController.self
     )
 }
-extension MyGameController: GameHost {}
+extension MyGameController: GameHost {}  // and AndroidGameHost, in its own file
 ```
 
 `AppIdentity` names the app wherever the runtime needs a name: `CFBundleName`
