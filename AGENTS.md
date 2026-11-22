@@ -60,9 +60,15 @@ would want.
   z-order values and shared node names once more than one file uses them.
 - Use keyed `SKAction`s for anything that's replaced or stopped, and
   `SKAction.animate(duration:curve:)` with a `TimingCurve` for eased custom
-  animation.
+  animation. An owner's keys are an `enum ActionKey: String`, its raw values
+  prefixed where two owners share a node.
+- Add a node at its z-position (and position) with `addChild(_:z:at:)`, and
+  build paths and labels with `path(...)` and `label(...)`.
 - Use `@NSCodingUnsupported` (from `Macros`) on node subclasses instead of a
-  hand-written `init?(coder:)`.
+  hand-written `init?(coder:)`; `inherit: .size` or `.plain` writes the
+  pass-through `init(size:)` or `init()`.
+- Buttons, switches and tiles subclass `PressableNode` (`PlatformInput`),
+  which tracks the touch, focus and activation; a control keeps only its look.
 - Asset-backed images go through `PlatformSprite`'s helpers: `txtr("Asset")`,
   `sprite("Asset", size: ...)`, `tinted("Asset", color)`, `sliced(...)`.
 - Don't use `SKShapeNode` except as an `SKCropNode`'s mask: draw rings, pills,
@@ -77,9 +83,11 @@ would want.
   bare `random(in:)`, so two runs with the same seed draw alike on every
   platform.
 - Debug-only switches come from launch arguments (`LaunchArgumentReader`);
-  release builds take fixed values.
+  release builds take fixed values. Read each with `@LaunchArgument("Key")`
+  (`Macros`), never from `UserDefaults` directly.
 - The game opens on the studio splash, `StudioSplashScene`, over a plain
-  black launch screen.
+  black launch screen, shown and handed off on both platforms by
+  `StudioSplashScene.launch(in:style:waitingFor:firstScene:)`.
 
 ## Design system
 
@@ -122,8 +130,15 @@ would want.
   ask it `isUnlocked` rather than checking products), Game Center and Play
   Games (`GameCenterManager`; name the button by `.service`), synced saved
   data (`ICloudSyncManager`; list each synced key in its owner's
-  `syncedKeys`), input and focus, display settings, haptics and rating
-  prompts, sharing, Spine rigs, the splash.
+  `syncedKeys`, which `@SyncedKeys` builds), input and focus, display
+  settings, haptics and rating prompts, sharing, Spine rigs, the splash.
+- Saved values are properties: `@Stored("key")` over user defaults,
+  `@Synced("key", merge:)` over `ICloudSyncManager`, a key with no property
+  of its own marked `@SyncedKey`. A `Codable` type whose properties fall back
+  to defaults uses `@DecodableDefaults` rather than a hand-written
+  `init(from:)`.
+- The Game Center button shows `GameServiceMark.node(size:manager:isButton:)`:
+  Game Center's mark on Apple, Play Games' on Android, with no platform check.
 - Store screenshots and recordings go through `Tools/Capture` (README,
   "Screen captures"): a game keeps its `capture.json`, hooks and shims, never
   a copy of the capture scripts.
@@ -156,6 +171,10 @@ would want.
 - A game allows the same orientations on Android as on iOS, phones and
   tablets apart: its `spritekit_orientations` resources (template README,
   "Orientations"), with `android:appCategory="game"` in its manifest.
+- The game's Android controller conforms to `AndroidGameHost` over a
+  `GameHostSurface`, starting from `Templates/Game/` (its README), with its
+  services from `AndroidPlatformServices.Configuration.toolkit(...)`: it
+  writes only what's its own (first scene, scene size, Back, keys, links).
 - The game links its `Source/` folders whole, never file by file; what
   Android leaves out goes in the target's `exclude:`.
 - The runtime is a git submodule at `Android/spritekit-android`. Run
@@ -273,6 +292,11 @@ would want.
 - Show only the new state: no before shots unless asked for a comparison.
   Open with what ships by default; variants behind launch flags go in their
   own section, each captioned with its flag.
+- A pull request that adds a shared abstraction, or moves a game onto one,
+  shows a sample of call sites in a Before / after table (an HTML `<table>`,
+  a `swift` block in each cell); the diff shows the rest. This repository is
+  public: its tables use neutral names, and a game's real code goes only in
+  that game's own pull request.
 - Every push re-shoots what it changed and rewrites the description to match
   the code as it now is; delete the uploads it replaces.
 - Follow-up work on an open pull request goes into that pull request. Once
