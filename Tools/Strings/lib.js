@@ -251,24 +251,30 @@ function duplicates(entries) {
 // The keys a type-safe strings layer names: each match of `pattern` (its
 // first group the key; by default `case .name: return "key"`), only inside
 // the body of `var <property>` when one is given, so the layer's English
-// fallbacks and comments aren't taken for keys.
+// fallbacks and comments aren't taken for keys. A layer written with the
+// `@LocalizedStrings` macro names each key as `@L("key"`, read anywhere in
+// the file unless a `pattern` is given; a `property` the file doesn't
+// declare (the macro writes it) is then no error.
 const LAYER_PATTERN = 'case\\s+\\.\\w+[^:\\n]*:\\s*return\\s+"((?:[^"\\\\]|\\\\.)*)"';
-function layerKeys(source, { property, pattern = LAYER_PATTERN } = {}) {
-  let text = source;
-  if (property) {
-    const head = new RegExp(`\\bvar\\s+${property}\\s*:\\s*String\\s*\\{`).exec(source);
-    if (!head) return null;
-    let depth = 1;
-    let k = head.index + head[0].length;
-    for (; k < source.length && depth; k++) {
-      if (source[k] === '{') depth++;
-      else if (source[k] === '}') depth--;
-    }
-    text = source.slice(head.index + head[0].length, k - 1);
+const MACRO_PATTERN = '@L\\(\\s*"((?:[^"\\\\]|\\\\.)*)"';
+function layerKeys(source, { property, pattern } = {}) {
+  const unescape = (key) => key.replace(/\\(.)/g, '$1');
+  const matches = (text, re) => [...text.matchAll(new RegExp(re, 'g'))].filter((m) => m[1] !== undefined).map((m) => unescape(m[1]));
+  const macro = pattern ? [] : matches(source, MACRO_PATTERN);
+  if (!property) {
+    if (pattern) return matches(source, pattern);
+    // Both forms, in the order the file names them.
+    return [...source.matchAll(new RegExp(`${LAYER_PATTERN}|${MACRO_PATTERN}`, 'g'))].map((m) => unescape(m[1] ?? m[2]));
   }
-  const keys = [];
-  for (const m of text.matchAll(new RegExp(pattern, 'g'))) if (m[1] !== undefined) keys.push(m[1].replace(/\\(.)/g, '$1'));
-  return keys;
+  const head = new RegExp(`\\bvar\\s+${property}\\s*:\\s*String\\s*\\{`).exec(source);
+  if (!head) return macro.length ? macro : null;
+  let depth = 1;
+  let k = head.index + head[0].length;
+  for (; k < source.length && depth; k++) {
+    if (source[k] === '{') depth++;
+    else if (source[k] === '}') depth--;
+  }
+  return [...matches(source.slice(head.index + head[0].length, k - 1), pattern ?? LAYER_PATTERN), ...macro];
 }
 
 // MARK: - Layout
@@ -464,6 +470,7 @@ module.exports = {
   duplicates,
   layerKeys,
   LAYER_PATTERN,
+  MACRO_PATTERN,
   layOut,
   withRaw,
   rawValue,

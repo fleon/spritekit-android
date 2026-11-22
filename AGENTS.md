@@ -103,6 +103,7 @@ would want.
   same placeholders).
 - Don't localize internal identifiers: asset names, sound names, action keys,
   debug messages, JSON keys.
+- The strings layer uses `@LocalizedStrings` (from `Macros`).
 - Let `wrappedLines` (CoreText's breaks on both platforms) break lines.
 - On Android the runtime reads the tables in the APK, in the device's
   languages (`PreferredLanguages`). Files that import only Foundation must

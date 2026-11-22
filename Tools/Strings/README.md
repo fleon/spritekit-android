@@ -34,7 +34,7 @@ require('../../Android/spritekit-android/Tools/Strings/strings.js');
 | `tables` | The tables, by name without `.strings` (default every `.strings` file in the base folder). |
 | `placeholders` | `printf` (Foundation's format specifiers, the default), `braces` (numbered `{1}`), or both in a list. |
 | `order` | Whether a translation must keep the base's order (default `true`). |
-| `layer` | The type-safe strings layer: `{ "file": "Source/Utils/LocalizedString.swift", "property": "key", "tables": ["Localizable"] }`. `property` names the `var` whose `switch` returns each case's key (`case .play: return "title.play"`), so English fallbacks and translator comments elsewhere in the file aren't taken for keys; `pattern` replaces that match (a regular expression whose first group is the key); `tables` limits the tables (and the base's `.stringsdict` files) it reads from. A list checks several layers. |
+| `layer` | The type-safe strings layer: `{ "file": "Source/Utils/LocalizedString.swift", "property": "key", "tables": ["Localizable"] }`. `property` names the `var` whose `switch` returns each case's key (`case .play: return "title.play"`), so English fallbacks and translator comments elsewhere in the file aren't taken for keys; a layer written with `@LocalizedStrings` (Platform's `Macros`) names its keys as `@L("title.play", …)`, read anywhere in the file, `property` or not (with no `property` both forms are read); `pattern` replaces those matches (a regular expression whose first group is the key); `tables` limits the tables (and the base's `.stringsdict` files) it reads from. A list checks several layers. |
 | `generate` | For tables built from JSON (below). |
 
 ## Commands
