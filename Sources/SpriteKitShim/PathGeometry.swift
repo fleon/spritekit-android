@@ -1,3 +1,4 @@
+#if SPRITEKIT_SHIM
 import Foundation
 
 /// The path calls CoreGraphics works out itself rather than recording:
@@ -279,3 +280,5 @@ public extension PathGeometry {
         return out
     }
 }
+
+#endif

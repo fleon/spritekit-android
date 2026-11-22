@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 extension SKNode {
     /// Adds `node` at `z`, and at `position` when one is given, and returns

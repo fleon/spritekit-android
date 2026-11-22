@@ -1,10 +1,6 @@
 import Foundation
 import PlatformSprite
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import UIKit
-#endif
 
 #if canImport(UIKit) || !canImport(Darwin)
 extension StudioSplashLaunch.Wait {

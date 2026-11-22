@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 // Shorthands for the geometry a SpriteKit game builds all day: `pt`, `sz`
 // and `rect` for the CoreGraphics initializers, `clamp` and `lerp` for the

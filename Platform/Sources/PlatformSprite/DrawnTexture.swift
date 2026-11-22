@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 // Drawn in UIKit's renderer, whose context the Mac host's shim hands over as
 // its own bitmap context rather than CoreGraphics': everywhere but there.

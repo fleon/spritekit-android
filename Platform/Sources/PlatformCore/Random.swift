@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// Where a game's random draws come from: each subsystem keeps a stream,
 /// `var random = Random("celebration")`, and draws with `using: &random`.

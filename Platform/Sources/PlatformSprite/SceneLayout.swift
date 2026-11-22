@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Where content can go in a scene. Scenes have a fixed design height and a
 /// wide canvas shown with aspect fill, so the visible width depends on the

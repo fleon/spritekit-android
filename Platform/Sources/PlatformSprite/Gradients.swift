@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// A colour at a place along a gradient, from 0 (its start) to 1 (its end).
 public struct GradientStop {

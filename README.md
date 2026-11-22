@@ -234,15 +234,13 @@ SpriteKit, UIKit and services; on Android, and on a Mac host for its tests,
 against the shim, which `SPRITEKIT_SHIM` selects there. Its sources import
 
 ```swift
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 ```
 
-and never `Modules/`, whose targets collide with Apple's frameworks. It
+which on Apple platforms is the shim's passthrough (it re-exports SpriteKit,
+CoreGraphics and UIKit, and compiles nothing else), and never `Modules/`,
+whose targets collide with Apple's frameworks. `#if SPRITEKIT_SHIM` is kept
+for what really differs between the two. It
 reaches this package as `..`, so a game's graph holds one
 `spritekit-android`.
 

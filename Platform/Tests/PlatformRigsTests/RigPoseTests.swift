@@ -1,10 +1,6 @@
 import Foundation
 import Testing
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import CoreGraphics
-#endif
 @testable import PlatformRigs
 
 @Suite("Posing a rig")

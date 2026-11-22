@@ -1,9 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-#endif
 
 /// A timing curve: progress from 0 to 1 eased. `bezier` solves CSS-style
 /// cubic-bezier curves, so a web prototype's timings carry over exactly.

@@ -1,10 +1,5 @@
 import Foundation
-#if SPRITEKIT_SHIM
 import SpriteKitShim
-#else
-import SpriteKit
-import UIKit
-#endif
 
 /// Notes when every frame renders for `duration` seconds, with the scene on
 /// screen, then writes them to `Library/Caches/frames.json` (seconds since
