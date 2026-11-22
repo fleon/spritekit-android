@@ -1,4 +1,5 @@
 import Foundation
+import PlatformCore
 import Macros
 #if SPRITEKIT_SHIM
 import SpriteKitShim

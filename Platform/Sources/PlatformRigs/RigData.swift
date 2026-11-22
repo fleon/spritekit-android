@@ -2,6 +2,7 @@
 import CoreGraphics
 #endif
 import Foundation
+import PlatformCore
 
 /// A Spine skeleton as a game plays it: what Spine 4.2 exported as JSON, with its images packed into one
 /// texture whose places the JSON's `atlas` table gives (`[x, y, width,
