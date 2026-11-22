@@ -96,11 +96,12 @@ let package = Package(
         // Focus for the Apple TV remote, gamepads and the Mac's pointer,
         // moving between a scene's controls; gamepads (GameController on
         // Apple, the shell's `GamepadEvents` on Android); the keyboard's
-        // and the Menu button's scene protocols.
+        // and the Menu button's scene protocols; the pressable control base.
         .target(
             name: "PlatformInput",
             dependencies: [
                 "PlatformCore",
+                "Macros",
                 .product(name: "SpriteKitShim", package: "spritekit-android", condition: onShim),
             ],
             swiftSettings: settings
