@@ -1504,7 +1504,10 @@ Scripts/emulators.sh release <session>
 Scripts/emulators.sh status
 ```
 
-Slots boot on the host GPU and lapse after their lease. A machine names its
+Slots boot on the host GPU and lapse after their lease. Each new owner gets
+the slot as its AVD defines it: screen size and density, rotation (unlocked,
+upright), font and animation scales and the games' debug properties are
+reset. A machine names its
 pool's AVDs, state and the debug properties cleared for each new owner in
 `~/.config/spritekit-android/pool.env` (see the script's header). Emulator
 frame times describe the host's GPU, not a phone's: measure performance on a
