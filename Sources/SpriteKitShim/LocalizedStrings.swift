@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// `NSLocalizedString` on Android, where corelibs' `Bundle.main` is the
 /// system's `app_process` and holds no `.lproj`, so every string came out as
@@ -52,11 +53,15 @@ public enum LocalizedStrings {
     /// The device's preferred languages, most preferred first.
     public nonisolated(unsafe) static var preferredLanguages: () -> [String] = { PreferredLanguages.current }
 
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var tables: [String: [String: String]] = [:]
-    nonisolated(unsafe) private static var files: [String: [String: String]] = [:]
-    nonisolated(unsafe) private static var pluralTables: [String: [String: StringsDict.Entry]] = [:]
-    nonisolated(unsafe) private static var chosen: String??
+    /// The tables read so far and the language chosen, read on any thread.
+    private struct Cache {
+        var tables: [String: [String: String]] = [:]
+        var files: [String: [String: String]] = [:]
+        var pluralTables: [String: [String: StringsDict.Entry]] = [:]
+        var chosen: String?
+    }
+
+    private static let cache = Locked(Cache())
 
     /// The development language (`AppIdentity.developmentRegion`, Apple's
     /// `CFBundleDevelopmentRegion`); `Base.lproj` holds it too.
@@ -78,13 +83,13 @@ public enum LocalizedStrings {
     /// the development language its own folder's and then `Base.lproj`'s.
     static func searchOrder() -> [String] {
         let available = localizations?() ?? []
-        lock.lock()
-        if chosen == nil {
+        let language = cache.withLock { cache in
+            if let chosen = cache.chosen { return chosen }
             let languages = available.filter { $0 != "Base" } + (available.contains(developmentLanguage) ? [] : [developmentLanguage])
-            chosen = .some(LocalizationMatch.best(of: languages, for: preferredLanguages()) ?? developmentLanguage)
+            let chosen = LocalizationMatch.best(of: languages, for: preferredLanguages()) ?? developmentLanguage
+            cache.chosen = chosen
+            return chosen
         }
-        let language = (chosen ?? nil) ?? developmentLanguage
-        lock.unlock()
         let folders = language == developmentLanguage ? development : [language]
         return folders.filter(available.contains)
     }
@@ -92,20 +97,13 @@ public enum LocalizedStrings {
     /// One language's table, read once.
     private static func strings(language: String, table: String) -> [String: String] {
         let name = "\(language)/\(table)"
-        lock.lock()
-        if let cached = tables[name] {
-            lock.unlock()
-            return cached
-        }
-        lock.unlock()
+        if let cached = cache.withLock({ $0.tables[name] }) { return cached }
         var parsed: [String: String] = [:]
         if let folder = BundleResources.folderProvider?(language, "lproj"),
            let data = FileManager.default.contents(atPath: folder + "/" + table + ".strings") {
             parsed = StringsFile.parse(data)
         }
-        lock.lock()
-        tables[name] = parsed
-        lock.unlock()
+        cache.withLock { $0.tables[name] = parsed }
         return parsed
     }
 
@@ -117,16 +115,9 @@ public enum LocalizedStrings {
 
     /// The `.stringsdict` file at `path`, read once. Empty if there's none.
     static func pluralTable(atPath path: String) -> [String: StringsDict.Entry] {
-        lock.lock()
-        if let cached = pluralTables[path] {
-            lock.unlock()
-            return cached
-        }
-        lock.unlock()
+        if let cached = cache.withLock({ $0.pluralTables[path] }) { return cached }
         let parsed = FileManager.default.contents(atPath: path).map(StringsDict.parse) ?? [:]
-        lock.lock()
-        pluralTables[path] = parsed
-        lock.unlock()
+        cache.withLock { $0.pluralTables[path] = parsed }
         return parsed
     }
 
@@ -142,27 +133,15 @@ public enum LocalizedStrings {
     /// language itself and reads that language's folder
     /// (`BundleResources.folderProvider`). Empty if there's none.
     public static func table(atPath path: String) -> [String: String] {
-        lock.lock()
-        if let cached = files[path] {
-            lock.unlock()
-            return cached
-        }
-        lock.unlock()
+        if let cached = cache.withLock({ $0.files[path] }) { return cached }
         let parsed = FileManager.default.contents(atPath: path).map(StringsFile.parse) ?? [:]
-        lock.lock()
-        files[path] = parsed
-        lock.unlock()
+        cache.withLock { $0.files[path] = parsed }
         return parsed
     }
 
     /// Forgets the tables and the language chosen (tests).
     static func reset() {
-        lock.lock()
-        tables = [:]
-        files = [:]
-        pluralTables = [:]
-        chosen = nil
-        lock.unlock()
+        cache.withLock { $0 = Cache() }
     }
 }
 

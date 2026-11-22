@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// An image: one the game loaded from a file, or one it drew.
 ///
@@ -31,17 +32,16 @@ public final class UIImage: @unchecked Sendable {
     public var cgImage: RasterImage? {
         if let drawn { return drawn }
         guard let asset else { return nil }
-        lock.lock()
-        defer { lock.unlock() }
-        if let decoded { return decoded }
-        decoded = UIImage.packed?(asset.name)
-        return decoded
+        return decoded.withLock { decoded in
+            if let decoded { return decoded }
+            decoded = UIImage.packed?(asset.name)
+            return decoded
+        }
     }
     private let drawn: RasterImage?
     /// The packed art's image this is, for `UIImage(named:)`.
     public let asset: AssetIndex.Entry?
-    private var decoded: RasterImage?
-    private let lock = NSLock()
+    private let decoded = Locked<RasterImage?>(nil)
 
     /// In points: the pixel size over `scale`.
     public let size: CGSize

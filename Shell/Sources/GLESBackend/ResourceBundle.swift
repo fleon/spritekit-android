@@ -1,5 +1,6 @@
 import CAndroidShell
 import Foundation
+import PlatformServices
 import ShellCore
 import SpriteKitShim
 
@@ -39,8 +40,7 @@ public enum ResourceBundle {
 
     nonisolated(unsafe) static var folder: FolderRule = defaultFolder
 
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var unpacked: Set<String> = []
+    private static let unpacked = Locked(Set<String>())
     nonisolated(unsafe) private static var cache: URL?
 
     /// The strings each language's folder holds, and their plurals
@@ -88,18 +88,18 @@ public enum ResourceBundle {
         let key = "\(folder)/\(file)"
         let directory = cache.appendingPathComponent(folder)
         let url = directory.appendingPathComponent(file)
-        lock.lock()
-        defer { lock.unlock() }
-        if unpacked.contains(key) { return url }
-        guard let data = AssetBundle.load(key) else { return nil }
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
-            unpacked.insert(key)
-            return url
-        } catch {
-            Log.error("\(key) would not unpack: \(error)")
-            return nil
+        return unpacked.withLock { unpacked in
+            if unpacked.contains(key) { return url }
+            guard let data = AssetBundle.load(key) else { return nil }
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try data.write(to: url, options: .atomic)
+                unpacked.insert(key)
+                return url
+            } catch {
+                Log.error("\(key) would not unpack: \(error)")
+                return nil
+            }
         }
     }
 }

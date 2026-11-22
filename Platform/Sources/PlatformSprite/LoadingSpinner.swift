@@ -119,19 +119,14 @@ public final class LoadingSpinner: SKNode {
 
     /// Shaders no spinner shows any more, kept so the next spinner needn't
     /// compile its own (SpriteKit compiles each shader as it first draws).
-    private nonisolated(unsafe) static var spare: [Shading] = []
-    private static let lock = NSLock()
+    private static let spare = Locked<[Shading]>([])
 
     private static func take() -> Shading {
-        lock.lock()
-        defer { lock.unlock() }
-        return spare.popLast() ?? Shading()
+        spare.withLock { $0.popLast() } ?? Shading()
     }
 
     private static func give(_ shading: Shading) {
-        lock.lock()
-        defer { lock.unlock() }
-        spare.append(shading)
+        spare.withLock { $0.append(shading) }
     }
 
     /// The arc swept anticlockwise (y up) from the ring's right, as far as

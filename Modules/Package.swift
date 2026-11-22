@@ -93,6 +93,7 @@ let package = Package(
                 ],
                 path: "Sources/AVFoundation", swiftSettings: [v5, shimDefine]),
         .target(name: "os",
+                dependencies: [.product(name: "PlatformServices", package: "spritekit-android")],
                 path: "Sources/os", swiftSettings: [v5, shimDefine]),
         // Not a passthrough: Android has no Accelerate, so this one has the
         // free-function spelling of the SIMD maths in it. It also re-exports

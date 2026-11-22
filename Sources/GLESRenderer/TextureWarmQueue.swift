@@ -1,4 +1,5 @@
 import Foundation
+import PlatformServices
 import SpriteKitShim
 
 /// Textures the asset index doesn't back, their pixels readied on the
@@ -9,29 +10,23 @@ import SpriteKitShim
 public final class TextureWarmQueue: @unchecked Sendable {
     public typealias Item = (texture: SKTexture, width: Int, height: Int, pixels: Data)
 
-    private let lock = NSLock()
-    private var waiting: [Item] = []
+    private let waiting = Locked<[Item]>([])
 
     public init() {}
 
     public func add(_ item: Item) {
-        lock.lock()
-        waiting.append(item)
-        lock.unlock()
+        waiting.withLock { $0.append(item) }
     }
 
     public func next() -> Item? {
-        lock.lock()
-        defer { lock.unlock() }
-        return waiting.isEmpty ? nil : waiting.removeFirst()
+        waiting.withLock { $0.isEmpty ? nil : $0.removeFirst() }
     }
 
     @discardableResult
     public func removeAll() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        let count = waiting.count
-        waiting.removeAll()
-        return count
+        waiting.withLock { waiting in
+            defer { waiting.removeAll() }
+            return waiting.count
+        }
     }
 }

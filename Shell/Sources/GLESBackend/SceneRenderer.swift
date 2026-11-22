@@ -1,5 +1,6 @@
 import CAndroidShell
 import Foundation
+import PlatformServices
 import GLESRenderer
 import SpriteKitShim
 import ShellCore
@@ -1388,15 +1389,12 @@ public final class SceneRenderer: FrameRenderer, MetalCommandExecutor {
     /// renderer draws with; says so once for each `what` that isn't.
     nonisolated private static func onGLThread(_ what: String) -> Bool {
         guard !Thread.isMainThread else { return true }
-        offThreadLock.lock()
-        let first = offThreadCalls.insert(what).inserted
-        offThreadLock.unlock()
+        let first = offThreadCalls.withLock { $0.insert(what).inserted }
         if first { Log.error("\(what) called off the frame thread (\(Thread.current.name ?? "unnamed")): refused, as GL is current only there") }
         return false
     }
 
-    nonisolated private static let offThreadLock = NSLock()
-    nonisolated(unsafe) private static var offThreadCalls: Set<String> = []
+    nonisolated private static let offThreadCalls = Locked(Set<String>())
 
     private func bake(_ node: SKNode, crop: CGRect?) -> SKTexture? {
         FrameCosts.time(.bakes) { bakeNow(node, crop: crop) }

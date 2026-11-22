@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// Where the art lives on Android.
 ///
@@ -160,14 +161,11 @@ public final class AssetIndex: Sendable {
     /// The index every `SKTexture(imageNamed:)` resolves against. The app
     /// sets it as it starts; it is nil in tests that do not need art.
     public static var shared: AssetIndex? {
-        get { Shared.lock.withLock { Shared.index } }
-        set { Shared.lock.withLock { Shared.index = newValue } }
+        get { sharedIndex.withLock { $0 } }
+        set { sharedIndex.withLock { $0 = newValue } }
     }
 
-    private enum Shared {
-        static let lock = NSLock()
-        nonisolated(unsafe) static var index: AssetIndex?
-    }
+    private static let sharedIndex = Locked<AssetIndex?>(nil)
 
     // MARK: Details
 
@@ -209,14 +207,6 @@ public final class AssetIndex: Sendable {
         let scale: Double
         let pages: [Page]
         let assets: [String: Asset]
-    }
-}
-
-private extension NSLock {
-    func withLock<T>(_ body: () -> T) -> T {
-        lock()
-        defer { unlock() }
-        return body()
     }
 }
 

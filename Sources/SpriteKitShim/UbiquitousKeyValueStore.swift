@@ -97,11 +97,14 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
 
     private let defaults: UserDefaults
     private let clock: () -> TimeInterval
-    private let lock = NSLock()
-    private var records: [String: UbiquitousRecord]
-    /// Whether the cloud has been heard from yet, so the next merge is
-    /// iCloud's initial sync.
-    private var hasSynced = false
+    private struct State {
+        var records: [String: UbiquitousRecord]
+        /// Whether the cloud has been heard from yet, so the next merge is
+        /// iCloud's initial sync.
+        var hasSynced = false
+    }
+
+    private let state: Locked<State>
 
     /// Where the values go beyond this device. Installing one merges with it
     /// at once; if it holds nothing yet (Play Games not signed in), the first
@@ -119,12 +122,12 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
         self.defaults = defaults
         self.clock = clock
         let saved = defaults.dictionary(forKey: Self.defaultsKey) ?? [:]
-        records = saved.compactMapValues { ($0 as? [String: Any]).flatMap(UbiquitousRecord.init(dictionary:)) }
+        state = Locked(State(records: saved.compactMapValues { ($0 as? [String: Any]).flatMap(UbiquitousRecord.init(dictionary:)) }))
     }
 
     // MARK: Reading
 
-    open func object(forKey key: String) -> Any? { locked { records[key]?.value } }
+    open func object(forKey key: String) -> Any? { state.withLock { $0.records[key]?.value } }
     open func string(forKey key: String) -> String? { object(forKey: key) as? String }
     open func array(forKey key: String) -> [Any]? { object(forKey: key) as? [Any] }
     open func dictionary(forKey key: String) -> [String: Any]? { object(forKey: key) as? [String: Any] }
@@ -133,7 +136,7 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
     open func double(forKey key: String) -> Double { (object(forKey: key) as? NSNumber)?.doubleValue ?? 0 }
     open func bool(forKey key: String) -> Bool { (object(forKey: key) as? NSNumber)?.boolValue ?? false }
 
-    open var dictionaryRepresentation: [String: Any] { locked { records.compactMapValues(\.value) } }
+    open var dictionaryRepresentation: [String: Any] { state.withLock { $0.records.compactMapValues(\.value) } }
 
     // MARK: Writing
 
@@ -164,7 +167,7 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
     /// answers whenever the values could be saved.
     @discardableResult
     open func synchronize() -> Bool {
-        locked { save() }
+        state.withLock { save($0.records) }
         onMain { [self] in cloud?.synchronize() }
         return true
     }
@@ -173,22 +176,16 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
 
     private func write(_ value: Any?, forKey key: String) {
         let record = UbiquitousRecord(value: value, time: clock())
-        locked {
-            records[key] = record
-            save()
+        state.withLock { state in
+            state.records[key] = record
+            save(state.records)
         }
         onMain { [self] in cloud?.set(record.dictionary, forKey: Self.cloudPrefix + key) }
     }
 
     /// Under the lock.
-    private func save() {
+    private func save(_ records: [String: UbiquitousRecord]) {
         defaults.set(records.mapValues(\.dictionary), forKey: Self.defaultsKey)
-    }
-
-    private func locked<T>(_ body: () -> T) -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return body()
     }
 
     private func onMain(_ body: @escaping () -> Void) {
@@ -209,16 +206,16 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
         }
         var changed: [String] = []
         var outgoing: [(String, UbiquitousRecord)] = []
-        let reason: Int = locked {
-            let reason = hasSynced ? Self.serverChange : Self.initialSyncChange
-            if heardFrom || !remote.isEmpty { hasSynced = true }
-            for key in Set(records.keys).union(remote.keys).sorted() {
-                switch (records[key], remote[key]) {
+        let reason: Int = state.withLock { state in
+            let reason = state.hasSynced ? Self.serverChange : Self.initialSyncChange
+            if heardFrom || !remote.isEmpty { state.hasSynced = true }
+            for key in Set(state.records.keys).union(remote.keys).sorted() {
+                switch (state.records[key], remote[key]) {
                 case let (local?, theirs?) where theirs.wins(over: local):
                     if !theirs.sameValue(as: local) { changed.append(key) }
-                    records[key] = theirs
+                    state.records[key] = theirs
                 case let (nil, theirs?):
-                    records[key] = theirs
+                    state.records[key] = theirs
                     if theirs.value != nil { changed.append(key) }
                 case let (local?, theirs) where theirs.map({ local.wins(over: $0) }) ?? true:
                     outgoing.append((key, local))
@@ -226,7 +223,7 @@ open class UbiquitousKeyValueStore: @unchecked Sendable {
                     break
                 }
             }
-            save()
+            save(state.records)
             return reason
         }
         for (key, record) in outgoing {

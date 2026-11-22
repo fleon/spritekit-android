@@ -12,25 +12,23 @@ import SpriteKit
 /// (registering a file twice fails, and logs on Apple). The file names are
 /// the game's; on Android `Bundle.main` finds them in the APK.
 public nonisolated enum FontRegistry {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var registered: [String: Bool] = [:]
-    nonisolated(unsafe) private static var faces: [String: [String]] = [:]
+    private static let state = Locked<(registered: [String: Bool], faces: [String: [String]])>(([:], [:]))
 
     /// Registers the bundle's `name.ext`, the first time it's asked for:
     /// whether it registered.
     @discardableResult
     public static func register(_ name: String, withExtension ext: String = "ttf") -> Bool {
         let key = "\(name).\(ext)"
-        lock.lock()
-        defer { lock.unlock() }
-        if let done = registered[key] { return done }
-        var done = false
-        if let url = Bundle.main.url(forResource: name, withExtension: ext) {
-            var error: Unmanaged<CFError>?
-            done = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+        return state.withLock { state in
+            if let done = state.registered[key] { return done }
+            var done = false
+            if let url = Bundle.main.url(forResource: name, withExtension: ext) {
+                var error: Unmanaged<CFError>?
+                done = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+            }
+            state.registered[key] = done
+            return done
         }
-        registered[key] = done
-        return done
     }
 
     /// Registers each of the bundle's `fontFiles`, `ext` files by name.
@@ -43,15 +41,15 @@ public nonisolated enum FontRegistry {
     public static func postScriptNames(inFile name: String, withExtension ext: String = "ttf") -> [String] {
         register(name, withExtension: ext)
         let key = "\(name).\(ext)"
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached = faces[key] { return cached }
-        var names: [String] = []
-        if let url = Bundle.main.url(forResource: name, withExtension: ext),
-           let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] {
-            names = descriptors.map { CTFontCopyPostScriptName(CTFontCreateWithFontDescriptor($0, 0, nil)) as String }
+        return state.withLock { state in
+            if let cached = state.faces[key] { return cached }
+            var names: [String] = []
+            if let url = Bundle.main.url(forResource: name, withExtension: ext),
+               let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] {
+                names = descriptors.map { CTFontCopyPostScriptName(CTFontCreateWithFontDescriptor($0, 0, nil)) as String }
+            }
+            state.faces[key] = names
+            return names
         }
-        faces[key] = names
-        return names
     }
 }

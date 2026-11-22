@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// A fragment shader attached to a node.
 ///
@@ -58,8 +59,7 @@ open class SKShader: @unchecked Sendable {
     // (`programWarmer`), which builds their programs a few a frame while a
     // loading screen still shows.
 
-    private static let madeLock = NSLock()
-    private nonisolated(unsafe) static var made: [UInt: [Weak]] = [:]
+    private static let made = Locked([UInt: [Weak]]())
     /// What one thread may hold before its oldest are let go: a thread that
     /// makes shaders and never preloads mustn't keep them all.
     static let madeLimit = 4096
@@ -69,21 +69,19 @@ open class SKShader: @unchecked Sendable {
     private static func noteMade(_ shader: SKShader) {
         guard !Thread.isMainThread else { return }
         let thread = UInt(bitPattern: pthread_self())
-        madeLock.lock()
-        var list = made[thread] ?? []
-        if list.count >= madeLimit { list.removeAll { $0.shader == nil } }
-        if list.count >= madeLimit { list.removeFirst(list.count - madeLimit + 1) }
-        list.append(Weak(shader: shader))
-        made[thread] = list
-        madeLock.unlock()
+        made.withLock { made in
+            var list = made[thread] ?? []
+            if list.count >= madeLimit { list.removeAll { $0.shader == nil } }
+            if list.count >= madeLimit { list.removeFirst(list.count - madeLimit + 1) }
+            list.append(Weak(shader: shader))
+            made[thread] = list
+        }
     }
 
     /// The shaders made on the calling thread since it last asked, still alive.
     public static func takeMadeOnThisThread() -> [SKShader] {
         let thread = UInt(bitPattern: pthread_self())
-        madeLock.lock()
-        let list = made.removeValue(forKey: thread) ?? []
-        madeLock.unlock()
+        let list = made.withLock { $0.removeValue(forKey: thread) ?? [] }
         return list.compactMap(\.shader)
     }
 
@@ -142,13 +140,12 @@ public final class SKUniform: @unchecked Sendable {
 
     // Uniforms are written on whichever thread builds or updates a scene,
     // so the shared clock ticks under a lock: no two writes share a stamp.
-    nonisolated(unsafe) private static var writeClock: UInt64 = 0
-    private static let writeClockLock = NSLock()
+    private static let writeClock = Locked<UInt64>(0)
 
     private static func nextWriteStamp() -> UInt64 {
-        writeClockLock.withLock {
-            writeClock &+= 1
-            return writeClock
+        writeClock.withLock { clock in
+            clock &+= 1
+            return clock
         }
     }
 

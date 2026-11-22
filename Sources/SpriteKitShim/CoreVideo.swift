@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 // CoreVideo, as filming a scene through `SKRenderer` uses it: pixel buffers
 // a frame is rendered into and handed to the video writer (or read back for
@@ -108,8 +109,7 @@ public final class CVPixelBufferPool: @unchecked Sendable {
     public let width: Int
     public let height: Int
     public let pixelFormat: OSType
-    private let lock = NSLock()
-    private var free: [CVPixelBuffer] = []
+    private let free = Locked<[CVPixelBuffer]>([])
 
     public init(width: Int, height: Int, pixelFormat: OSType = kCVPixelFormatType_32BGRA) {
         self.width = width
@@ -119,7 +119,7 @@ public final class CVPixelBufferPool: @unchecked Sendable {
 
     /// A buffer nobody else holds, else a new one.
     func take() -> CVPixelBuffer {
-        lock.withLock {
+        free.withLock { free in
             if let index = free.indices.first(where: { isKnownUniquelyReferenced(&free[$0]) }) {
                 return free[index]
             }

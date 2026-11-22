@@ -54,6 +54,9 @@ would want.
   haptics, saved data). `didMove(to:)` loads the scene if nothing has, then
   starts what runs once it shows. Keep `update(_:)` minimal.
 - No allocations or texture creation inside per-frame callbacks.
+- State read on more than one thread lives in a `Locked<State>`
+  (`PlatformServices`, which `PlatformCore` brings), reached through
+  `withLock`, never a lock paired by hand with `lock()` and `unlock()`.
 - Keep node ownership local: each node manages its own subnodes.
 - Give overlapping siblings explicit `zPosition`s: the view ignores sibling
   order, so nodes at the same z-position may draw in any order. Centralize

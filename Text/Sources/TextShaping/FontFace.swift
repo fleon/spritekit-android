@@ -1,6 +1,7 @@
 #if canImport(CTextShaping)
 import CTextShaping
 import Foundation
+import PlatformServices
 import SpriteKitShim
 
 public enum FontError: Error, CustomStringConvertible {

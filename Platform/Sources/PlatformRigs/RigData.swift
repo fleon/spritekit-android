@@ -234,50 +234,41 @@ public nonisolated final class RigData: @unchecked Sendable {
 
     // MARK: - Loading
 
-    // Guarded by `lock`.
-    nonisolated(unsafe) private static var cache: [String: RigData] = [:]
-    nonisolated(unsafe) private static var load: @Sendable (String) -> RigData? = { bundled($0) }
-    private static let lock = NSLock()
+    private struct Loading {
+        var cache: [String: RigData] = [:]
+        var load: @Sendable (String) -> RigData? = { bundled($0) }
+    }
+
+    private static let loading = Locked(Loading())
 
     /// Reads the rig `name` for `named(_:)`, the first time it's asked for.
     /// By default `bundled(_:)`; a game that packs its rigs another way
     /// (deflated, split into a skeleton and its places) sets its own.
     public static var loader: @Sendable (String) -> RigData? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return load
-        }
+        get { loading.withLock { $0.load } }
         set {
-            lock.lock()
-            load = newValue
-            cache.removeAll()
-            lock.unlock()
+            loading.withLock { loading in
+                loading.load = newValue
+                loading.cache.removeAll()
+            }
         }
     }
 
     /// The rig `name`, read once by `loader` and kept.
     public static func named(_ name: String) -> RigData? {
-        lock.lock()
-        if let rig = cache[name] {
-            lock.unlock()
+        let (cached, load) = loading.withLock { ($0.cache[name], $0.load) }
+        if let cached { return cached }
+        guard let rig = load(name) else { return nil }
+        return loading.withLock { loading in
+            if let raced = loading.cache[name] { return raced }
+            loading.cache[name] = rig
             return rig
         }
-        let load = load
-        lock.unlock()
-        guard let rig = load(name) else { return nil }
-        lock.lock()
-        defer { lock.unlock() }
-        if let raced = cache[name] { return raced }
-        cache[name] = rig
-        return rig
     }
 
     /// Forgets the rigs `forget` picks by name, so they're read again.
     public static func forget(where forget: (String) -> Bool) {
-        lock.lock()
-        cache = cache.filter { !forget($0.key) }
-        lock.unlock()
+        loading.withLock { $0.cache = $0.cache.filter { !forget($0.key) } }
     }
 
     /// `Rig<name>.json` and its texture `Rig<name>.png` from `bundle`.

@@ -32,8 +32,7 @@ public nonisolated final class Localizer<Language: LocalizationLanguage>: @unche
     private let readSetting: () -> String?
     private let saveSetting: (String) -> Void
     private let preferredLanguages: () -> [String]
-    private let lock = NSLock()
-    private var cached: (language: Language, strings: Strings)?
+    private let cached = Locked<(language: Language, strings: Strings)?>(nil)
 
     /// - Parameters:
     ///   - development: the language the strings are written in.
@@ -106,9 +105,7 @@ public nonisolated final class Localizer<Language: LocalizationLanguage>: @unche
 
     /// Forgets the language and its strings, read again when next asked.
     public func forget() {
-        lock.lock()
-        cached = nil
-        lock.unlock()
+        cached.withLock { $0 = nil }
     }
 
     /// An interface string in the current language, else `fallback`.
@@ -123,9 +120,15 @@ public nonisolated final class Localizer<Language: LocalizationLanguage>: @unche
     }
 
     private func load() -> (language: Language, strings: Strings) {
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached { return cached }
+        cached.withLock { cached in
+            if let cached { return cached }
+            let loaded = read()
+            cached = loaded
+            return loaded
+        }
+    }
+
+    private func read() -> (language: Language, strings: Strings) {
         let saved = readSetting().flatMap(Language.init(rawValue:))
         let language = saved ?? deviceLanguage
         let folder = language == development ? developmentFolder : language.rawValue
@@ -135,7 +138,6 @@ public nonisolated final class Localizer<Language: LocalizationLanguage>: @unche
         #else
         let strings = Strings(bundle: bundle.path(forResource: folder, ofType: "lproj").flatMap(Bundle.init(path:)) ?? bundle)
         #endif
-        cached = (language, strings)
         return (language, strings)
     }
 }

@@ -1,6 +1,7 @@
 #if canImport(CTextShaping)
 import CTextShaping
 import Foundation
+import PlatformServices
 import SpriteKitShim
 
 /// What a game's font names resolve to.
@@ -233,14 +234,6 @@ public final class FontLibrary: @unchecked Sendable {
             recency.removeAll()
             missing.removeAll()
         }
-    }
-}
-
-extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
     }
 }
 

@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM && !canImport(Darwin)
 import Foundation
+import PlatformServices
 
 /// Runs the main actor's work on the thread the game lives on.
 ///
@@ -53,14 +54,11 @@ public enum MainActorJobs {
 final class FrameLoopExecutor: SerialExecutor, @unchecked Sendable {
     static let shared = FrameLoopExecutor()
 
-    private let lock = NSLock()
-    private var pending: [UnownedJob] = []
+    private let pending = Locked([UnownedJob]())
 
     func enqueue(_ job: consuming ExecutorJob) {
         let unowned = UnownedJob(job)
-        lock.lock()
-        pending.append(unowned)
-        lock.unlock()
+        pending.withLock { $0.append(unowned) }
     }
 
     func asUnownedSerialExecutor() -> UnownedSerialExecutor {
@@ -74,10 +72,10 @@ final class FrameLoopExecutor: SerialExecutor, @unchecked Sendable {
     func drain(rounds: Int) {
         let executor = asUnownedSerialExecutor()
         for _ in 0 ..< rounds {
-            lock.lock()
-            let jobs = pending
-            pending.removeAll(keepingCapacity: true)
-            lock.unlock()
+            let jobs = pending.withLock { pending in
+                defer { pending.removeAll(keepingCapacity: true) }
+                return pending
+            }
             guard !jobs.isEmpty else { return }
             for job in jobs { job.runSynchronously(on: executor) }
         }

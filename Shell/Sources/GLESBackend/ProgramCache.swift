@@ -1,5 +1,6 @@
 import CAndroidShell
 import Foundation
+import PlatformServices
 import ShellCore
 import SpriteKitShim
 
@@ -40,13 +41,15 @@ nonisolated final class ProgramCache: @unchecked Sendable {
     private static let headerSize = 40
 
     private let folder: URL
-    private let lock = NSLock()
-    /// Files in the folder (or on their way), by name, with their sizes.
-    private var kept: [String: Int] = [:]
-    private var keptBytes = 0
-    private let writes = DispatchQueue(label: "ProgramCache.writes", qos: .utility)
+    private struct State {
+        /// Files in the folder (or on their way), by name, with their sizes.
+        var kept: [String: Int] = [:]
+        var keptBytes = 0
+        var stats = Stats()
+    }
 
-    private var stats = Stats()
+    private let state = Locked(State())
+    private let writes = DispatchQueue(label: "ProgramCache.writes", qos: .utility)
 
     struct Stats {
         var loaded = 0
@@ -98,7 +101,8 @@ nonisolated final class ProgramCache: @unchecked Sendable {
             return nil
         }
         prune()
-        Log.info("program cache \(name): \(kept.count) programs, \(keptBytes / 1024) KB\(setting == "clear" ? " (cleared)" : "")")
+        let (count, bytes) = state.withLock { ($0.kept.count, $0.keptBytes) }
+        Log.info("program cache \(name): \(count) programs, \(bytes / 1024) KB\(setting == "clear" ? " (cleared)" : "")")
     }
 
     /// Loads the program for these sources, or builds it with `build` (which
@@ -107,9 +111,7 @@ nonisolated final class ProgramCache: @unchecked Sendable {
     func program(vertex: String, fragment: String, create: () -> GLuint, build: (GLuint) -> Bool) -> GLuint {
         let key = Self.key(vertex: vertex, fragment: fragment)
         let file = key.name + ".bin"
-        lock.lock()
-        let has = kept[file] != nil
-        lock.unlock()
+        let has = state.withLock { $0.kept[file] != nil }
 
         if has {
             let started = MediaTime.source()
@@ -138,15 +140,11 @@ nonisolated final class ProgramCache: @unchecked Sendable {
     }
 
     var summary: String {
-        lock.lock()
-        defer { lock.unlock() }
-        return stats.text
+        state.withLock { $0.stats.text }
     }
 
     private func count(_ change: (inout Stats) -> Void) {
-        lock.lock()
-        change(&stats)
-        lock.unlock()
+        state.withLock { change(&$0.stats) }
     }
 
     // MARK: Files
@@ -184,14 +182,13 @@ nonisolated final class ProgramCache: @unchecked Sendable {
         var length: GLint = 0
         glGetProgramiv(program, GLenum(GL_PROGRAM_BINARY_LENGTH), &length)
         guard length > 0 else { return }
-        lock.lock()
         let size = Int(length) + Self.headerSize
-        let fits = kept[file] == nil && keptBytes + size <= Self.capacity
-        if fits {
-            keptBytes += size
-            kept[file] = size
+        let fits = state.withLock { state in
+            guard state.kept[file] == nil, state.keptBytes + size <= Self.capacity else { return false }
+            state.keptBytes += size
+            state.kept[file] = size
+            return true
         }
-        lock.unlock()
         guard fits else { return }
 
         var data = Data(count: Self.headerSize + Int(length))
@@ -231,9 +228,9 @@ nonisolated final class ProgramCache: @unchecked Sendable {
 
     private func forget(_ file: String) {
         try? FileManager.default.removeItem(at: folder.appendingPathComponent(file))
-        lock.lock()
-        if let size = kept.removeValue(forKey: file) { keptBytes -= size }
-        lock.unlock()
+        state.withLock { state in
+            if let size = state.kept.removeValue(forKey: file) { state.keptBytes -= size }
+        }
     }
 
     /// Lists the folder, deleting the least recently used files past
@@ -258,8 +255,11 @@ nonisolated final class ProgramCache: @unchecked Sendable {
                 entries.removeAll { $0.name == entry.name }
             }
         }
-        kept = Dictionary(entries.map { ($0.name, $0.size) }, uniquingKeysWith: { first, _ in first })
-        keptBytes = total
+        let kept = Dictionary(entries.map { ($0.name, $0.size) }, uniquingKeysWith: { first, _ in first })
+        state.withLock { state in
+            state.kept = kept
+            state.keptBytes = total
+        }
     }
 
     // MARK: Keys
