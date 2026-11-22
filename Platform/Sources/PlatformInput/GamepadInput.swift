@@ -1,4 +1,5 @@
 import Foundation
+import PlatformCore
 #if SPRITEKIT_SHIM
 import SpriteKitShim
 #else
@@ -36,7 +37,7 @@ public final class GamepadInput {
     /// The pretend pad's id, past any SDL hands out.
     private static let scriptedPad = UInt32.max
     #else
-    private var observers: [NSObjectProtocol] = []
+    private let observers = ObserverBag()
     /// The controllers read, by the ids their pads go by.
     private var controllers: [ObjectIdentifier: GCController] = [:]
     #if os(tvOS)
@@ -74,24 +75,15 @@ public final class GamepadInput {
         GamepadEvents.sink = { [weak self] in self?.receive($0) }
         for id in GamepadEvents.connected.sorted() { receive(.connected(id: id)) }
         #else
-        let center = NotificationCenter.default
-        observers = [
-            center.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] notification in
-                guard let controller = notification.object as? GCController else { return }
-                MainActor.assumeIsolated { self?.attach(controller) }
-            },
-            center.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] notification in
-                guard let controller = notification.object as? GCController else { return }
-                MainActor.assumeIsolated { self?.detach(controller) }
-            },
-        ]
+        observers.observe(.GCControllerDidConnect, queue: .main) { [weak self] notification in
+            guard let controller = notification.object as? GCController else { return }
+            MainActor.assumeIsolated { self?.attach(controller) }
+        }
+        observers.observe(.GCControllerDidDisconnect, queue: .main) { [weak self] notification in
+            guard let controller = notification.object as? GCController else { return }
+            MainActor.assumeIsolated { self?.detach(controller) }
+        }
         GCController.controllers().forEach(attach)
-        #endif
-    }
-
-    deinit {
-        #if !SPRITEKIT_SHIM
-        observers.forEach(NotificationCenter.default.removeObserver)
         #endif
     }
 

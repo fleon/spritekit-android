@@ -67,6 +67,9 @@ would want.
 - Use `@NSCodingUnsupported` (from `Macros`) on node subclasses instead of a
   hand-written `init?(coder:)`; `inherit: .size` or `.plain` writes the
   pass-through `init(size:)` or `init()`.
+- Block observers of `NotificationCenter` go in an `ObserverBag`
+  (`PlatformCore`), kept as a property: it removes them when it goes or on
+  `removeAll()`, with no token arrays or `deinit` of your own.
 - Buttons, switches and tiles subclass `PressableNode` (`PlatformInput`),
   which tracks the touch, focus and activation; a control keeps only its look.
 - Asset-backed images go through `PlatformSprite`'s helpers: `txtr("Asset")`,
