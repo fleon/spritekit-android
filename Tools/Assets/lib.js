@@ -39,9 +39,11 @@ function stripComments(text) {
     .replace(/(^|[^:"])\/\/.*$/gm, (m, before) => before + ' '.repeat(m.length - before.length));
 }
 
-/// The first argument of the call starting at `start`: up to the first
-/// comma or closing parenthesis at its own depth.
-function firstArgument(text, start) {
+/// The arguments of the call whose list starts at `start`, each trimmed,
+/// up to the closing parenthesis at their own depth.
+function callArguments(text, start) {
+  const found = [];
+  let from = start;
   let depth = 0;
   let inString = false;
   for (let i = start; i < text.length; i++) {
@@ -54,11 +56,42 @@ function firstArgument(text, start) {
     if (c === '"') inString = true;
     else if ('([{'.includes(c)) depth++;
     else if (')]}'.includes(c)) {
-      if (depth === 0) return text.slice(start, i).trim();
+      if (depth === 0) {
+        found.push(text.slice(from, i).trim());
+        return found;
+      }
       depth--;
-    } else if (c === ',' && depth === 0) return text.slice(start, i).trim();
+    } else if (c === ',' && depth === 0) {
+      found.push(text.slice(from, i).trim());
+      from = i + 1;
+    }
   }
-  return text.slice(start).trim();
+  found.push(text.slice(from).trim());
+  return found;
+}
+
+/// The first argument of the call starting at `start`: up to the first
+/// comma or closing parenthesis at its own depth.
+function firstArgument(text, start) {
+  return callArguments(text, start)[0];
+}
+
+/// The value passed to the argument labelled `label` in the call starting
+/// at `start`, wherever it stands; undefined when the call has none.
+function labelledArgument(text, start, label) {
+  const labelled = new RegExp(`^${label}\\s*:\\s*`);
+  const argument = callArguments(text, start).find((a) => labelled.test(a));
+  return argument?.replace(labelled, '');
+}
+
+/// A `calls` entry: a function's name, which takes the name first
+/// (`badge`, or `badge(_:)`), or a function and one of its labels, which
+/// takes it there (`Piece(asset:)`).
+function ownCall(entry) {
+  const m = entry.match(/^([\w.$]+)(?:\((\w+):\))?$/);
+  if (!m) throw new Error(`assets.json calls: can't read ${JSON.stringify(entry)}; say name or name(label:)`);
+  const pattern = String.raw`(?<![\w])${m[1].replace(/[.$]/g, '\\$&')}\(\s*`;
+  return m[2] && m[2] !== '_' ? { pattern, label: m[2] } : pattern;
 }
 
 /// A `String` enum's cases' raw values, by case name, from Swift source:
@@ -97,7 +130,8 @@ function stringEnums(text) {
 /// before its first interpolation).
 /// `enums` resolves `.case` and `Type.case` arguments: by type name, each
 /// case's raw value. `calls` names a game's own functions that take an
-/// image's (`images`) or a sound's (`sounds`) name first; an enum passed to
+/// image's (`images`) or a sound's (`sounds`) name, first or at a label
+/// (`ownCall`); an enum passed to
 /// `AudioConfiguration.sounds(T.self)` names every one of its cases.
 function scanSwift(text, enums = {}, calls = {}) {
   const source = stripComments(text);
@@ -110,14 +144,17 @@ function scanSwift(text, enums = {}, calls = {}) {
     }
   }
   const scan = (patterns, kind) => {
-    for (const pattern of patterns) {
+    for (const entry of patterns) {
+      const { pattern, label } = typeof entry === 'string' ? { pattern: entry } : entry;
       const re = new RegExp(pattern, 'g');
       let match;
       while ((match = re.exec(source))) {
         // A helper's own declaration (`func img(_ name: String)`) names nothing.
         if (/\bfunc\s+$/.test(source.slice(Math.max(0, match.index - 40), match.index))) continue;
         const line = lineOf(source, match.index);
-        const argument = firstArgument(source, re.lastIndex);
+        const argument = label ? labelledArgument(source, re.lastIndex, label) : firstArgument(source, re.lastIndex);
+        // Another overload, without the label.
+        if (argument === undefined) continue;
         const literal = argument.match(new RegExp(`^${LITERAL}$`));
         if (literal && !literal[1].includes('\\(')) {
           result[kind].push({ name: literal[1], line });
@@ -135,7 +172,7 @@ function scanSwift(text, enums = {}, calls = {}) {
       }
     }
   };
-  const own = (names) => (names ?? []).map((name) => String.raw`(?<![\w])${name.replace(/[.$]/g, '\\$&')}\(\s*`);
+  const own = (entries) => (entries ?? []).map(ownCall);
   scan([...IMAGE_CALLS, ...own(calls.images)], 'images');
   scan([...SOUND_CALLS, ...own(calls.sounds)], 'sounds');
   // Every case of an enum the audio configuration lists is a sound.
@@ -220,4 +257,4 @@ function compare({ used, have, unchecked, variants = false }) {
   return { missing, unused, maybeUsed };
 }
 
-module.exports = { stripComments, firstArgument, stringEnums, scanSwift, catalogImages, soundFiles, has, compare };
+module.exports = { stripComments, firstArgument, callArguments, labelledArgument, ownCall, stringEnums, scanSwift, catalogImages, soundFiles, has, compare };

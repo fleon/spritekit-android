@@ -30,7 +30,7 @@ require('../../Android/spritekit-android/Tools/Assets/assets.js');
 | `sources` | The Swift folders to read (default `Source`). |
 | `catalogs` | The asset catalogs (`.xcassets`) images come from. |
 | `sounds` | The folders sound files (`.wav`, `.caf`, `.m4a`, `.mp3`, `.aac`, `.aiff`, `.ogg`) come from. |
-| `calls` | A game's own functions that take a name first: `{ "images": ["badge"], "sounds": ["kick"] }`. |
+| `calls` | A game's own functions that take a name: `{ "images": ["badge", "Piece(asset:)"], "sounds": ["kick"] }`. A bare name (or `name(_:)`) reads the first argument; `name(label:)` reads the argument with that label, wherever it stands in the call. |
 | `enums` | The `String` enums whose cases name assets (default every one in the sources). |
 | `ignore` | Names neither checked nor listed as unused. |
 
@@ -49,6 +49,11 @@ Sounds: the first argument of `playSound`, `playMusic`,
 enum passed to `AudioConfiguration.sounds(T.self)`. A name with variants
 (`Name 1`, `Name 2`, as `AudioConfiguration.variantName` makes them) is
 found by its variants.
+
+A game's own `calls` are read the same way: `"badge"` reads
+`badge("Star")`, and `"Piece(asset:)"` reads `Piece(size: 2, asset: "Star")`.
+A call to that function without the label (another overload) is passed
+over.
 
 An argument that is a `String` enum's case (`.tap`, `Sound.tap`) reads as
 its raw value. A name built at run time (an interpolated string, a
