@@ -369,7 +369,9 @@ sound's duration; `skipIfPlaying`, `variants`), `playEffect(_:repeats:
 variants:onFinish:)` and `stopEffect(_:fadeDuration:)` for sounds on voices
 of their own, `playMusic(_:loop:)` (the track already playing keeps going,
 another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
-`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`;
+`resumeMusic`, `duckMusicForJingle()` and `restoreMusicAfterJingle(duration:)`
+(the free functions `playSound`, `playMusic`, `stopMusic`, `pauseMusic` and
+`resumeMusic` are the same calls on `shared`, for a scene's one-liners);
 `AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
 switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
 unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
