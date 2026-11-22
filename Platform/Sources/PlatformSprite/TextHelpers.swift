@@ -119,10 +119,22 @@ extension SKLabelNode {
     /// Sets the label on its baseline (`.baseline`) at `point`, moved so
     /// its font's `band` is aligned `mode` there: centred on it, its top or
     /// its bottom at it. Use it, never `.center`, `.top` or `.bottom`, which
-    /// align the string's ink and so move with its letters. It reads the
-    /// font, size and `yScale` as they are now: call it again after
-    /// changing them.
+    /// align the string's ink and so move with its letters.
+    ///
+    /// On a plain `SKLabelNode` it is one-shot: it bakes the offset into
+    /// `position`, from the font, size and `yScale` as they are now, so call
+    /// it after the label's last `position`, font or scale change (a later
+    /// `position = …` puts the baseline there), and scaling pivots at the
+    /// baseline. An `AlignedLabelNode` (what `label(... .vAlign(.center))`
+    /// makes) keeps `mode` and `band` and moves to `point`, and stays
+    /// aligned through every later change.
     public func align(_ mode: SKLabelVerticalAlignmentMode, at point: CGPoint, band: TextBand = Typography.textBand()) {
+        if let aligned = self as? AlignedLabelNode {
+            aligned.band = band
+            aligned.verticalAlignmentMode = mode
+            aligned.position = point
+            return
+        }
         verticalAlignmentMode = .baseline
         let metrics = FontBandMetrics(fontNamed: fontName, size: fontSize)
         let baseline = metrics.baseline(mode, at: 0, band: band)
@@ -130,7 +142,8 @@ extension SKLabelNode {
     }
 
     /// Centres the label's font `band` on `point`, its baseline where the
-    /// font puts it whatever its letters (`align(.center, at:band:)`).
+    /// font puts it whatever its letters (`align(.center, at:band:)`):
+    /// one-shot on a plain `SKLabelNode`, kept by an `AlignedLabelNode`.
     public func centerVertically(on point: CGPoint, band: TextBand = Typography.textBand()) {
         align(.center, at: point, band: band)
     }

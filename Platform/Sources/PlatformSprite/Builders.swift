@@ -112,8 +112,9 @@ public enum LabelCommand {
     case hAlign(_ mode: SKLabelHorizontalAlignmentMode)
     /// `.center`, `.top` and `.bottom` align the font's text band
     /// (`band`, else `Typography.textBand`) at `position`, by its metrics,
-    /// the label set on its baseline (`SKLabelNode.align`), so every string
-    /// in one font sits alike; `.baseline` puts the baseline there.
+    /// so every string in one font sits alike: the label is an
+    /// `AlignedLabelNode`, whose `position` stays the alignment point
+    /// however it's set later. `.baseline` puts the baseline there.
     case vAlign(_ mode: SKLabelVerticalAlignmentMode)
     /// The text band `vAlign` aligns.
     case band(_ band: TextBand)
@@ -126,13 +127,22 @@ public enum LabelCommand {
 }
 
 /// A label set up by `commands`, in order; what they leave is
-/// `SKLabelNode`'s own default (a baseline, centred). Its vertical
-/// alignment is applied last, from the font and position the commands set.
+/// `SKLabelNode`'s own default (a baseline, centred). Aligned `.center`,
+/// `.top` or `.bottom` (`vAlign`), it is an `AlignedLabelNode`: its
+/// `position`, given here or set at any time later, is where the font's
+/// band is aligned.
 @discardableResult
 public func label(_ commands: LabelCommand...) -> SKLabelNode {
-    let label = SKLabelNode()
     var vertical = SKLabelVerticalAlignmentMode.baseline
     var band: TextBand?
+    for command in commands {
+        switch command {
+        case .vAlign(let mode): vertical = mode
+        case .band(let textBand): band = textBand
+        default: break
+        }
+    }
+    let label = vertical == .baseline ? SKLabelNode() : AlignedLabelNode(vertical, band: band)
     for command in commands {
         switch command {
         #if canImport(UIKit) || !canImport(Darwin)
@@ -149,10 +159,8 @@ public func label(_ commands: LabelCommand...) -> SKLabelNode {
             label.fontColor = color
         case .hAlign(let mode):
             label.horizontalAlignmentMode = mode
-        case .vAlign(let mode):
-            vertical = mode
-        case .band(let textBand):
-            band = textBand
+        case .vAlign, .band:
+            break
         case .position(let x, let y):
             label.position = pt(x, y)
         case .z(let z):
@@ -164,9 +172,6 @@ public func label(_ commands: LabelCommand...) -> SKLabelNode {
         case .parent(let node):
             node.addChild(label)
         }
-    }
-    if vertical != .baseline {
-        label.align(vertical, at: label.position, band: band ?? Typography.textBand())
     }
     return label
 }

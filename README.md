@@ -411,8 +411,15 @@ decides, it hands in:
   `ContinuousCorners`); `label(.font(weight,
   size), .text(…), …)` makes an `SKLabelNode` in `Typography`'s face, or a
   named one (`.fontNamed`); its `.vAlign(.center)`, `.top` and `.bottom`
-  align the font's text band at `.position` by its metrics (`.band(…)` to
-  choose one), the label on its baseline. `rectInScene(for:scene:)` is what a node draws,
+  make an `AlignedLabelNode`, which aligns the font's text band at its
+  `position` by its metrics (`.band(…)` to choose one), the text on its
+  baseline. `position` stays the alignment point (the band's centre for
+  `.center`) however it's set: in the builder, by `label.position = …`
+  afterwards, or by actions (`move`, `scale`, which pivots at that point).
+  A font or size change moves the text to stay aligned; a text change never
+  moves it. Its `verticalAlignmentMode` names the band's alignment, its
+  text draws in a child label, and `colorize` actions don't reach the text
+  (set `fontColor`). `rectInScene(for:scene:)` is what a node draws,
   in the scene's space, and holds through rotation (`boundingRect(_:in:)`).
 - **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
   string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
@@ -423,7 +430,11 @@ decides, it hands in:
   again. `label.centerVertically(on:)` (or `align(.top, at:)`, `.bottom`)
   sets the label on `.baseline` and moves it so a band of its font is
   centred on the point, the same baseline for every string in that font
-  and size. `TextBand.capitals` (baseline to cap height) suits scripts
+  and size. On a plain `SKLabelNode` that is one-shot, baked into
+  `position` from the font and scale of the moment: call it after the
+  last `position`, font or scale change. On an `AlignedLabelNode` it sets
+  the alignment and moves the label to the point, and the label stays
+  aligned. `TextBand.capitals` (baseline to cap height) suits scripts
   with capitals; `.line` (descender to ascender) suits Thai, Lao, Khmer
   and Burmese, whose marks stack above and below and whose typical line's
   ink centres on it. `UIFont.baseline(_:at:band:)` gives the y for

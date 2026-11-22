@@ -36,7 +36,15 @@ public enum SKLabelVerticalAlignmentMode: Int, Sendable {
 /// line (`numberOfLines` other than 1) is framed by its typographic block
 /// instead (`spriteKitParagraph`).
 open class SKLabelNode: SKNode {
-    open var text: String? { didSet { invalidateLayout() } }
+    open var text: String? {
+        get { ownText }
+        set { ownText = newValue }
+    }
+    /// The text this class holds, which the label lays out, frames and
+    /// draws: SpriteKit's renderer reads its own, not what a subclass's
+    /// `text` override returns (measured on a Mac), so a subclass that
+    /// hands its text to a child draws it once.
+    var ownText: String? { didSet { invalidateLayout() } }
     open var fontName: String? { didSet { invalidateLayout() } }
     open var fontSize: CGFloat = 32 { didSet { invalidateLayout() } }
     open var fontColor: SKColor? = .white
@@ -270,7 +278,7 @@ open class SKLabelNode: SKNode {
     private var layoutKey: LayoutInput {
         LayoutInput(
             runs: runs,
-            text: text,
+            text: ownText,
             kern: kern,
             fontName: fontName,
             fontSize: fontSize,
@@ -284,7 +292,7 @@ open class SKLabelNode: SKNode {
     }
 
     private func makeLayout() -> TextLayout? {
-        guard let text, let provider = TextMetrics.provider else { return nil }
+        guard let text = ownText, let provider = TextMetrics.provider else { return nil }
         // An empty label frames 2 × 2, its padding alone, as SpriteKit's does.
         guard !text.isEmpty else { return Self.emptyFrame(horizontal: horizontalAlignmentMode, vertical: verticalAlignmentMode) }
         if let runs {

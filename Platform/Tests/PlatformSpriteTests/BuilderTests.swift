@@ -87,7 +87,7 @@ struct PathBuilderTests {
 }
 
 struct LabelBuilderTests {
-    @Test func appliesItsCommandsInOrder() {
+    @Test func appliesItsCommandsInOrder() throws {
         let parent = SKNode()
         let made = label(
             .fontNamed("Face-Bold", 18),
@@ -105,10 +105,14 @@ struct LabelBuilderTests {
         #expect(made.fontSize == 18)
         #expect(made.text == "Hello")
         #expect(made.horizontalAlignmentMode == .left)
-        // Centred by the font's capitals, on its baseline.
+        // Centred by the font's capitals at its position, the text on its
+        // baseline.
         let metrics = FontBandMetrics(fontNamed: "Face-Bold", size: 18)
-        #expect(made.verticalAlignmentMode == .baseline)
-        #expect(made.position == pt(3, 4 - metrics.capHeight / 2))
+        let aligned = try #require(made as? AlignedLabelNode)
+        #expect(made.verticalAlignmentMode == .center)
+        #expect(made.position == pt(3, 4))
+        #expect(aligned.textNode.verticalAlignmentMode == .baseline)
+        #expect(aligned.textNode.position == pt(0, -metrics.capHeight / 2))
         #expect(made.zPosition == 2)
         #expect(made.alpha == 0.5)
         #expect(made.name == "greeting")

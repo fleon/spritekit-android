@@ -474,7 +474,7 @@ public struct DrawList {
                     kern: run.kern
                 ))))
             }
-        } else if let label = node as? SKLabelNode, let text = label.text, !text.isEmpty {
+        } else if let label = node as? SKLabelNode, let text = label.ownText, !text.isEmpty {
             entries.append((z, .label(Label(
                 transform: transform,
                 text: text,
