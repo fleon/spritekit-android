@@ -1,0 +1,148 @@
+# The checks CONTRIBUTING.md asks of every change, on every pull request and
+# every push to main: the host tests, Platform/ built for each Apple platform,
+# the runtime cross-compiled for Android, and the tools' own tests.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SWIFT_VERSION: 6.4.2
+  SWIFT_SDK_URL: https://download.swift.org/swift-6.4.2-release/android-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_android.artifactbundle.tar.gz
+  SWIFT_SDK_SHA256: 4d6ad63ea74becd58e123ff58b1b48c3be5ec0db0dff0ea5abe37ac007dd3233
+  NDK_VERSION: r30
+  # What the runtime is developed with; the xcode-27 image has it.
+  XCODE_VERSION: 27.2
+
+jobs:
+  tools:
+    name: Tools tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Node tests
+        run: node --test $(git ls-files 'Tools/*.test.js' 'Tools/**/*.test.js')
+      - name: Pricing tests
+        run: python3 -m unittest discover -s Tools/Pricing
+
+  host:
+    name: Host tests
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      # The checkout's folder must be named spritekit-android: SwiftPM takes
+      # the package's identity from it (Actions checks out into the repo's name).
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+          swift --version
+      - name: Install cmake and ninja
+        run: brew install ninja cmake || true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            Vendor/src/*.tar.xz
+            Vendor/out/host
+          key: vendor-host-${{ runner.os }}-${{ hashFiles('Vendor/versions.sh', 'Vendor/build.sh') }}
+      - name: FreeType and HarfBuzz for the host
+        run: '[ -d Vendor/out/host/lib/pkgconfig ] || Vendor/build.sh host'
+      - name: swift test
+        run: swift test
+      - name: swift test --package-path Platform
+        run: swift test --package-path Platform
+
+  apple:
+    name: Platform on ${{ matrix.name }}
+    runs-on: xcode-27
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS
+            destination: generic/platform=iOS Simulator
+          - name: tvOS
+            destination: generic/platform=tvOS Simulator
+          - name: Mac Catalyst
+            destination: generic/platform=macOS,variant=Mac Catalyst
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+      - name: Build
+        working-directory: Platform
+        run: |
+          xcodebuild build -scheme SpriteKitPlatform-Package \
+            -destination '${{ matrix.destination }}' \
+            -skipMacroValidation -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO | tail -200
+          exit "${PIPESTATUS[0]}"
+
+  android:
+    name: Android (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANDROID_NDK_HOME: ${{ github.workspace }}/../android-ndk-r30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cmake and ninja
+        run: sudo apt-get update -q && sudo apt-get install -yq ninja-build cmake binutils-gold libcurl4-openssl-dev
+      - name: Android NDK
+        run: |
+          curl -fsSL -o ndk.zip "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+          unzip -q ndk.zip -d "$(dirname "$ANDROID_NDK_HOME")"
+          rm ndk.zip
+          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"
+      - name: Swift and its Android SDK
+        run: |
+          curl -fsSL -O "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
+          tar -zxf "swiftly-$(uname -m).tar.gz"
+          ./swiftly init --assume-yes --quiet-shell-followup --skip-install
+          . "$HOME/.local/share/swiftly/env.sh"
+          swiftly install --use --assume-yes "$SWIFT_VERSION"
+          echo "$HOME/.local/share/swiftly/bin" >> "$GITHUB_PATH"
+          swift sdk install "$SWIFT_SDK_URL" --checksum "$SWIFT_SDK_SHA256"
+          # Links the SDK's sysroot to the NDK's.
+          # (where SwiftPM keeps SDKs differs by host).
+          setup="$(find "$HOME" -path "*/swift-sdks/swift-${SWIFT_VERSION}-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh" | head -1)"
+          "$setup"
+          swift sdk list
+      - uses: actions/cache@v4
+        with:
+          path: |
+            Vendor/src/*.tar.xz
+            Vendor/out/aarch64-linux-android
+            Vendor/out/x86_64-linux-android
+          key: vendor-android-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('Vendor/versions.sh', 'Vendor/build.sh') }}
+      - name: FreeType and HarfBuzz for Android
+        run: '[ -d Vendor/out/aarch64-linux-android/lib/pkgconfig ] || Vendor/build.sh android'
+      - uses: actions/cache@v4
+        with:
+          path: Vendor/sdl3/arm64-v8a
+          key: sdl-${{ runner.os }}-${{ env.NDK_VERSION }}-${{ hashFiles('Scripts/config.sh', 'Scripts/build-sdl.sh') }}
+      - name: SDL
+        run: '[ -d Vendor/sdl3/arm64-v8a/include ] || Scripts/build-sdl.sh arm64-v8a'
+      - name: Cross-compile
+        run: Scripts/check-android.sh arm64-v8a
