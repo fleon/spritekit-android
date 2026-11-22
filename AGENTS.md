@@ -167,6 +167,9 @@ would want.
   `init(from:)`.
 - The Game Center button shows `GameServiceMark.node(size:manager:isButton:)`:
   Game Center's mark on Apple, Play Games' on Android, with no platform check.
+- Check asset and sound names with the runtime's `Tools/Assets/assets.js
+  check`, through the game's own `Tools/Assets/assets.js` (its README), after
+  adding, renaming or removing art or sounds.
 - Store screenshots and recordings go through `Tools/Capture` (README,
   "Screen captures"): a game keeps its `capture.json`, hooks and shims, never
   a copy of the capture scripts.

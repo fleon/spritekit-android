@@ -1574,6 +1574,16 @@ runs it through a two-line `Tools/Strings/strings.js` beside its
 `strings.json`; [`Tools/Strings/README.md`](Tools/Strings/README.md) has the
 settings and commands.
 
+## Asset names
+
+`Tools/Assets/assets.js` checks the image and sound names a game's Swift
+passes (`txtr`, `sprite`, `UIImage(named:)`, `playSound`, a sound enum's
+cases, ...) against its asset catalogs and sound files, and lists the
+assets nothing names and the names built at run time it can't check. Each
+game runs it through a two-line `Tools/Assets/assets.js` beside its
+`assets.json`; [`Tools/Assets/README.md`](Tools/Assets/README.md) has the
+settings.
+
 ## Prices
 
 `Tools/Pricing/` prices every game's app or in-app purchases by purchasing
