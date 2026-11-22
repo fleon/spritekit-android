@@ -21,7 +21,9 @@ private func measured(_ text: String, font: CTFont) -> (advance: CGFloat, ink: C
 }
 
 #if SPRITEKIT_SHIM
-private final class CoreTextProvider: TextProvider, @unchecked Sendable {
+/// Measures the shim's labels with CoreText, as `CoreTextParityTests` holds
+/// the device's text stack to.
+final class CoreTextProvider: TextProvider, @unchecked Sendable {
     private func font(_ key: FontKey) -> CTFont { CTFontCreateWithName(key.name as CFString, key.size, nil) }
 
     func fontMetrics(_ key: FontKey) -> FontMetrics? {

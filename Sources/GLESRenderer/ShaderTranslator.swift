@@ -315,6 +315,40 @@ public enum ShaderTranslator {
     /// shader that moved alpha around would change the mask's shape, and
     /// nothing in this game masks with one. The renderer logs it if it ever
     /// meets one rather than silently clipping to the wrong shape.
+    /// One pass of an effect node's Gaussian blur (`EffectBlur`): the texel
+    /// under the pixel and `u_blur_count` pairs either side along
+    /// `u_blur_step` (a texel across or up), each pair in one linear fetch.
+    /// Premultiplied colour is summed as stored, as Core Image's blur under
+    /// SpriteKit mixes red into green (measured on a Mac).
+    public static let blurFragmentShader = """
+    #version 300 es
+
+    precision highp float;
+
+    in vec2 v_tex_coord;
+    in vec4 v_color_mix;
+    in float v_blend;
+
+    uniform sampler2D u_texture;
+    uniform vec2 u_blur_step;
+    uniform float u_blur_centre;
+    uniform int u_blur_count;
+    uniform vec4 u_blur_pairs[\(EffectBlur.maximumPairs / 2)];
+
+    out vec4 \(fragColor);
+
+    void main() {
+        vec4 sum = texture(u_texture, v_tex_coord) * u_blur_centre;
+        for (int i = 0; i < u_blur_count; i++) {
+            vec4 two = u_blur_pairs[i / 2];
+            vec2 pair = (i % 2 == 0) ? two.xy : two.zw;
+            vec2 offset = u_blur_step * pair.x;
+            sum += (texture(u_texture, v_tex_coord + offset) + texture(u_texture, v_tex_coord - offset)) * pair.y;
+        }
+        \(fragColor) = sum;
+    }
+    """
+
     /// A composited crop (`CropCompositing`): its contents, drawn into a
     /// target of their own, times its mask's coverage, drawn into another.
     /// The mask is read four times, three quarters of a texel apart: a hard

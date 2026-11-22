@@ -89,7 +89,7 @@ final class CropCompositingTests: XCTestCase {
         for pass in passes {
             switch pass {
             case let .crop(_, mask, contents): return (mask, contents, false)
-            case let .effect(_, _, _, _, _, _, _, _, _, contents):
+            case let .effect(_, _, _, _, _, _, _, _, _, contents, _):
                 if let found = findCrop(contents) { return (found.mask, found.contents, true) }
             default: continue
             }

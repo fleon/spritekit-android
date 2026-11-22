@@ -150,7 +150,61 @@ struct AlignedLabelTests {
         #expect(aligned.textNode.text == "Bye")
     }
 
+    /// A label's soft shadow: offset copies in a blurred effect node. On a
+    /// Mac, SpriteKit frames and blurs copies that draw in a child exactly as
+    /// it does plain labels set on the same baselines (`EffectBlurTests`).
+    private func shadow(aligned: Bool) -> SKEffectNode {
+        #if SPRITEKIT_SHIM
+        if TextMetrics.provider == nil { TextMetrics.provider = CoreTextProvider() }
+        #endif
+        let effect = SKEffectNode()
+        effect.filter = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 8])
+        effect.shouldRasterize = true
+        for dx in [-2, 0, 2] as [CGFloat] {
+            for dy in [-2, 0, 2] as [CGFloat] {
+                if aligned {
+                    effect.addChild(label(.fontNamed(Fixture.font, Fixture.size), .vAlign(.center), .band(.capitals), .text("Quiz"), .position(dx, dy)))
+                } else {
+                    let plain = label(.fontNamed(Fixture.font, Fixture.size), .text("Quiz"))
+                    plain.position = pt(dx, Fixture.baseline(centredAt: dy))
+                    effect.addChild(plain)
+                }
+            }
+        }
+        return effect
+    }
+
+    @Test func aShadowOfAlignedCopiesFramesAsOneOfPlainCopies() {
+        let aligned = shadow(aligned: true).calculateAccumulatedFrame()
+        let plain = shadow(aligned: false).calculateAccumulatedFrame()
+        #expect(!aligned.isEmpty)
+        #expect(near(aligned.minX, plain.minX) && near(aligned.minY, plain.minY))
+        #expect(near(aligned.width, plain.width) && near(aligned.height, plain.height))
+    }
+
     #if SPRITEKIT_SHIM
+    @Test func theShimBlursAShadowOfAlignedCopiesOverTheirTextAndThreeSigmasMore() throws {
+        let effect = shadow(aligned: true)
+        let scene = SKScene(size: sz(200, 200))
+        effect.position = Fixture.point
+        scene.addChild(effect)
+        let command = try #require(DrawList(scene: scene).commands.compactMap { command -> DrawList.Effect? in
+            if case .effect(let found) = command { return found }
+            return nil
+        }.first)
+        // Sigma 4: the copies' text, and 12 points past it each side.
+        let text = effect.calculateAccumulatedFrame().offsetBy(dx: -Fixture.point.x, dy: -Fixture.point.y)
+        #expect(command.blurSigma == 4)
+        #expect(command.bounds == text.insetBy(dx: -12, dy: -12))
+        // Each copy drawn once, on its baseline.
+        let baselines = command.contents.commands.compactMap { command -> CGFloat? in
+            if case .label(let drawn) = command { return drawn.transform.ty }
+            return nil
+        }
+        #expect(baselines.count == 9)
+        #expect(baselines.allSatisfy { y in [-2, 0, 2].contains { near(y, Fixture.baseline(centredAt: $0)) } })
+    }
+
     @Test func theShimDrawsTheTextOnceOnItsBaseline() {
         let scene = SKScene(size: sz(200, 200))
         let made = centred()

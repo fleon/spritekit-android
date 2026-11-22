@@ -220,7 +220,7 @@ struct NestedPassTests {
         }
         let passes = SpriteBatcher().passes(for: list)
         #expect(passes.count == 2)
-        guard case let .effect(_, _, shader, _, _, _, _, _, _, contents) = passes[1] else {
+        guard case let .effect(_, _, shader, _, _, _, _, _, _, contents, _) = passes[1] else {
             Issue.record("expected an effect"); return
         }
         #expect(shader != nil)
@@ -312,12 +312,12 @@ struct InlineTests {
         effect.addChild(sprite(SKTexture(imageNamed: "Brick")))
         let list = scene { $0.addChild(effect) }
         var batcher = SpriteBatcher()
-        guard case let .effect(_, _, _, _, _, _, _, _, _, contents)? = batcher.passes(for: list).first else {
+        guard case let .effect(_, _, _, _, _, _, _, _, _, contents, _)? = batcher.passes(for: list).first else {
             Issue.record("expected the effect"); return
         }
         #expect(!contents.isEmpty)
         batcher.rasterIsFresh = { _, _, _ in true }
-        guard case let .effect(_, _, _, _, _, _, _, _, _, kept)? = batcher.passes(for: list).first else {
+        guard case let .effect(_, _, _, _, _, _, _, _, _, kept, _)? = batcher.passes(for: list).first else {
             Issue.record("expected the effect"); return
         }
         #expect(kept.isEmpty)

@@ -22,7 +22,7 @@ private func crop() -> SKCropNode {
 /// The effect passes at the top of `passes`, in order.
 private func effects(_ passes: [SpriteBatcher.Pass]) -> [[SpriteBatcher.Pass]] {
     passes.compactMap { pass in
-        if case let .effect(_, _, _, _, _, _, _, _, _, contents) = pass { return contents }
+        if case let .effect(_, _, _, _, _, _, _, _, _, contents, _) = pass { return contents }
         return nil
     }
 }

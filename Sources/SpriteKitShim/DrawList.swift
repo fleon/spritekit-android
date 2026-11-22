@@ -134,6 +134,10 @@ public struct DrawList {
         /// redraws it through `rasterGeneration`, as on Apple.
         public var contentsDigest: UInt64
         public var contents: DrawList
+        /// The Gaussian blur its picture is drawn through, as a sigma in its
+        /// own points (`SKEffectNode.blurSigma`); 0 for none. `bounds`
+        /// already reaches as far as the blur spreads.
+        public var blurSigma: CGFloat = 0
     }
 
     public struct Crop {
@@ -342,7 +346,7 @@ public struct DrawList {
             // rect in its own space. One that does fill a texture keeps
             // every child: its texture spans the off-screen ones too.
             var inner: CGRect?
-            if let cull, effect.shader == nil, !effect.shouldRasterize, alpha >= 0.999,
+            if let cull, effect.shader == nil, !effect.shouldRasterize, effect.blurSigma == 0, alpha >= 0.999,
                transform.a * transform.d - transform.b * transform.c != 0 {
                 inner = cull.applying(transform.inverted())
             }
@@ -358,7 +362,8 @@ public struct DrawList {
                 owner: ObjectIdentifier(effect),
                 rasterGeneration: effect.rasterGeneration,
                 contentsDigest: effect.shouldRasterize ? contents.digest ^ ownDigest(of: effect) : 0,
-                contents: contents
+                contents: contents,
+                blurSigma: effect.blurSigma
             ))))
             return
         }
@@ -552,15 +557,15 @@ public struct DrawList {
     }
 
     /// What of a rasterized node's own makes Apple draw its cached pixels
-    /// again: its own position, scale, rotation, alpha and shader (but not an
-    /// ancestor's, which only moves the cached picture).
+    /// again: its own position, scale, rotation, alpha, shader and blur (but
+    /// not an ancestor's, which only moves the cached picture).
     @MainActor private static func ownDigest(of effect: SKEffectNode) -> UInt64 {
         var hash: UInt64 = 0x84222325cbf29ce4
         func mix(_ value: CGFloat) {
             hash = (hash ^ UInt64(bitPattern: Int64((value * 1000).rounded()))) &* 0x100_0000_01b3
         }
         let t = effect.localTransform
-        for value in [t.a, t.b, t.c, t.d, t.tx, t.ty, effect.alpha] { mix(value) }
+        for value in [t.a, t.b, t.c, t.d, t.tx, t.ty, effect.alpha, effect.blurSigma] { mix(value) }
         hash = (hash ^ UInt64(UInt(bitPattern: effect.shader.map { ObjectIdentifier($0).hashValue } ?? 0))) &* 0x100_0000_01b3
         return hash
     }
@@ -676,6 +681,7 @@ public struct DrawList {
             case let .effect(effect):
                 mix(UInt64(4))
                 mix(effect.transform); mix(effect.bounds); mix(effect.alpha)
+                mix(effect.blurSigma)
                 mix(effect.rasterGeneration)
                 mix(effect.contents.digest)
             case let .crop(crop):

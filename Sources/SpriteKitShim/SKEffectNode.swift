@@ -52,8 +52,9 @@ open class SKEffectNode: SKNode {
     }
 
     open var shouldEnableEffects: Bool = true
-    /// SpriteKit's Core Image filter on the node's picture, such as a
-    /// `CIGaussianBlur` (`CIFilter.gaussianBlurRadius`). Kept, not yet drawn: the renderer composites the picture unblurred.
+    /// SpriteKit's Core Image filter on the node's picture. A
+    /// `CIGaussianBlur` is drawn (`blurSigma`); any other filter is kept,
+    /// and the picture composites unfiltered.
     open var filter: CIFilter?
     open var shouldCenterFilter: Bool = true
     open var blendMode: SKBlendMode = .alpha
@@ -63,9 +64,30 @@ open class SKEffectNode: SKNode {
     }
 
     /// The bounds the offscreen texture must cover: the whole subtree,
-    /// including children outside the viewport.
+    /// including children outside the viewport, and as far again as a blur
+    /// spreads it (`blurSigma`), so the blur is never clipped.
     open var effectBounds: CGRect {
-        accumulatedContents(includingHidden: false)
+        let contents = accumulatedContents(includingHidden: false)
+        let reach = Self.blurReach(sigma: blurSigma)
+        guard reach > 0, !contents.isEmpty else { return contents }
+        return contents.insetBy(dx: -reach, dy: -reach)
+    }
+
+    /// The Gaussian blur's sigma, in the node's own points, that its
+    /// `CIGaussianBlur` spreads the picture by (0 for none). SpriteKit
+    /// blurs by half the filter's `inputRadius` in points at every display
+    /// scale: sigma 6 px for a radius of 6 on a 2x Mac and 9 px on a 3x
+    /// iPhone (measured, `EffectBlurTests`).
+    package var blurSigma: CGFloat {
+        guard shouldEnableEffects, let radius = filter?.gaussianBlurRadius else { return 0 }
+        return radius / 2
+    }
+
+    /// How far past its contents a blur of `sigma` spreads a picture, and
+    /// how far SpriteKit's texture reaches past them: three sigmas, past
+    /// which nothing is left of a pixel at 8 bits.
+    package static func blurReach(sigma: CGFloat) -> CGFloat {
+        sigma > 0 ? 3 * sigma : 0
     }
 
     /// SKWarpable's, carried for the API: the game warps sprites only, so
