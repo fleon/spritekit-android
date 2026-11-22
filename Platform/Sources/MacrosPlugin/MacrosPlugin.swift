@@ -8,6 +8,7 @@ struct MacrosPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
         NSCodingUnsupportedMacro.self,
         LocalizedStringsMacro.self, LocalizedCaseMacro.self,
+        LaunchArgumentMacro.self,
     ]
 }
 

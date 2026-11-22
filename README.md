@@ -470,7 +470,14 @@ decides, it hands in:
   a key used twice; generated members carry the enum's `nonisolated`.
 - **Debugging** (`Markers`, `FrameLog`; `LaunchArgumentReader` in
   `PlatformCore`): the arguments are the game's; the reader answers fixed
-  values in a release build.
+  values in a release build. `@LaunchArgument("Key")` (`Macros`) writes a
+  `var`'s getter as one read: the declared type picks the method (`Bool`,
+  `String?`, `Int?`, `Double?`, `CGFloat?`, `CGSize?`, `[String]?`,
+  `[Double]?`, a `String`-backed enum), `as:` another (`.fraction`), and
+  `unset:`, `release:` and `separator:` pass through; a non-optional reads
+  as its zero when the key isn't given. It reads the enclosing type's static
+  `reader`, or the expression `reader:` names, and diagnoses a type it can't
+  read, which keeps a hand-written getter.
 ### Haptics, ratings and play time (`PlatformDevice`)
 
 `HapticsManager` plays UIKit's kinds of feedback (`lightImpact()`,
