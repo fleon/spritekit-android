@@ -83,7 +83,7 @@ struct FocusNavigatorTests {
     }
 
     @Test func focusMovesPressesAndComesBackFromAPopup() {
-        let view = SKView(bounds: rect(200, 200))
+        let view = SKView(frame: rect(200, 200))
         let scene = SKScene(size: sz(200, 200))
         // Scene coordinates: y up. Top row first in reading order.
         let topLeft = button(at: pt(50, 150), in: scene)
@@ -124,7 +124,7 @@ struct FocusNavigatorTests {
     }
 
     @Test func aRequestedControlTakesFocus() {
-        let view = SKView(bounds: rect(200, 200))
+        let view = SKView(frame: rect(200, 200))
         let scene = SKScene(size: sz(200, 200))
         let first = button(at: pt(50, 100), in: scene)
         let second = button(at: pt(150, 100), in: scene)
@@ -139,7 +139,7 @@ struct FocusNavigatorTests {
     }
 
     @Test func theDriverShowsFocusOnlyOnceAGamepadAsks() {
-        let view = SKView(bounds: rect(200, 200))
+        let view = SKView(frame: rect(200, 200))
         let scene = SKScene(size: sz(200, 200))
         let first = button(at: pt(50, 100), in: scene)
         _ = button(at: pt(150, 100), in: scene)
@@ -289,6 +289,8 @@ struct GamepadTests {
         #expect(gone == 1 && !pads.isConnected)
     }
 
+    // `GamepadEvents` is the Android shell's.
+    #if SPRITEKIT_SHIM
     @Test func theShellsEventsDriveTheInput() {
         let clock = ManualClock()
         let input = GamepadInput(schedule: clock.schedule)
@@ -305,6 +307,7 @@ struct GamepadTests {
         GamepadEvents.post(.disconnected(id: 3))
         #expect(gone && !GamepadInput.isConnected)
     }
+    #endif
 
     @Test func scriptsParseIntoSteps() {
         let steps = GamepadScript.parse(["down", "wait", "stickleft:2", "lb", "connect", "disconnect"], pressDuration: 0.1)
@@ -314,6 +317,9 @@ struct GamepadTests {
         ])
     }
 
+    // On Apple a script drives a GameController pad, whose handlers this
+    // clock doesn't run.
+    #if SPRITEKIT_SHIM
     @Test func aScriptPlaysOnAPretendPad() {
         let clock = ManualClock()
         let input = GamepadInput(schedule: clock.schedule)
@@ -324,4 +330,5 @@ struct GamepadTests {
         #expect(actions == [.move(.right), .press(.a)])
         #expect(!GamepadInput.isConnected)
     }
+    #endif
 }

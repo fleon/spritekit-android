@@ -131,6 +131,8 @@ struct DisplaySettingsTests {
     }
 }
 
+// `DisplaySettingsHost` is the Android shell's, so the shim's alone.
+#if SPRITEKIT_SHIM
 /// The shell's `GameHost` display members, as it declares them.
 @MainActor
 private protocol ShellDisplayMembers {
@@ -160,3 +162,4 @@ struct DisplaySettingsHostTests {
 }
 
 private final class MeasuredScene: SKScene {}
+#endif

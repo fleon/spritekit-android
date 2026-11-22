@@ -1,5 +1,6 @@
 # The checks CONTRIBUTING.md asks of every change, and a few more: the host
-# tests, Platform/ built for each Apple platform, the runtime cross-compiled
+# tests, Platform/ built for each Apple platform and its tests run on Mac
+# Catalyst against Apple's SpriteKit, the runtime cross-compiled
 # for both Android ABIs, the Android library, the game templates built into
 # an APK that's run on an emulator, the tools' tests and shellcheck.
 #
@@ -196,6 +197,30 @@ jobs:
             CODE_SIGNING_ALLOWED=NO | tail -200
           exit "${PIPESTATUS[0]}"
 
+  catalyst:
+    name: Platform tests on Mac Catalyst
+    needs: changes
+    if: needs.changes.outputs.apple == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      # Named spritekit-android, as the host tests need it (the package's identity).
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+      # Platform's tests against Apple's own SpriteKit, UIKit and CoreText,
+      # where the host tests run them against the shim.
+      - name: Test
+        working-directory: Platform
+        run: |
+          xcodebuild test -scheme SpriteKitPlatform-Package \
+            -destination 'platform=macOS,variant=Mac Catalyst' \
+            -skipMacroValidation -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tail -400
+          exit "${PIPESTATUS[0]}"
+
   android:
     name: Android (${{ matrix.abi }})
     needs: changes
@@ -300,7 +325,7 @@ jobs:
 
   passed:
     name: Checks passed
-    needs: [changes, tools, shellcheck, host, apple, android, library, template]
+    needs: [changes, tools, shellcheck, host, apple, catalyst, android, library, template]
     if: always()
     runs-on: ubuntu-latest
     steps:

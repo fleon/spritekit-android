@@ -4,11 +4,16 @@ import Testing
 @testable import PlatformSprite
 
 /// The points each curve of a path ends at, and its control points, in order.
+/// Curves whose controls sit on their end are left out: UIKit draws the
+/// straight run between two corners that way (and a zero-length one where
+/// they meet mid-side), where the shim's port draws a line.
 private func curves(_ path: CGPath) -> [[CGPoint]] {
     var found: [[CGPoint]] = []
     path.applyWithBlock { element in
         let e = element.pointee
-        if e.type == .addCurveToPoint { found.append([e.points[0], e.points[1], e.points[2]]) }
+        guard e.type == .addCurveToPoint else { return }
+        let points = [e.points[0], e.points[1], e.points[2]]
+        if !points.allSatisfy({ $0 == points[2] }) { found.append(points) }
     }
     return found
 }

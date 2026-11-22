@@ -30,7 +30,7 @@ struct TextureCacheTests {
         let saved = SpriteArt.capInsets
         defer { SpriteArt.capInsets = saved }
         SpriteArt.capInsets = { name, _ in name == "Panel" ? UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10) : nil }
-        let node = SKSpriteNode(texture: SKTexture(cgImage: RasterImage(width: 40, height: 20, pixels: [UInt8](repeating: 255, count: 40 * 20 * 4))))
+        let node = SKSpriteNode(texture: SKTexture(cgImage: bitmap(width: 40, height: 20, pixels: [UInt8](repeating: 255, count: 40 * 20 * 4))))
         node.slice("Panel")
         #expect(node.centerRect == rect(0.25, 0.25, 0.5, 0.5))
         let plain = SKSpriteNode(texture: node.texture)
@@ -39,7 +39,7 @@ struct TextureCacheTests {
     }
 
     @Test func gathersEachTextureOnce() {
-        let texture = SKTexture(cgImage: RasterImage(width: 2, height: 2, pixels: [UInt8](repeating: 0, count: 16)))
+        let texture = SKTexture(cgImage: bitmap(width: 2, height: 2, pixels: [UInt8](repeating: 0, count: 16)))
         let root = SKNode()
         root.addChild(SKSpriteNode(texture: texture))
         let child = SKNode()

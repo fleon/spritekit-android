@@ -3,8 +3,9 @@
 // shim's labels lay out as they do on Android, through a text provider
 // that measures with CoreText, which the device's HarfBuzz and FreeType
 // stack is held to (Text/, `CoreTextParityTests`), over the open-licensed
-// fonts kept with those tests.
-#if SPRITEKIT_SHIM && canImport(Darwin)
+// fonts kept with those tests. On Mac Catalyst, against Apple's fonts and
+// SpriteKit, the tests that don't read the shim's label layout.
+#if canImport(Darwin)
 import CoreText
 import Foundation
 import SpriteKitShim
@@ -12,6 +13,14 @@ import Testing
 @testable import PlatformSprite
 import PlatformTestSupport
 
+/// A line's advance and the bounds of its ink, as CoreText measures it.
+private func measured(_ text: String, font: CTFont) -> (advance: CGFloat, ink: CGRect) {
+    let attributes = [NSAttributedString.Key(kCTFontAttributeName as String): font]
+    let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+    return (CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)), CTLineGetBoundsWithOptions(line, .useGlyphPathBounds))
+}
+
+#if SPRITEKIT_SHIM
 private final class CoreTextProvider: TextProvider, @unchecked Sendable {
     private func font(_ key: FontKey) -> CTFont { CTFontCreateWithName(key.name as CFString, key.size, nil) }
 
@@ -24,15 +33,14 @@ private final class CoreTextProvider: TextProvider, @unchecked Sendable {
     }
 
     func measure(_ text: String, font key: FontKey) -> TextLine {
-        let attributes = [NSAttributedString.Key(kCTFontAttributeName as String): font(key)]
-        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
-        let advance = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        return TextLine(text: text, advance: advance, inkBounds: CTLineGetBoundsWithOptions(line, .useGlyphPathBounds))
+        let line = measured(text, font: font(key))
+        return TextLine(text: text, advance: line.advance, inkBounds: line.ink)
     }
 
     func breakLines(_ text: String, font: FontKey, maxWidth: CGFloat) -> [String] { [text] }
     func breakOffsets(in text: String) -> [Int] { [0] }
 }
+#endif
 
 private enum Fixture {
     static let latin = "Montserrat-Bold"
@@ -49,13 +57,16 @@ private enum Fixture {
         for file in ["Montserrat.ttf", "KoHo-Bold.ttf"] {
             CTFontManagerRegisterFontsForURL(fonts.appendingPathComponent(file) as CFURL, .process, nil)
         }
+        #if SPRITEKIT_SHIM
         if TextMetrics.provider == nil { TextMetrics.provider = CoreTextProvider() }
+        #endif
         return CTFontCopyPostScriptName(CTFontCreateWithName(thai as CFString, size, nil)) as String == thai
     }()
 
     static func metrics(_ name: String) -> FontBandMetrics { FontBandMetrics(fontNamed: name, size: size) }
 }
 
+#if SPRITEKIT_SHIM
 private func label(_ text: String, font: String) -> SKLabelNode {
     let label = SKLabelNode(fontNamed: font)
     label.fontSize = Fixture.size
@@ -72,8 +83,12 @@ private func drawnBaseline(_ label: SKLabelNode) -> CGFloat? {
 }
 
 private func spread(_ values: [CGFloat]) -> CGFloat { (values.max() ?? 0) - (values.min() ?? 0) }
+#endif
 
 struct TextBandTests {
+    // These read where the shim's labels lay their text out, which Apple's
+    // SpriteKit doesn't say.
+    #if SPRITEKIT_SHIM
     @Test func spriteKitCentringMovesWithTheLetters() throws {
         try #require(Fixture.installed)
         for font in [Fixture.latin, Fixture.thai] {
@@ -105,6 +120,8 @@ struct TextBandTests {
         }
     }
 
+    #endif
+
     @Test func theBandsAreReadFromTheFont() {
         #expect(Fixture.installed)
         let metrics = Fixture.metrics(Fixture.thai)
@@ -124,8 +141,7 @@ struct TextBandTests {
         // within a point of the line band's, where the capitals band would
         // sit it lower.
         let metrics = Fixture.metrics(Fixture.thai)
-        let provider = try #require(TextMetrics.provider)
-        let ink = provider.measure("ภาษาไทยที่สุด", font: FontKey(name: Fixture.thai, size: Fixture.size)).inkBounds
+        let ink = measured("ภาษาไทยที่สุด", font: CTFontCreateWithName(Fixture.thai as CFString, Fixture.size, nil)).ink
         #expect(abs(ink.midY - (metrics.ascender + metrics.descender) / 2) < 1)
     }
 
@@ -139,6 +155,7 @@ struct TextBandTests {
         #expect(Typography.textBand() == .capitals)
     }
 
+    #if SPRITEKIT_SHIM
     @Test func builderAlignsByTheBand() throws {
         try #require(Fixture.installed)
         let modes: [SKLabelVerticalAlignmentMode] = [.center, .top, .bottom]
@@ -180,5 +197,6 @@ struct TextBandTests {
         let fromBaseline = textBlockBaselines(count: 3, advance: advance, lineSpacing: spacing, bandMiddle: nil)
         #expect(fromBaseline == [0, -48, -96])
     }
+    #endif
 }
 #endif
