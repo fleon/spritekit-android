@@ -62,6 +62,24 @@ public func range(_ constantValue: CGFloat) -> SKRange {
     SKRange(constantValue: constantValue)
 }
 
+/// Holds a node's x at `x`.
+public func xConstraint(_ x: CGFloat) -> SKConstraint {
+    SKConstraint.positionX(range(x))
+}
+
+public func xConstraint(_ x: SKRange) -> SKConstraint {
+    SKConstraint.positionX(x)
+}
+
+/// Holds a node's y at `y`.
+public func yConstraint(_ y: CGFloat) -> SKConstraint {
+    SKConstraint.positionY(range(y))
+}
+
+public func yConstraint(_ y: SKRange) -> SKConstraint {
+    SKConstraint.positionY(y)
+}
+
 public nonisolated func distance(_ point1: CGPoint, _ point2: CGPoint) -> CGFloat {
     hypot(point2.x - point1.x, point2.y - point1.y)
 }

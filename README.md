@@ -50,8 +50,8 @@ IDs, achievement IDs, constants), and the module does the rest.
 
 | Module | What it saves you writing |
 | --- | --- |
-| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, seeded randomness you can replay, a launch-argument reader for debug switches |
-| `PlatformSprite` | A texture cache and sprite helpers, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
+| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches |
+| `PlatformSprite` | A texture cache and sprite helpers, path and label builders, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
 | `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
 | `PlatformGameCenter` | Sign-in, achievements and leaderboards that catch up from saved progress (GameKit, or Play Games) |
@@ -379,6 +379,19 @@ decides, it hands in:
   slice table), `SpriteArt.scale` sizes art drawn at a scale of its own,
   and `SpriteArt.whenForgetting` hooks a game's own caches of assets'
   textures (lit shaders' normal maps) onto `forgetTextures`.
+- **Nodes and actions** (in `PlatformCore`): `addChild(_:z:at:)` sets a
+  node's z-position (and position) as it adds it, and returns it.
+  `run(_:withKey:)`, `action(forKey:)`, `removeAction(forKey:)` and
+  `hasAction(forKey:)` take an owner's `enum ActionKey: String`, whose raw
+  values are the keys (`case pulse = "logo.pulse"`: a prefix still keeps
+  two owners apart on one node), at no cost over a string.
+  `xConstraint`/`yConstraint` hold a node's x or y.
+- **Builders**: `path(.moveTo(…), .lineTo(…), .roundedRect(…), …)` makes a
+  `CGPath` for `ShapeSprite`, a crop mask or a route (`ArcDirection` as
+  UIKit names it: `.clockwise` is a rising angle); `label(.font(weight,
+  size), .text(…), …)` makes an `SKLabelNode` in `Typography`'s face, or a
+  named one (`.fontNamed`). `rectInScene(for:scene:)` is what a node draws,
+  in the scene's space, and holds through rotation (`boundingRect(_:in:)`).
 - **Colours** (`hex`, `rgb`, `rgba`, `UIColor(hex:)` from a number or a
   string, `withOpacity`, `blended`, `brightness`, `toVec3`, `cacheKey`).
 - **Text** (`wrappedLines`, CoreText's breaks on both platforms;
