@@ -649,7 +649,11 @@ whose scene hands touches out sets `handlesTouches = false` on its controls
 the touches to the scene rather than the control. A touch's end that
 arrives before its late start (handed out a frame after touch-down)
 completes the tap as the start comes, within `lateBeganWindow`, with no
-`cancelPress()` needed.
+`cancelPress()` needed. Every tap that fires, by touch or activation, calls
+`showTap(_:pressShown:)` once before `perform`; by default it flashes the
+press where `showPressed` never showed it (an activation, or a tap completed
+late), and a control whose press look is a one-shot effect (a bounce) puts
+it there.
 
 `KeyboardControllable` (keys by HID usage; the remote's Back and Android's
 back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene
