@@ -81,15 +81,23 @@ round, the second commit would meet a review already under way. Without
 ## Rules it keeps
 
 - Every write but that release waits in the Play Console
-  (`--changes-not-sent-for-review`): only the user submits.
+  (`--changes-not-sent-for-review`): only the user submits. The one way round
+  it is `--without-hold`, on a draft release only, for an app whose changes
+  Play won't hold (below).
 - `--send-for-review` takes a rolled-out testing-track release, and still
   passes `--changes-in-review error`, so it never cancels a review under way.
 - Production takes only a non-beta build, only ever as a draft the user rolls
   out; `--rollout`, `--also` and `--send-for-review` refuse it.
 - A testing track takes only a beta build (`build.json`'s `beta`, which the
   app template writes from `-P<betaProperty>`).
-- An app Play has never published refuses the hold; the tool then sends
-  nothing rather than every pending change.
+- Play holds an app's changes back from review only after a rejected update,
+  and never for an app it hasn't published; otherwise it refuses
+  `--changes-not-sent-for-review`. The tool then sends nothing rather than
+  every pending change. A draft release (production, or a testing track
+  without `--rollout`) can go up with `--without-hold`: it serves nobody, but
+  anything else waiting in the Play Console goes for review with it, so check
+  Publishing overview first. A review already under way still makes it fail
+  (`--changes-in-review error`), never cancelled.
 
 ## Tests
 
