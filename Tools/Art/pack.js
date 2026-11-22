@@ -149,11 +149,8 @@ function main(argv) {
     }
   }
 
-  if (!png && !fs.existsSync(require('./ASTC/compress').ENCODER)) {
-    console.log('art: building the ASTC encoder (Tools/Art/ASTC/build-astcenc.sh)');
-    const built = spawnSync('bash', [BUILD_ENCODER], { stdio: 'inherit' });
-    if (built.status !== 0) return built.status || 1;
-  }
+  // Built here, before the packer runs under the guard, if the checkout has none.
+  if (!png) require('./ASTC/compress').encoder();
 
   const packed = spawnSync(process.execPath, [
     GUARD, String(MEMORY_GB), '--', process.execPath, PACKER, out, ...catalogs, ...(png ? ['--png'] : []),

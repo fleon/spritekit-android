@@ -3,8 +3,9 @@
 // KTX 1.1 files the shell uploads as they are (GLESRenderer's
 // CompressedPage, GLDevice.createTexture(compressed:)).
 //
-// Arm's astcenc does the encoding (build it once with build-astcenc.sh in
-// this folder). A page goes in straight RGBA8, top row first, as a PNG
+// Arm's astcenc does the encoding: the first call in a checkout without it
+// builds it with build-astcenc.sh in this folder (out/ is gitignored, so
+// every fresh clone and worktree starts without one). A page goes in straight RGBA8, top row first, as a PNG
 // decodes, and comes out the way the renderer wants it on the GPU:
 //
 //   premultiplied  SpriteKit's textures are, and the renderer blends
@@ -28,9 +29,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const ENCODER = path.join(__dirname, 'out', 'astcenc');
+const BUILD_ENCODER = path.join(__dirname, 'build-astcenc.sh');
 
 /// GL's internal format for each block size (KHR_texture_compression_astc_ldr).
 const FORMATS = {
@@ -47,9 +49,15 @@ const QUALITY = { psnr: 46, outlier: 24, outliers: 0.1 };
 const CANDIDATES = ['8x8', '6x6', '5x5'];
 const FALLBACK = '4x4';
 
+/// The encoder's path, built first if this checkout has none. The build's
+/// output goes to stderr, so a tool's stdout stays its own.
 function encoder() {
   if (!fs.existsSync(ENCODER)) {
-    throw new Error(`No ASTC encoder at ${ENCODER}: run Tools/Art/ASTC/build-astcenc.sh`);
+    console.error(`ASTC: no encoder in this checkout, building it (${path.relative(process.cwd(), BUILD_ENCODER)})`);
+    const built = spawnSync('bash', [BUILD_ENCODER], { stdio: ['ignore', process.stderr, process.stderr] });
+    if (built.status !== 0 || !fs.existsSync(ENCODER)) {
+      throw new Error(`Building the ASTC encoder failed (${BUILD_ENCODER}): see its output above`);
+    }
   }
   return ENCODER;
 }

@@ -1069,7 +1069,6 @@ A game with no exporter of its own packs its Apple asset catalogs straight
 into the art above with `Tools/Art/xcassets-art.js`:
 
 ```
-Tools/Art/ASTC/build-astcenc.sh     # once per checkout: astcenc into Tools/Art/ASTC/out (gitignored)
 node Tools/guard.js 12 -- node Tools/Art/xcassets-art.js <outDir> <Assets.xcassets> [<more.xcassets> ...] [--png]
 node Tools/Art/check-xcassets-art.js   # the packer against Tools/Art/Fixtures
 ```
@@ -1077,7 +1076,9 @@ node Tools/Art/check-xcassets-art.js   # the packer against Tools/Art/Fixtures
 `Tools/guard.js` kills the run if it passes 12 GB (it never comes near:
 the packer holds one decoded image and one page at a time). `--png` writes
 PNG pages and needs no encoder; without it pages are ASTC with mip levels,
-exactly as above. `outDir` is cleared first, so it must be empty, missing
+exactly as above, and a checkout with no encoder builds Arm's `astcenc`
+first (`Tools/Art/ASTC/build-astcenc.sh`, into the gitignored
+`Tools/Art/ASTC/out`; it needs cmake and ninja). `outDir` is cleared first, so it must be empty, missing
 or an earlier pack.
 
 It reads a catalog as Xcode does:
@@ -1132,7 +1133,7 @@ from `runtime.sh`, as the other scripts do:
 exec "$RUNTIME_DIR/Scripts/art.sh" "$@"
 ```
 
-It builds the ASTC encoder if the checkout has none, then runs the packer
+It runs the packer
 under `Tools/guard.js 12` on the game's catalogs. The settings are paths
 from the game's root:
 

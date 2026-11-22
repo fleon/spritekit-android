@@ -8,8 +8,8 @@
 // Several catalogs pack into one index (a game's own art and, say, its SF
 // Symbols pre-rendered into a second catalog); an image name two catalogs
 // share is an error. `--png` writes every page as a PNG instead of ASTC,
-// which needs no encoder and is quick; without it, build the encoder once
-// per checkout with Tools/Art/ASTC/build-astcenc.sh.
+// which needs no encoder and is quick; without it, a checkout with no
+// encoder builds one first (Tools/Art/ASTC/build-astcenc.sh).
 //
 // What it reads, as Xcode does:
 //
