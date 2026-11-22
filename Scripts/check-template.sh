@@ -70,8 +70,8 @@ for abi in "${abis[@]}"; do
     "$runtime/Scripts/build-sdl.sh" "$abi"
     "$runtime/Scripts/build-shell.sh" --debug "$abi"
     # Without the Swift runtime beside it, the shell builds but can't load.
-    if [ ! -f "$JNI_LIBS/$abi/libswiftCore.so" ]; then
-        echo "no libswiftCore.so staged in $JNI_LIBS/$abi: the shell would not load" >&2
+    if [ ! -f "$game/Android/App/app/src/main/jniLibs/$abi/libswiftCore.so" ]; then
+        echo "no libswiftCore.so staged for $abi: the shell would not load" >&2
         exit 1
     fi
 done
