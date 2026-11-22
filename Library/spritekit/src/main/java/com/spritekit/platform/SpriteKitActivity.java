@@ -11,9 +11,12 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Base64;
 import android.util.Log;
 import android.util.TypedValue;
+import android.view.Choreographer;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -331,7 +334,8 @@ public class SpriteKitActivity extends SDLActivity {
         if (!orientationHeld) setRequestedOrientation(gameOrientation());
         super.onCreate(savedInstanceState);
         services = new PlatformServices();
-        services.add(DeviceServices.SERVICE, new DeviceServices(this, services));
+        device = new DeviceServices(this, services);
+        services.add(DeviceServices.SERVICE, device);
         services.add(PlayGamesServices.SERVICE, new PlayGamesServices(this, services));
         services.add(PlayReview.SERVICE, new PlayReview(this, services));
         addServices(services);
@@ -398,6 +402,25 @@ public class SpriteKitActivity extends SDLActivity {
         if (!orientationHeld) setRequestedOrientation(gameOrientation());
     }
 
+    /**
+     * SDL makes its window fullscreen once the game has launched, which hides
+     * a status bar the game showed at launch: the bar goes back as the game
+     * asked once that style is in place. SDL sets it through the old system
+     * UI flags, which take effect only at the next frame's layout, so the
+     * bar is put back after that frame (a frame callback, then a message
+     * that runs once the frame is done).
+     */
+    @Override
+    protected boolean sendCommand(int command, Object data) {
+        boolean result = super.sendCommand(command, data);
+        DeviceServices device = this.device;
+        if (command == COMMAND_CHANGE_WINDOW_STYLE && device != null) {
+            Handler main = new Handler(Looper.getMainLooper());
+            main.post(() -> Choreographer.getInstance().postFrameCallback(frame -> main.post(device::restoreStatusBar)));
+        }
+        return result;
+    }
+
     /** A fold or unfold can move the device between phone and tablet. */
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
@@ -418,6 +441,9 @@ public class SpriteKitActivity extends SDLActivity {
 
     /** The platform services, for the game (see {@link PlatformServices}). */
     private PlatformServices services;
+
+    /** The device's service, which puts the status bar back after SDL hides it. */
+    private DeviceServices device;
 
     /** Tells the frame loop that platform events are waiting; registered by the shell. */
     static native void nativePlatformEventsReady();

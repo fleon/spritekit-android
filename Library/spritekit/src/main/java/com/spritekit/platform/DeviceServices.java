@@ -58,6 +58,8 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
 
     private final Activity activity;
     private final PlatformServices services;
+    /** The status bar the game last asked for: null until it asks. UI thread. */
+    private Boolean statusBarVisible;
     private final Vibrator vibrator;
     private final AudioManager audio;
     private final PowerManager power;
@@ -99,7 +101,10 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
                 return null;
             case "statusBar": {
                 boolean visible = args.optBoolean("visible");
-                activity.runOnUiThread(() -> showStatusBar(visible));
+                activity.runOnUiThread(() -> {
+                    statusBarVisible = visible;
+                    showStatusBar(visible);
+                });
                 return null;
             }
             case "state":
@@ -224,6 +229,15 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
      * hides, as the iOS build's {@code prefersStatusBarHidden} follows it.
      * Only the status bar: the navigation bar keeps SDL's own setting.
      */
+    /**
+     * Shows or hides the status bar again as the game last asked, once SDL's
+     * window style is in place: making the window fullscreen, which SDL does
+     * after the game has launched and asked, hides the bar. UI thread.
+     */
+    void restoreStatusBar() {
+        if (statusBarVisible != null) showStatusBar(statusBarVisible);
+    }
+
     private void showStatusBar(boolean visible) {
         Window window = activity.getWindow();
         if (Build.VERSION.SDK_INT >= 30) {
