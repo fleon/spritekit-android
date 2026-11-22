@@ -291,7 +291,13 @@ Play Games' mark in its own greens (`PlayGamesMark`: the path data and
 colours, and `node(size:manager:isButton:)` drawing it on the button's
 centre). Where Play Games can't run (no Google Play services, a build
 without it) the button hides itself (`hidesButton(for:)`); Game Center's
-button on Apple is never hidden by it. Each game keeps its own button.
+button on Apple is never hidden by it. Where the service is Game Center, it
+wears Game Center's four bubbles (`GameCenterMark`: their geometry and
+gradients, `draw(in:rect:)`, and `texture(size:)` and `node(size:)` drawn
+once a size into `DrawnTexture`'s cache). Both marks stand on a 24-unit grid
+centred on the button, so `GameServiceMark.node(size:manager:isButton:)`
+gives the platform's own with no platform check in the game. Each game keeps
+its own button.
 
 ### Sharing (`PlatformShare`)
 
