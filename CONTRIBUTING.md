@@ -36,7 +36,18 @@ Open an issue with:
    ```
 
    If you touch `Platform/`, also build it for iOS, tvOS and Mac Catalyst,
-   since games use it on Apple platforms too.
+   since games use it on Apple platforms too, and run its tests on Mac
+   Catalyst, against Apple's own SpriteKit rather than the shim:
+
+   ```bash
+   cd Platform && xcodebuild test -scheme SpriteKitPlatform-Package \
+       -destination 'platform=macOS,variant=Mac Catalyst' \
+       -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO
+   ```
+
+   A test that only the shim can run (one that reads its draw list or
+   delivers its touches, say) goes inside `#if SPRITEKIT_SHIM`; one that pins
+   Apple's behaviour runs on both.
 
    Host tests take their scratch defaults (`scratchDefaults`,
    `scratchSuite`) and tolerances (`near`) from `RuntimeTestSupport`, or
@@ -49,8 +60,9 @@ Open an issue with:
    worktree afterwards.
 
    The pull request's checks (`.github/workflows/checks.yml`) run these and
-   more, each only when its files change: both Android ABIs, the Android
-   library's Gradle build, `shellcheck`, the tools' tests, and
+   more, each only when its files change: Platform's tests on Mac Catalyst,
+   both Android ABIs, the Android library's Gradle build, `shellcheck`, the
+   tools' tests, and
    `Scripts/check-template.sh`, which builds the game templates into an APK
    around a stand-in game (`Templates/Check`) and launches it on an
    emulator, and `Scripts/check-template-apple.sh`, which builds that game's

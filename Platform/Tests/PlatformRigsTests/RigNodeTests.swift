@@ -5,7 +5,8 @@ import SpriteKitShim
 
 @Suite("Drawing a rig")
 struct RigNodeTests {
-    private let texture = SKTexture(color: .white, size: CGSize(width: 128, height: 128))
+    // White RGBA, as Apple has it: `SKTexture(color:size:)` is the shim's alone.
+    private let texture = SKTexture(data: Data(repeating: 255, count: 128 * 128 * 4), size: CGSize(width: 128, height: 128))
 
     private func node(caching: Bool = true, regionsAsSprites: Bool = false, hiding: Set<String> = []) throws -> RigNode {
         RigNode(data: try #require(RigFixture.data), texture: texture, unit: 2, hiding: hiding, regionsAsSprites: regionsAsSprites, caching: caching)
@@ -54,9 +55,10 @@ struct RigNodeTests {
         let tip = try #require(rig.data.slot(named: "tip"))
         let sprite = try #require(rig.parts[tip].values.first as? SKSpriteNode)
         let bone = try #require(rig.bone(named: "tail2"))
-        // The region sits 4 along its bone.
-        #expect(abs(sprite.position.x - (bone.x + bone.a * 4 * 2)) < 1e-6)
-        #expect(abs(sprite.position.y - (bone.y + bone.c * 4 * 2)) < 1e-6)
+        // The region sits 4 along its bone. SpriteKit keeps a node's position
+        // and rotation in Float, hence the tolerance.
+        #expect(abs(sprite.position.x - (bone.x + bone.a * 4 * 2)) < 1e-4)
+        #expect(abs(sprite.position.y - (bone.y + bone.c * 4 * 2)) < 1e-4)
         #expect(abs(sprite.zRotation - atan2(bone.c, bone.a)) < 1e-6)
     }
 

@@ -114,6 +114,8 @@ private final class Square: PressableNode {
     }
 }
 
+// Driven by the shim's `deliverTouch`: Apple has no way to make a touch.
+#if SPRITEKIT_SHIM
 @MainActor
 struct PressableNodeTests {
     private func scene(with control: Square) -> SKScene {
@@ -240,7 +242,7 @@ struct PressableNodeTests {
         control.addChild(ring)
         control.focusRing = ring
         #expect(ring.alpha == 0)
-        let view = SKView(bounds: rect(200, 200))
+        let view = SKView(frame: rect(200, 200))
         let scene = scene(with: control)
         view.presentScene(scene)
 
@@ -311,6 +313,8 @@ struct PressableNodeTests {
         #expect(control.action(forKey: "pressable.flash") == nil)
     }
 }
+
+#endif
 
 // MARK: A scene that hands out touches itself
 
