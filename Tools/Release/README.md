@@ -115,8 +115,8 @@ Tools/Release/nightly.sh --notes notes.txt               # the release (the nigh
 2. **Worktree.** Everything happens in a throwaway worktree of the branch,
    with the runtime submodule, removed at the end; the checkout it's run from
    is only fetched.
-3. **Version.** The minor goes up (1.7 → 1.8, 1.4.1 → 1.5.0) once the
-   version has an approved release on either store: an App Store version
+3. **Version.** The minor goes up (1.7 → 1.8, 1.4.1 → 1.5, a patch of 0
+   left off) once the version has an approved release on either store: an App Store version
    Apple approved (waiting for release, live, or later replaced or removed),
    or a production release on Play that names the version and that Google
    approved (`play.js versions --approved`). Then the next build number. Both

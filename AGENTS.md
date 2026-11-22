@@ -288,7 +288,8 @@ would want.
   every testing track. Never promote a testing build to production.
 - A game moves to the next minor version (x.y.z to x.(y+1).0) once its
   current version has an approved release on either store; until then each
-  build keeps the version and takes only the next build number.
+  build keeps the version and takes only the next build number. A patch of 0
+  is left off (1.5, not 1.5.0); any other patch stays (1.4.1).
 - Google Play goes through the runtime's `Tools/Play/play.js` (its README),
   run through the game's own two-line `play.js` with its `listing.json` and
   `play.json`: never `gplay` writes of your own, and never a copy of the

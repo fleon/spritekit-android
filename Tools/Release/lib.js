@@ -44,15 +44,20 @@ function withVersion(text, from, to) {
     (value.replace(/"/g, '').trim() === from ? `MARKETING_VERSION = ${to};` : line));
 }
 
-// The next minor version, with as many parts as this one: 1.7 → 1.8,
-// 1.4.1 → 1.5.0.
+// The next minor version, written without a patch of 0: 1.7 → 1.8,
+// 1.4.1 → 1.5 (1.5.0 with its patch of 0 left off).
 function bumpMinor(version) {
   const parts = String(version).split('.');
   const [major, minor] = parts.map(Number);
   if (parts.length < 2 || parts.length > 3 || !Number.isInteger(major) || !Number.isInteger(minor)) {
     throw new Error(`MARKETING_VERSION isn't x.y or x.y.z: ${version}`);
   }
-  return parts.length === 2 ? `${major}.${minor + 1}` : `${major}.${minor + 1}.0`;
+  return withoutZeroPatch(`${major}.${minor + 1}.0`);
+}
+
+// A version without a patch of 0 (1.5.0 is 1.5); any other patch stays (1.4.1).
+function withoutZeroPatch(version) {
+  return String(version).replace(/^(\d+\.\d+)\.0$/, '$1');
 }
 
 // --- Build numbers --------------------------------------------------------
@@ -218,7 +223,7 @@ function playRelease({ aab, name, notes, send }) {
 }
 
 module.exports = {
-  APP_STORE_APPROVED, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor,
+  APP_STORE_APPROVED, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor, withoutZeroPatch,
   highestTaken, nextBuild, thisBuild, androidName, patchName, ascData, ascBuildNumbers, ascUploadNumbers, appStoreApproved,
   newPRs, buildInSubject, buildSubject, bulleted, plainTitle, draftNotes, FALLBACK,
   fill, settingsFrom, nightlyProblems, playRelease, sameVersion, namesVersion,

@@ -24,12 +24,16 @@ test('the project: the app target is the last value; a bump leaves other targets
   assert.match(bumped, /MARKETING_VERSION = 1\.0;/);
 });
 
-test('the minor goes up with as many parts as the version has', () => {
+test('the minor goes up to x.(y+1).0, written without its patch of 0', () => {
   assert.strictEqual(lib.bumpMinor('1.7'), '1.8');
-  assert.strictEqual(lib.bumpMinor('1.4.1'), '1.5.0');
-  assert.strictEqual(lib.bumpMinor('1.5.0'), '1.6.0');
+  assert.strictEqual(lib.bumpMinor('1.4.1'), '1.5');
+  assert.strictEqual(lib.bumpMinor('1.5.0'), '1.6');
   assert.strictEqual(lib.bumpMinor('2.9'), '2.10');
   assert.throws(() => lib.bumpMinor('7'), /x\.y/);
+  assert.strictEqual(lib.withoutZeroPatch('1.5.0'), '1.5');
+  assert.strictEqual(lib.withoutZeroPatch('1.4.1'), '1.4.1');
+  assert.strictEqual(lib.withoutZeroPatch('1.10.0'), '1.10');
+  assert.strictEqual(lib.withoutZeroPatch('2.0'), '2.0');
 });
 
 test('build numbers: one past everything taken; a build now keeps an untaken project number', () => {
