@@ -42,6 +42,45 @@ struct PressTrackerTests {
     }
 }
 
+struct PressTrackerLateBeganTests {
+    @Test func anEndBeforeItsLandingCompletesTheTapAtOnce() {
+        var tracker = PressTracker()
+        #expect(tracker.ended(inside: true, at: 10) == .init())
+        #expect(tracker.began(inside: true, at: 10.016) == .init(fires: true))
+        #expect(!tracker.isTracking && !tracker.isPressed)
+        // The next tap is an ordinary one.
+        #expect(tracker.began(inside: true, at: 11) == .init(pressed: true))
+        #expect(tracker.ended(inside: true, at: 11.1) == .init(pressed: false, fires: true))
+    }
+
+    @Test func anEarlyEndOffTheControlCompletesWithoutFiring() {
+        var tracker = PressTracker()
+        _ = tracker.ended(inside: false, at: 10)
+        #expect(tracker.began(inside: true, at: 10.01) == .init())
+        #expect(!tracker.isTracking)
+    }
+
+    @Test func aLandingLongAfterAnEarlyEndIsATouchOfItsOwn() {
+        var tracker = PressTracker()
+        _ = tracker.ended(inside: true, at: 10)
+        #expect(tracker.began(inside: true, at: 11) == .init(pressed: true))
+        #expect(tracker.isTracking)
+    }
+
+    @Test func theEndOfATouchThatLandedOffTheControlIsNotEarly() {
+        var tracker = PressTracker()
+        _ = tracker.began(inside: false, at: 10)
+        _ = tracker.ended(inside: true, at: 10.1)
+        #expect(tracker.began(inside: true, at: 10.15) == .init(pressed: true))
+    }
+
+    @Test func aTouchDownControlFiresForALateLanding() {
+        var tracker = PressTracker(trigger: .touchDown)
+        _ = tracker.ended(inside: false, at: 10)
+        #expect(tracker.began(inside: true, at: 10.01) == .init(fires: true))
+    }
+}
+
 // MARK: The node, through the shim's touches
 
 /// A 40-point square control centred on its position.
@@ -230,5 +269,40 @@ struct PressableNodeTests {
         control.pressBegan(at: .zero)
         #expect(control.knob.action(forKey: "pressable.press") != nil)
         #expect(control.action(forKey: "pressable.press") == nil)
+    }
+}
+
+// MARK: A scene that hands out touches itself
+
+@MainActor
+@Suite(.serialized)
+struct SceneDispatchTests {
+    @Test func aControlCanLeaveItsTouchesToTheScene() {
+        let control = Square()
+        #expect(control.isUserInteractionEnabled)
+        control.handlesTouches = false
+        #expect(!control.isUserInteractionEnabled)
+
+        let saved = PressableNode.configuration
+        defer { PressableNode.configuration = saved }
+        PressableNode.configuration.handlesTouches = false
+        let dispatched = Square()
+        #expect(!dispatched.handlesTouches && !dispatched.isUserInteractionEnabled)
+    }
+
+    @Test func anEndDeliveredBeforeALateBeganStillTapsOnceAndLetsGo() {
+        let control = Square()
+        control.handlesTouches = false
+        var taps = 0
+        control.onTap = { taps += 1 }
+        control.pressEnded(at: pt(0, 0))
+        control.pressBegan(at: pt(0, 0))
+        #expect(taps == 1)
+        #expect(!control.isPressed)
+        // No cancelPress needed: the next tap presses and fires as usual.
+        control.pressBegan(at: pt(0, 0))
+        #expect(control.isPressed)
+        control.pressEnded(at: pt(0, 0))
+        #expect(taps == 2 && !control.isPressed)
     }
 }

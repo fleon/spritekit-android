@@ -20,6 +20,11 @@ public struct PressConfiguration {
     public var disabledAlpha: CGFloat = 0.4
     /// How long the default disabled fade takes.
     public var disabledFadeDuration: TimeInterval = 0.2
+    /// Whether controls take their touches from SpriteKit themselves
+    /// (`isUserInteractionEnabled`). A game whose scene hands touches out
+    /// and calls `pressBegan(at:)` and the rest sets it false, so the scene
+    /// keeps them. Each control's `handlesTouches` starts from it.
+    public var handlesTouches = true
 
     public init() {}
 }
@@ -59,18 +64,38 @@ public nonisolated struct PressTracker: Sendable {
     }
 
     public var trigger: Trigger
+    /// How soon after an end that came first a touch's landing still counts
+    /// as that end's (a game that hands out touches a frame late may send a
+    /// touch's end before its start): the tap completes at once.
+    public var lateBeganWindow: TimeInterval = 0.25
     /// A touch that landed on the control is down.
     public private(set) var isTracking = false
     /// That touch is on the control now.
     public private(set) var isPressed = false
+    /// A touch began (followed or not) and hasn't ended.
+    private var touchOpen = false
+    /// An end no touch had begun for, and when it came.
+    private var earlyEnd: (inside: Bool, time: TimeInterval)?
 
     public init(trigger: Trigger = .release) {
         self.trigger = trigger
     }
 
-    /// A touch lands; one that lands off the control is never followed.
-    public mutating func began(inside: Bool) -> Step {
-        guard !isTracking, inside else { return Step() }
+    /// A touch lands at `time`; one that lands off the control, or while
+    /// another is followed, is never followed. Landing just after an end
+    /// that came first
+    /// completes that tap: no press shows, and it fires if it lifted on the
+    /// control too (or as it lands, for `.touchDown`).
+    public mutating func began(inside: Bool, at time: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Step {
+        if let end = earlyEnd {
+            earlyEnd = nil
+            if time >= end.time, time - end.time <= lateBeganWindow {
+                return Step(fires: inside && (trigger == .touchDown || end.inside))
+            }
+        }
+        guard !isTracking else { return Step() }
+        touchOpen = true
+        guard inside else { return Step() }
         isTracking = true
         isPressed = true
         return Step(pressed: true, fires: trigger == .touchDown)
@@ -82,8 +107,12 @@ public nonisolated struct PressTracker: Sendable {
         return Step(pressed: inside)
     }
 
-    public mutating func ended(inside: Bool) -> Step {
-        guard isTracking else { return Step() }
+    public mutating func ended(inside: Bool, at time: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Step {
+        defer { touchOpen = false }
+        guard isTracking else {
+            if !touchOpen { earlyEnd = (inside, time) }
+            return Step()
+        }
         let fires = trigger == .release && isPressed && inside
         let wasPressed = isPressed
         isTracking = false
@@ -93,6 +122,7 @@ public nonisolated struct PressTracker: Sendable {
 
     /// The system took the touch away, or the control stopped taking them.
     public mutating func cancelled() -> Step {
+        earlyEnd = nil
         guard isTracking else { return Step() }
         let wasPressed = isPressed
         isTracking = false
@@ -152,6 +182,13 @@ open class PressableNode: SKNode, Focusable {
     private var tracker = PressTracker()
     private var touch: UITouch?
 
+    /// Whether it takes its touches from SpriteKit itself; false where the
+    /// game's scene hands touches out and calls `pressBegan(at:)` and the
+    /// rest. Starts from `PressConfiguration.handlesTouches`.
+    public var handlesTouches = PressableNode.configuration.handlesTouches {
+        didSet { isUserInteractionEnabled = handlesTouches }
+    }
+
     private enum ActionKey {
         static let press = "pressable.press"
         static let flash = "pressable.flash"
@@ -161,7 +198,7 @@ open class PressableNode: SKNode, Focusable {
 
     public override init() {
         super.init()
-        isUserInteractionEnabled = true
+        isUserInteractionEnabled = handlesTouches
     }
 
     // MARK: Hooks for the subclass

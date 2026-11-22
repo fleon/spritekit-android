@@ -634,7 +634,13 @@ touch let go); sounds and haptics go in `playFeedback`, or once for every
 control in `PressableNode.feedback`. Defaults are `PressConfiguration`'s.
 A control that can't subclass it (a sprite, or one a game hands touches its
 own way) holds a `PressTracker`, the same state machine, or calls
-`pressBegan(at:)`, `pressMoved(to:)` and `pressEnded(at:)` itself.
+`pressBegan(at:)`, `pressMoved(to:)` and `pressEnded(at:)` itself. A game
+whose scene hands touches out sets `handlesTouches = false` on its controls
+(or `PressConfiguration.handlesTouches` for all of them), so SpriteKit gives
+the touches to the scene rather than the control. A touch's end that
+arrives before its late start (handed out a frame after touch-down)
+completes the tap as the start comes, within `lateBeganWindow`, with no
+`cancelPress()` needed.
 
 `KeyboardControllable` (keys by HID usage; the remote's Back and Android's
 back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene
