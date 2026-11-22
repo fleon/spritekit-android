@@ -37,7 +37,9 @@ require('../../Android/spritekit-android/Tools/Assets/assets.js');
 ## What it reads
 
 Images: the first argument of `txtr`, `sprite`, `tinted`, `sliced`,
-`SKTexture(imageNamed:)`, `SKSpriteNode(imageNamed:)` and `UIImage(named:)`.
+`SKTexture(imageNamed:)`, `SKSpriteNode(imageNamed:)` and `UIImage(named:)`,
+and the splash's logo (`StudioSplashScene.Style(logo:)`). A function's own
+declaration (`func badge(_ name: String)`) isn't read as a call.
 An asset catalog's names are its `.imageset` folders, under a folder's name
 where the folder provides a namespace.
 
