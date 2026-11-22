@@ -1,0 +1,19 @@
+# Claude's advisory review of this game's pull requests: the runtime's
+# workflow (spritekit-android, .github/workflows/claude-review.yml), called,
+# not copied. Set CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`) or
+# ANTHROPIC_API_KEY as a repository secret; with neither, it skips.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    uses: fleon/spritekit-android/.github/workflows/claude-review.yml@main
+    secrets: inherit
