@@ -50,7 +50,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 
 | Module | What it saves you writing |
 | --- | --- |
-| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches |
+| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches, notification observers removed together (`ObserverBag`) |
 | `PlatformSprite` | A texture cache and sprite helpers, path and label builders, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
 | `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
@@ -154,8 +154,8 @@ Package.swift        PlatformServices, SpriteKitShim, GLESRenderer,
 Sources/
   PlatformServices/  Plain Foundation, on every platform: the protocols a
                      game's audio, achievements, leaderboards, purchases and
-                     synced saved data stand on, the sync engine's merge and
-                     the render scale governor.
+                     synced saved data stand on, the sync engine's merge,
+                     the render scale governor and `ObserverBag`.
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
                      camera, SKRenderer, the UIKit / CoreGraphics /
@@ -396,6 +396,11 @@ decides, it hands in:
   values are the keys (`case pulse = "logo.pulse"`: a prefix still keeps
   two owners apart on one node), at no cost over a string.
   `xConstraint`/`yConstraint` hold a node's x or y.
+- **Observers** (`ObserverBag`, in `PlatformServices`, which `PlatformCore`
+  re-exports): `observers.observe(name, object:, queue:) { … }` adds a
+  block observer and keeps its token; the bag removes them all on
+  `removeAll()` or when it goes, so an owner keeps one as a property and
+  writes no `deinit`. Foundation's `NotificationCenter` on every platform.
 - **Builders**: `path(.moveTo(…), .lineTo(…), .roundedRect(…), …)` makes a
   `CGPath` for `ShapeSprite`, a crop mask or a route (`ArcDirection` as
   UIKit names it: `.clockwise` is a rising angle); `label(.font(weight,

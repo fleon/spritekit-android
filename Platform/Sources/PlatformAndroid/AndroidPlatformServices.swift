@@ -98,15 +98,10 @@ public enum AndroidPlatformServices {
         public fileprivate(set) var leaderboards: PlayGamesLeaderboards?
         public fileprivate(set) var cloud: PlaySavedGamesCloud?
         public fileprivate(set) var billing: BillingBackend?
-        fileprivate var observers: [NSObjectProtocol] = []
-        fileprivate let center: NotificationCenter
+        fileprivate let observers: ObserverBag
 
         fileprivate init(center: NotificationCenter) {
-            self.center = center
-        }
-
-        deinit {
-            for observer in observers { center.removeObserver(observer) }
+            observers = ObserverBag(center: center)
         }
     }
 
@@ -149,17 +144,8 @@ public enum AndroidPlatformServices {
             games.signInChanged = { cloud.signInChanged($0) }
             receive(cloud)
             // Android may end a backgrounded app without a word.
-            let center = configuration.notificationCenter
-            installed.observers.append(center.addObserver(
-                forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil
-            ) { _ in
-                cloud.flush()
-            })
-            installed.observers.append(center.addObserver(
-                forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil
-            ) { _ in
-                cloud.synchronize()
-            })
+            installed.observers.observe(UIApplication.didEnterBackgroundNotification) { _ in cloud.flush() }
+            installed.observers.observe(UIApplication.willEnterForegroundNotification) { _ in cloud.synchronize() }
         }
         if let receive = configuration.leaderboards {
             let leaderboards = PlayGamesLeaderboards(channel: channel, mapping: mapping)
@@ -211,7 +197,7 @@ public enum AndroidPlatformServices {
         }
         if let statusBar = configuration.statusBar {
             let show = { _ = channel.call("device.statusBar", ["visible": statusBar.isVisible()]) }
-            installed.observers.append(center.addObserver(forName: statusBar.changed, object: nil, queue: nil) { _ in show() })
+            installed.observers.observe(statusBar.changed) { _ in show() }
             show()
         }
     }

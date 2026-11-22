@@ -59,7 +59,7 @@ public final class AppleAudioBackend: AudioBackend {
     /// The app is in the background: music waits for `resume()`.
     private var isInBackground = false
     private let sessionQueue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier ?? "app").audio-session", qos: .userInitiated)
-    private var observers: [NSObjectProtocol] = []
+    private let observers = ObserverBag()
 
     /// Starts an ambient session and listens for what stops the engine.
     /// Files are looked for in `bundle` with each extension in turn.
@@ -75,19 +75,14 @@ public final class AppleAudioBackend: AudioBackend {
         observe()
     }
 
-    deinit {
-        for observer in observers { NotificationCenter.default.removeObserver(observer) }
-    }
-
     private func observe() {
-        let center = NotificationCenter.default
         func on(_ name: Notification.Name, _ object: Any? = nil, _ run: @escaping (AppleAudioBackend, Notification) -> Void) {
-            observers.append(center.addObserver(forName: name, object: object, queue: .main) { [weak self] notification in
+            observers.observe(name, object: object, queue: .main) { [weak self] notification in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     run(self, notification)
                 }
-            })
+            }
         }
         on(AVAudioSession.silenceSecondaryAudioHintNotification) { backend, _ in
             backend.onOtherAudioChange?(backend.isOtherAudioPlaying)
