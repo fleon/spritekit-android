@@ -80,8 +80,7 @@ You'll need a Mac (the host tests compare against Apple's frameworks) and:
 git clone https://github.com/fleon/spritekit-android.git
 cd spritekit-android
 swift test                                  # host tests: no device needed
-Vendor/build.sh android                     # FreeType and HarfBuzz for Android
-Scripts/check-android.sh arm64-v8a          # cross-compiles the runtime
+Scripts/check-android.sh arm64-v8a          # cross-compiles the runtime (building SDL, FreeType and HarfBuzz the first time)
 ```
 
 ### Bring your game to Android
@@ -92,10 +91,10 @@ Scripts/check-android.sh arm64-v8a          # cross-compiles the runtime
 3. Make a Swift package at `<game>/Android/Game` that links your game's
    `Source/` folder, adds a controller adopting `GameHost`, and exports
    `SDL_main`.
-4. Build SDL and your game's shell library, then the app:
+4. Build your game's shell library (the first build in a checkout builds
+   SDL, FreeType and HarfBuzz for it), then the app:
 
    ```bash
-   Scripts/build-sdl.sh arm64-v8a
    Scripts/build-shell.sh --debug arm64-v8a
    (cd ../App && ./gradlew installDebug)
    ```
@@ -859,13 +858,19 @@ The scripts find the game from the runtime's parent directory, or from
 (default `App/`), in `Scripts/config.sh`.
 
 ```bash
-Vendor/build.sh android                     # FreeType + HarfBuzz, both ABIs
-Scripts/build-sdl.sh arm64-v8a              # SDL 3.4.20, staged into the game's App
 Scripts/build-shell.sh --debug arm64-v8a    # the game's AndroidShell library, staged
+Vendor/build.sh android                     # FreeType + HarfBuzz, both ABIs (or one: arm64-v8a, x86_64)
+Scripts/build-sdl.sh arm64-v8a              # SDL 3.4.20, staged into the game's App
 Scripts/check-android.sh arm64-v8a          # this runtime alone, cross-compiled
 Scripts/art.sh                              # the game's asset catalogs, packed (below)
 swift test                                  # host tests, on a Mac
 ```
+
+`Vendor/` is gitignored, so a fresh clone or worktree has no SDL and no
+text stack: `build-shell.sh` and `check-android.sh` build them for the ABI
+they're asked for the first time it's missing (`ensure_sdl` and
+`ensure_text` in `config.sh`), and `build-shell.sh` also re-stages SDL into
+a cleaned App. `Vendor/build.sh` and `build-sdl.sh` rebuild them by hand.
 
 `build-shell.sh --debug` is for every check; an optimised build (no flag) is
 for measuring frame times, and `--store` for a store upload (no `DEBUG`, and

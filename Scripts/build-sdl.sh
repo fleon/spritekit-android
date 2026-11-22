@@ -9,11 +9,23 @@
 #
 #   Scripts/build-sdl.sh            # both ABIs
 #   Scripts/build-sdl.sh arm64-v8a  # just one
+#   Scripts/build-sdl.sh --no-stage arm64-v8a
+#                                   # SDL alone, staged into no game: the
+#                                   # runtime's own checks (check-android.sh),
+#                                   # where the game's App would be the clone's
+#                                   # parent
 
 . "$(dirname "$0")/config.sh"
 require_ndk
 
-targets=("$@")
+stage=1
+targets=()
+for arg in "$@"; do
+    case "$arg" in
+        --no-stage) stage=0 ;;
+        *) targets+=("$arg") ;;
+    esac
+done
 [ ${#targets[@]} -eq 0 ] && targets=("${ABIS[@]}")
 
 mkdir -p "$VENDOR_DIR"
@@ -44,10 +56,13 @@ for abi in "${targets[@]}"; do
     cmake --build "$build" --parallel
     cmake --install "$build" >/dev/null
 
+    [ "$stage" = 1 ] || continue
     mkdir -p "$JNI_LIBS/$abi"
     cp "$prefix/lib/libSDL3.so" "$JNI_LIBS/$abi/"
     echo "    staged $JNI_LIBS/$abi/libSDL3.so"
 done
+
+[ "$stage" = 1 ] || exit 0
 
 # SDL's Android glue is Java: the activity, the GL surface, input, audio.
 # It is part of SDL, not of this project, so it is compiled from the

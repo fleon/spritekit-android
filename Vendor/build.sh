@@ -5,6 +5,8 @@
 #   ./build.sh              everything (host, arm64-v8a, x86_64)
 #   ./build.sh host         just the Mac, which is what `swift test` needs
 #   ./build.sh android      just the two device ABIs
+#   ./build.sh arm64-v8a    one device ABI (or x86_64): what the scripts
+#                           build on demand when a checkout has none
 #
 # Nothing binary is committed: this fetches the pinned tarballs in
 # versions.sh, checks their hashes and builds static libraries into
@@ -169,10 +171,12 @@ case "$what" in
     host)    build_one host "${HOST_FLAGS[@]}" ;;
     android) build_android arm64-v8a aarch64-linux-android
              build_android x86_64    x86_64-linux-android ;;
+    arm64-v8a) build_android arm64-v8a aarch64-linux-android ;;
+    x86_64)    build_android x86_64    x86_64-linux-android ;;
     all)     build_one host "${HOST_FLAGS[@]}"
              build_android arm64-v8a aarch64-linux-android
              build_android x86_64    x86_64-linux-android ;;
-    *) echo "usage: build.sh [host|android|all]" >&2; exit 2 ;;
+    *) echo "usage: build.sh [host|android|arm64-v8a|x86_64|all]" >&2; exit 2 ;;
 esac
 
 echo
