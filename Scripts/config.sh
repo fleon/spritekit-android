@@ -63,14 +63,20 @@ swift_triple() {
 # For a game's build, SDL also counts as missing when it isn't staged into
 # the game's jniLibs (a cleaned App), which build-sdl.sh redoes
 # incrementally; `--unstaged` (the runtime's own checks, with no game) asks
-# for the build alone.
+# for the build alone and stages nothing, so a standalone clone never grows
+# an App beside it.
 ensure_sdl() { # abi [--unstaged]
-    local abi="$1"
+    local abi="$1" unstaged=0
+    [ "${2:-}" = --unstaged ] && unstaged=1
     if [ -d "$VENDOR_DIR/sdl3/$abi/include" ]; then
-        [ "${2:-}" = --unstaged ] || [ -f "$JNI_LIBS/$abi/libSDL3.so" ] && return 0
+        [ "$unstaged" = 1 ] || [ -f "$JNI_LIBS/$abi/libSDL3.so" ] && return 0
     fi
     echo "==> no SDL for $abi in this checkout or the game: building it (Scripts/build-sdl.sh $abi)" >&2
-    "$RUNTIME_DIR/Scripts/build-sdl.sh" "$abi" >&2
+    if [ "$unstaged" = 1 ]; then
+        "$RUNTIME_DIR/Scripts/build-sdl.sh" --no-stage "$abi" >&2
+    else
+        "$RUNTIME_DIR/Scripts/build-sdl.sh" "$abi" >&2
+    fi
     [ -d "$VENDOR_DIR/sdl3/$abi/include" ] || { echo "building SDL for $abi failed: see its output above" >&2; exit 1; }
 }
 
