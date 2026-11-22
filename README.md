@@ -1238,6 +1238,12 @@ and tested on a Mac against a fake Java:
 - **The device:** haptics (primitives where the vibrator has them), audio
   focus, battery saver as Low Power Mode, sharing through Android's chooser.
 
+A backend waits for Java through two helpers: `SharedCall` (the first caller
+sends, the rest wait, one event answers them all: loading achievements, a
+restore, a purchase of one product) and `RequestTable` (a number a request,
+answered by number, by a timeout, or all at once at sign-out). Each answers
+a waiter once, and answers what still waits when it goes.
+
 #### Consumables: what the app's Java answers
 
 A game with consumables passes them to `PlayBilling(consumables:)` and sets

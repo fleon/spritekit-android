@@ -36,9 +36,7 @@ public final class PlayGamesLeaderboards: LeaderboardsBackend {
 
     private let channel: PlatformChannel
     private let mapping: PlayGamesMapping
-    private let after: (TimeInterval, @escaping () -> Void) -> Void
-    private var nextRequest = 1
-    private var waiters: [Int: CheckedContinuation<Answer, Never>] = [:]
+    private let requests: RequestTable<Answer>
     /// Nil until the first `signIn` event: Java is asked, and answers.
     private var isSignedIn: Bool?
 
@@ -57,7 +55,7 @@ public final class PlayGamesLeaderboards: LeaderboardsBackend {
     ) {
         self.channel = channel
         self.mapping = mapping
-        self.after = after
+        requests = RequestTable(ifAbandoned: .failure(.failed), after: after)
         isAvailable = channel.call("games.available")?.bool("available") ?? false
         channel.on(Self.service) { [weak self] event, body in self?.handle(event, body) }
     }
@@ -159,19 +157,12 @@ public final class PlayGamesLeaderboards: LeaderboardsBackend {
     private func request(_ name: String, _ arguments: PlatformChannel.Message) async -> Answer {
         guard isAvailable else { return .failure(.unavailable) }
         guard isSignedIn != false else { return .failure(.signedOut) }
-        let request = nextRequest
-        nextRequest += 1
-        var arguments = arguments
-        arguments["request"] = request
-        return await withCheckedContinuation { continuation in
-            waiters[request] = continuation
+        return await requests.send(timeout: (Self.timeout, .failure(.failed))) { request in
+            var arguments = arguments
+            arguments["request"] = request
             channel.call(name, arguments)
-            after(Self.timeout) { [weak self] in self?.finish(request, .failure(.failed)) }
+            return nil
         }
-    }
-
-    private func finish(_ request: Int, _ answer: Answer) {
-        waiters.removeValue(forKey: request)?.resume(returning: answer)
     }
 
     private func handle(_ event: String, _ body: PlatformChannel.Message) {
@@ -180,16 +171,14 @@ public final class PlayGamesLeaderboards: LeaderboardsBackend {
             let signedIn = body.bool("signedIn") ?? false
             isSignedIn = signedIn
             guard !signedIn else { return }
-            for request in waiters.keys.sorted() {
-                finish(request, .failure(.signedOut))
-            }
+            requests.finishAll(.failure(.signedOut))
         case "scoresSubmitted", "leaderboards", "scores":
             guard let request = body.int("request") else { return }
             if body.bool("ok") == true {
-                finish(request, .success(body))
+                requests.finish(id: request, .success(body))
             } else {
                 let signedOut = body["reason"] as? String == "signedOut" || isSignedIn == false
-                finish(request, .failure(signedOut ? .signedOut : .failed))
+                requests.finish(id: request, .failure(signedOut ? .signedOut : .failed))
             }
         default:
             break
