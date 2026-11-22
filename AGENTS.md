@@ -65,7 +65,9 @@ would want.
   animation. An owner's keys are an `enum ActionKey: String`, its raw values
   prefixed where two owners share a node.
 - Add a node at its z-position (and position) with `addChild(_:z:at:)`, and
-  build paths and labels with `path(...)` and `label(...)`.
+  build paths and labels with `path(...)` and `label(...)`; an outline
+  `UIBezierPath(roundedRect:cornerRadius:)` drew is
+  `.continuousRoundedRect`.
 - Text labels never use SpriteKit's `.center`, `.top` or `.bottom`
   vertical alignment: those align the ink of the letters in the string, so
   a descender (q, p, y, g, Q) or a Thai mark moves the line. Set labels on

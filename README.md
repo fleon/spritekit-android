@@ -403,7 +403,10 @@ decides, it hands in:
   writes no `deinit`. Foundation's `NotificationCenter` on every platform.
 - **Builders**: `path(.moveTo(…), .lineTo(…), .roundedRect(…), …)` makes a
   `CGPath` for `ShapeSprite`, a crop mask or a route (`ArcDirection` as
-  UIKit names it: `.clockwise` is a rising angle); `label(.font(weight,
+  UIKit names it: `.clockwise` is a rising angle; `.roundedRect` has
+  CoreGraphics' circular corners, `.continuousRoundedRect` UIKit's
+  continuous ones, UIKit's own on Apple and the same curve elsewhere,
+  `ContinuousCorners`); `label(.font(weight,
   size), .text(…), …)` makes an `SKLabelNode` in `Typography`'s face, or a
   named one (`.fontNamed`); its `.vAlign(.center)`, `.top` and `.bottom`
   align the font's text band at `.position` by its metrics (`.band(…)` to
