@@ -91,6 +91,7 @@ jobs:
               - 'Templates/**'
               - 'Scripts/build-shell.sh'
               - 'Scripts/check-template.sh'
+              - 'Scripts/signing.sh'
               - 'Tools/Art/**'
               - 'Tools/guard.js'
             tools:
