@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Pinned versions of the two C libraries the text stack is built on.
 #
 # Both are fetched as release tarballs and checked against these hashes

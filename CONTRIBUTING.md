@@ -44,6 +44,13 @@ Open an issue with:
    `git worktree add --detach <dir>/spritekit-android HEAD`, and remove that
    worktree afterwards.
 
+   The pull request's checks (`.github/workflows/checks.yml`) run these and
+   more, each only when its files change: both Android ABIs, the Android
+   library's Gradle build, `shellcheck`, the tools' tests, and
+   `Scripts/check-template.sh`, which builds the game templates into an APK
+   around a stand-in game (`Templates/Check`) and launches it on an
+   emulator. `Checks passed` must be green to merge.
+
 4. **Explain the why** in the pull request: what Apple does, what was
    wrong, and how you checked it.
 

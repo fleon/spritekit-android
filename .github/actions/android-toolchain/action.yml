@@ -1,0 +1,53 @@
+# What cross-compiling for Android needs on a Linux runner: cmake and ninja,
+# the NDK, swiftly's Swift with its Android SDK, and FreeType and HarfBuzz
+# for both ABIs (Vendor/build.sh android, cached).
+name: Android toolchain
+description: NDK, Swift and its Android SDK, and the vendored C libraries
+inputs:
+  swift-version:
+    required: true
+  swift-sdk-url:
+    required: true
+  swift-sdk-sha256:
+    required: true
+  ndk-version:
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: cmake, ninja and swiftly's dependencies
+      shell: bash
+      run: sudo apt-get update -q && sudo apt-get install -yq ninja-build cmake binutils-gold libcurl4-openssl-dev
+    - name: Android NDK
+      shell: bash
+      run: |
+        ndk="$RUNNER_TEMP/android-ndk-${{ inputs.ndk-version }}"
+        curl -fsSL -o "$RUNNER_TEMP/ndk.zip" "https://dl.google.com/android/repository/android-ndk-${{ inputs.ndk-version }}-linux.zip"
+        unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+        rm "$RUNNER_TEMP/ndk.zip"
+        echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+    - name: Swift and its Android SDK
+      shell: bash
+      run: |
+        cd "$RUNNER_TEMP"
+        curl -fsSL -O "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
+        tar -zxf "swiftly-$(uname -m).tar.gz"
+        ./swiftly init --assume-yes --quiet-shell-followup --skip-install
+        . "$HOME/.local/share/swiftly/env.sh"
+        swiftly install --use --assume-yes "${{ inputs.swift-version }}"
+        echo "$HOME/.local/share/swiftly/bin" >> "$GITHUB_PATH"
+        swift sdk install "${{ inputs.swift-sdk-url }}" --checksum "${{ inputs.swift-sdk-sha256 }}"
+        # Links the SDK's sysroot to the NDK's (where SwiftPM keeps SDKs
+        # differs by host).
+        setup="$(find "$HOME" -path "*/swift-sdks/swift-${{ inputs.swift-version }}-RELEASE_android.artifactbundle/swift-android/scripts/setup-android-sdk.sh" | head -1)"
+        ANDROID_NDK_HOME="$ANDROID_NDK_HOME" "$setup"
+    - uses: actions/cache@v4
+      with:
+        path: |
+          Vendor/src/*.tar.xz
+          Vendor/out/aarch64-linux-android
+          Vendor/out/x86_64-linux-android
+        key: vendor-android-${{ runner.os }}-${{ inputs.ndk-version }}-${{ hashFiles('Vendor/versions.sh', 'Vendor/build.sh') }}
+    - name: FreeType and HarfBuzz for Android
+      shell: bash
+      run: '[ -d Vendor/out/x86_64-linux-android/lib/pkgconfig ] || Vendor/build.sh android'

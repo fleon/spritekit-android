@@ -1,0 +1,4 @@
+# Scripts/config.sh and Vendor/versions.sh only set variables for the scripts
+# that source them, which reads to shellcheck as unused (SC2034).
+disable=SC2034
+external-sources=true

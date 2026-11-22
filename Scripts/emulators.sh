@@ -197,7 +197,7 @@ clean_slot() {
     local prefix pattern
     for prefix in $PROPERTY_PREFIXES; do
         pattern="$(printf '%s' "$prefix" | sed 's/\./\\./g')"
-        "$ADB" -s "$serial" shell "for p in \$(getprop | grep -o '^\[$pattern[^]]*' | tr -d '['); do setprop \"\$p\" ''; done" >/dev/null 2>&1 || true
+        "$ADB" -s "$serial" shell "for p in \$(getprop | grep -o '^\[${pattern}[^]]*' | tr -d '['); do setprop \"\$p\" ''; done" >/dev/null 2>&1 || true
     done
 }
 

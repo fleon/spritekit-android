@@ -28,6 +28,7 @@
 
 set -u
 CONFIG="${SKA_DEVICES_CONFIG:-$HOME/.config/spritekit-android/devices.env}"
+# shellcheck source=/dev/null
 [ -f "$CONFIG" ] && . "$CONFIG"
 DIR="${SKA_DEVICE_LOCKS:-$HOME/.spritekit-android/device-locks}"
 DEVICES="${SKA_DEVICES:-}"

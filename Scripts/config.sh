@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared settings for the Android shell's build scripts.
 #
 # Everything the scripts need to agree on lives here: the pinned SDL version,
@@ -92,7 +93,10 @@ ndk_lib_dir() {
         x86_64)    triple="x86_64-linux-android" ;;
         *) return 1 ;;
     esac
-    echo "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/$triple"
+    # darwin-x86_64 on a Mac, linux-x86_64 on Linux: an NDK ships one.
+    local prebuilt
+    prebuilt="$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -mindepth 1 -maxdepth 1 -type d | head -1)"
+    echo "$prebuilt/sysroot/usr/lib/$triple"
 }
 
 # The NDK ships llvm-readelf and llvm-strip as symlinks, so this must not
