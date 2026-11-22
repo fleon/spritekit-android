@@ -632,7 +632,9 @@ follows one touch from down to up (pressed while the finger is on its
 lifts on it, or as it lands with `trigger = .touchDown`), ignores a second
 finger, drops a cancelled touch, takes no press or focus while disabled
 (still swallowing its touches), and is `Focusable`: the remote's click, a
-gamepad's A or a key fire it through `activate`, with the press flashed.
+gamepad's A or a key fire it through `activate`, with the press flashed
+(`flashPress()`, for the control's `flashDuration` or the configuration's;
+a subclass may override it).
 Its look is the subclass's: by default a press shrinks `pressScaleNode`, a
 disabled control fades and focus fades `focusRing`, and `showPressed`,
 `showEnabled` and `showFocused` replace those. Firing runs `onTap`, or a
@@ -647,7 +649,11 @@ whose scene hands touches out sets `handlesTouches = false` on its controls
 the touches to the scene rather than the control. A touch's end that
 arrives before its late start (handed out a frame after touch-down)
 completes the tap as the start comes, within `lateBeganWindow`, with no
-`cancelPress()` needed.
+`cancelPress()` needed. Every tap that fires, by touch or activation, calls
+`showTap(_:pressShown:)` once before `perform`; by default it flashes the
+press where `showPressed` never showed it (an activation, or a tap completed
+late), and a control whose press look is a one-shot effect (a bounce) puts
+it there.
 
 `KeyboardControllable` (keys by HID usage; the remote's Back and Android's
 back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene

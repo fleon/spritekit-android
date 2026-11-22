@@ -153,6 +153,9 @@ open class PressableNode: SKNode, Focusable {
     public var onFocus: (() -> Void)?
     /// How far a touch may stray off `hitFrame` and still count.
     public var touchSlop = PressableNode.configuration.touchSlop
+    /// How long `flashPress()` shows the press on this control; nil takes
+    /// `PressConfiguration.flashDuration`.
+    public var flashDuration: TimeInterval?
     /// Whether it fires as the touch lifts (the default) or as it lands.
     public var trigger: PressTracker.Trigger {
         get { tracker.trigger }
@@ -257,6 +260,22 @@ open class PressableNode: SKNode, Focusable {
         focusRing?.fadeFocusRing(focused, withKey: ActionKey.focus)
     }
 
+    /// Shows the tap firing, once each time it fires (by touch or by
+    /// activation), before `playFeedback` and `perform`. `pressShown` is
+    /// whether `showPressed` showed this tap: false for `activate()` and
+    /// for a tap whose end arrived before its late start. By default those
+    /// flash the press: an activation through `flashPress()`, a late tap
+    /// the same way but leaving `TouchOrigin` where the touch was. A
+    /// one-shot look (a bounce) goes here rather than in `showPressed`.
+    open func showTap(_ source: PressSource, pressShown: Bool) {
+        guard !pressShown else { return }
+        if case .touch = source {
+            flash()
+        } else {
+            flashPress()
+        }
+    }
+
     /// Plays the press's sound and haptic, just before it fires. By default
     /// `PressableNode.feedback`.
     open func playFeedback(_ source: PressSource) {
@@ -320,21 +339,28 @@ open class PressableNode: SKNode, Focusable {
     private func apply(_ step: PressTracker.Step, at point: CGPoint?) {
         if let pressed = step.pressed { showPressed(pressed) }
         guard step.fires, isEnabled, let point else { return }
-        fire(.touch(point))
+        // A tap completed late fires without ever having shown its press.
+        fire(.touch(point), pressShown: step.pressed != nil)
     }
 
-    private func fire(_ source: PressSource) {
+    private func fire(_ source: PressSource, pressShown: Bool) {
+        showTap(source, pressShown: pressShown)
         playFeedback(source)
         perform(source)
     }
 
-    /// Shows a press and lets it go, without a touch (a key, a demo).
-    public func flashPress() {
+    /// Shows a press and lets it go, without a touch (a key, a demo), for
+    /// `flashDuration`. A subclass may flash its own way.
+    open func flashPress() {
         TouchOrigin.record(self)
+        flash()
+    }
+
+    private func flash() {
         removeAction(forKey: ActionKey.flash)
         showPressed(true)
         run(.sequence([
-            .wait(forDuration: Self.configuration.flashDuration),
+            .wait(forDuration: flashDuration ?? Self.configuration.flashDuration),
             .run { [weak self] in
                 guard let self, !tracker.isPressed else { return }
                 showPressed(false)
@@ -359,8 +385,7 @@ open class PressableNode: SKNode, Focusable {
     /// The remote's click, a gamepad's A or a key presses it like a tap.
     open func activate() -> Bool {
         guard isEnabled, canFocus else { return false }
-        flashPress()
-        fire(.activation)
+        fire(.activation, pressShown: false)
         return true
     }
 }

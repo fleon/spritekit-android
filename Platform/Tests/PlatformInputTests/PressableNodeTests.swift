@@ -87,6 +87,8 @@ struct PressTrackerLateBeganTests {
 private final class Square: PressableNode {
     var shown: [Bool] = []
     var sources: [PressSource] = []
+    /// Each `showTap`'s `pressShown`.
+    var tapsShown: [Bool] = []
 
     override init() {
         super.init()
@@ -104,6 +106,11 @@ private final class Square: PressableNode {
 
     override func playFeedback(_ source: PressSource) {
         sources.append(source)
+    }
+
+    override func showTap(_ source: PressSource, pressShown: Bool) {
+        tapsShown.append(pressShown)
+        super.showTap(source, pressShown: pressShown)
     }
 }
 
@@ -131,6 +138,8 @@ struct PressableNodeTests {
         #expect(taps == 1 && !control.isPressed)
         #expect(control.shown == [true, false])
         #expect(control.sources == [.touch(pt(5, -5))])
+        #expect(control.tapsShown == [true])
+        #expect(control.action(forKey: "pressable.flash") == nil)
     }
 
     @Test func strayingOffLetsGoAndComingBackPressesAgain() {
@@ -243,6 +252,7 @@ struct PressableNodeTests {
         #expect(navigator.select())
         #expect(taps == 1)
         #expect(control.sources == [.activation])
+        #expect(control.tapsShown == [false])
         #expect(control.shown == [true])
         navigator.stop()
         #expect(!control.isFocused)
@@ -269,6 +279,36 @@ struct PressableNodeTests {
         control.pressBegan(at: .zero)
         #expect(control.knob.action(forKey: "pressable.press") != nil)
         #expect(control.action(forKey: "pressable.press") == nil)
+    }
+
+    @Test func aFlashLastsTheControlsDurationOrTheConfigurations() {
+        let control = Square()
+        control.flashPress()
+        #expect(control.flashDuration == nil)
+        #expect(control.action(forKey: "pressable.flash")?.duration == PressableNode.configuration.flashDuration)
+        #expect(control.shown == [true])
+
+        control.flashDuration = 0.5
+        control.flashPress()
+        #expect(control.action(forKey: "pressable.flash")?.duration == 0.5)
+    }
+
+    @Test func aSubclassFlashesItsOwnWay() {
+        final class Flashing: PressableNode {
+            var flashes = 0
+            override init() {
+                super.init()
+                addChild(SKSpriteNode(color: .red, size: sz(40, 40)))
+            }
+            required init?(coder aDecoder: NSCoder) { fatalError() }
+            override func flashPress() { flashes += 1 }
+        }
+        let control = Flashing()
+        var taps = 0
+        control.onTap = { taps += 1 }
+        #expect(control.activate())
+        #expect(control.flashes == 1 && taps == 1)
+        #expect(control.action(forKey: "pressable.flash") == nil)
     }
 }
 
@@ -304,5 +344,29 @@ struct SceneDispatchTests {
         #expect(control.isPressed)
         control.pressEnded(at: pt(0, 0))
         #expect(taps == 2 && !control.isPressed)
+    }
+
+    @Test func aLateCompletedTapStillShowsItsPress() {
+        let control = Square()
+        control.handlesTouches = false
+        var taps = 0
+        control.onTap = { taps += 1 }
+        control.pressEnded(at: pt(0, 0))
+        control.pressBegan(at: pt(0, 0))
+        #expect(taps == 1)
+        // Shown once, through the flash, which lets go after flashDuration.
+        #expect(control.tapsShown == [false])
+        #expect(control.shown == [true])
+        #expect(control.action(forKey: "pressable.flash") != nil)
+    }
+
+    @Test func aLateTapOnATouchDownControlShowsItsPressToo() {
+        let control = Square()
+        control.handlesTouches = false
+        control.trigger = .touchDown
+        control.pressEnded(at: pt(0, 0))
+        control.pressBegan(at: pt(0, 0))
+        #expect(control.tapsShown == [false])
+        #expect(control.shown == [true])
     }
 }
