@@ -56,7 +56,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
 | `PlatformGameCenter` | Sign-in, achievements and leaderboards that catch up from saved progress (GameKit, or Play Games) |
 | `PlatformSync` | Saved data synced across a player's devices (iCloud's key-value store, or Play's Saved Games), with sets that merge instead of overwrite |
-| `PlatformInput` | Focus for the Apple TV remote, gamepads and the Mac's pointer; keyboard and Menu handling |
+| `PlatformInput` | Focus for the Apple TV remote, gamepads and the Mac's pointer; a pressable control base that follows a tap and takes focus; keyboard and Menu handling |
 | `PlatformDisplay` | Frame-rate and graphics settings, with an Auto mode that picks a render scale for the device |
 | `PlatformDevice` | Haptics, rating prompts at the right moment, play time |
 | `PlatformShare` | The share sheet, pasteboard, the App Store review page, feedback mail |
@@ -550,6 +550,23 @@ remote's way back. `playScript` plays `GamepadScript` steps on a pretend
 pad for test runs, and `showVirtualGamepad` puts up Apple's on-screen one.
 Timings and thresholds are `GamepadConfiguration`'s and
 `FocusConfiguration`'s (`FocusNavigator.configuration`).
+
+`PressableNode` is the base for a game's buttons, switches and tiles. It
+follows one touch from down to up (pressed while the finger is on its
+`hitFrame`, grown by `touchSlop`; let go while it strays off; firing as it
+lifts on it, or as it lands with `trigger = .touchDown`), ignores a second
+finger, drops a cancelled touch, takes no press or focus while disabled
+(still swallowing its touches), and is `Focusable`: the remote's click, a
+gamepad's A or a key fire it through `activate`, with the press flashed.
+Its look is the subclass's: by default a press shrinks `pressScaleNode`, a
+disabled control fades and focus fades `focusRing`, and `showPressed`,
+`showEnabled` and `showFocused` replace those. Firing runs `onTap`, or a
+subclass's `perform(_:)` (a switch flips there; `PressSource` says where a
+touch let go); sounds and haptics go in `playFeedback`, or once for every
+control in `PressableNode.feedback`. Defaults are `PressConfiguration`'s.
+A control that can't subclass it (a sprite, or one a game hands touches its
+own way) holds a `PressTracker`, the same state machine, or calls
+`pressBegan(at:)`, `pressMoved(to:)` and `pressEnded(at:)` itself.
 
 `KeyboardControllable` (keys by HID usage; the remote's Back and Android's
 back arrive as Escape) and `MenuToggling` (a gamepad's Menu) are the scene
