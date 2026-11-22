@@ -113,20 +113,37 @@ nonisolated struct FontBandMetrics: Equatable {
     func baseline(_ mode: SKLabelVerticalAlignmentMode, at y: CGFloat, band: TextBand) -> CGFloat {
         band.baseline(mode, at: y, ascender: ascender, descender: descender, capHeight: capHeight)
     }
+
+    /// The `position.y` of an unscaled `.baseline` label whose band is
+    /// aligned `mode` at `y`: the baseline less SpriteKit's padding.
+    func labelY(_ mode: SKLabelVerticalAlignmentMode, at y: CGFloat, band: TextBand) -> CGFloat {
+        baseline(mode, at: y, band: band) - SKLabelNode.baselinePadding
+    }
 }
 
 extension SKLabelNode {
+    /// How far above its `position` SpriteKit draws the baseline of a
+    /// one-line `.baseline` label, in the label's own points: it lays the
+    /// line into a box of whole points padded by one on every side and
+    /// stands the box's bottom at the origin. Measured on iOS at 3x
+    /// (Tools/BaselineProbe): +1.000 in all 140 cases, font sizes 9 to 48,
+    /// label scales 1 and 2, parent scales 1 to 3, fractional positions;
+    /// it scales with the node and is never rounded to a pixel. The shim
+    /// lays a line out alike (`spriteKitLine`). So a label whose baseline
+    /// belongs at `y` goes at `y - baselinePadding * yScale`.
+    public nonisolated static let baselinePadding: CGFloat = 1
+
     /// Sets the label on its baseline (`.baseline`) at `point`, moved so
     /// its font's `band` is aligned `mode` there: centred on it, its top or
     /// its bottom at it. Use it, never `.center`, `.top` or `.bottom`, which
     /// align the string's ink and so move with its letters.
     ///
     /// On a plain `SKLabelNode` it is one-shot: it bakes the offset into
-    /// `position`, from the font, size and `yScale` as they are now, so call
-    /// it after the label's last `position`, font or scale change (a later
-    /// `position = …` puts the baseline there), and scaling pivots at the
-    /// baseline. An `AlignedLabelNode` (what `label(... .vAlign(.center))`
-    /// makes) keeps `mode` and `band` and moves to `point`, and stays
+    /// `position`, from the font, size and `yScale` as they are now (with
+    /// SpriteKit's `baselinePadding` taken off, so the baseline is drawn
+    /// where the band puts it), so call it after the label's last
+    /// `position`, font or scale change, and scaling pivots at `position`.
+    /// An `AlignedLabelNode` (what `label(... .vAlign(.center))` makes) keeps `mode` and `band` and moves to `point`, and stays
     /// aligned through every later change.
     public func align(_ mode: SKLabelVerticalAlignmentMode, at point: CGPoint, band: TextBand = Typography.textBand()) {
         if let aligned = self as? AlignedLabelNode {
@@ -137,8 +154,7 @@ extension SKLabelNode {
         }
         verticalAlignmentMode = .baseline
         let metrics = FontBandMetrics(fontNamed: fontName, size: fontSize)
-        let baseline = metrics.baseline(mode, at: 0, band: band)
-        position = pt(point.x, point.y + baseline * yScale)
+        position = pt(point.x, point.y + metrics.labelY(mode, at: 0, band: band) * yScale)
     }
 
     /// Centres the label's font `band` on `point`, its baseline where the
@@ -218,9 +234,17 @@ extension ScriptedLanguage {
 
 extension UIFont {
     /// The baseline's y for a line in this font whose `band` is aligned
-    /// `mode` at `y`: the same for every string.
+    /// `mode` at `y`: the same for every string. Not a label's `position`,
+    /// which SpriteKit draws its baseline above: for that, `labelY`.
     public func baseline(_ mode: SKLabelVerticalAlignmentMode, at y: CGFloat, band: TextBand = Typography.textBand()) -> CGFloat {
         band.baseline(mode, at: y, ascender: ascender, descender: descender, capHeight: capHeight)
+    }
+
+    /// The `position.y` that draws an unscaled `.baseline` label in this
+    /// font with its `band` aligned `mode` at `y`: `baseline(_:at:band:)`
+    /// less `SKLabelNode.baselinePadding`.
+    public func labelY(_ mode: SKLabelVerticalAlignmentMode, at y: CGFloat, band: TextBand = Typography.textBand()) -> CGFloat {
+        baseline(mode, at: y, band: band) - SKLabelNode.baselinePadding
     }
 
     /// How far a `.center` label of `text` in this font moves so its
@@ -329,15 +353,18 @@ public final class TextBlockNode: SKNode {
             label.fontColor = color
             label.horizontalAlignmentMode = alignment
             label.verticalAlignmentMode = .baseline
-            label.position = pt(0, baseline)
+            label.position = pt(0, baseline - SKLabelNode.baselinePadding)
             return label
         }
         super.init()
         lines.forEach(addChild)
     }
 
-    /// The last line's baseline, below the origin.
-    public var lastBaselineY: CGFloat { lines.last?.position.y ?? 0 }
+    /// The last line's baseline, below the origin: where it is drawn,
+    /// `SKLabelNode.baselinePadding` above the label's `position`.
+    public var lastBaselineY: CGFloat {
+        lines.last.map { $0.position.y + SKLabelNode.baselinePadding * $0.yScale } ?? 0
+    }
 
     @available(*, unavailable)
     public required init?(coder aDecoder: NSCoder) {
