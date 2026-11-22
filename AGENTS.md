@@ -14,6 +14,8 @@ would want.
 
 - Keep edits minimal and localized; avoid unrelated refactors.
 - Prefer `private` and `fileprivate` for internal state and helper methods.
+- A type with one shared instance is `@Singleton` (`Macros`), not a
+  hand-written `static let shared` and `private init() {}`.
 - Keep comments concise and only for non-obvious behaviour.
 - Match the existing naming and formatting of the file you're editing.
 - Avoid force unwraps; prefer `guard let` and safe defaults.
