@@ -122,6 +122,8 @@ would want.
   instead of inline bounds and interpolation math.
 - If an initializer pattern repeats, add a shorthand to the game's geometry
   helpers rather than writing it out again.
+- Step through an enum's cases with `index`, `next()`, `previous()` and
+  `at(_:)` (`PlatformCore`), not `allCases.firstIndex(of:)` and modulo.
 
 ## Localization
 

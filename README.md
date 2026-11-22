@@ -50,7 +50,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 
 | Module | What it saves you writing |
 | --- | --- |
-| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches, notification observers removed together (`ObserverBag`) |
+| `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches, notification observers removed together (`ObserverBag`), stepping through an enum's cases (`index`, `next()`, `previous()`) |
 | `PlatformSprite` | A texture cache and sprite helpers, path and label builders, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
 | `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
