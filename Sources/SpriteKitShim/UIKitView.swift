@@ -90,18 +90,51 @@ public final class UIScreen {
     }
 }
 
+/// A scene the app shows, as `UIApplication.connectedScenes` lists it. Its
+/// activation follows the app's (`UIApplication.applicationState`): Android
+/// has one scene, in front while the game is.
 @MainActor
-open class UIWindowScene {
+open class UIScene: Hashable {
+    public enum ActivationState: Int, Sendable {
+        case unattached = -1
+        case foregroundActive = 0
+        case foregroundInactive = 1
+        case background = 2
+    }
+
+    public var activationState: ActivationState {
+        switch UIApplication.shared.applicationState {
+        case .active: .foregroundActive
+        case .inactive: .foregroundInactive
+        case .background: .background
+        }
+    }
+
+    public init() {}
+
+    public nonisolated static func == (lhs: UIScene, rhs: UIScene) -> Bool { lhs === rhs }
+    public nonisolated func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
+}
+
+@MainActor
+open class UIWindowScene: UIScene {
     public struct Geometry {
         public var interfaceOrientation: UIInterfaceOrientation
     }
 
     public let screen: UIScreen
     public var effectiveGeometry: Geometry
+    /// The orientation the scene shows in (UIKit's older spelling of
+    /// `effectiveGeometry.interfaceOrientation`).
+    public var interfaceOrientation: UIInterfaceOrientation { effectiveGeometry.interfaceOrientation }
 
+    /// Joins `UIApplication.shared.connectedScenes` for as long as whoever
+    /// made it (the game's surface) keeps it.
     public init(screen: UIScreen, interfaceOrientation: UIInterfaceOrientation = .unknown) {
         self.screen = screen
         effectiveGeometry = Geometry(interfaceOrientation: interfaceOrientation)
+        super.init()
+        ConnectedScenes.add(self)
     }
 
     /// The scene's windows: those whose `windowScene` is this scene.

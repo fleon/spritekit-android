@@ -117,13 +117,7 @@ public extension UIApplication {
             SystemServices.keepAwake(newValue)
         }
     }
-
-    /// Android has one window and no scenes to list.
-    var connectedScenes: Set<UIWindowSceneHandle> { [] }
 }
-
-/// What `connectedScenes` holds; nothing on Android.
-public struct UIWindowSceneHandle: Hashable, Sendable {}
 
 private nonisolated(unsafe) let idleTimer = IdleTimer()
 private final class IdleTimer { var disabled = false }
