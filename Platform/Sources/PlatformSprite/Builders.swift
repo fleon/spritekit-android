@@ -114,7 +114,9 @@ public enum LabelCommand {
     /// (`band`, else `Typography.textBand`) at `position`, by its metrics,
     /// so every string in one font sits alike: the label is an
     /// `AlignedLabelNode`, whose `position` stays the alignment point
-    /// however it's set later. `.baseline` puts the baseline there.
+    /// however it's set later. `.baseline` leaves SpriteKit's own label,
+    /// which draws its baseline `SKLabelNode.baselinePadding` above
+    /// `position`.
     case vAlign(_ mode: SKLabelVerticalAlignmentMode)
     /// The text band `vAlign` aligns.
     case band(_ band: TextBand)

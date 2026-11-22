@@ -437,8 +437,14 @@ decides, it hands in:
   aligned. `TextBand.capitals` (baseline to cap height) suits scripts
   with capitals; `.line` (descender to ascender) suits Thai, Lao, Khmer
   and Burmese, whose marks stack above and below and whose typical line's
-  ink centres on it. `UIFont.baseline(_:at:band:)` gives the y for
-  layout code. `capitalsOffset` and `centerCapitals`, which measured each
+  ink centres on it. SpriteKit draws a one-line `.baseline` label's
+  baseline a point above its `position`, in the label's own points (it
+  pads the line's box by one and stands the box on the origin;
+  `SKLabelNode.baselinePadding`, measured by `Tools/BaselineProbe`), and
+  every one of these takes it off, so the text is drawn where the font's
+  metrics put it. `UIFont.baseline(_:at:band:)` gives the baseline's y
+  for layout code, and `UIFont.labelY(_:at:band:)` the `position.y` that
+  draws a `.baseline` label there. `capitalsOffset` and `centerCapitals`, which measured each
   string's ink, are deprecated. `TextBlockNode` sets every line on its
   baseline, evenly spaced: hung from its first line's top (each line's
   band centred in its height) or, with `anchor: .firstBaseline`, from its

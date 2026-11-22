@@ -13,37 +13,6 @@ import Testing
 @testable import PlatformSprite
 import PlatformTestSupport
 
-/// A line's advance and the bounds of its ink, as CoreText measures it.
-private func measured(_ text: String, font: CTFont) -> (advance: CGFloat, ink: CGRect) {
-    let attributes = [NSAttributedString.Key(kCTFontAttributeName as String): font]
-    let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
-    return (CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)), CTLineGetBoundsWithOptions(line, .useGlyphPathBounds))
-}
-
-#if SPRITEKIT_SHIM
-/// Measures the shim's labels with CoreText, as `CoreTextParityTests` holds
-/// the device's text stack to.
-final class CoreTextProvider: TextProvider, @unchecked Sendable {
-    private func font(_ key: FontKey) -> CTFont { CTFontCreateWithName(key.name as CFString, key.size, nil) }
-
-    func fontMetrics(_ key: FontKey) -> FontMetrics? {
-        let font = font(key)
-        return FontMetrics(
-            ascent: CTFontGetAscent(font), descent: CTFontGetDescent(font), leading: CTFontGetLeading(font),
-            capHeight: CTFontGetCapHeight(font), xHeight: CTFontGetXHeight(font)
-        )
-    }
-
-    func measure(_ text: String, font key: FontKey) -> TextLine {
-        let line = measured(text, font: font(key))
-        return TextLine(text: text, advance: line.advance, inkBounds: line.ink)
-    }
-
-    func breakLines(_ text: String, font: FontKey, maxWidth: CGFloat) -> [String] { [text] }
-    func breakOffsets(in text: String) -> [Int] { [0] }
-}
-#endif
-
 private enum Fixture {
     static let latin = "Montserrat-Bold"
     /// Latin and Thai in one face.
@@ -60,7 +29,7 @@ private enum Fixture {
             CTFontManagerRegisterFontsForURL(fonts.appendingPathComponent(file) as CFURL, .process, nil)
         }
         #if SPRITEKIT_SHIM
-        if TextMetrics.provider == nil { TextMetrics.provider = CoreTextProvider() }
+        _ = ShimText.installed
         #endif
         return CTFontCopyPostScriptName(CTFontCreateWithName(thai as CFString, size, nil)) as String == thai
     }()
@@ -81,7 +50,7 @@ private func drawnBaseline(_ label: SKLabelNode) -> CGFloat? {
     if let aligned = label as? AlignedLabelNode {
         return drawnBaseline(aligned.textNode).map { label.position.y + $0 * label.yScale }
     }
-    return label.layout.flatMap { $0.lines.first }.map { label.position.y + $0.origin.y }
+    return label.layout.flatMap { $0.lines.first }.map { label.position.y + $0.origin.y * label.yScale }
 }
 
 private func spread(_ values: [CGFloat]) -> CGFloat { (values.max() ?? 0) - (values.min() ?? 0) }
@@ -114,10 +83,12 @@ struct TextBandTests {
                 let baselines = try labels.map { try #require(drawnBaseline($0)) }
                 #expect(spread(baselines) == 0, "\(font) \(band): \(baselines)")
                 #expect(labels.allSatisfy { $0.verticalAlignmentMode == .baseline })
-                // The node sits where the band's middle is on the centre.
+                // The text is drawn with the band's middle on the centre,
+                // the node SpriteKit's padding below its baseline.
                 let metrics = Fixture.metrics(font)
                 let span = band.span(ascender: metrics.ascender, descender: metrics.descender, capHeight: metrics.capHeight)
-                #expect(abs(labels[0].position.y + (span.bottom + span.top) / 2 - centre.y) < 1e-9)
+                #expect(abs(baselines[0] + (span.bottom + span.top) / 2 - centre.y) < 1e-9)
+                #expect(abs(labels[0].position.y - (baselines[0] - SKLabelNode.baselinePadding)) < 1e-9)
             }
         }
     }
@@ -168,14 +139,15 @@ struct TextBandTests {
             let baselines = try labels.map { try #require(drawnBaseline($0)) }
             #expect(spread(baselines) == 0, "\(mode): \(baselines)")
             #expect(labels[0].verticalAlignmentMode == mode && labels[0].position == pt(5, 50))
-            // Drawn where a baseline label put at the band's baseline draws.
-            let placed = label(Fixture.samples[0], font: Fixture.thai)
-            placed.position = pt(5, Fixture.metrics(Fixture.thai).baseline(mode, at: 50, band: .line))
-            #expect(near(try #require(drawnBaseline(labels[0])), try #require(drawnBaseline(placed))))
+            // Drawn on the band's baseline.
+            let baseline = Fixture.metrics(Fixture.thai).baseline(mode, at: 50, band: .line)
+            #expect(near(try #require(drawnBaseline(labels[0])), baseline))
         }
-        // A baseline label is left where it's put.
+        // A baseline label is left where it's put, drawn as SpriteKit
+        // draws one: its baseline a point above.
         let plain = PlatformSprite.label(.fontNamed(Fixture.thai, Fixture.size), .text("pq"), .position(5, 50))
         #expect(plain.position == pt(5, 50) && plain.verticalAlignmentMode == .baseline)
+        #expect(near(try #require(drawnBaseline(plain)), 50 + SKLabelNode.baselinePadding))
     }
 
     @Test func textBlockLinesSitOnEvenlySpacedBaselines() throws {

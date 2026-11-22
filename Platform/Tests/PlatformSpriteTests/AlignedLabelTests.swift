@@ -25,10 +25,17 @@ private enum Fixture {
     }
 }
 
-/// Where the label's text sits on its baseline, in its parent.
+/// Where the label's text is drawn on its baseline, in its parent: the
+/// shim's pen origin; on Apple's SpriteKit, which doesn't say, SpriteKit's
+/// padding above the text child (as `LabelInkTests` reads it rendered).
 private func drawnBaseline(_ label: SKLabelNode, in parent: SKNode) throws -> CGFloat {
     let aligned = try #require(label as? AlignedLabelNode)
-    return aligned.convert(aligned.textNode.position, to: parent).y
+    #if SPRITEKIT_SHIM
+    try #require(ShimText.installed)
+    return try #require(drawnLine(aligned, in: parent)).baseline
+    #else
+    return aligned.textNode.convert(pt(0, SKLabelNode.baselinePadding), to: parent).y
+    #endif
 }
 
 /// Runs the scene's actions for `seconds`, as a view would.
@@ -82,6 +89,7 @@ struct AlignedLabelTests {
             let made = AlignedLabelNode(mode, band: .line)
             made.fontName = Fixture.font
             made.fontSize = Fixture.size
+            made.text = "Quiz"
             scene.addChild(made)
             made.position = Fixture.point
             let expected = Fixture.metrics().baseline(mode, at: Fixture.point.y, band: .line)
@@ -123,9 +131,11 @@ struct AlignedLabelTests {
         made.fontSize = 50
         #expect(near(try drawnBaseline(made, in: scene), Fixture.baseline(centredAt: Fixture.point.y, size: 50)))
         let settled = try drawnBaseline(made, in: scene)
+        let child = try #require(made as? AlignedLabelNode).textNode.position
         for text in ["MAP", "pqyg", "ภาษาไทย", ""] {
             made.text = text
-            #expect(try drawnBaseline(made, in: scene) == settled, "\(text)")
+            if !text.isEmpty { #expect(try drawnBaseline(made, in: scene) == settled, "\(text)") }
+            #expect(try #require(made as? AlignedLabelNode).textNode.position == child, "\(text)")
         }
         #expect(made.position == Fixture.point)
     }
@@ -152,10 +162,11 @@ struct AlignedLabelTests {
 
     /// A label's soft shadow: offset copies in a blurred effect node. On a
     /// Mac, SpriteKit frames and blurs copies that draw in a child exactly as
-    /// it does plain labels set on the same baselines (`EffectBlurTests`).
+    /// it does plain labels whose pens sit on the same baselines
+    /// (`EffectBlurTests`).
     private func shadow(aligned: Bool) -> SKEffectNode {
         #if SPRITEKIT_SHIM
-        if TextMetrics.provider == nil { TextMetrics.provider = CoreTextProvider() }
+        _ = ShimText.installed
         #endif
         let effect = SKEffectNode()
         effect.filter = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 8])
@@ -166,7 +177,7 @@ struct AlignedLabelTests {
                     effect.addChild(label(.fontNamed(Fixture.font, Fixture.size), .vAlign(.center), .band(.capitals), .text("Quiz"), .position(dx, dy)))
                 } else {
                     let plain = label(.fontNamed(Fixture.font, Fixture.size), .text("Quiz"))
-                    plain.position = pt(dx, Fixture.baseline(centredAt: dy))
+                    plain.position = pt(dx, Fixture.baseline(centredAt: dy) - SKLabelNode.baselinePadding)
                     effect.addChild(plain)
                 }
             }
@@ -196,16 +207,17 @@ struct AlignedLabelTests {
         let text = effect.calculateAccumulatedFrame().offsetBy(dx: -Fixture.point.x, dy: -Fixture.point.y)
         #expect(command.blurSigma == 4)
         #expect(command.bounds == text.insetBy(dx: -12, dy: -12))
-        // Each copy drawn once, on its baseline.
+        // Each copy drawn once, its pen on its baseline.
         let baselines = command.contents.commands.compactMap { command -> CGFloat? in
-            if case .label(let drawn) = command { return drawn.transform.ty }
+            if case .label(let drawn) = command { return drawn.transform.ty + (drawn.layout?.lines.first?.origin.y ?? 0) }
             return nil
         }
         #expect(baselines.count == 9)
         #expect(baselines.allSatisfy { y in [-2, 0, 2].contains { near(y, Fixture.baseline(centredAt: $0)) } })
     }
 
-    @Test func theShimDrawsTheTextOnceOnItsBaseline() {
+    @Test func theShimDrawsTheTextOnceOnItsBaseline() throws {
+        try #require(ShimText.installed)
         let scene = SKScene(size: sz(200, 200))
         let made = centred()
         scene.addChild(made)
@@ -215,7 +227,11 @@ struct AlignedLabelTests {
             return nil
         }
         #expect(drawn.count == 1)
-        #expect(drawn.first.map { near($0.transform.ty, Fixture.baseline(centredAt: Fixture.point.y)) } == true)
+        // The node SpriteKit's padding below the baseline, the pen on it.
+        let baseline = Fixture.baseline(centredAt: Fixture.point.y)
+        #expect(drawn.first.map { near($0.transform.ty, baseline - SKLabelNode.baselinePadding) } == true)
+        let origin = try #require(drawn.first?.layout?.lines.first?.origin)
+        #expect(near(try #require(drawn.first).transform.ty + origin.y, baseline))
     }
     #endif
 }
