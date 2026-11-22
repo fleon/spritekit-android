@@ -155,7 +155,9 @@ Sources/
   PlatformServices/  Plain Foundation, on every platform: the protocols a
                      game's audio, achievements, leaderboards, purchases and
                      synced saved data stand on, the sync engine's merge,
-                     the render scale governor and `ObserverBag`.
+                     the render scale governor, `ObserverBag`, and `Locked`
+                     (state behind a lock, the runtime's and the toolkit's
+                     every cache).
   SpriteKitShim/     The scene graph, actions, textures, labels, shapes,
                      crop and effect nodes, warps, emitters, transitions,
                      camera, SKRenderer, the UIKit / CoreGraphics /

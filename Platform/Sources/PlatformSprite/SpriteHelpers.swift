@@ -18,31 +18,32 @@ public nonisolated enum SpriteArt {
     /// with the same pick: for caches of the game's own that hold assets'
     /// textures (lit shaders holding normal maps, say).
     public static func whenForgetting(_ hook: @escaping ((String) -> Bool) -> Void) {
-        TextureCache.lock.lock()
-        TextureCache.forgetHooks.append(hook)
-        TextureCache.lock.unlock()
+        TextureCache.state.withLock { $0.forgetHooks.append(hook) }
     }
 }
 
 private nonisolated enum TextureCache {
+    struct State {
+        var textures: [String: SKTexture] = [:]
+        /// `sliced`'s textures at a scale of their own, by name and scale.
+        var scaled: [String: (name: String, texture: SKTexture)] = [:]
+        var forgetHooks: [((String) -> Bool) -> Void] = []
+    }
+
     /// `txtr` runs on the main thread, loading queues and preloads alike.
-    static let lock = NSLock()
-    nonisolated(unsafe) static var textures: [String: SKTexture] = [:]
-    /// `sliced`'s textures at a scale of their own, by name and scale.
-    nonisolated(unsafe) static var scaled: [String: (name: String, texture: SKTexture)] = [:]
-    nonisolated(unsafe) static var forgetHooks: [((String) -> Bool) -> Void] = []
+    static let state = Locked(State())
 }
 
 /// Asset-backed textures are cached so every sprite of the same image shares
 /// one texture (and SpriteKit can batch their draws). Safe on any thread.
 public nonisolated func txtr(_ imageName: String) -> SKTexture {
-    TextureCache.lock.lock()
-    defer { TextureCache.lock.unlock() }
-    if let cached = TextureCache.textures[imageName] { return cached }
-    let texture = SKTexture(imageNamed: imageName)
-    texture.filteringMode = .linear
-    TextureCache.textures[imageName] = texture
-    return texture
+    TextureCache.state.withLock { state in
+        if let cached = state.textures[imageName] { return cached }
+        let texture = SKTexture(imageNamed: imageName)
+        texture.filteringMode = .linear
+        state.textures[imageName] = texture
+        return texture
+    }
 }
 
 /// Forgets every cached texture, so a scene that no longer shows them lets
@@ -54,9 +55,7 @@ public nonisolated func clearTextureCache() {
 
 /// Whether `txtr` already holds `imageName`.
 public nonisolated func isTextureCached(_ imageName: String) -> Bool {
-    TextureCache.lock.lock()
-    defer { TextureCache.lock.unlock() }
-    return TextureCache.textures[imageName] != nil
+    TextureCache.state.withLock { $0.textures[imageName] != nil }
 }
 
 /// Forgets the cached textures `forget` picks, so they go once no sprite
@@ -64,11 +63,11 @@ public nonisolated func isTextureCached(_ imageName: String) -> Bool {
 /// Pick only what is off screen: asking `txtr` again for one still shown
 /// makes a second copy.
 public nonisolated func forgetTextures(where forget: (String) -> Bool) {
-    TextureCache.lock.lock()
-    TextureCache.textures = TextureCache.textures.filter { !forget($0.key) }
-    TextureCache.scaled = TextureCache.scaled.filter { !forget($0.value.name) }
-    let hooks = TextureCache.forgetHooks
-    TextureCache.lock.unlock()
+    let hooks = TextureCache.state.withLock { state in
+        state.textures = state.textures.filter { !forget($0.key) }
+        state.scaled = state.scaled.filter { !forget($0.value.name) }
+        return state.forgetHooks
+    }
     withoutActuallyEscaping(forget) { forget in
         for hook in hooks { hook(forget) }
     }
@@ -142,10 +141,7 @@ public func sliced(_ imageName: String, size: CGSize, scale: CGFloat = 1) -> SKS
 /// `imageName`'s art as a texture `scale` times its point size.
 private func slicedTexture(_ imageName: String, scale: CGFloat) -> SKTexture {
     let key = "\(imageName)@\(scale)"
-    TextureCache.lock.lock()
-    let cached = TextureCache.scaled[key]?.texture
-    TextureCache.lock.unlock()
-    if let cached { return cached }
+    if let cached = TextureCache.state.withLock({ $0.scaled[key]?.texture }) { return cached }
     guard let artScale = SpriteArt.scale, let image = UIImage(named: imageName)?.cgImage else { return txtr(imageName) }
     #if SPRITEKIT_SHIM
     let scaled = UIImage(cgImage: image, scale: artScale / scale)
@@ -154,9 +150,7 @@ private func slicedTexture(_ imageName: String, scale: CGFloat) -> SKTexture {
     #endif
     let texture = SKTexture(image: scaled)
     texture.filteringMode = .linear
-    TextureCache.lock.lock()
-    TextureCache.scaled[key] = (imageName, texture)
-    TextureCache.lock.unlock()
+    TextureCache.state.withLock { $0.scaled[key] = (imageName, texture) }
     return texture
 }
 

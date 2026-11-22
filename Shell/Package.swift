@@ -105,6 +105,7 @@ let package = Package(
                 "CAndroidAudio",
                 "ShellCore",
                 .product(name: "PlatformShim", package: "spritekit-android"),
+                .product(name: "PlatformServices", package: "spritekit-android"),
             ],
             path: "Sources/SDLAudio",
             swiftSettings: [v5, shimDefine, mainActor]
@@ -120,6 +121,7 @@ let package = Package(
                 .product(name: "GLESRenderer", package: "spritekit-android"),
                 .product(name: "TextShaping", package: "Text"),
                 .product(name: "PlatformShim", package: "spritekit-android"),
+                .product(name: "PlatformServices", package: "spritekit-android"),
             ],
             path: "Sources/GLESBackend",
             swiftSettings: [v5, shimDefine, mainActor]

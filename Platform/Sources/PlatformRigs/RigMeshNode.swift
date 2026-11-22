@@ -1,4 +1,5 @@
 import Foundation
+import PlatformCore
 import Macros
 import SpriteKitShim
 
@@ -68,58 +69,52 @@ public final class RigMeshNode: SKNode {
     /// may hold it while something slides (meshes wait hidden).
     public static var primingGate: (() -> Bool)?
 
-    // Guarded by `lock`: meshes are made off the main thread as scenes load.
-    nonisolated private static let lock = NSLock()
-    /// Every shader made, by key, each the first time a mesh needs it.
-    nonisolated(unsafe) private static var shaders: [String: SKShader?] = [:]
-    /// Shaders made but not yet primed (`primePending`).
-    nonisolated(unsafe) private static var pending: [SKShader] = []
-    nonisolated(unsafe) private static var primed = Set<ObjectIdentifier>()
+    private struct ShaderState {
+        /// Every shader made, by key, each the first time a mesh needs it.
+        var shaders: [String: SKShader?] = [:]
+        /// Shaders made but not yet primed (`primePending`).
+        var pending: [SKShader] = []
+        var primed = Set<ObjectIdentifier>()
+    }
+
+    // Locked: meshes are made off the main thread as scenes load.
+    nonisolated private static let shaderState = Locked(ShaderState())
 
     /// The shader for `shading` (tinted per vertex or not), made and queued
     /// for priming the first time a mesh needs it.
     private static func shader(_ shading: Shading, tinted: Bool) -> SKShader? {
         let key = tinted ? "\(shading.key) tinted" : shading.key
-        lock.lock()
-        if let shader = shaders[key] {
-            lock.unlock()
-            return shader
-        }
-        lock.unlock()
+        if let shader = shaderState.withLock({ $0.shaders[key] }) { return shader }
         let made = make(shading, tinted: tinted)
-        lock.lock()
-        defer { lock.unlock() }
-        if let raced = shaders[key] { return raced }
-        shaders[key] = made
-        if let made { pending.append(made) }
-        return made
+        return shaderState.withLock { state in
+            if let raced = state.shaders[key] { return raced }
+            state.shaders[key] = made
+            if let made { state.pending.append(made) }
+            return made
+        }
     }
 
     private static func isPrimed(_ shader: SKShader?) -> Bool {
         guard let shader else { return true }
-        lock.lock()
-        defer { lock.unlock() }
-        return primed.contains(ObjectIdentifier(shader))
+        return shaderState.withLock { $0.primed.contains(ObjectIdentifier(shader)) }
     }
 
     /// Forgets the shaders whose shading keys `forget` picks: each primed
     /// shader holds megabytes of buffers. Meshes still showing keep theirs;
     /// the next mesh to need one makes and primes it again.
     public nonisolated static func forgetShaders(where forget: (String) -> Bool) {
-        lock.lock()
-        defer { lock.unlock() }
-        let dropped = shaders.filter { forget($0.key.hasSuffix(" tinted") ? String($0.key.dropLast(7)) : $0.key) }
-        for key in dropped.keys { shaders[key] = nil }
-        let ids = Set(dropped.values.compactMap { $0.map(ObjectIdentifier.init) })
-        primed.subtract(ids)
-        pending.removeAll { ids.contains(ObjectIdentifier($0)) }
+        shaderState.withLock { state in
+            let dropped = state.shaders.filter { forget($0.key.hasSuffix(" tinted") ? String($0.key.dropLast(7)) : $0.key) }
+            for key in dropped.keys { state.shaders[key] = nil }
+            let ids = Set(dropped.values.compactMap { $0.map(ObjectIdentifier.init) })
+            state.primed.subtract(ids)
+            state.pending.removeAll { ids.contains(ObjectIdentifier($0)) }
+        }
     }
 
     /// Whether shaders made wait to be primed.
     public static var hasPendingShaders: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return !pending.isEmpty
+        shaderState.withLock { !$0.pending.isEmpty }
     }
 
     /// Primes the shaders made since last time (`AttributeShaders`), `limit`
@@ -127,15 +122,14 @@ public final class RigMeshNode: SKNode {
     /// the main thread.
     public static func primePending(in view: SKView, limit: Int = .max) {
         guard hasPendingShaders, primingGate?() ?? true else { return }
-        lock.lock()
-        let shaders = Array(pending.prefix(limit))
-        pending.removeFirst(shaders.count)
-        lock.unlock()
+        let shaders = shaderState.withLock { state in
+            let shaders = Array(state.pending.prefix(limit))
+            state.pending.removeFirst(shaders.count)
+            return shaders
+        }
         guard !shaders.isEmpty else { return }
         AttributeShaders.prime(shaders, in: view)
-        lock.lock()
-        primed.formUnion(shaders.map(ObjectIdentifier.init))
-        lock.unlock()
+        shaderState.withLock { $0.primed.formUnion(shaders.map(ObjectIdentifier.init)) }
     }
 
     /// How it's shaded; changing it hides it until the new shader is primed.

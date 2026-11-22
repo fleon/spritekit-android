@@ -1,36 +1,38 @@
 import Foundation
+import PlatformServices
 import SpriteKitShim
 
 /// Shaders a build handed over (`SKShader.programWarmer`) from its own
 /// thread, for the frame thread to build their programs a few a frame.
 nonisolated final class ShaderWarmQueue: @unchecked Sendable {
-    private let lock = NSLock()
-    private var waiting: [SKShader] = []
-    private var seen = Set<ObjectIdentifier>()
+    private struct State {
+        var waiting: [SKShader] = []
+        var seen = Set<ObjectIdentifier>()
+    }
+
+    private let state = Locked(State())
 
     func add(_ shaders: [SKShader]) {
-        lock.lock()
-        for shader in shaders where seen.insert(ObjectIdentifier(shader)).inserted {
-            waiting.append(shader)
+        state.withLock { state in
+            for shader in shaders where state.seen.insert(ObjectIdentifier(shader)).inserted {
+                state.waiting.append(shader)
+            }
         }
-        lock.unlock()
     }
 
     func next() -> SKShader? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !waiting.isEmpty else { return nil }
-        let shader = waiting.removeFirst()
-        seen.remove(ObjectIdentifier(shader))
-        return shader
+        state.withLock { state in
+            guard !state.waiting.isEmpty else { return nil }
+            let shader = state.waiting.removeFirst()
+            state.seen.remove(ObjectIdentifier(shader))
+            return shader
+        }
     }
 
     func removeAll() -> [SKShader] {
-        lock.lock()
-        defer { lock.unlock() }
-        let taken = waiting
-        waiting.removeAll()
-        seen.removeAll()
-        return taken
+        state.withLock { state in
+            defer { state = State() }
+            return state.waiting
+        }
     }
 }

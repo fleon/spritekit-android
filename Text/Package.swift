@@ -48,6 +48,7 @@ let package = Package(
             dependencies: [
                 "CTextShaping",
                 .product(name: "SpriteKitShim", package: "spritekit-android"),
+                .product(name: "PlatformServices", package: "spritekit-android"),
             ],
             path: "Sources/TextShaping",
             swiftSettings: [v5, shimDefine],

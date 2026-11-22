@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// `.stringsdict` plurals on Android, as Foundation resolves them on Apple
 /// (measured on macOS 27.2; `StringsDictTests`).
@@ -60,32 +61,25 @@ public enum StringsDict {
         return entries
     }
 
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var registered: [String: Entry] = [:]
+    private static let registered = Locked([String: Entry]())
 
     /// Remembers `entry` under its format's text, so formatting it resolves
     /// its plurals; returns the format.
     @discardableResult
     public static func register(_ entry: Entry) -> String {
-        lock.lock()
-        registered[entry.format] = entry
-        lock.unlock()
+        registered.withLock { $0[entry.format] = entry }
         return entry.format
     }
 
     /// The entry registered for `format`, if it has a plural variable in it.
     public static func entry(for format: String) -> Entry? {
         guard format.contains("#@") else { return nil }
-        lock.lock()
-        defer { lock.unlock() }
-        return registered[format]
+        return registered.withLock { $0[format] }
     }
 
     /// Forgets every registered format (tests).
     static func reset() {
-        lock.lock()
-        registered = [:]
-        lock.unlock()
+        registered.withLock { $0 = [:] }
     }
 
     /// `format` with `arguments`, its plurals in `pluralLocale`'s categories

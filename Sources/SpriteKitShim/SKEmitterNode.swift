@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// A particle emitter, simulated here in Swift and drawn as sprites.
 ///
@@ -340,14 +341,13 @@ struct ParticleRandom {
 
 /// Hands each new emitter the next seed.
 private final class SeedCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var count: UInt64 = 0
+    private let count = Locked<UInt64>(0)
 
     func next() -> UInt64 {
-        lock.lock()
-        defer { lock.unlock() }
-        count += 1
-        return count &* 0x2545_F491_4F6C_DD1D
+        count.withLock { count in
+            count += 1
+            return count &* 0x2545_F491_4F6C_DD1D
+        }
     }
 }
 

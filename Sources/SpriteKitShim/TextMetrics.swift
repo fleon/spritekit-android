@@ -1,5 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
+import PlatformServices
 
 /// The seam between the layer and the text stack.
 ///
@@ -14,15 +15,12 @@ import Foundation
 /// did before any of this — an honest nothing rather than a plausible wrong
 /// number, which is the same rule the rest of the layer follows.
 public enum TextMetrics {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var registered: TextProvider?
-
-    nonisolated(unsafe) private static var registeredCatalog: FontCatalog?
+    private static let registered = Locked<(provider: TextProvider?, catalog: FontCatalog?)>((nil, nil))
 
     /// Installed once, at start-up, by whatever owns the font files.
     public static var provider: TextProvider? {
-        get { lock.lock(); defer { lock.unlock() }; return registered }
-        set { lock.lock(); defer { lock.unlock() }; registered = newValue }
+        get { registered.withLock { $0.provider } }
+        set { registered.withLock { $0.provider = newValue } }
     }
 
     /// The font files behind the provider: what CoreText's font manager and
@@ -30,8 +28,8 @@ public enum TextMetrics {
     /// test of the scene graph), where every name is taken on trust, as
     /// before the stack could answer.
     public static var catalog: FontCatalog? {
-        get { lock.lock(); defer { lock.unlock() }; return registeredCatalog }
-        set { lock.lock(); defer { lock.unlock() }; registeredCatalog = newValue }
+        get { registered.withLock { $0.catalog } }
+        set { registered.withLock { $0.catalog = newValue } }
     }
 }
 

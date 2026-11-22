@@ -1,6 +1,7 @@
 import CAndroidShell
 import CAndroidAudio
 import Foundation
+import PlatformServices
 import PlatformShim
 import ShellCore
 
@@ -94,17 +95,20 @@ final class MusicMixer {
 
     private let stream: OpaquePointer
     private let deviceRate: Int32
-    /// Guards `commands`, `current` and `isStopping` — nothing else.
-    private let lock = NSLock()
-    private var commands: [Command] = []
-    /// The track asked for last, so asking again is ignored rather than
-    /// restarting it, and so a decoder that finished opening after a newer
-    /// request can be thrown away.
-    private var current: String?
-    private var isStopping = false
+    /// What the game's thread and the mixer's share, under a lock.
+    private struct Shared {
+        var commands: [Command] = []
+        /// The track asked for last, so asking again is ignored rather than
+        /// restarting it, and so a decoder that finished opening after a newer
+        /// request can be thrown away.
+        var current: String?
+        var isStopping = false
+        var hasStopped = false
+    }
+
+    private let shared = Locked(Shared())
     /// Signalled once the mixer thread has let go of its stream and decks.
     private let finished = DispatchSemaphore(value: 0)
-    private var hasStopped = false
 
     /// Mixer-thread state.
     private var decks: [Deck] = []
@@ -142,11 +146,11 @@ final class MusicMixer {
     /// soundtrack touches SDL again, so the device can close and SDL can
     /// quit. A track still being opened is waited for and closed too.
     func stop() {
-        lock.lock()
-        isStopping = true
-        let alreadyStopped = hasStopped
-        hasStopped = true
-        lock.unlock()
+        let alreadyStopped = shared.withLock { shared in
+            shared.isStopping = true
+            defer { shared.hasStopped = true }
+            return shared.hasStopped
+        }
         guard !alreadyStopped else { return }
         opener.sync {}
         finished.wait()
@@ -156,15 +160,16 @@ final class MusicMixer {
     /// track already playing keeps it going. Returns at once: nothing here
     /// opens a file or waits on the mixer.
     func play(_ track: String?, loop: MusicLoop?, volume: Float, over fade: TimeInterval) {
-        lock.lock()
-        if track == current {
-            if let track { commands.append(.retarget(name: track, volume: volume, fade: fade)) }
-            lock.unlock()
-            return
+        let isCurrent = shared.withLock { shared in
+            if track == shared.current {
+                if let track { shared.commands.append(.retarget(name: track, volume: volume, fade: fade)) }
+                return true
+            }
+            shared.current = track
+            shared.commands.append(.fadeOutAll(fade: fade))
+            return false
         }
-        current = track
-        commands.append(.fadeOutAll(fade: fade))
-        lock.unlock()
+        guard !isCurrent else { return }
 
         guard let track else { return }
         opener.async { [weak self] in
@@ -172,11 +177,12 @@ final class MusicMixer {
                 if track != nil { Log.error("no soundtrack \(track) in the APK") }
                 return
             }
-            self.lock.lock()
             // Another call may have overtaken this one while the file opened.
-            let wanted = self.current == track && !self.isStopping
-            if wanted { self.commands.append(.add(deck, volume: volume, fade: fade)) }
-            self.lock.unlock()
+            let wanted = self.shared.withLock { shared in
+                let wanted = shared.current == track && !shared.isStopping
+                if wanted { shared.commands.append(.add(deck, volume: volume, fade: fade)) }
+                return wanted
+            }
             if !wanted { ska_audio_close(deck.decoder) }
         }
     }
@@ -199,11 +205,10 @@ final class MusicMixer {
 
     private func run() {
         while true {
-            lock.lock()
-            let stopping = isStopping
-            let due = commands
-            commands.removeAll()
-            lock.unlock()
+            let (stopping, due) = shared.withLock { shared in
+                defer { shared.commands.removeAll() }
+                return (shared.isStopping, shared.commands)
+            }
             if stopping { break }
             for command in due { apply(command) }
 

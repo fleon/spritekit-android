@@ -1,4 +1,5 @@
 import Foundation
+import PlatformServices
 import ShellCore
 
 /// The packed pages a launch's first seconds drew (a splash's and the first
@@ -11,9 +12,7 @@ nonisolated final class LaunchPages: @unchecked Sendable {
     /// How long into a launch the pages drawn count.
     static let window: TimeInterval = 4
 
-    private let lock = NSLock()
-    private var drawn: [Int] = []
-    private var isWritten = false
+    private let state = Locked<(drawn: [Int], isWritten: Bool)>(([], false))
     private let url: URL?
 
     init() {
@@ -31,23 +30,20 @@ nonisolated final class LaunchPages: @unchecked Sendable {
     /// Notes a page taken for its upload `elapsed` seconds into the launch.
     func note(_ page: Int, at elapsed: TimeInterval) {
         guard elapsed < Self.window else { return }
-        lock.lock()
-        if !drawn.contains(page) { drawn.append(page) }
-        lock.unlock()
+        state.withLock { state in
+            if !state.drawn.contains(page) { state.drawn.append(page) }
+        }
     }
 
     /// Writes what this launch drew, once its window has passed.
     func writeIfDue(at elapsed: TimeInterval) {
         guard elapsed >= Self.window else { return }
-        lock.lock()
-        guard !isWritten else {
-            lock.unlock()
-            return
+        let pages: [Int]? = state.withLock { state in
+            guard !state.isWritten else { return nil }
+            state.isWritten = true
+            return state.drawn
         }
-        isWritten = true
-        let pages = drawn
-        lock.unlock()
-        guard let url, let data = try? JSONEncoder().encode(pages) else { return }
+        guard let pages, let url, let data = try? JSONEncoder().encode(pages) else { return }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
