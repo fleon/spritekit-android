@@ -20,9 +20,11 @@
 #
 # Each slot is an AVD of its own (`<prefix><n>`, made here on first use from
 # the template below) on console port 5556, 5558, 5560 or 5562, so
-# slots never share data, installs or system properties. Emulators start on
-# the host GPU (`-gpu host`): left to choose, one fell back to SwiftShader at
-# about two frames a second. A released slot's emulator is shut down, so idle
+# slots never share data, installs or system properties. Each new owner
+# gets the slot as the AVD defines it: screen size and density, rotation
+# (unlocked, upright), font and animation scales and the games' debug
+# properties are reset. Emulators start on the host GPU (`-gpu host`): left
+# to choose, one fell back to SwiftShader at about two frames a second. A released slot's emulator is shut down, so idle
 # slots hold no memory; a boot from cold takes about 15 seconds.
 #
 # State lives outside every checkout, so every worktree of every game on the
@@ -186,14 +188,24 @@ stop_slot() {
 }
 
 # A slot handed to a new owner starts as the AVD defines it. Screen overrides
-# (`wm size`, `wm density`) survive reboots in the AVD's data, and one session
-# left a 402-point screen for the next; the games' `debug.<key>.*` properties last
-# until a reboot. Every new lease clears them.
+# (`wm size`, `wm density`), a locked rotation (`accelerometer_rotation 0`,
+# `user_rotation`, `wm user-rotation lock`), font scale and animation scales
+# survive reboots in the AVD's data: one session left a 402-point screen for
+# the next, another a slot locked in landscape. The games' `debug.<key>.*`
+# properties last until a reboot. Every new lease clears them.
 clean_slot() {
     local serial
     serial=$(serial_of "$1")
     "$ADB" -s "$serial" shell wm size reset >/dev/null 2>&1 || true
     "$ADB" -s "$serial" shell wm density reset >/dev/null 2>&1 || true
+    "$ADB" -s "$serial" shell wm user-rotation free >/dev/null 2>&1 || true
+    "$ADB" -s "$serial" shell settings put system accelerometer_rotation 1 >/dev/null 2>&1 || true
+    "$ADB" -s "$serial" shell settings put system user_rotation 0 >/dev/null 2>&1 || true
+    "$ADB" -s "$serial" shell settings put system font_scale 1.0 >/dev/null 2>&1 || true
+    local scale
+    for scale in window_animation_scale transition_animation_scale animator_duration_scale; do
+        "$ADB" -s "$serial" shell settings put global "$scale" 1 >/dev/null 2>&1 || true
+    done
     local prefix pattern
     for prefix in $PROPERTY_PREFIXES; do
         pattern="$(printf '%s' "$prefix" | sed 's/\./\\./g')"
