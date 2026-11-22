@@ -180,7 +180,6 @@ public final class StudioSplashScene: SKScene {
             let label = SKLabelNode(text: text)
             label.fontName = style.fontName
             label.fontColor = style.textColor
-            label.verticalAlignmentMode = .bottom
             footerNode.addChild(label)
         }
         layoutFooter()
@@ -200,7 +199,8 @@ public final class StudioSplashScene: SKScene {
         let lines = footerNode.children.compactMap { $0 as? SKLabelNode }
         for (index, label) in lines.enumerated() {
             label.fontSize = style.fontSize * scale
-            label.position = CGPoint(x: 0, y: CGFloat(lines.count - 1 - index) * style.footerLineSpacing * scale)
+            // The font's descender, not the line's ink, on the line's bottom.
+            label.align(.bottom, at: CGPoint(x: 0, y: CGFloat(lines.count - 1 - index) * style.footerLineSpacing * scale), band: .line)
         }
         footerNode.position = CGPoint(
             x: 0,

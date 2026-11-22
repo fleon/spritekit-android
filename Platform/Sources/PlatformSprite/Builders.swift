@@ -96,7 +96,13 @@ public enum LabelCommand {
     case text(_ text: String)
     case color(_ color: UIColor)
     case hAlign(_ mode: SKLabelHorizontalAlignmentMode)
+    /// `.center`, `.top` and `.bottom` align the font's text band
+    /// (`band`, else `Typography.textBand`) at `position`, by its metrics,
+    /// the label set on its baseline (`SKLabelNode.align`), so every string
+    /// in one font sits alike; `.baseline` puts the baseline there.
     case vAlign(_ mode: SKLabelVerticalAlignmentMode)
+    /// The text band `vAlign` aligns.
+    case band(_ band: TextBand)
     case position(_ x: CGFloat, _ y: CGFloat)
     case z(_ z: CGFloat)
     case alpha(_ alpha: CGFloat)
@@ -106,10 +112,13 @@ public enum LabelCommand {
 }
 
 /// A label set up by `commands`, in order; what they leave is
-/// `SKLabelNode`'s own default (a baseline, centred).
+/// `SKLabelNode`'s own default (a baseline, centred). Its vertical
+/// alignment is applied last, from the font and position the commands set.
 @discardableResult
 public func label(_ commands: LabelCommand...) -> SKLabelNode {
     let label = SKLabelNode()
+    var vertical = SKLabelVerticalAlignmentMode.baseline
+    var band: TextBand?
     for command in commands {
         switch command {
         #if canImport(UIKit) || !canImport(Darwin)
@@ -127,7 +136,9 @@ public func label(_ commands: LabelCommand...) -> SKLabelNode {
         case .hAlign(let mode):
             label.horizontalAlignmentMode = mode
         case .vAlign(let mode):
-            label.verticalAlignmentMode = mode
+            vertical = mode
+        case .band(let textBand):
+            band = textBand
         case .position(let x, let y):
             label.position = pt(x, y)
         case .z(let z):
@@ -139,6 +150,9 @@ public func label(_ commands: LabelCommand...) -> SKLabelNode {
         case .parent(let node):
             node.addChild(label)
         }
+    }
+    if vertical != .baseline {
+        label.align(vertical, at: label.position, band: band ?? Typography.textBand())
     }
     return label
 }
