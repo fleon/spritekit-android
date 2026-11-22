@@ -61,7 +61,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 | `PlatformDevice` | Haptics, rating prompts at the right moment, play time |
 | `PlatformShare` | The share sheet, pasteboard, the App Store review page, feedback mail |
 | `PlatformRigs` | Spine 4.2 skeletons posed and drawn in SpriteKit (Spine Runtimes License, see below) |
-| `Macros` | `@NSCodingUnsupported` for node subclasses |
+| `Macros` | `@NSCodingUnsupported` for node subclasses; `@LocalizedStrings` for the type-safe strings layer |
 
 "Shared platform code" below describes each one in detail.
 
@@ -449,6 +449,19 @@ decides, it hands in:
   the bundle's `.lproj` with a content table keyed by its text; on Android
   from the APK's `lproj/`, through the shim's `.strings` parser, so the
   player's pick holds there too.
+- **The strings layer** (`@LocalizedStrings` and `@L`, in `Macros`): an
+  enum whose cases each carry their key, English fallback and translator
+  comment (`@L("levels.completed", "%d of %d", comment: "…") case
+  completed(Int, Int)`) gets `key`, `fallback`, `comment` and `localized`,
+  one switch apiece. `localized` is `NSLocalizedString` (with a `table:`
+  and `bundle:`), or the enum's own `lookup` (`lookup: .custom`, for a
+  `Localizer`), then `String(format:)` or `localizedStringWithFormat`
+  (`formatting:`, per enum or per case) with the associated values in
+  order. A key built at run time is `@L(.custom)`, read from the enum's
+  `customKey` and `customFallback`; `formatting: .custom` hands the looked-up
+  string to its `customLocalized(_:)`. The compiler flags a case without
+  `@L`, a fallback whose placeholders don't match the associated values, and
+  a key used twice; generated members carry the enum's `nonisolated`.
 - **Debugging** (`Markers`, `FrameLog`; `LaunchArgumentReader` in
   `PlatformCore`): the arguments are the game's; the reader answers fixed
   values in a release build.
