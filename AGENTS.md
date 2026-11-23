@@ -357,6 +357,18 @@ would want.
 - In the Claude desktop app, after opening a pull request, bind it to the
   session and turn on Auto-fix with comments, without asking; if the switch
   is refused, ask once.
+- Watch every pull request you open until it's merged or closed, and fix
+  what lands without being asked: each new review, review comment, pull
+  request comment (Claude's review or the person's) and failed check. Fix it
+  in that pull request and reply to the comment naming the commit, or reply
+  why it stays as it is. A question from the person gets an answer, not a
+  change (see Working conventions). A ready pull request stays ready while
+  you fix review comments: turning it into a draft and back would start
+  another full review each round. The same goes for a pull request another
+  one depends on (a runtime pull request a game's waits on). Where Auto-fix
+  isn't on (outside the desktop app, or refused), keep a watch running in
+  the session that polls the pull requests with `gh` about once a minute,
+  and re-arm it whenever it expires.
 - Branch off the default branch. When a change depends on an open pull
   request, wait for that one to merge rather than stacking on it: a pull
   request based on a branch that has since merged merges into that dead
