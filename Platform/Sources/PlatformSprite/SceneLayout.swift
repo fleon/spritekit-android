@@ -451,3 +451,23 @@ public struct SceneLayout: Equatable {
         cornerButtonCenter(side: 1, end: -1, size: size).offset(0, CGFloat(index) * metrics.railButtonSpacing)
     }
 }
+
+extension SceneLayout {
+    /// `edgeX(side:clearsHousing:)` by reading order: the leading edge is
+    /// the left in a left-to-right language and the right in a
+    /// right-to-left one.
+    public func edgeX(_ edge: HorizontalEdge, clearsHousing: Bool, direction: LayoutDirection = .current) -> CGFloat {
+        edgeX(side: direction.side(edge), clearsHousing: clearsHousing)
+    }
+
+    /// `edgeButtonX(side:size:clearsHousing:)` by reading order.
+    public func edgeButtonX(_ edge: HorizontalEdge, size: CGFloat, clearsHousing: Bool, direction: LayoutDirection = .current) -> CGFloat {
+        edgeButtonX(side: direction.side(edge), size: size, clearsHousing: clearsHousing)
+    }
+
+    /// `cornerButtonCenter(side:end:size:)` by reading order: a back button
+    /// stands in the leading top corner.
+    public func cornerButtonCenter(_ edge: HorizontalEdge, end: CGFloat, size: CGFloat, direction: LayoutDirection = .current) -> CGPoint {
+        cornerButtonCenter(side: direction.side(edge), end: end, size: size)
+    }
+}

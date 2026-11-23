@@ -101,6 +101,13 @@ would want.
 - Lay out from `SceneLayout` (the visible and safe rects), never from the
   scene's size, so every screen works on phones and tablets, upright and in
   landscape.
+- Lay a screen out with `LayoutItem` (rows, columns, grids, overlays,
+  insets) rather than position arithmetic, and name horizontal places by
+  reading order: `leading` and `trailing`, never left and right, so the
+  screen mirrors in a right-to-left language (`LayoutDirection`). What
+  shows a physical direction (a board, a track) keeps its own with
+  `direction(_:)`; art that points along the reading order (a back
+  chevron) flips with `mirrorScale`.
 - Never share an `SKUniform` between shaders that may be built on different
   threads; give each shader its own.
 - Every random draw comes from a named, seedable stream (`Random`), never a

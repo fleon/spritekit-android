@@ -198,7 +198,8 @@ extension Typography {
 
     /// Sets text as `localizer`'s current language asks: in its script's
     /// own face where it has one, else `base`, with its line height and
-    /// text band.
+    /// text band, and lays out in the direction it reads
+    /// (`LayoutDirection.current`).
     public static func follow<Language: ScriptedLanguage>(
         _ localizer: Localizer<Language>,
         base: @escaping (_ weight: UIFont.Weight, _ size: CGFloat) -> UIFont
@@ -211,6 +212,7 @@ extension Typography {
         }
         lineHeightRatio = { localizer.current.lineHeightRatio }
         textBand = { localizer.current.textBand }
+        LayoutDirection.resolve = { localizer.current.layoutDirection }
     }
 }
 

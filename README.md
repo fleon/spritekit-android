@@ -478,6 +478,17 @@ decides, it hands in:
   (`DisplayCorners`), a camera's occlusion (iOS 27.1's `reservedRegions`)
   and where round buttons stand in the corners or a rail, by the game's
   `SceneLayout.Metrics`.
+- **Layout** (`LayoutItem`, `LayoutDirection`): a small rect-based layout
+  over `SceneLayout`'s rects: rows and columns with gaps, grids, overlays,
+  insets and alignment. Items state their own size and placing the tree
+  sets each leaf's resting position, once on load and when the layout
+  changes. Horizontal placement is by reading order (leading and
+  trailing), so a right-to-left language mirrors it; `direction(_:)`
+  keeps a subtree that shows a physical direction as drawn.
+  `LayoutDirection.current` follows the language (`Typography.follow`,
+  else a game sets `resolve`), and `forced` mirrors it for a debug launch
+  argument. `SceneLayout`'s corner and edge helpers take a
+  `HorizontalEdge` too.
 - **Launch splash** (`StudioSplashScene`): a studio's logo over a footer
   line or two, held at least a minimum time and until the game reports
   what it waits for `ready` (a game service's first answer, a feed), never
