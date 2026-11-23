@@ -484,7 +484,8 @@ decides, it hands in:
   sets each leaf's resting position, once on load and when the layout
   changes. Horizontal placement is by reading order (leading and
   trailing), so a right-to-left language mirrors it; `direction(_:)`
-  keeps a subtree that shows a physical direction as drawn.
+  keeps what a subtree that shows a physical direction holds as drawn,
+  while the subtree itself stands where its parent puts it.
   `LayoutDirection.current` follows the language (`Typography.follow`,
   else a game sets `resolve`), and `forced` mirrors it for a debug launch
   argument. `SceneLayout`'s corner and edge helpers take a

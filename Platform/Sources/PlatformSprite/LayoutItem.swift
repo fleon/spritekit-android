@@ -197,8 +197,9 @@ public struct LayoutItem {
         return item
     }
 
-    /// This item and everything in it laid out in `direction` whatever the
-    /// language: for what shows a physical direction (a board, a track).
+    /// What this item holds laid out in `direction` whatever the language:
+    /// for what shows a physical direction (a board, a track). Where the
+    /// item itself stands in its parent still follows the parent's.
     public func direction(_ direction: LayoutDirection) -> LayoutItem {
         var item = self
         item.fixedDirection = direction
@@ -215,7 +216,7 @@ public struct LayoutItem {
 
     /// The frame this item takes in `rect`, standing by its alignment.
     public func frame(in rect: CGRect, direction: LayoutDirection = .current) -> CGRect {
-        frame(in: rect, direction: fixedDirection ?? direction, h: hAlign ?? .center, v: vAlign ?? .center)
+        frame(in: rect, direction: direction, h: hAlign ?? .center, v: vAlign ?? .center)
     }
 
     private func frame(in rect: CGRect, direction: LayoutDirection, h: HAlign, v: VAlign) -> CGRect {
@@ -239,8 +240,8 @@ public struct LayoutItem {
     }
 
     private func place(in rect: CGRect, direction inherited: LayoutDirection, hDefault: HAlign, vDefault: VAlign) {
+        let frame = frame(in: rect, direction: inherited, h: hAlign ?? hDefault, v: vAlign ?? vDefault)
         let direction = fixedDirection ?? inherited
-        let frame = frame(in: rect, direction: direction, h: hAlign ?? hDefault, v: vAlign ?? vDefault)
         let rightToLeft = direction.isRightToLeft
         switch content {
         case .leaf(let place):

@@ -105,8 +105,8 @@ would want.
   insets) rather than position arithmetic, and name horizontal places by
   reading order: `leading` and `trailing`, never left and right, so the
   screen mirrors in a right-to-left language (`LayoutDirection`). What
-  shows a physical direction (a board, a track) keeps its own with
-  `direction(_:)`; art that points along the reading order (a back
+  shows a physical direction (a board, a track) lays its contents out in
+  its own with `direction(_:)`, standing where its parent puts it; art that points along the reading order (a back
   chevron) flips with `mirrorScale`.
 - Never share an `SKUniform` between shaders that may be built on different
   threads; give each shader its own.

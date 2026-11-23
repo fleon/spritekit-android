@@ -106,6 +106,22 @@ struct LayoutItemTests {
         #expect(f.frames["second"] == CGRect(x: 24, y: 0, width: 20, height: 20))
     }
 
+    @Test func aFixedDirectionItemStandsByItsParents() {
+        let f = Frames()
+        let column = LayoutItem.column([
+            f.leaf("title", 40, 20),
+            LayoutItem.row([f.leaf("start", 20, 10), f.leaf("end", 20, 10)]).direction(.leftToRight),
+        ], align: .leading)
+        column.aligned(.leading, .top).place(in: CGRect(x: 0, y: 0, width: 100, height: 30), direction: .rightToLeft)
+        #expect(f.frames["title"] == CGRect(x: 60, y: 10, width: 40, height: 20))
+        #expect(f.frames["start"] == CGRect(x: 60, y: 0, width: 20, height: 10))
+        #expect(f.frames["end"] == CGRect(x: 80, y: 0, width: 20, height: 10))
+        let board = f.leaf("board", 30, 30).direction(.leftToRight).aligned(.leading, .top)
+        LayoutItem.overlay([board]).aligned(.fill, .fill).place(in: CGRect(x: 0, y: 0, width: 100, height: 100), direction: .rightToLeft)
+        #expect(f.frames["board"] == CGRect(x: 70, y: 70, width: 30, height: 30))
+        #expect(board.frame(in: CGRect(x: 0, y: 0, width: 100, height: 100), direction: .rightToLeft).minX == 70)
+    }
+
     @Test func sizedHoldsItsContentInTheLargerFrame() {
         let f = Frames()
         let cell = f.leaf("dot", 10, 10).aligned(.trailing, .bottom)
