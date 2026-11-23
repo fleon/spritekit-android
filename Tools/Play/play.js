@@ -52,11 +52,18 @@
 //   --send-for-review  on a testing-track release only: with --send, send
 //                      the edit for review instead of holding it (without
 //                      --send the plan says it would)
+//   --without-hold     on a draft release only (production, or a testing
+//                      track without --rollout): commit without holding the
+//                      edit back, for an app whose changes Play won't hold
+//                      (it refuses --changes-not-sent-for-review unless an
+//                      update was rejected). The draft serves nobody, but
+//                      anything else waiting in the Play Console goes for
+//                      review with it: check Publishing overview first.
 //   --help, -h         print this and stop
 //
 // Nothing here submits for review but the nightly testing build: every
 // other write passes --changes-not-sent-for-review, so it waits in the Play
-// Console for the user. The nightly's release (--send-for-review) still
+// Console for the user, unless --without-hold asks a draft release not to. The nightly's release (--send-for-review) still
 // passes --changes-in-review error, so it never cancels a review already
 // under way.
 
@@ -105,6 +112,7 @@ const PRODUCTS = path.join(HERE, 'Monetization/iap');
 const send = args.includes('--send');
 const offline = args.includes('--offline');
 const forReview = args.includes('--send-for-review');
+const withoutHold = args.includes('--without-hold');
 const usage = (why) => { console.error(why); process.exit(2); };
 if (offline && send) usage('--offline reads nothing from Play, so it can send nothing: drop one.');
 const STEPS = ['listing', 'images', 'screenshots', 'product', 'datasafety', 'release', 'tracks', 'versions', 'status'];
@@ -115,9 +123,10 @@ const SHOTS = option('--screenshots') ? path.resolve(option('--screenshots')) : 
 
 // Every write waits in the Play Console: only the user submits, but for the
 // nightly's release.
-const HOLD = ['--changes-not-sent-for-review', '--changes-in-review', 'error'];
-// Play's answer when an app was never published: it won't hold changes, and
-// a commit without the hold would send every pending change for review.
+const HOLD = lib.commitFlags();
+// Play's answer when it won't hold an app's changes back (it holds them only
+// after a rejected update, and never for an app it hasn't published): a commit
+// without the hold would send every pending change for review.
 const REFUSES_HOLD = /changesNotSentForReview must not be set/i;
 
 let changes = 0;
@@ -191,11 +200,11 @@ function stage(name, { lint, plan, apply }) {
   if (!send) return true;
   const wrote = gplay(apply);
   if (wrote.status !== 0 && REFUSES_HOLD.test(wrote.err || wrote.out)) {
-    // Never send without the hold: on a never-published app that sends every
-    // pending change for review, and an approval can publish the app.
+    // Never send without the hold: that sends every pending change for
+    // review, and on a never-published app an approval can publish it.
     failed += 1;
-    console.log(`${name}: this app has never been published, so Play refuses to hold changes back and would send`);
-    console.log('         every pending change for review. Nothing was sent; make this change in the Play Console.');
+    console.log(`${name}: Play won't hold this app's changes back from review, and without the hold every pending`);
+    console.log('         change would go for review. Nothing was sent; make this change in the Play Console.');
     return false;
   }
   if (wrote.status !== 0) {
@@ -462,6 +471,7 @@ function releaseStep() {
   const alsoWrong = lib.alsoProblem(TRACK, also);
   if (alsoWrong) return refuse(`${alsoWrong}.`);
   if (forReview && !rollout) return refuse('--send-for-review sends a rolled-out release; pass --rollout with it.');
+  if (withoutHold && (rollout || forReview)) return refuse('--without-hold is for a draft release only, not with --rollout or --send-for-review.');
   if (!fs.existsSync(ARTIFACT)) return refuse(`${ARTIFACT} is not there.`);
   // A testing track takes a beta build, production a build of its own.
   const beta = betaOf(ARTIFACT);
@@ -497,15 +507,18 @@ function releaseStep() {
   changes += 1;
   if (!send) return;
   const published = lib.everPublished(maybe(online('tracks', 'list', '--output', 'json'))?.tracks);
-  // Sent for review: no hold, and a review already under way makes the
-  // commit fail rather than be cancelled and resubmitted.
-  const commit = forReview ? ['--changes-in-review', 'error'] : HOLD;
+  // Sent for review, or a draft with --without-hold: no hold. Either way a
+  // review already under way makes the commit fail rather than be cancelled.
+  const commit = lib.commitFlags({ forReview, withoutHold });
   const wrote = gplay(online(...argv, ...commit));
   if (wrote.status !== 0 && REFUSES_HOLD.test(wrote.err || wrote.out)) {
-    return refuse('this app has never been published, so Play refuses to hold the release back and would send every pending change for review. Upload it in the Play Console instead.');
+    return refuse(published
+      ? 'Play won\'t hold this app\'s changes back from review (it holds them only after a rejected update). A draft serves nobody: once Publishing overview in the Play Console shows nothing else waiting, run this again with --without-hold, or upload it in the Play Console.'
+      : 'this app has never been published, so Play refuses to hold the release back and would send every pending change for review. Upload it in the Play Console instead.');
   }
   if (wrote.status !== 0) { failed += 1; console.log(`Release: failed.\n${wrote.err || wrote.out}`); return; }
   if (forReview) sentForReview = true;
+  if (withoutHold) console.log('Release: committed without the hold. Anything else waiting in the Play Console went for review with it.');
   console.log(production
     ? 'Release: uploaded as a draft on production. It reaches nobody until it is rolled out in the Play Console.'
     : rollout

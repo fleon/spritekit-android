@@ -119,8 +119,15 @@ function approvedRelease(releases, version) {
   return releases.find((r) => r.track === 'production' && APPROVED.includes(r.status) && namesVersion(r.name, version)) ?? null;
 }
 
+// What a commit passes. Held (--changes-not-sent-for-review) unless it's sent
+// for review or, for a draft, the user asked for no hold; a review already
+// under way always makes it fail rather than be cancelled.
+function commitFlags({ forReview = false, withoutHold = false } = {}) {
+  return forReview || withoutHold ? ['--changes-in-review', 'error'] : ['--changes-not-sent-for-review', '--changes-in-review', 'error'];
+}
+
 module.exports = {
-  APPROVED, sameVersion, namesVersion, releasesIn, uploadedIn, approvedRelease,
+  commitFlags, APPROVED, sameVersion, namesVersion, releasesIn, uploadedIn, approvedRelease,
   TESTING, LIMITS, KEPT, tracksIn, alsoProblem, cutNotes, overLimits, counted, describe,
   betaIn, nativeSymbols, onlyTallScreenshots, everPublished,
 };

@@ -10,6 +10,13 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const lib = require('./lib');
 
+test('a commit is held unless it goes for review or a draft asks not to be', () => {
+  const hold = ['--changes-not-sent-for-review', '--changes-in-review', 'error'];
+  assert.deepStrictEqual(lib.commitFlags(), hold);
+  assert.deepStrictEqual(lib.commitFlags({ forReview: true }), ['--changes-in-review', 'error']);
+  assert.deepStrictEqual(lib.commitFlags({ withoutHold: true }), ['--changes-in-review', 'error']);
+});
+
 test('notes are cut to 500 characters at a line break', () => {
   const line = 'x'.repeat(99);
   const notes = Array.from({ length: 8 }, () => line).join('\n');
