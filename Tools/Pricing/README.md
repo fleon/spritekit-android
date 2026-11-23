@@ -9,7 +9,7 @@ Google Play, from one copy of the tools. A game keeps its settings in a
 | `ppp.py <price>` | Prints the purchasing-power price for every storefront: World Bank price levels (and, with `--income-weight`, incomes) and live exchange rates, rounded as prices. Takes only flags. |
 | `appstore.py` | Plans the App Store price schedule from those levels, at each territory's nearest price point (.x9 / 9 endings first), for the app itself or for tiers of in-app purchases. `--send` replaces the schedules. |
 | `play.py` | Prices every Google Play region as the App Store prices it (snapshots of both), and writes gplay's one-time product file or, for a paid app, the table Play Console takes by hand, with `prices.md` comparing the two stores. Talks to neither store, but `--refresh` re-reads an app's App Store prices first (read only). |
-| `product.js` | Creates or updates the one-time product on Play from the product file, through the Publisher API (`gplay iap apply` can't create a first product). The plan reads Play only; `--send` writes. `--reward` does the same for a pre-registration reward. |
+| `product.js` | Creates or updates the one-time product on Play from the product file, through the Publisher API (`gplay iap apply` can't create a first product). The plan reads Play only; `--send` writes. `--reward` does the same for a pre-registration reward. For a game with more products, `--file <body.json>` takes a whole product body instead, and `--get <productId>` prints a product as Play holds it. |
 
 `--help` on each lists its flags. Every flag overrides its setting.
 
