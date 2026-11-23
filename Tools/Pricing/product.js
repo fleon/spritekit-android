@@ -17,6 +17,15 @@
 // With --reward, the same for a pre-registration reward (listing.json
 // `reward`: `productId`, `purchaseOptionId`, `listings`).
 //
+// For a game with more than listing.json's one product:
+//
+//   node <Play dir>/product.js --file <body.json> [--send|--verify]
+//       the same for a whole oneTimeProduct body (its productId, listings and
+//       purchaseOptions) in place of the product's file; a product that
+//       exists keeps its listings when the body has none.
+//   node <Play dir>/product.js --get <productId>
+//       prints the product as Play holds it (JSON), or {"missing": true}.
+//
 // The plan reads Play only: the product as it stands (if any), and Play's own
 // conversion of the file's US price for new regions (pricing:convertRegionPrices,
 // which computes and changes nothing), whose answer names the current regions
@@ -50,9 +59,17 @@ const PACKAGE = SOURCE.package;
 // is built from the product's file (the same regions at the same prices,
 // so it is no cheaper way in) with its own id, purchase option and copy.
 const REWARD = process.argv.includes('--reward');
+const argument = (flag) => {
+  const at = process.argv.indexOf(flag);
+  return at >= 0 ? process.argv[at + 1] : undefined;
+};
+// --file: a whole product body of the game's own; --get: read one product.
+const BODY_FILE = argument('--file');
+const GET = argument('--get');
 const PRODUCT_FILE = path.join(HERE, 'Monetization', 'iap', `${SOURCE.product.productId}.json`);
-const PRODUCT_ID = REWARD ? SOURCE.reward.productId : SOURCE.product.productId;
-const FILE = REWARD ? PRODUCT_FILE : path.join(HERE, 'Monetization', 'iap', `${PRODUCT_ID}.json`);
+const PRODUCT_ID = GET ?? (BODY_FILE ? JSON.parse(fs.readFileSync(BODY_FILE, 'utf8')).productId
+  : REWARD ? SOURCE.reward.productId : SOURCE.product.productId);
+const FILE = BODY_FILE ?? (REWARD ? PRODUCT_FILE : path.join(HERE, 'Monetization', 'iap', `${PRODUCT_ID}.json`));
 const API = 'https://androidpublisher.googleapis.com/androidpublisher/v3';
 const send = process.argv.includes('--send');
 
@@ -147,6 +164,10 @@ async function main() {
   const exists = existing.status === 200;
   if (!exists && existing.status !== 404) throw new Error(`reading the product: ${existing.status} ${JSON.stringify(existing.body).slice(0, 300)}`);
 
+  if (!(product.listings ?? []).length) {
+    if (!exists) problems.push('a new product needs listings');
+    else product.listings = existing.body.listings ?? [];
+  }
   console.log(`Product ${PRODUCT_ID} on ${PACKAGE}: ${exists ? 'exists, would be updated' : 'missing, would be created'}`);
   console.log(`  listings: ${product.listings.length} languages (${product.listings.map((l) => l.languageCode).join(', ')})`);
   console.log(`  purchase option "${option.purchaseOptionId}": buy, legacy-compatible, one at a time, then activated`);
@@ -184,7 +205,15 @@ async function main() {
   console.log(`Purchase option "${option.purchaseOptionId}" is active.`);
 }
 
-if (process.argv.includes('--verify')) {
+if (GET) {
+  // Read-only: one product as Play holds it.
+  (async () => {
+    const live = await call(await token(), 'GET', `applications/${PACKAGE}/oneTimeProducts/${GET}`);
+    if (live.status === 404) return console.log(JSON.stringify({ missing: true }));
+    if (live.status !== 200) throw new Error(`reading ${GET}: ${live.status} ${JSON.stringify(live.body).slice(0, 300)}`);
+    console.log(JSON.stringify(live.body));
+  })().catch((error) => { console.error(error.message); process.exit(1); });
+} else if (process.argv.includes('--verify')) {
   // Read-only: the product as Play holds it, against the file.
   (async () => {
     const bearer = await token();
