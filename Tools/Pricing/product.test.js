@@ -31,12 +31,12 @@ globalThis.fetch = async (url, init = {}) => {
 };
 `;
 
-function game({ currency = 'EUR' } = {}) {
+function game({ currency = 'EUR', product = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'product-'));
   const money = (units, nanos, code) => ({ currencyCode: code, units: String(units), nanos });
   fs.writeFileSync(path.join(dir, 'listing.json'), JSON.stringify({
     package: 'com.example.game',
-    product: { productId: 'com.example.full', listings: {} },
+    ...(product ? { product: { productId: 'com.example.full', listings: {} } } : {}),
     reward: { productId: 'com.example.reward', purchaseOptionId: 'reward', listings: { 'en-US': { title: 'Gift', description: 'Free' } } },
   }));
   fs.mkdirSync(path.join(dir, 'Monetization', 'iap'), { recursive: true });
@@ -102,6 +102,39 @@ test('--reward plans the reward from the product\'s file', () => {
   assert.strictEqual(status, 0);
   assert.match(stdout, /Product com\.example\.reward on com\.example\.game/);
   assert.match(stdout, /listings: 1 languages \(en-US\)/);
+});
+
+// A body of the game's own for --file: the product's file under another id.
+function body(dir, { listings = true } = {}) {
+  const product = JSON.parse(fs.readFileSync(path.join(dir, 'Monetization', 'iap', 'com.example.full.json'), 'utf8'));
+  product.productId = 'com.example.world';
+  if (!listings) delete product.listings;
+  const file = path.join(dir, 'world.json');
+  fs.writeFileSync(file, JSON.stringify(product));
+  return file;
+}
+
+test('--file plans a body of the game\'s own, with listing.json holding only the package', () => {
+  const dir = game({ product: false });
+  const { status, stdout } = run(dir, '--file', body(dir));
+  assert.strictEqual(status, 0);
+  assert.match(stdout, /Product com\.example\.world on com\.example\.game: missing, would be created/);
+  assert.match(stdout, /Plan only\./);
+});
+
+test('--file refuses a new product without listings, sending nothing', () => {
+  const dir = game({ product: false });
+  const { status, stdout, stderr, calls } = run(dir, '--file', body(dir, { listings: false }), '--send');
+  assert.strictEqual(status, 1);
+  assert.match(stdout, /a new product needs listings/);
+  assert.match(stderr, /nothing was sent/);
+  assert.ok(!calls.some((c) => c.method === 'PATCH'));
+});
+
+test('--get prints a product Play doesn\'t have as missing, with listing.json holding only the package', () => {
+  const { status, stdout } = run(game({ product: false }), '--get', 'com.example.world');
+  assert.strictEqual(status, 0);
+  assert.deepStrictEqual(JSON.parse(stdout), { missing: true });
 });
 
 test('it needs PLAY_DIR', () => {

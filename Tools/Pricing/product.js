@@ -66,10 +66,11 @@ const argument = (flag) => {
 // --file: a whole product body of the game's own; --get: read one product.
 const BODY_FILE = argument('--file');
 const GET = argument('--get');
-const PRODUCT_FILE = path.join(HERE, 'Monetization', 'iap', `${SOURCE.product.productId}.json`);
+// Those two need only listing.json's package, not its one product.
+const productFile = () => path.join(HERE, 'Monetization', 'iap', `${SOURCE.product.productId}.json`);
 const PRODUCT_ID = GET ?? (BODY_FILE ? JSON.parse(fs.readFileSync(BODY_FILE, 'utf8')).productId
   : REWARD ? SOURCE.reward.productId : SOURCE.product.productId);
-const FILE = BODY_FILE ?? (REWARD ? PRODUCT_FILE : path.join(HERE, 'Monetization', 'iap', `${PRODUCT_ID}.json`));
+const FILE = GET ? undefined : BODY_FILE ?? productFile();
 const API = 'https://androidpublisher.googleapis.com/androidpublisher/v3';
 const send = process.argv.includes('--send');
 
@@ -166,7 +167,7 @@ async function main() {
 
   if (!(product.listings ?? []).length) {
     if (!exists) problems.push('a new product needs listings');
-    else product.listings = existing.body.listings ?? [];
+    product.listings = exists ? existing.body.listings ?? [] : [];
   }
   console.log(`Product ${PRODUCT_ID} on ${PACKAGE}: ${exists ? 'exists, would be updated' : 'missing, would be created'}`);
   console.log(`  listings: ${product.listings.length} languages (${product.listings.map((l) => l.languageCode).join(', ')})`);
