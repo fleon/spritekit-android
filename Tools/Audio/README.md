@@ -57,11 +57,11 @@ own (its name in `tracks` is then just a key):
   "resource": "BackgroundMusic",
   "minLoopSeconds": 200,
   "medley": {
-    "bpm": 129.999,
+    "bpm": 120,
     "blendBeats": 4,
     "parts": [
-      { "master": "Zyl 1", "firstDownbeat": 0.0406, "from": 7, "to": 93 },
-      { "master": "Zyl 2", "firstDownbeat": 2.3713, "from": 20, "to": 56 }
+      { "master": "Theme A", "firstDownbeat": 0.05, "from": 8, "to": 90 },
+      { "master": "Theme B", "firstDownbeat": 2.4, "from": 20, "to": 56 }
     ]
   }
 }
