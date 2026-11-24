@@ -180,6 +180,12 @@ would want.
   `playMusic` and `stopMusic`, never a game's own wrappers of them.
 - Keep `AudioManager`'s default of pausing the music while another app plays
   audio (`stepsAsideForOtherAudio`); no game turns it off.
+- A game's soundtrack plays its intro once and then repeats a loop on the
+  beat: its masters stay out of the bundle, and the runtime's
+  `Tools/Audio/music.js` (its README), through the game's own two-line
+  shim, finds the loops and exports the `.m4a` files and `MusicLoops`
+  the game hands to `AudioConfiguration.musicLoops`. Never bundle a track
+  that loops whole, and never cut loop points by hand.
 - On Android, saved data syncs through Play Games Saved Games, the
   counterpart of iCloud's key-value store: Saved Games is on in the game's
   Play Games project and the Android controller hands its cloud to the sync.
