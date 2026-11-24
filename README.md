@@ -1638,6 +1638,17 @@ game runs it through a two-line `Tools/Assets/assets.js` beside its
 `assets.json`; [`Tools/Assets/README.md`](Tools/Assets/README.md) has the
 settings.
 
+## Soundtrack loops
+
+`Tools/Audio/music.js` makes every game's soundtrack loop on the beat: it
+finds where each master repeats musically (after its intro, before its
+ending, on matching bars), cuts and encodes the `.m4a` files the game bundles
+with the seam crossfaded in, writes the loop points as Swift for
+`AudioConfiguration.musicLoops`, and checks every seam as the player renders
+it. Each game runs it through a two-line `Tools/Audio/music.js` beside its
+`music.json`; [`Tools/Audio/README.md`](Tools/Audio/README.md) has the
+settings and commands.
+
 ## Prices
 
 `Tools/Pricing/` prices every game's app or in-app purchases by purchasing
