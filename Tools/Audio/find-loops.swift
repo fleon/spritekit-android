@@ -34,7 +34,7 @@
 //   7. Splice: the lag is aligned on 1 ms onset envelopes, then on the
 //      waveform (±15 ms, kept close to the rhythm); the seam sits just
 //      before the downbeat's attack, with a 40 ms crossfade baked into the
-//      file's tail by export-music.js.
+//      file's tail by `music.js export` (`cutLoop` in lib.js).
 //
 // `check` decodes the exported .m4a files, confirms the AAC encoder
 // delay is compensated (frame N of the file is frame N of the master), renders
@@ -1024,7 +1024,7 @@ func check(_ settings: Settings, seamDir: URL?) throws {
         let gridAfter = outOfB.map { grid((seam + guardBand)..<(seam + span), against: $0.mono, towardEnd: false) }
 
         // The file runs on past the loop end with the loop start's audio (see
-        // export-music.js); its first half must match the audio at the start.
+        // `cutLoop` in lib.js); its first half must match the audio at the start.
         let tail = (decoded.count - end) / 2
         let tailError = tail > 0 ? rmsDB(ArraySlice(vDSP.subtract(decoded.mono[end..<(end + tail)], decoded.mono[start..<(start + tail)])))
             - rmsDB(decoded.mono[start..<(start + tail)]) : 0
