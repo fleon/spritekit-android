@@ -25,7 +25,8 @@ function readSettings(dir) {
     const track = typeof spec === 'string' ? { resource: spec } : { ...spec };
     if (!track.resource || !/^[\w-]+$/.test(track.resource)) throw new Error(`Track "${master}" needs a resource name (letters, digits, - and _)`);
     if (track.minLoopSeconds !== undefined && !(track.minLoopSeconds >= 0)) throw new Error(`Track "${master}": minLoopSeconds must be a number of seconds`);
-    return { master, resource: track.resource, minLoopSeconds: track.minLoopSeconds || 0 };
+    if (track.medley !== undefined) medleyProblem(master, track.medley);
+    return { master, resource: track.resource, minLoopSeconds: track.minLoopSeconds || 0, ...(track.medley ? { medley: track.medley } : {}) };
   });
   const resources = new Set();
   for (const { resource } of tracks) {
@@ -41,6 +42,78 @@ function readSettings(dir) {
     bitrate: json.bitrate || 128000,
     tracks,
   };
+}
+
+/// Throws when a track's medley isn't one `buildMedley` can build.
+function medleyProblem(master, medley) {
+  const fail = (why) => { throw new Error(`Track "${master}": medley ${why}`); };
+  if (!medley || typeof medley !== 'object') fail('must be an object');
+  if (!(medley.bpm > 0)) fail('needs the pieces\' common bpm');
+  if (medley.blendBeats !== undefined && !(medley.blendBeats > 0)) fail('blendBeats must be a positive number of beats');
+  if (medley.beatsPerBar !== undefined && !(Number.isInteger(medley.beatsPerBar) && medley.beatsPerBar > 0)) fail('beatsPerBar must be a positive whole number');
+  if (!Array.isArray(medley.parts) || medley.parts.length < 2) fail('needs two or more parts');
+  for (const part of medley.parts) {
+    if (!part || typeof part.master !== 'string' || !part.master) fail('parts each name a master');
+    if (!(part.firstDownbeat >= 0)) fail(`part "${part.master}" needs firstDownbeat (seconds)`);
+    if (!(Number.isInteger(part.from) && Number.isInteger(part.to) && part.from >= 0 && part.to > part.from)) fail(`part "${part.master}" needs bars from < to`);
+  }
+}
+
+/// Plays several masters in turn as one master, for a soundtrack that
+/// alternates pieces sharing a tempo: the first part from its first frame to
+/// its bar `to`, each other part from its bar `from` to its bar `to`, and the
+/// first part again from its bar `from` to its own end, each handing over to
+/// the next with an equal-power blend of `blendBeats` centred on the bar line.
+/// The first part's second pass repeats its first one exactly, so the loop
+/// search finds the whole round as the loop (similarity 1.0), and the track
+/// then plays the first part's intro once and goes round the parts forever.
+/// `pieces` maps each part's master to its decoded { sampleRate, samples }.
+function buildMedley(medley, pieces) {
+  const parts = medley.parts;
+  const first = pieces[parts[0].master];
+  const { sampleRate } = first;
+  const channels = first.samples.length;
+  for (const { master } of parts) {
+    const piece = pieces[master];
+    if (!piece) throw new Error(`Missing medley part "${master}"`);
+    if (piece.sampleRate !== sampleRate || piece.samples.length !== channels) throw new Error(`Medley part "${master}" differs from "${parts[0].master}" in sample rate or channels`);
+  }
+  const beat = 60 / medley.bpm;
+  const bar = (medley.beatsPerBar || 4) * beat;
+  const blend = Math.round((medley.blendBeats || 4) * beat * sampleRate);
+  const half = Math.floor(blend / 2);
+  const frameAt = (part, b) => Math.round((part.firstDownbeat + b * bar) * sampleRate);
+  const length = (part) => pieces[part.master].samples[0].length;
+  for (const part of parts) {
+    if (frameAt(part, part.from) - half < 0 || frameAt(part, part.to) - half + blend > length(part)) throw new Error(`Medley part "${part.master}": bars ${part.from}–${part.to} run past the master`);
+  }
+  // Runs of plain audio and blends, in order.
+  const runs = [{ part: parts[0], start: 0, end: frameAt(parts[0], parts[0].to) - half }];
+  parts.forEach((part, k) => {
+    const next = parts[(k + 1) % parts.length];
+    runs.push({ out: part, outStart: frameAt(part, part.to) - half, into: next, intoStart: frameAt(next, next.from) - half });
+    const start = frameAt(next, next.from) - half + blend;
+    runs.push({ part: next, start, end: k + 1 < parts.length ? frameAt(next, next.to) - half : length(next) });
+  });
+  const frames = runs.reduce((sum, r) => sum + (r.out ? blend : r.end - r.start), 0);
+  const samples = Array.from({ length: channels }, () => new Float32Array(frames));
+  let at = 0;
+  for (const r of runs) {
+    for (let c = 0; c < channels; c++) {
+      if (r.out) {
+        const a = pieces[r.out.master].samples[c];
+        const b = pieces[r.into.master].samples[c];
+        for (let i = 0; i < blend; i++) {
+          const [gOut, gIn] = crossfadeGains((i + 1) / blend, 0);
+          samples[c][at + i] = gOut * a[r.outStart + i] + gIn * b[r.intoStart + i];
+        }
+      } else {
+        samples[c].set(pieces[r.part.master].samples[c].subarray(r.start, r.end), at);
+      }
+    }
+    at += r.out ? blend : r.end - r.start;
+  }
+  return { sampleRate, samples, frames };
 }
 
 /// A master's file: `<master>.<ext>` in the masters folder.
@@ -193,6 +266,7 @@ module.exports = {
   MASTER_EXTENSIONS,
   TAIL_FRAMES,
   readSettings,
+  buildMedley,
   masterFile,
   isLfsPointer,
   readWav,

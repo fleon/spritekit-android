@@ -1024,11 +1024,22 @@ func check(_ settings: Settings, seamDir: URL?) throws {
         let gridAfter = outOfB.map { grid((seam + guardBand)..<(seam + span), against: $0.mono, towardEnd: false) }
 
         // The file runs on past the loop end with the loop start's audio (see
-        // `cutLoop` in lib.js); its first half must match the audio at the start.
+        // `cutLoop` in lib.js): its first half, against the master's audio at
+        // the start, may differ by no more than the codec's own noise there
+        // (the decoded file against the master at the start) plus 6 dB, and
+        // never by more than -12 dB. The
+        // codec noise is the yardstick because the two copies sit at different
+        // phases of the AAC frames: a dense passage can code at -20 dB where
+        // the rest of the track codes at -30, while other audio is near 0 dB.
         let tail = (decoded.count - end) / 2
-        let tailError = tail > 0 ? rmsDB(ArraySlice(vDSP.subtract(decoded.mono[end..<(end + tail)], decoded.mono[start..<(start + tail)])))
-            - rmsDB(decoded.mono[start..<(start + tail)]) : 0
-        let tailOK = tail > 0 && tailError < -20
+        var tailOK = false
+        if tail > 0 {
+            let reference = try loadAudio(masterURL, frames: start..<(start + tail)).mono
+            let level = rmsDB(ArraySlice(reference))
+            let tailError = rmsDB(ArraySlice(vDSP.subtract(decoded.mono[end..<(end + tail)], reference))) - level
+            let codecError = rmsDB(ArraySlice(vDSP.subtract(decoded.mono[start..<(start + tail)], reference))) - level
+            tailOK = tailError < min(-12, codecError + 6)
+        }
         let ok = offset == 0 && tailOK && playerError < 1e-4
         if !ok { failures += 1 }
         print(String(format: "%@ %5d  %@  %@   %.3f (%.3f, natural %.3f)   %+5.1f dB (natural %+5.1f)   %4.1f / %4.1f dB   %5.1f / %5.1f / %5.1f   %+5.1f ms (r %.2f)   %@",

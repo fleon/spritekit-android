@@ -44,6 +44,43 @@ heard once and the same half minute after that. The longer loop it picks
 matches less closely (`loops.json` notes a weak match); listen to its seam
 (`check --seams`).
 
+### Medleys
+
+A track can instead play several masters in turn, for a soundtrack made of
+pieces that share a tempo: the first piece's intro once, then each piece's
+chosen bars, round and round, each handing over to the next with a blend
+centred on a bar line. Give the track a `medley` in place of a master of its
+own (its name in `tracks` is then just a key):
+
+```json
+"BackgroundMusic": {
+  "resource": "BackgroundMusic",
+  "minLoopSeconds": 200,
+  "medley": {
+    "bpm": 120,
+    "blendBeats": 4,
+    "parts": [
+      { "master": "Theme A", "firstDownbeat": 0.05, "from": 8, "to": 90 },
+      { "master": "Theme B", "firstDownbeat": 2.4, "from": 20, "to": 56 }
+    ]
+  }
+}
+```
+
+Each part names a master, the time of its first downbeat in seconds, and the
+bars it plays (`from` to `to`, counted from that downbeat; `beatsPerBar`
+defaults to 4, `blendBeats` to 4). Every command builds the medley first, in
+a scratch folder: the first part from its first frame to its bar `to`, each
+other part from `from` to `to`, then the first part again from its bar
+`from` to its own end. That second pass repeats the first exactly, so
+`loops` finds the whole round as the loop, as it would any other song's,
+and `export` and `check` treat the medley as the track's master. Set
+`minLoopSeconds` near the round's length so the search can't settle on a
+shorter repeat inside one piece. The beat grid of each part (`bpm`,
+`firstDownbeat`) comes from `loops --debug` run on the parts as tracks of
+their own; the pieces must share the tempo, as a blend between two grids
+that drift apart flams.
+
 The game hands the loop points to the audio manager and plays the `.m4a`
 files:
 
