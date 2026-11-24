@@ -82,34 +82,44 @@ public final class FocusNavigator {
 
     /// The index of the frame in `frames` that focus moving `direction`
     /// from `from` lands on, if any lies that way. Frames are in view
-    /// coordinates, y growing downwards.
+    /// coordinates, y growing downwards. A control wholly that way and in
+    /// line with `from` (overlapping it across the way) beats any that
+    /// still overlaps `from` along the way, however near: from the right of
+    /// a pair, left lands on its other half, not on a wide control under
+    /// both whose middle happens to lie a little left.
     public static func nearest(from: CGRect, among frames: [CGRect], _ direction: Direction) -> Int? {
         let configuration = configuration
-        var best: (index: Int, score: CGFloat)?
+        var candidates: [(index: Int, score: CGFloat, isClear: Bool, isInLine: Bool)] = []
         for (index, to) in frames.enumerated() {
-            // How far it lies that way (edge to edge), how far off to the
-            // side, and how far its centre is from straight ahead.
-            let ahead: CGFloat
+            // How far it lies that way (edge to edge, negative where they
+            // overlap), how far off to the side, and how far its centre is
+            // from straight ahead.
+            let gap: CGFloat
             let aside: CGFloat
             let offCentre: CGFloat
             switch direction {
             case .left, .right:
                 let sign: CGFloat = direction == .right ? 1 : -1
                 guard (to.midX - from.midX) * sign > configuration.directionSlop else { continue }
-                ahead = max(0, sign > 0 ? to.minX - from.maxX : from.minX - to.maxX)
+                gap = sign > 0 ? to.minX - from.maxX : from.minX - to.maxX
                 aside = max(0, max(to.minY - from.maxY, from.minY - to.maxY))
                 offCentre = abs(to.midY - from.midY)
             case .up, .down:
                 let sign: CGFloat = direction == .down ? 1 : -1
                 guard (to.midY - from.midY) * sign > configuration.directionSlop else { continue }
-                ahead = max(0, sign > 0 ? to.minY - from.maxY : from.minY - to.maxY)
+                gap = sign > 0 ? to.minY - from.maxY : from.minY - to.maxY
                 aside = max(0, max(to.minX - from.maxX, from.minX - to.maxX))
                 offCentre = abs(to.midX - from.midX)
             }
-            let score = ahead + aside * configuration.asideWeight + offCentre * configuration.centreWeight
-            if best == nil || score < best?.score ?? 0 { best = (index, score) }
+            let score = max(0, gap) + aside * configuration.asideWeight + offCentre * configuration.centreWeight
+            candidates.append((index, score, gap >= 0, aside == 0))
         }
-        return best?.index
+        // Controls still overlapping `from` along the way only count when
+        // nothing in line lies wholly that way.
+        if candidates.contains(where: { $0.isClear && $0.isInLine }) {
+            candidates.removeAll { !$0.isClear }
+        }
+        return candidates.min { $0.score < $1.score }?.index
     }
 
     /// Presses the focused control. Returns whether one took the press.

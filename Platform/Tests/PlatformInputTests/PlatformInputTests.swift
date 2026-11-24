@@ -40,6 +40,18 @@ struct FocusGeometryTests {
         #expect(FocusNavigator.nearest(from: from, among: [left, middle], .down) == 1)
     }
 
+    @Test func aControlInLineBeatsOneOverlappingAlongTheWay() {
+        // A pair side by side, and a wide control under both, a little left
+        // of the pair's middle: its right edge passes the right one's left.
+        let thisWorld = rect(0, 0, 100, 40)
+        let fullGame = rect(200, 0, 100, 40)
+        let restore = rect(90, 60, 140, 40)
+        #expect(FocusNavigator.nearest(from: fullGame, among: [restore, thisWorld], .left) == 1)
+        // Down still lands on it, and so does left with nothing in line.
+        #expect(FocusNavigator.nearest(from: fullGame, among: [restore, thisWorld], .down) == 0)
+        #expect(FocusNavigator.nearest(from: fullGame, among: [restore], .left) == 0)
+    }
+
     @Test func centresWithinTheSlopAreNotThatWay() {
         let from = rect(0, 0, 40, 40)
         let level = rect(0.5, 80, 40, 40)
