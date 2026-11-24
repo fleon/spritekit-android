@@ -91,3 +91,33 @@ test('the Swift file lists each track\'s loop as a MusicLoop', () => {
   assert.match(source, /import PlatformAudio/);
   assert.match(source, /"MusicTitle": MusicLoop\(start: 10, end: 20\),/);
 });
+
+test('a medley track keeps its recipe, and a bad one is refused', () => {
+  const medley = { bpm: 120, parts: [{ master: 'A', firstDownbeat: 0, from: 1, to: 3 }, { master: 'B', firstDownbeat: 0, from: 1, to: 2 }] };
+  const settings = lib.readSettings(gameDir({ tracks: { Game: { resource: 'MusicGame', medley } } }).dir);
+  assert.deepStrictEqual(settings.tracks, [{ master: 'Game', resource: 'MusicGame', minLoopSeconds: 0, medley }]);
+  const refused = (m) => assert.throws(() => lib.readSettings(gameDir({ tracks: { Game: { resource: 'MusicGame', medley: m } } }).dir), /medley/);
+  refused({ ...medley, bpm: 0 });
+  refused({ ...medley, parts: medley.parts.slice(0, 1) });
+  refused({ ...medley, parts: [medley.parts[0], { master: 'B', firstDownbeat: 0, from: 2, to: 2 }] });
+});
+
+test('a medley plays its parts in turn and repeats the first part exactly', () => {
+  // 60 BPM in 1/4: a bar is one second, 100 frames at 100 Hz; a one-beat blend.
+  const sampleRate = 100;
+  const piece = (base) => ({ sampleRate, samples: [Float32Array.from({ length: 1000 }, (_, i) => base + i)] });
+  const pieces = { A: piece(0), B: piece(10000) };
+  const medley = { bpm: 60, beatsPerBar: 1, blendBeats: 1, parts: [{ master: 'A', firstDownbeat: 0, from: 2, to: 5 }, { master: 'B', firstDownbeat: 0.5, from: 3, to: 6 }] };
+  const { samples: [out], frames } = lib.buildMedley(medley, pieces);
+  // A from its start until the blend begins half a bar before bar 5.
+  assert.strictEqual(out[0], 0);
+  assert.strictEqual(out[449], 449);
+  // B from half a bar after its bar 3 (frame 350) once the blend is over.
+  assert.strictEqual(out[550], 10000 + 400);
+  // Back into A at its bar 2: past the second blend, A's frames return.
+  const back = 450 + 100 + (600 - 400) + 100; // A, blend, B up to half a bar before its bar 6, blend
+  assert.strictEqual(out[back], 250);
+  assert.strictEqual(frames, back + (1000 - 250));
+  // The second pass of A is the first one, frame for frame.
+  for (let i = 250; i < 449; i++) assert.strictEqual(out[back + i - 250], out[i]);
+});

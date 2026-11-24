@@ -70,14 +70,10 @@ try {
 }
 if (only && !settings.tracks.some((t) => t.master === only)) die(`no track "${only}" in music.json`);
 
-const tracks = settings.tracks.map((track) => {
-  const file = lib.masterFile(settings, track.master);
-  if (lib.isLfsPointer(file)) die(`${path.relative(settings.root, file)} is a Git LFS pointer: download it first (git lfs pull)`);
-  return { ...track, file };
-});
-
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'music-'));
+let tracks;
 try {
+  tracks = settings.tracks.map((track) => ({ ...track, file: track.medley ? medleyFile(track) : master(track.master) }));
   if (command === 'loops') findLoops();
   if (command === 'export') exportTracks();
   if (command === 'export' || command === 'check') check();
@@ -86,6 +82,36 @@ try {
   process.exitCode = 1;
 } finally {
   fs.rmSync(scratch, { recursive: true, force: true });
+}
+
+/// A master's file, refusing one Git LFS hasn't downloaded.
+function master(name) {
+  const file = lib.masterFile(settings, name);
+  if (lib.isLfsPointer(file)) throw new Error(`${path.relative(settings.root, file)} is a Git LFS pointer: download it first (git lfs pull)`);
+  return file;
+}
+
+/// Decodes a master through afconvert, as AVAudioFile reads it: a
+/// compressed master's encoder delay and padding are dropped.
+function decode(file, name) {
+  const decoded = path.join(scratch, `${name}-decoded.wav`);
+  execFileSync('afconvert', ['-f', 'WAVE', '-d', 'LEF32', file, decoded]);
+  const wav = lib.readWav(decoded);
+  fs.rmSync(decoded);
+  return wav;
+}
+
+/// Builds a medley track's master from its parts into the scratch folder;
+/// every command then treats it as the track's master.
+function medleyFile(track) {
+  const pieces = {};
+  track.medley.parts.forEach((part, k) => {
+    pieces[part.master] ??= decode(master(part.master), `${track.resource}-part${k}`);
+  });
+  const { sampleRate, samples } = lib.buildMedley(track.medley, pieces);
+  const file = path.join(scratch, `${track.resource}-medley.wav`);
+  lib.writeFloatWav(file, sampleRate, samples);
+  return file;
 }
 
 /// Runs find-loops.swift with the settings it needs.
@@ -105,12 +131,7 @@ function exportTracks() {
   fs.mkdirSync(settings.output, { recursive: true });
   const entries = [];
   for (const track of tracks) {
-    // Decoded through afconvert, as AVAudioFile reads it: a compressed
-    // master's encoder delay and padding are dropped.
-    const decoded = path.join(scratch, `${track.resource}-master.wav`);
-    execFileSync('afconvert', ['-f', 'WAVE', '-d', 'LEF32', track.file, decoded]);
-    const { sampleRate, samples, frames } = lib.readWav(decoded);
-    fs.rmSync(decoded);
+    const { sampleRate, samples, frames } = decode(track.file, track.resource);
     const loop = loops[track.master];
     const problem = lib.loopProblem(track.master, loop, frames, sampleRate);
     if (problem) throw new Error(problem);
