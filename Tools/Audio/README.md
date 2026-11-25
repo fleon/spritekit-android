@@ -42,7 +42,9 @@ A track's `minLoopSeconds` keeps shorter loops out of the search: for a song
 whose only close repeats are a few bars long, which would leave most of it
 heard once and the same half minute after that. The longer loop it picks
 matches less closely (`loops.json` notes a weak match); listen to its seam
-(`check --seams`).
+(`check --seams`). Its `maxIntroSeconds` keeps loops starting later out:
+where the loop could start anywhere (a medley's exact repeat), an early start
+keeps the intro, and so the file, short.
 
 ### Medleys
 
@@ -76,10 +78,32 @@ other part from `from` to `to`, then the first part again from its bar
 `loops` finds the whole round as the loop, as it would any other song's,
 and `export` and `check` treat the medley as the track's master. Set
 `minLoopSeconds` near the round's length so the search can't settle on a
-shorter repeat inside one piece. The beat grid of each part (`bpm`,
+shorter repeat inside one piece, and `maxIntroSeconds` to a few bars so the
+seam lands early in the first part. The beat grid of each part (`bpm`,
 `firstDownbeat`) comes from `loops --debug` run on the parts as tracks of
-their own; the pieces must share the tempo, as a blend between two grids
-that drift apart flams.
+their own; pieces blended on the beat must share the tempo, as a blend
+between two grids that drift apart flams.
+
+Pieces in tempos or keys of their own don't blend on the beat: play each
+whole and hand over in its fade-out. Give each part its own `bpm` (it counts
+its bars on its own grid), the blend in seconds (`blendSeconds`, in place of
+`blendBeats`, the medley then needing no common `bpm`), and `"from": "start"`,
+so the part comes in from its first frame (the blend beginning there) rather
+than across a bar line; its `to` is a bar in its fade, where the next piece
+takes over:
+
+```json
+"medley": {
+  "blendSeconds": 0.05,
+  "parts": [
+    { "master": "Theme A", "bpm": 120, "firstDownbeat": 0.08, "from": "start", "to": 91 },
+    { "master": "Theme B", "bpm": 87, "firstDownbeat": 1.18, "from": "start", "to": 64 }
+  ]
+}
+```
+
+Keep the blend shorter than the time before the piece's first attack, or the
+fade-in softens it.
 
 The game hands the loop points to the audio manager and plays the `.m4a`
 files:
