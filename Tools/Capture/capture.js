@@ -17,8 +17,11 @@
 //                               APK (arm64-v8a); prints the APK's path
 //   build ios <udid>            the same for the simulator, with ios.patch,
 //                               and installs the app on <udid>
-//   shoot android <out> [name…] shoots on $ANDROID_SERIAL (adb from $ADB):
-//                               <out>/[<language>/]<file>.png
+//   shoot android [--screen <name>] <out> [name…]
+//                               shoots on $ANDROID_SERIAL (adb from $ADB):
+//                               <out>/[<language>/]<file>.png, on
+//                               android.screen, or the named one of
+//                               android.screens
 //   shoot ios <udid> <display> <out> [name…]
 //                               shoots on a simulator; <display> is 1 (an
 //                               iPhone Duo's outer screen), 3 (its inner one)
@@ -60,6 +63,7 @@ const usage = () => {
 if (argv.includes('--help') || argv.includes('-h') || !argv.length) { usage(); process.exit(argv.length ? 0 : 2); }
 
 const SETTINGS_FILE = option('--settings') ?? process.env.CAPTURE_SETTINGS;
+const SCREEN = option('--screen');
 const [command, ...rest] = argv;
 
 // MARK: - Settings
@@ -147,6 +151,8 @@ function shootAndroid(settings, out, filters) {
   const pkg = android.package;
   const a = (...args) => execFileSync(adb, ['-s', serial, ...args], { timeout: 60000, maxBuffer: 256 << 20, stdio: ['ignore', 'pipe', 'pipe'] });
   const vars = { appData: `/data/user/0/${pkg}` };
+  let screen;
+  try { screen = lib.screenFor(android, SCREEN); } catch (error) { fail(error.message, 2); }
   let captures;
   try { captures = lib.plan(settings, 'android', filters, vars); } catch (error) { fail(error.message, 2); }
   fs.mkdirSync(out, { recursive: true });
@@ -161,9 +167,9 @@ function shootAndroid(settings, out, filters) {
     }
     a('shell', 'rm', '-f', '/data/local/tmp/shot.tmp');
   }
-  if (android.screen) {
-    a('shell', 'wm', 'size', android.screen.size);
-    a('shell', 'wm', 'density', String(android.screen.density));
+  if (screen) {
+    a('shell', 'wm', 'size', screen.size);
+    a('shell', 'wm', 'density', String(screen.density));
     sleep(5);
   }
   const defaultSettle = Number(process.env.SETTLE || android.settle);
@@ -195,7 +201,7 @@ function shootAndroid(settings, out, filters) {
     // Best effort: a device that went away mustn't hide why the run stopped.
     const tidy = (...args) => { try { a(...args); } catch { /* gone */ } };
     tidy('shell', 'am', 'force-stop', pkg);
-    if (android.screen) {
+    if (screen) {
       tidy('shell', 'wm', 'size', 'reset');
       tidy('shell', 'wm', 'density', 'reset');
     }

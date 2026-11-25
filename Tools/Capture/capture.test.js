@@ -53,6 +53,17 @@ test('settings refuse what a run would trip over, every problem at once', () => 
   assert.doesNotThrow(() => lib.readSettings({ name: 'x', shots: [{ name: 'a', file: '1' }, { name: 'b', file: '1', optional: true }] }));
 });
 
+test('an Android run takes android.screen, or a named one of android.screens', () => {
+  const phone = { size: '1080x1920', density: 420 };
+  const tablet = { size: '2880x1620', density: 360 };
+  const android = lib.readSettings({ name: 'x', shots: [{ name: 'a', file: '1', scene: 'S' }], android: { package: 'p', screen: phone, screens: { tablet } } }).android;
+  assert.deepStrictEqual(lib.screenFor(android), phone);
+  assert.deepStrictEqual(lib.screenFor(android, 'tablet'), tablet);
+  assert.throws(() => lib.screenFor(android, 'tv'), /no screen tv in android\.screens \(tablet\)/);
+  assert.strictEqual(lib.screenFor({}), null);
+  assert.throws(() => lib.readSettings({ name: 'x', shots: [{ name: 'a', file: '1', scene: 'S' }], android: { package: 'p', screens: { tablet: { size: '2880x1620' } } } }), /android\.screens/);
+});
+
 test('a plan takes every shot in every language, in order, named by file', () => {
   const steps = lib.plan(settings(), 'android', [], { appData: '/data/user/0/com.example.game' });
   assert.deepStrictEqual(steps.map((s) => s.file), ['en/1.png', 'en/2.png', 'de/1.png', 'de/2.png']);

@@ -26,7 +26,7 @@ does the rest:
 ```bash
 node Tools/Capture/capture.js --settings <capture.json> build android            # prints the APK's path
 node Tools/Capture/capture.js --settings <capture.json> build ios <udid>         # builds and installs
-node Tools/Capture/capture.js --settings <capture.json> shoot android <out> [name…]
+node Tools/Capture/capture.js --settings <capture.json> shoot android [--screen <name>] <out> [name…]
 node Tools/Capture/capture.js --settings <capture.json> shoot ios <udid> <display> <out> [name…]
 node Tools/Capture/capture.js check <dir> --store play|appstore [--size <w>x<h>]
 node Tools/Capture/capture.js sheet <dir> <file.jpg>
@@ -41,7 +41,9 @@ node Tools/Capture/capture.js sheet <dir> <file.jpg>
   `<work>/build.log`.
 - `shoot android` shoots on `$ANDROID_SERIAL` (adb from `$ADB`, else the one
   on the path). It pushes the files the game seeds into the app's data, sets
-  the emulator's screen (and sets it back afterwards), and for each shot
+  the emulator's screen (and sets it back afterwards: `android.screen`, or
+  with `--screen <name>` one of `android.screens`, such as a tablet's
+  landscape beside the phone's portrait), and for each shot
   stops the app, clears the log, starts it with the shot's launch arguments
   (`args64`, as `Scripts/launch.js` does), waits until it has settled and
   saves the screen. Settled means the shot's scene has drawn (the renderer's
@@ -90,7 +92,7 @@ exec node "${0:A:h:h:h:h}/Android/spritekit-android/Tools/Capture/capture.js" --
 | `languages` | The languages to shoot, each into its own folder; without it, one set. |
 | `languageArgs` | The arguments that pick a language (default `["-AppleLanguages", "({language})"]`). |
 | `shots` | In store order: `name`, `file` (without `.png`), `args`, and per platform what it waits for: `scene` and `event` (a log line) and `settle` (seconds after it settles) on Android, `wait` (seconds after launch) on iOS. `optional: true` shoots it only when named (an alternative take, which may share its main shot's `file`). |
-| `android` | `package`, `patch` (the patch script, beside `capture.json`), `abisProperty` (the Gradle property that picks ABIs, as `zyl.abis`), `app` (default `Android/App`), `screen` (`{ "size": "1080x1920", "density": 420 }`), `flatten` (save RGB, without alpha), `log` (`filter`: keep only lines with this; `landed`: the line a scene logs once it's in, `{scene}` for its name, default `scene {scene} at`), `timeout` (default 120), `settle` (default 6; `$SETTLE` overrides it), `args` (added to every shot; `{appData}` is the app's data folder) and `push`. |
+| `android` | `package`, `patch` (the patch script, beside `capture.json`), `abisProperty` (the Gradle property that picks ABIs, as `zyl.abis`), `app` (default `Android/App`), `screen` (`{ "size": "1080x1920", "density": 420 }`), `screens` (more screens by name, for `--screen`: `{ "tablet": { "size": "2880x1620", "density": 360 } }`), `flatten` (save RGB, without alpha), `log` (`filter`: keep only lines with this; `landed`: the line a scene logs once it's in, `{scene}` for its name, default `scene {scene} at`), `timeout` (default 120), `settle` (default 6; `$SETTLE` overrides it), `args` (added to every shot; `{appData}` is the app's data folder) and `push`. |
 | `ios` | `bundle`, `project`, `scheme`, `app` (the product's name), `patch`, `wait` (default 8), `args` and `push`. |
 | `push` | `[{ "from": "<folder in the work folder>", "to": "<folder in the app's data>" }]`: files the hooks read, such as saved games, copied in before the shots. |
 
