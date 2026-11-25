@@ -38,6 +38,17 @@ final class RecordingDevice: RenderDevice {
     private(set) var repeating: Set<UInt32> = []
     func setRepeats(_ name: UInt32) { repeating.insert(name) }
 
+    /// Set to copy a texture's region on the GPU, as `GLDevice` does; off,
+    /// a copy fails, as it does on a device whose framebuffer is incomplete.
+    var copiesRegions = false
+    private(set) var copies: [(source: UInt32, copy: UInt32, width: Int, height: Int)] = []
+    func copyRegion(of source: UInt32, x: Int, y: Int, width: Int, height: Int) -> UInt32 {
+        guard copiesRegions else { return 0 }
+        nextName += 1
+        copies.append((source, nextName, width, height))
+        return nextName
+    }
+
     // MARK: Compressed pages
 
     var supportsASTC = true
@@ -551,6 +562,41 @@ struct CompressedPageCacheTests {
         #expect(drawn != sampled && sampled == shaded)
         #expect(device.compressedUploads.map(\.levels) == [2, 1])
         #expect(device.repeating.contains(sampled))
+    }
+
+    @Test("A shader's whole page uploaded ahead of its first draw is copied, not waited for (its pixels are gone)")
+    func plainAfterUploadAhead() throws {
+        AssetIndex.shared = try AssetIndex(json: Data(Self.index.utf8))
+        defer { AssetIndex.shared = nil }
+        for copies in [true, false] {
+            let device = RecordingDevice()
+            device.supportsASTC = false
+            device.copiesRegions = copies
+            let cache = ResourceCache(device: device)
+            cache.pageRowsBottomFirst = true
+            // Decoding in software, and the decoded page taken by the upload
+            // ahead: never ready again, as `PageDecodes.isWaiting` says.
+            cache.defersPages = true
+            cache.pageIsReady = { _ in false }
+            cache.pageWanted = { _ in }
+            var ahead: [(page: Int, image: PageImage)] = [(1, PageImage(Self.page(width: 40, height: 40, levels: 2)))]
+            cache.pageAhead = { ahead.isEmpty ? nil : ahead.removeFirst() }
+            var reads = 0
+            cache.pageSource = { _ in reads += 1; return PageImage(Self.page(width: 40, height: 40, levels: 2)) }
+            cache.uploadAhead(while: { true })
+            let drawn = cache.name(for: SKTexture(imageNamed: "Ground"))
+            let sampled = cache.samplerName(for: SKTexture(imageNamed: "Ground"))
+            #expect(drawn != 0)
+            #expect(sampled != 0 && sampled != drawn, "the shader's map is bound, level 0 alone")
+            #expect(device.repeating.contains(sampled))
+            #expect(cache.samplerName(for: SKTexture(imageNamed: "Ground")) == sampled)
+            if copies {
+                #expect(device.copies.map(\.source) == [drawn] && device.copies.first?.width == 40)
+                #expect(reads == 0, "copied on the GPU, not decoded again")
+            } else {
+                #expect(reads == 1, "read again once, where the GPU can't copy it")
+            }
+        }
     }
 
     @Test("Without ASTC a page decodes to RGBA8 and makes the levels it shipped with")
