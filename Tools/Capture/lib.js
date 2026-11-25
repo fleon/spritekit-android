@@ -24,6 +24,8 @@ const isStrings = (v) => Array.isArray(v) && v.every((s) => typeof s === 'string
 
 // Checks a capture.json (already parsed) and fills in its defaults. Throws
 // with every problem at once.
+const isScreen = (screen) => /^\d+x\d+$/.test(screen?.size ?? '') && Number.isInteger(screen.density);
+
 function readSettings(json, where = 'capture.json') {
   const problems = [];
   const s = json && typeof json === 'object' ? json : {};
@@ -50,8 +52,10 @@ function readSettings(json, where = 'capture.json') {
   const android = s.android;
   if (android !== undefined) {
     if (typeof android.package !== 'string') problems.push('android.package: the app\'s package');
-    if (android.screen !== undefined && !(/^\d+x\d+$/.test(android.screen.size ?? '') && Number.isInteger(android.screen.density))) {
-      problems.push('android.screen: { "size": "<w>x<h>", "density": <dpi> }');
+    if (android.screen !== undefined && !isScreen(android.screen)) problems.push('android.screen: { "size": "<w>x<h>", "density": <dpi> }');
+    if (android.screens !== undefined && !(android.screens && typeof android.screens === 'object' && !Array.isArray(android.screens)
+      && Object.values(android.screens).every(isScreen))) {
+      problems.push('android.screens: { "<name>": { "size": "<w>x<h>", "density": <dpi> } }');
     }
     if (android.log !== undefined && typeof android.log.landed !== 'string') problems.push('android.log.landed: the line a scene logs once it is in ({scene} for its name)');
     for (const shot of s.shots ?? []) {
@@ -110,6 +114,18 @@ function selection(settings, filters = []) {
 // its language (null for a game that shoots one), its launch arguments and
 // its file relative to the output folder (`<language>/<file>.png`, or
 // `<file>.png`).
+// The screen an Android run sets: android.screen, or with a name (--screen)
+// one of android.screens; null keeps the device's own.
+function screenFor(android, name) {
+  if (name === undefined) return android.screen ?? null;
+  const screen = android.screens?.[name];
+  if (!screen) {
+    const known = Object.keys(android.screens ?? {});
+    throw new Error(`no screen ${name} in android.screens${known.length ? ` (${known.join(', ')})` : ''}`);
+  }
+  return screen;
+}
+
 function plan(settings, platform, filters = [], vars = {}) {
   const block = settings[platform];
   if (!block) throw new Error(`capture.json has no ${platform} settings`);
@@ -232,7 +248,7 @@ function markTime(marks, from, scene) {
 
 module.exports = {
   BASE_EXCLUDES, LANGUAGE_ARGS, STORES, SIZES,
-  readSettings, fill, selection, plan, args64, settled, filterLog,
+  readSettings, screenFor, fill, selection, plan, args64, settled, filterLog,
   pngInfo, isCompletePNG, screenshotProblem, setProblems,
   framing, markTime,
 };
