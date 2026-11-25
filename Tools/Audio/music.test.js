@@ -31,6 +31,8 @@ test('settings refuse missing tracks, bad names and two tracks on one resource',
   assert.throws(() => lib.readSettings(gameDir({ tracks: { A: 'Music A' } }).dir), /resource name/);
   assert.throws(() => lib.readSettings(gameDir({ tracks: { A: 'M', B: 'M' } }).dir), /Two tracks export to M/);
   assert.throws(() => lib.readSettings(gameDir({ tracks: { A: { resource: 'M', minLoopSeconds: -1 } } }).dir), /minLoopSeconds/);
+  assert.deepStrictEqual(lib.readSettings(gameDir({ tracks: { A: { resource: 'M', maxIntroSeconds: 20 } } }).dir).tracks[0], { master: 'A', resource: 'M', minLoopSeconds: 0, maxIntroSeconds: 20 });
+  assert.throws(() => lib.readSettings(gameDir({ tracks: { A: { resource: 'M', maxIntroSeconds: -1 } } }).dir), /maxIntroSeconds/);
 });
 
 test('a master is found by any listed extension, WAV first', () => {
@@ -100,6 +102,16 @@ test('a medley track keeps its recipe, and a bad one is refused', () => {
   refused({ ...medley, bpm: 0 });
   refused({ ...medley, parts: medley.parts.slice(0, 1) });
   refused({ ...medley, parts: [medley.parts[0], { master: 'B', firstDownbeat: 0, from: 2, to: 2 }] });
+  // Pieces in tempos of their own: each part's bpm, and the blend in seconds.
+  const own = { blendSeconds: 0.1, parts: [{ ...medley.parts[0], bpm: 120 }, { ...medley.parts[1], bpm: 90 }] };
+  assert.deepStrictEqual(lib.readSettings(gameDir({ tracks: { Game: { resource: 'MusicGame', medley: own } } }).dir).tracks[0].medley, own);
+  refused({ ...own, blendSeconds: undefined });
+  refused({ ...own, blendBeats: 4 });
+  refused({ ...own, blendSeconds: 0 });
+  refused({ ...own, parts: [own.parts[0], medley.parts[1]] });
+  refused({ ...own, parts: [own.parts[0], { ...own.parts[1], bpm: -1 }] });
+  assert.strictEqual(lib.readSettings(gameDir({ tracks: { Game: { resource: 'MusicGame', medley: { ...own, parts: [own.parts[0], { ...own.parts[1], from: 'start' }] } } } }).dir).tracks[0].medley.parts[1].from, 'start');
+  refused({ ...own, parts: [own.parts[0], { ...own.parts[1], from: 'end' }] });
 });
 
 test('a medley plays its parts in turn and repeats the first part exactly', () => {
@@ -120,4 +132,29 @@ test('a medley plays its parts in turn and repeats the first part exactly', () =
   assert.strictEqual(frames, back + (1000 - 250));
   // The second pass of A is the first one, frame for frame.
   for (let i = 250; i < 449; i++) assert.strictEqual(out[back + i - 250], out[i]);
+});
+
+test('a medley\'s parts count bars at their own tempos, the blend in seconds', () => {
+  // A at 60 BPM, B at 120 BPM in 1/4: bars of 100 and 50 frames at 100 Hz; a 20-frame blend.
+  const sampleRate = 100;
+  const piece = (base) => ({ sampleRate, samples: [Float32Array.from({ length: 1000 }, (_, i) => base + i)] });
+  const pieces = { A: piece(0), B: piece(10000) };
+  const medley = { beatsPerBar: 1, blendSeconds: 0.2, parts: [{ master: 'A', bpm: 60, firstDownbeat: 0, from: 2, to: 5 }, { master: 'B', bpm: 120, firstDownbeat: 0.5, from: 3, to: 6 }] };
+  const { samples: [out], frames } = lib.buildMedley(medley, pieces);
+  // A until the blend begins 10 frames before its bar 5 (frame 500).
+  assert.strictEqual(out[489], 489);
+  // B from 10 frames past its bar 3 (frame 50 + 3 × 50 = 200).
+  assert.strictEqual(out[510], 10000 + 210);
+  // B until 10 frames before its bar 6 (frame 350), then back into A past its bar 2.
+  const back = 490 + 20 + (340 - 210) + 20;
+  assert.strictEqual(out[back], 210);
+  assert.strictEqual(frames, back + (1000 - 210));
+  // From "start": B comes in from its first frame, and A comes back from its own.
+  const whole = { ...medley, parts: [{ ...medley.parts[0], from: 'start' }, { ...medley.parts[1], from: 'start' }] };
+  const { samples: [w], frames: wFrames } = lib.buildMedley(whole, pieces);
+  assert.strictEqual(w[510], 10000 + 20);
+  const wBack = 490 + 20 + (340 - 20) + 20;
+  assert.strictEqual(w[wBack], 20);
+  assert.strictEqual(wFrames, wBack + (1000 - 20));
+  for (let i = 20; i < 489; i++) assert.strictEqual(w[wBack + i - 20], w[i]);
 });

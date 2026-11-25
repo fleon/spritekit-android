@@ -8,9 +8,10 @@
 //
 // The settings file (JSON, written by music.js) holds `loops` (the loops
 // file), `music` (the folder of exported .m4a files) and `tracks`, each
-// `{ master, resource, file, minLoopSeconds }`: `file` is the master, in
-// any format AVAudioFile reads, and a loop shorter than `minLoopSeconds`
-// isn't considered.
+// `{ master, resource, file, minLoopSeconds, maxIntroSeconds }`: `file` is
+// the master, in any format AVAudioFile reads, a loop shorter than
+// `minLoopSeconds` isn't considered, and one starting after
+// `maxIntroSeconds` (when given) isn't either.
 //
 // Analysis, per track, on a mono mixdown:
 //   1. Onset strength (log-mel spectral flux, 5 ms hop) → tempo from its
@@ -86,6 +87,7 @@ struct Track {
     var resource: String
     var file: URL
     var minLoopSeconds: Double
+    var maxIntroSeconds: Double?
 }
 
 /// The game's settings, from the file music.js writes (`--settings`).
@@ -104,7 +106,8 @@ struct Settings {
             guard let master = track["master"] as? String, let resource = track["resource"] as? String,
                   let file = track["file"] as? String else { throw fail("Bad track in \(url.path)") }
             return Track(master: master, resource: resource, file: URL(fileURLWithPath: file),
-                         minLoopSeconds: (track["minLoopSeconds"] as? Double) ?? 0)
+                         minLoopSeconds: (track["minLoopSeconds"] as? Double) ?? 0,
+                         maxIntroSeconds: track["maxIntroSeconds"] as? Double)
         }
     }
 }
@@ -473,7 +476,7 @@ struct TrackAnalysis {
     var notes: [String]
 }
 
-func analyze(name: String, url: URL, minLoopSeconds: Double, debugDir: URL?) throws -> TrackAnalysis {
+func analyze(name: String, url: URL, minLoopSeconds: Double, maxIntroSeconds: Double? = nil, debugDir: URL?) throws -> TrackAnalysis {
     let audio = try loadAudio(url)
     let sr = audio.sampleRate
     let x = audio.mono
@@ -682,11 +685,14 @@ func analyze(name: String, url: URL, minLoopSeconds: Double, debugDir: URL?) thr
         return LoopChoice(a: a, b: b, score: best?.0 ?? -.infinity, before: before, after: after, around: around, basis: best?.1 ?? "none")
     }
     let firstA = max(introEnd, straddle)
+    // The latest beat a loop may start on: `maxIntroSeconds` keeps the file
+    // short where the loop could start anywhere (a medley's exact repeat).
+    let lastA = maxIntroSeconds.map { limit in (beatFrames.lastIndex { Double($0) / fps <= limit } ?? 0) } ?? n
     var candidates: [LoopChoice] = []
     let beatSeconds = Double(typicalInterval) / fps
     let minLag = max(minLoopBars * beatsPerBar, Int((minLoopSeconds / beatSeconds).rounded(.up)))
     for lag in stride(from: minLag, through: endingStart - firstA, by: 1) {
-        let best = stride(from: firstA, through: endingStart - lag, by: 1).filter(isDownbeat).map { evaluate($0, $0 + lag) }.max { $0.score < $1.score }
+        let best = stride(from: firstA, through: min(endingStart - lag, lastA), by: 1).filter(isDownbeat).map { evaluate($0, $0 + lag) }.max { $0.score < $1.score }
         if let best { candidates.append(best) }
     }
     // Rank: match, plus a bonus per doubling of length and for phrase lengths;
@@ -704,7 +710,7 @@ func analyze(name: String, url: URL, minLoopSeconds: Double, debugDir: URL?) thr
     let lag = winner.b - winner.a
     var loop = winner
     loop.context = -.infinity
-    for a in stride(from: firstA, through: endingStart - lag, by: 1) where isDownbeat(a) {
+    for a in stride(from: firstA, through: min(endingStart - lag, lastA), by: 1) where isDownbeat(a) {
         var choice = evaluate(a, a + lag)
         guard choice.score >= winner.score - seamTolerance, let near = window(-beatsPerBar..<beatsPerBar, a, a + lag) else { continue }
         choice.context = near.exact - levelPenalty * abs(features.leadIn[a] - features.leadIn[a + lag])
@@ -1154,7 +1160,7 @@ do {
         if let only, !tracks.contains(where: { $0.master == only }) { throw fail("No track \"\(only)\"") }
         for track in tracks where only == nil || only == track.master {
             let master = track.master
-            let t = try analyze(name: master, url: track.file, minLoopSeconds: track.minLoopSeconds, debugDir: debugDir)
+            let t = try analyze(name: master, url: track.file, minLoopSeconds: track.minLoopSeconds, maxIntroSeconds: track.maxIntroSeconds, debugDir: debugDir)
             loops[master] = entry(for: t)
             let sr = t.sampleRate
             print(String(format: "%@ %6.2f BPM  intro %6.2fs  loop %7.3fs → %7.3fs (%6.2f bars)  ending %6.2fs  match %.2f (%@)%@",
