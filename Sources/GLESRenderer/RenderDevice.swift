@@ -360,7 +360,25 @@ public final class ResourceCache {
         let mipped = AssetIndex.shared.map { page < $0.pages.count && $0.pages[page].levels > 1 } == true
         guard mipped else { return name(for: texture) }
         if let existing = plainPages[page] { return existing }
-        if deferring(page) { return 0 }
+        // Uploaded already, ahead of its first draw (`uploadAhead`), which
+        // took its decoded pixels: a page taken is never decoded again, so
+        // waiting for it (`deferring`) would leave the shader's map unbound,
+        // black, for good. Its level 0 is copied on the GPU instead, else
+        // read again here, holding this one frame.
+        if let uploaded = pageNames[page] {
+            if uploaded != 0, !compressedPages.contains(page), let size = AssetIndex.shared?.pages[page].size {
+                let width = Int(size.width.rounded()), height = Int(size.height.rounded())
+                let copied = device.copyRegion(of: uploaded, x: 0, y: 0, width: width, height: height)
+                if copied != 0 {
+                    own(copied, width: width, height: height)
+                    device.setRepeats(copied)
+                    plainPages[page] = copied
+                    return copied
+                }
+            }
+        } else if deferring(page) {
+            return 0
+        }
         guard let source = pageSource?(page) else { return name(for: texture) }
         var name: UInt32 = 0
         if let compressed = source.compressed, device.supportsASTC {
