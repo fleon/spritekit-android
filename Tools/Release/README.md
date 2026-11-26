@@ -114,7 +114,10 @@ Tools/Release/nightly.sh --notes notes.txt               # the release (the nigh
    Build <N>" and stops.
 2. **Worktree.** Everything happens in a throwaway worktree of the branch,
    with the runtime submodule, removed at the end; the checkout it's run from
-   is only fetched.
+   is only fetched. Every fetch and push (the submodule's too) goes to GitHub
+   over HTTPS with gh's login, whatever the remote's URL, never over SSH: a
+   run nobody watches can't answer an SSH agent's prompt (1Password's waits
+   for one forever). They never prompt, and give up after ten minutes.
 3. **Version.** The minor goes up (1.7 → 1.8, 1.4.1 → 1.5, a patch of 0
    left off) once the version has an approved release on either store: an App Store version
    Apple approved (waiting for release, live, or later replaced or removed),
