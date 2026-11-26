@@ -74,6 +74,11 @@ const git = (...argv) => {
   return r.stdout.trim();
 };
 const fail = (why) => { say(`${why}: no build.`); process.exit(1); };
+// Git over the network: HTTPS with gh's login (lib.HTTPS_GIT), never a
+// prompt, and given up after ten minutes rather than waited on all night.
+const net = (argv) => quiet('git', [...lib.HTTPS_GIT, ...argv], {
+  env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, timeout: 10 * 60 * 1000,
+});
 
 // The checkout this runs from (or a worktree of it): only fetched.
 const ROOT = (() => { try { return git('-C', CONFIG_ROOT, 'rev-parse', '--show-toplevel'); } catch { return CONFIG_ROOT; } })();
@@ -86,7 +91,7 @@ const SLUG = S.name.replace(/[^A-Za-z0-9]/g, '');
 // --- 1. Decide -------------------------------------------------------------
 
 if (quiet('gh', ['auth', 'status']).status !== 0) fail('gh is missing or signed out');
-if (quiet('git', ['-C', ROOT, 'fetch', '-q', 'origin', '--prune']).status !== 0) fail('git fetch failed');
+if (net(['-C', ROOT, 'fetch', '-q', 'origin', '--prune']).status !== 0) fail('git fetch failed');
 
 // The last build: the newest `Build <N>` commit on the branch, else (before
 // the first nightly) the commit that last set the build number.
@@ -138,7 +143,7 @@ process.on('exit', cleanup);
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => process.exit(130));
 
 if (quiet('git', ['-C', ROOT, 'worktree', 'add', '-q', '--detach', WT, REF]).status !== 0) fail('the release worktree failed');
-if (quiet('git', ['-C', WT, 'submodule', 'update', '-q', '--init', S.submodule]).status !== 0) fail('the runtime submodule failed');
+if (net(['-C', WT, 'submodule', 'update', '-q', '--init', S.submodule]).status !== 0) fail('the runtime submodule failed');
 const RUNTIME = path.join(WT, S.submodule);
 const GUARD = path.join(RUNTIME, 'Tools/guard.js');
 
@@ -373,8 +378,8 @@ let pushed;
 if (DRY) {
   pushed = `dry run: ${SUBJECT} not pushed`;
 } else if (uploaded) {
-  const push = () => quiet('git', ['-C', WT, 'push', '-q', 'origin', `HEAD:${BRANCH}`]).status === 0;
-  const ok = push() || (quiet('git', ['-C', WT, 'fetch', '-q', 'origin']).status === 0
+  const push = () => net(['-C', WT, 'push', '-q', 'origin', `HEAD:${BRANCH}`]).status === 0;
+  const ok = push() || (net(['-C', WT, 'fetch', '-q', 'origin']).status === 0
     && quiet('git', ['-C', WT, 'rebase', '-q', ORIGIN]).status === 0 && push());
   pushed = ok ? `${SUBJECT} pushed to ${BRANCH}` : `${SUBJECT} NOT pushed: push it by hand, its number is taken`;
   if (!ok) failed = true;

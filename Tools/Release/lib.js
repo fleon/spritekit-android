@@ -222,8 +222,19 @@ function playRelease({ aab, name, notes, send }) {
     '--name', name, '--notes', notes, ...(send ? ['--send'] : [])];
 }
 
+// The nightly's fetches and pushes go to GitHub over HTTPS with gh's login,
+// never over SSH: a run nobody watches can't answer an SSH agent's prompt
+// (1Password's waits for one forever, and every later request queues behind
+// it). Passed before a git command, these reach its submodules too.
+const HTTPS_GIT = [
+  '-c', 'credential.helper=',
+  '-c', 'credential.helper=!gh auth git-credential',
+  '-c', 'url.https://github.com/.insteadOf=git@github.com:',
+  '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/',
+];
+
 module.exports = {
-  APP_STORE_APPROVED, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor, withoutZeroPatch,
+  APP_STORE_APPROVED, HTTPS_GIT, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor, withoutZeroPatch,
   highestTaken, nextBuild, thisBuild, androidName, patchName, ascData, ascBuildNumbers, ascUploadNumbers, appStoreApproved,
   newPRs, buildInSubject, buildSubject, bulleted, plainTitle, draftNotes, FALLBACK,
   fill, settingsFrom, nightlyProblems, playRelease, sameVersion, namesVersion,

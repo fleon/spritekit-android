@@ -203,3 +203,14 @@ test('nightly.js refuses --ref without --dry-run, and unknown options, before to
   assert.strictEqual(r.status, 2);
   assert.match(r.stderr, /appStore\.app/);
 });
+
+test('the nightly reaches GitHub over HTTPS with gh, never SSH', () => {
+  const pairs = [];
+  for (let i = 0; i < lib.HTTPS_GIT.length; i += 2) {
+    assert.strictEqual(lib.HTTPS_GIT[i], '-c');
+    pairs.push(lib.HTTPS_GIT[i + 1]);
+  }
+  assert.deepStrictEqual(pairs.slice(0, 2), ['credential.helper=', 'credential.helper=!gh auth git-credential']);
+  assert.ok(pairs.includes('url.https://github.com/.insteadOf=git@github.com:'));
+  assert.ok(pairs.includes('url.https://github.com/.insteadOf=ssh://git@github.com/'));
+});
