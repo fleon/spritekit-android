@@ -52,6 +52,9 @@
 //   --send-for-review  on a testing-track release only: with --send, send
 //                      the edit for review instead of holding it (without
 //                      --send the plan says it would)
+//   --prune            on the images step named alone: replace each gallery
+//                      the tree fills, deleting what's on Play but not in it
+//                      (without it the sync only adds)
 //   --without-hold     on a draft release (production, or a testing track
 //                      without --rollout), or the listing or images step
 //                      named alone: commit without holding the edit back,
@@ -117,6 +120,7 @@ const send = args.includes('--send');
 const offline = args.includes('--offline');
 const forReview = args.includes('--send-for-review');
 const withoutHold = args.includes('--without-hold');
+const prune = args.includes('--prune');
 const usage = (why) => { console.error(why); process.exit(2); };
 if (offline && send) usage('--offline reads nothing from Play, so it can send nothing: drop one.');
 const STEPS = ['listing', 'images', 'screenshots', 'product', 'datasafety', 'release', 'tracks', 'versions', 'status'];
@@ -133,6 +137,11 @@ const HOLD = lib.commitFlags();
 const UNHELD = ['release', 'listing', 'images'];
 if (withoutHold && !UNHELD.includes(step)) usage('--without-hold goes with one step named alone: release (a draft), listing or images.');
 const LISTING_COMMIT = withoutHold && step !== 'release' ? lib.commitFlags({ withoutHold }) : HOLD;
+// --prune replaces a gallery: the images step also deletes what's on Play in
+// a slot the tree fills but the tree doesn't hold (gplay's sync only adds,
+// so a new set would stack on the old one, past Play's eight).
+if (prune && step !== 'images') usage('--prune goes with the images step named alone.');
+const PRUNE = prune ? ['--prune'] : [];
 // Play's answer when it won't hold an app's changes back (it holds them only
 // after a rejected update, and never for an app it hasn't published): a commit
 // without the hold would send every pending change for review.
@@ -279,6 +288,19 @@ const SLOTS = {
 // The game language listing.json's `locales` maps to `locale`.
 const languageOf = (locale) => Object.keys(SOURCE.locales ?? {}).find((l) => SOURCE.locales[l] === locale);
 
+// A render set's folder for `language`: its own (`es-MX`), else its base
+// language's, for a listing that names its languages as App Store Connect
+// does (`en-US`, `de-DE`) where the capture tool names them as the game does
+// (`en`, `de`). Null when the set has neither.
+function renderedDir(set, language) {
+  const base = language.split('-')[0];
+  for (const name of [language, base]) {
+    const dir = path.resolve(HERE, SETTINGS.renders.dir, set, name);
+    if (fs.existsSync(dir)) return dir;
+  }
+  return null;
+}
+
 // Fills `target` with the PNGs in `from`, as high-quality JPEGs when asked
 // (Play takes them as it takes PNGs, at a fifth of the upload).
 function copyShots(from, target, { jpeg = false, only = /\.(png|jpe?g)$/i } = {}) {
@@ -309,8 +331,8 @@ function buildImages() {
     const language = languageOf(locale);
     if (renders && language) {
       for (const [slot, set] of Object.entries(renders.slots ?? {})) {
-        const rendered = path.resolve(HERE, renders.dir, set, language);
-        if (!fs.existsSync(rendered) || fs.existsSync(path.join(from, slot))) continue;
+        const rendered = renderedDir(set, language);
+        if (!rendered || fs.existsSync(path.join(from, slot))) continue;
         copyShots(rendered, path.join(to, slot), { jpeg: renders.jpeg !== false, only: /\.png$/ });
         slots += 1;
       }
@@ -352,8 +374,8 @@ function imagesStep() {
   console.log(`${slots} image slots gathered into the tree.`);
   stage('Images', {
     lint: ['metadata', 'images', 'validate', '--dir', TREE, '--output', 'json'],
-    plan: online('metadata', 'images', 'apply', '--dir', TREE, '--dry-run', '--output', 'json'),
-    apply: online('metadata', 'images', 'apply', '--dir', TREE, '--confirm', ...LISTING_COMMIT, '--output', 'json'),
+    plan: online('metadata', 'images', 'apply', '--dir', TREE, '--dry-run', ...PRUNE, '--output', 'json'),
+    apply: online('metadata', 'images', 'apply', '--dir', TREE, '--confirm', ...PRUNE, ...LISTING_COMMIT, '--output', 'json'),
   });
 }
 
