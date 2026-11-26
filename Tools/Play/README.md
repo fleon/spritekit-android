@@ -16,7 +16,7 @@ Each game keeps its own (`Android/Play/` or `Tools/Play/`):
 |---|---|
 | `play.js` | Two lines that run this tool on this directory (below). Callers run it as before. |
 | `listing.json` | `package`; optionally `defaultLanguage` (default `en-US`), `locales` (game language → Play locale), `listings` (per Play locale: `title`, `shortDescription`, `fullDescription`, optional `video`) and `product` (`productId`, `listings`). With no `listings`, the listing and images stay in the Play Console. |
-| `play.json` | Optional settings: `betaProperty` (the Gradle property a beta build takes, default `game.beta`), `readme` (the game's Play notes, default `README.md`) and `renders` (`{ "dir": "…", "slots": { "phoneScreenshots": "<set>" }, "jpeg": true }`: screenshots rendered as `<dir>/<set>/<game language>/*.png`, sent as JPEGs). |
+| `play.json` | Optional settings: `betaProperty` (the Gradle property a beta build takes, default `game.beta`), `readme` (the game's Play notes, default `README.md`) and `renders` (`{ "dir": "…", "slots": { "phoneScreenshots": "<set>" }, "jpeg": true }`: screenshots rendered as `<dir>/<set>/<game language>/*.png`, sent as JPEGs; a language `listing.json` names as App Store Connect does, `en-US`, takes its base language's folder, `en`, when it has none of its own). `play.js images --prune` replaces each gallery the tree fills: gplay's sync only adds, so a new set would stack on the old one past Play's eight. |
 | `Images/<locale>/` | `icon.png`, `featureGraphic.png`, `tvBanner.png` and gallery folders (`phoneScreenshots/`, `sevenInchScreenshots/`, …). A locale without its own takes the default language's. |
 | `ReleaseNotes/[<track>/]` | `<locale>.txt` notes for a release, when none are passed. |
 | `Monetization/iap/`, `Compliance/data-safety.csv` | The managed product as `gplay iap pull` wrote it, and the Data Safety CSV exported from the Console. Steps without them are skipped. |
@@ -82,8 +82,9 @@ round, the second commit would meet a review already under way. Without
 
 - Every write but that release waits in the Play Console
   (`--changes-not-sent-for-review`): only the user submits. The one way round
-  it is `--without-hold`, on a draft release only, for an app whose changes
-  Play won't hold (below).
+  it is `--without-hold`, for an app whose changes Play won't hold (below): on
+  a draft release, or on the `listing` or `images` step named alone, when the
+  user has asked for that change to go for review.
 - `--send-for-review` takes a rolled-out testing-track release, and still
   passes `--changes-in-review error`, so it never cancels a review under way.
 - Production takes only a non-beta build, only ever as a draft the user rolls
@@ -94,9 +95,11 @@ round, the second commit would meet a review already under way. Without
   and never for an app it hasn't published; otherwise it refuses
   `--changes-not-sent-for-review`. The tool then sends nothing rather than
   every pending change. A draft release (production, or a testing track
-  without `--rollout`) can go up with `--without-hold`: it serves nobody, but
-  anything else waiting in the Play Console goes for review with it, so check
-  Publishing overview first. A review already under way still makes it fail
+  without `--rollout`) can go up with `--without-hold`: it serves nobody. The
+  listing or the images can too (`play.js images --send --without-hold`), and
+  then go for review. Either way anything else waiting in the Play Console
+  goes for review with it, so check Publishing overview first. The listing
+  and images refuse it for an app Play hasn't published. A review already under way still makes it fail
   (`--changes-in-review error`), never cancelled.
 
 ## Tests

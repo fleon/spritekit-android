@@ -52,18 +52,25 @@
 //   --send-for-review  on a testing-track release only: with --send, send
 //                      the edit for review instead of holding it (without
 //                      --send the plan says it would)
-//   --without-hold     on a draft release only (production, or a testing
-//                      track without --rollout): commit without holding the
-//                      edit back, for an app whose changes Play won't hold
-//                      (it refuses --changes-not-sent-for-review unless an
-//                      update was rejected). The draft serves nobody, but
-//                      anything else waiting in the Play Console goes for
-//                      review with it: check Publishing overview first.
+//   --prune            on the images step named alone: replace each gallery
+//                      the tree fills, deleting what's on Play but not in it
+//                      (without it the sync only adds)
+//   --without-hold     on a draft release (production, or a testing track
+//                      without --rollout), or the listing or images step
+//                      named alone: commit without holding the edit back,
+//                      for an app whose changes Play won't hold (it refuses
+//                      --changes-not-sent-for-review unless an update was
+//                      rejected). A draft serves nobody; the listing and
+//                      images go for review. Anything else waiting in the
+//                      Play Console goes for review with it: check
+//                      Publishing overview first. Never for an app Play
+//                      hasn't published.
 //   --help, -h         print this and stop
 //
 // Nothing here submits for review but the nightly testing build: every
 // other write passes --changes-not-sent-for-review, so it waits in the Play
-// Console for the user, unless --without-hold asks a draft release not to. The nightly's release (--send-for-review) still
+// Console for the user, unless --without-hold asks a draft release, the
+// listing or the images not to. The nightly's release (--send-for-review) still
 // passes --changes-in-review error, so it never cancels a review already
 // under way.
 
@@ -113,6 +120,7 @@ const send = args.includes('--send');
 const offline = args.includes('--offline');
 const forReview = args.includes('--send-for-review');
 const withoutHold = args.includes('--without-hold');
+const prune = args.includes('--prune');
 const usage = (why) => { console.error(why); process.exit(2); };
 if (offline && send) usage('--offline reads nothing from Play, so it can send nothing: drop one.');
 const STEPS = ['listing', 'images', 'screenshots', 'product', 'datasafety', 'release', 'tracks', 'versions', 'status'];
@@ -124,6 +132,16 @@ const SHOTS = option('--screenshots') ? path.resolve(option('--screenshots')) : 
 // Every write waits in the Play Console: only the user submits, but for the
 // nightly's release.
 const HOLD = lib.commitFlags();
+// --without-hold goes with one step: a draft release (checked there), or the
+// listing or the images, which it then sends for review.
+const UNHELD = ['release', 'listing', 'images'];
+if (withoutHold && !UNHELD.includes(step)) usage('--without-hold goes with one step named alone: release (a draft), listing or images.');
+const LISTING_COMMIT = withoutHold && step !== 'release' ? lib.commitFlags({ withoutHold }) : HOLD;
+// --prune replaces a gallery: the images step also deletes what's on Play in
+// a slot the tree fills but the tree doesn't hold (gplay's sync only adds,
+// so a new set would stack on the old one, past Play's eight).
+if (prune && step !== 'images') usage('--prune goes with the images step named alone.');
+const PRUNE = prune ? ['--prune'] : [];
 // Play's answer when it won't hold an app's changes back (it holds them only
 // after a rejected update, and never for an app it hasn't published): a commit
 // without the hold would send every pending change for review.
@@ -198,13 +216,21 @@ function stage(name, { lint, plan, apply }) {
   if (total === 0) return true;
   changes += total;
   if (!send) return true;
+  const unheld = apply.includes('--changes-not-sent-for-review') ? false : withoutHold;
+  if (unheld && !lib.everPublished(maybe(online('tracks', 'list', '--output', 'json'))?.tracks)) {
+    // Unheld, a never-published app's approval can publish it.
+    failed += 1;
+    console.log(`${name}: this app has never been published, so --without-hold would send every pending change for review. Nothing was sent.`);
+    return false;
+  }
   const wrote = gplay(apply);
   if (wrote.status !== 0 && REFUSES_HOLD.test(wrote.err || wrote.out)) {
     // Never send without the hold: that sends every pending change for
     // review, and on a never-published app an approval can publish it.
     failed += 1;
     console.log(`${name}: Play won't hold this app's changes back from review, and without the hold every pending`);
-    console.log('         change would go for review. Nothing was sent; make this change in the Play Console.');
+    console.log('         change would go for review. Nothing was sent. Once Publishing overview in the Play Console shows');
+    console.log(`         nothing else waiting, run this step alone again with --without-hold to send it for review.`);
     return false;
   }
   if (wrote.status !== 0) {
@@ -212,7 +238,9 @@ function stage(name, { lint, plan, apply }) {
     console.log(`${name}: failed to send.\n${wrote.err || wrote.out}`);
     return false;
   }
-  console.log(`${name}: sent. It waits in the Play Console, not in review.`);
+  console.log(unheld
+    ? `${name}: sent without the hold. It went for review, with anything else waiting in the Play Console.`
+    : `${name}: sent. It waits in the Play Console, not in review.`);
   return true;
 }
 
@@ -245,7 +273,7 @@ function listingStep() {
   stage('Listing', {
     lint: ['metadata', 'validate', '--dir', TREE, '--output', 'json'],
     plan: online('metadata', 'apply', '--dir', TREE, '--dry-run', '--output', 'json'),
-    apply: online('metadata', 'apply', '--dir', TREE, '--confirm', ...HOLD, '--output', 'json'),
+    apply: online('metadata', 'apply', '--dir', TREE, '--confirm', ...LISTING_COMMIT, '--output', 'json'),
   });
 }
 
@@ -259,6 +287,19 @@ const SLOTS = {
 
 // The game language listing.json's `locales` maps to `locale`.
 const languageOf = (locale) => Object.keys(SOURCE.locales ?? {}).find((l) => SOURCE.locales[l] === locale);
+
+// A render set's folder for `language`: its own (`es-MX`), else its base
+// language's, for a listing that names its languages as App Store Connect
+// does (`en-US`, `de-DE`) where the capture tool names them as the game does
+// (`en`, `de`). Null when the set has neither.
+function renderedDir(set, language) {
+  const base = language.split('-')[0];
+  for (const name of [language, base]) {
+    const dir = path.resolve(HERE, SETTINGS.renders.dir, set, name);
+    if (fs.existsSync(dir)) return dir;
+  }
+  return null;
+}
 
 // Fills `target` with the PNGs in `from`, as high-quality JPEGs when asked
 // (Play takes them as it takes PNGs, at a fifth of the upload).
@@ -290,8 +331,8 @@ function buildImages() {
     const language = languageOf(locale);
     if (renders && language) {
       for (const [slot, set] of Object.entries(renders.slots ?? {})) {
-        const rendered = path.resolve(HERE, renders.dir, set, language);
-        if (!fs.existsSync(rendered) || fs.existsSync(path.join(from, slot))) continue;
+        const rendered = renderedDir(set, language);
+        if (!rendered || fs.existsSync(path.join(from, slot))) continue;
         copyShots(rendered, path.join(to, slot), { jpeg: renders.jpeg !== false, only: /\.png$/ });
         slots += 1;
       }
@@ -333,8 +374,8 @@ function imagesStep() {
   console.log(`${slots} image slots gathered into the tree.`);
   stage('Images', {
     lint: ['metadata', 'images', 'validate', '--dir', TREE, '--output', 'json'],
-    plan: online('metadata', 'images', 'apply', '--dir', TREE, '--dry-run', '--output', 'json'),
-    apply: online('metadata', 'images', 'apply', '--dir', TREE, '--confirm', ...HOLD, '--output', 'json'),
+    plan: online('metadata', 'images', 'apply', '--dir', TREE, '--dry-run', ...PRUNE, '--output', 'json'),
+    apply: online('metadata', 'images', 'apply', '--dir', TREE, '--confirm', ...PRUNE, ...LISTING_COMMIT, '--output', 'json'),
   });
 }
 
