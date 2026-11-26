@@ -52,18 +52,22 @@
 //   --send-for-review  on a testing-track release only: with --send, send
 //                      the edit for review instead of holding it (without
 //                      --send the plan says it would)
-//   --without-hold     on a draft release only (production, or a testing
-//                      track without --rollout): commit without holding the
-//                      edit back, for an app whose changes Play won't hold
-//                      (it refuses --changes-not-sent-for-review unless an
-//                      update was rejected). The draft serves nobody, but
-//                      anything else waiting in the Play Console goes for
-//                      review with it: check Publishing overview first.
+//   --without-hold     on a draft release (production, or a testing track
+//                      without --rollout), or the listing or images step
+//                      named alone: commit without holding the edit back,
+//                      for an app whose changes Play won't hold (it refuses
+//                      --changes-not-sent-for-review unless an update was
+//                      rejected). A draft serves nobody; the listing and
+//                      images go for review. Anything else waiting in the
+//                      Play Console goes for review with it: check
+//                      Publishing overview first. Never for an app Play
+//                      hasn't published.
 //   --help, -h         print this and stop
 //
 // Nothing here submits for review but the nightly testing build: every
 // other write passes --changes-not-sent-for-review, so it waits in the Play
-// Console for the user, unless --without-hold asks a draft release not to. The nightly's release (--send-for-review) still
+// Console for the user, unless --without-hold asks a draft release, the
+// listing or the images not to. The nightly's release (--send-for-review) still
 // passes --changes-in-review error, so it never cancels a review already
 // under way.
 
@@ -124,6 +128,11 @@ const SHOTS = option('--screenshots') ? path.resolve(option('--screenshots')) : 
 // Every write waits in the Play Console: only the user submits, but for the
 // nightly's release.
 const HOLD = lib.commitFlags();
+// --without-hold goes with one step: a draft release (checked there), or the
+// listing or the images, which it then sends for review.
+const UNHELD = ['release', 'listing', 'images'];
+if (withoutHold && !UNHELD.includes(step)) usage('--without-hold goes with one step named alone: release (a draft), listing or images.');
+const LISTING_COMMIT = withoutHold && step !== 'release' ? lib.commitFlags({ withoutHold }) : HOLD;
 // Play's answer when it won't hold an app's changes back (it holds them only
 // after a rejected update, and never for an app it hasn't published): a commit
 // without the hold would send every pending change for review.
@@ -198,13 +207,21 @@ function stage(name, { lint, plan, apply }) {
   if (total === 0) return true;
   changes += total;
   if (!send) return true;
+  const unheld = apply.includes('--changes-not-sent-for-review') ? false : withoutHold;
+  if (unheld && !lib.everPublished(maybe(online('tracks', 'list', '--output', 'json'))?.tracks)) {
+    // Unheld, a never-published app's approval can publish it.
+    failed += 1;
+    console.log(`${name}: this app has never been published, so --without-hold would send every pending change for review. Nothing was sent.`);
+    return false;
+  }
   const wrote = gplay(apply);
   if (wrote.status !== 0 && REFUSES_HOLD.test(wrote.err || wrote.out)) {
     // Never send without the hold: that sends every pending change for
     // review, and on a never-published app an approval can publish it.
     failed += 1;
     console.log(`${name}: Play won't hold this app's changes back from review, and without the hold every pending`);
-    console.log('         change would go for review. Nothing was sent; make this change in the Play Console.');
+    console.log('         change would go for review. Nothing was sent. Once Publishing overview in the Play Console shows');
+    console.log(`         nothing else waiting, run this step alone again with --without-hold to send it for review.`);
     return false;
   }
   if (wrote.status !== 0) {
@@ -212,7 +229,9 @@ function stage(name, { lint, plan, apply }) {
     console.log(`${name}: failed to send.\n${wrote.err || wrote.out}`);
     return false;
   }
-  console.log(`${name}: sent. It waits in the Play Console, not in review.`);
+  console.log(unheld
+    ? `${name}: sent without the hold. It went for review, with anything else waiting in the Play Console.`
+    : `${name}: sent. It waits in the Play Console, not in review.`);
   return true;
 }
 
@@ -245,7 +264,7 @@ function listingStep() {
   stage('Listing', {
     lint: ['metadata', 'validate', '--dir', TREE, '--output', 'json'],
     plan: online('metadata', 'apply', '--dir', TREE, '--dry-run', '--output', 'json'),
-    apply: online('metadata', 'apply', '--dir', TREE, '--confirm', ...HOLD, '--output', 'json'),
+    apply: online('metadata', 'apply', '--dir', TREE, '--confirm', ...LISTING_COMMIT, '--output', 'json'),
   });
 }
 
@@ -334,7 +353,7 @@ function imagesStep() {
   stage('Images', {
     lint: ['metadata', 'images', 'validate', '--dir', TREE, '--output', 'json'],
     plan: online('metadata', 'images', 'apply', '--dir', TREE, '--dry-run', '--output', 'json'),
-    apply: online('metadata', 'images', 'apply', '--dir', TREE, '--confirm', ...HOLD, '--output', 'json'),
+    apply: online('metadata', 'images', 'apply', '--dir', TREE, '--confirm', ...LISTING_COMMIT, '--output', 'json'),
   });
 }
 

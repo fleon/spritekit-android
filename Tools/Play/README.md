@@ -82,8 +82,9 @@ round, the second commit would meet a review already under way. Without
 
 - Every write but that release waits in the Play Console
   (`--changes-not-sent-for-review`): only the user submits. The one way round
-  it is `--without-hold`, on a draft release only, for an app whose changes
-  Play won't hold (below).
+  it is `--without-hold`, for an app whose changes Play won't hold (below): on
+  a draft release, or on the `listing` or `images` step named alone, when the
+  user has asked for that change to go for review.
 - `--send-for-review` takes a rolled-out testing-track release, and still
   passes `--changes-in-review error`, so it never cancels a review under way.
 - Production takes only a non-beta build, only ever as a draft the user rolls
@@ -94,9 +95,11 @@ round, the second commit would meet a review already under way. Without
   and never for an app it hasn't published; otherwise it refuses
   `--changes-not-sent-for-review`. The tool then sends nothing rather than
   every pending change. A draft release (production, or a testing track
-  without `--rollout`) can go up with `--without-hold`: it serves nobody, but
-  anything else waiting in the Play Console goes for review with it, so check
-  Publishing overview first. A review already under way still makes it fail
+  without `--rollout`) can go up with `--without-hold`: it serves nobody. The
+  listing or the images can too (`play.js images --send --without-hold`), and
+  then go for review. Either way anything else waiting in the Play Console
+  goes for review with it, so check Publishing overview first. The listing
+  and images refuse it for an app Play hasn't published. A review already under way still makes it fail
   (`--changes-in-review error`), never cancelled.
 
 ## Tests
