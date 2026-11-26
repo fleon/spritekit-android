@@ -150,6 +150,8 @@ const REFUSES_HOLD = /changesNotSentForReview must not be set/i;
 let changes = 0;
 let failed = 0;
 let sentForReview = false;
+// Something went up without the hold (--without-hold): it went for review.
+let sentUnheld = false;
 let unread = 0;
 let readOnly = false;
 
@@ -238,6 +240,7 @@ function stage(name, { lint, plan, apply }) {
     console.log(`${name}: failed to send.\n${wrote.err || wrote.out}`);
     return false;
   }
+  if (unheld) sentUnheld = true;
   console.log(unheld
     ? `${name}: sent without the hold. It went for review, with anything else waiting in the Play Console.`
     : `${name}: sent. It waits in the Play Console, not in review.`);
@@ -559,6 +562,7 @@ function releaseStep() {
   }
   if (wrote.status !== 0) { failed += 1; console.log(`Release: failed.\n${wrote.err || wrote.out}`); return; }
   if (forReview) sentForReview = true;
+  if (withoutHold) sentUnheld = true;
   if (withoutHold) console.log('Release: committed without the hold. Anything else waiting in the Play Console went for review with it.');
   console.log(production
     ? 'Release: uploaded as a draft on production. It reaches nobody until it is rolled out in the Play Console.'
@@ -674,6 +678,7 @@ else if (unread) console.log(`The files check out, but ${unread} step${unread ==
 else if (changes === 0 && readOnly) console.log(step ? 'Nothing was sent.' : 'Nothing to send.');
 else if (changes === 0) console.log('Google Play is up to date.');
 else if (send && sentForReview) console.log(`Sent ${changes} changes, the release sent for review (testing tracks only).`);
+else if (send && sentUnheld) console.log(`Sent ${changes} changes without the hold: they went for review, with anything else waiting in the Play Console.`);
 else if (send) console.log(`Sent ${changes} changes. They wait in the Play Console: nothing was submitted for review.`);
 else console.log(`${changes} changes. Run with --send to make them.`);
 process.exit(failed ? 1 : 0);
