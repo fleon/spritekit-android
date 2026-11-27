@@ -2,6 +2,46 @@
 
 **Bring your SpriteKit game to Android without rewriting it.**
 
+## Games built using SpriteKit Android
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="20%">
+      <a href="https://fleon.com/games/switchlings"><img src="Docs/Games/switchlings.png" width="80" height="80" alt="Switchlings icon"></a><br>
+      <b><a href="https://fleon.com/games/switchlings">Switchlings</a></b><br>
+      <sub>Coming soon</sub><br>
+      <a href="https://apps.apple.com/app/id6818995219">Pre-order on the App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.switchlings">Pre-register on Google Play</a>
+    </td>
+    <td align="center" valign="top" width="20%">
+      <a href="https://fleon.com/games/phantom-words"><img src="Docs/Games/phantom-words.png" width="80" height="80" alt="Phantom Words icon"></a><br>
+      <b><a href="https://fleon.com/games/phantom-words">Phantom Words</a></b><br>
+      <a href="https://apps.apple.com/app/id6789995017">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.phantomwords">Google Play</a>
+    </td>
+    <td align="center" valign="top" width="20%">
+      <a href="https://fleon.com/games/zyl"><img src="Docs/Games/zyl.png" width="80" height="80" alt="Zyl icon"></a><br>
+      <b><a href="https://fleon.com/games/zyl">Zyl</a></b><br>
+      <a href="https://apps.apple.com/app/id6759285712">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.zyl">Google Play</a>
+    </td>
+    <td align="center" valign="top" width="20%">
+      <a href="https://fleon.com/games/hue-rings"><img src="Docs/Games/hue-rings.png" width="80" height="80" alt="Hue Rings icon"></a><br>
+      <b><a href="https://fleon.com/games/hue-rings">Hue Rings</a></b><br>
+      <a href="https://apps.apple.com/app/id6758245846">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.huerings">Google Play</a>
+    </td>
+    <td align="center" valign="top" width="20%">
+      <a href="https://fleon.com/games/sheeping-around"><img src="Docs/Games/sheeping-around.png" width="80" height="80" alt="Sheeping Around icon"></a><br>
+      <b><a href="https://fleon.com/games/sheeping-around">Sheeping Around</a></b><br>
+      <a href="https://apps.apple.com/app/id1369538992">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleonlabs.sheepingaround">Google Play</a>
+    </td>
+  </tr>
+</table>
+
+Shipped a game with SpriteKit Android? Open a pull request to add it here.
+
 SpriteKit for Android is a Swift runtime that lets a SpriteKit game's own
 sources compile and run on Android, unedited. Your code keeps `import
 SpriteKit`, `import UIKit`, `import CoreGraphics` and the rest; this runtime
