@@ -9,7 +9,6 @@
     <td align="center" valign="top">
       <img src="Docs/Games/switchlings.png" width="80" height="80" alt="Switchlings icon"><br>
       <b>Switchlings</b><br>
-      <sub>Coming soon</sub><br>
       <a href="https://apps.apple.com/app/id6818995219">App Store</a><br>
       <a href="https://play.google.com/store/apps/details?id=com.fleon.switchlings">Google Play</a>
     </td>
