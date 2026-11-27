@@ -2,6 +2,45 @@
 
 **Bring your SpriteKit game to Android without rewriting it.**
 
+## Games built using SpriteKit Android
+
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <img src="Docs/Games/switchlings.png" width="80" height="80" alt="Switchlings icon"><br>
+      <b>Switchlings</b><br>
+      <a href="https://apps.apple.com/app/id6818995219">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.switchlings">Google Play</a>
+    </td>
+    <td align="center" valign="top">
+      <img src="Docs/Games/phantom-words.png" width="80" height="80" alt="Phantom Words icon"><br>
+      <b>Phantom&nbsp;Words</b><br>
+      <a href="https://apps.apple.com/app/id6789995017">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.phantomwords">Google Play</a>
+    </td>
+    <td align="center" valign="top">
+      <img src="Docs/Games/zyl.png" width="80" height="80" alt="Zyl icon"><br>
+      <b>Zyl</b><br>
+      <a href="https://apps.apple.com/app/id6759285712">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.zyl">Google Play</a>
+    </td>
+    <td align="center" valign="top">
+      <img src="Docs/Games/hue-rings.png" width="80" height="80" alt="Hue Rings icon"><br>
+      <b>Hue&nbsp;Rings</b><br>
+      <a href="https://apps.apple.com/app/id6758245846">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.huerings">Google Play</a>
+    </td>
+    <td align="center" valign="top">
+      <img src="Docs/Games/sheeping-around.png" width="80" height="80" alt="Sheeping Around icon"><br>
+      <b>Sheeping&nbsp;Around</b><br>
+      <a href="https://apps.apple.com/app/id1369538992">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleonlabs.sheepingaround">Google Play</a>
+    </td>
+  </tr>
+</table>
+
+Shipped a game with SpriteKit Android? Open a pull request to add it here.
+
 SpriteKit for Android is a Swift runtime that lets a SpriteKit game's own
 sources compile and run on Android, unedited. Your code keeps `import
 SpriteKit`, `import UIKit`, `import CoreGraphics` and the rest; this runtime

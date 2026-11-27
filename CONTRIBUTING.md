@@ -27,7 +27,9 @@ Open an issue with:
    tests, fixtures or descriptions. Describe a change by what SpriteKit or
    Apple does, and test it with neutral fixtures. A game's own Android code
    (its controller, its managers' bodies, its Gradle app) lives in the
-   game's repository.
+   game's repository. The one exception is the README's list of games built
+   with the runtime: a shipped game adds its name, icon and store links
+   there.
 3. **Run the checks** before you open a pull request:
 
    ```bash

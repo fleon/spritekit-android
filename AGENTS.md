@@ -193,7 +193,8 @@ would want.
 - A bug or a gap in shared code is fixed here, in a PR on this repository,
   and then the game moves its submodule. Never copy shared code back into a
   game, and never put a game's names, content or reasons into this
-  repository.
+  repository, except its entry (name, icon, store links) in the README's
+  list of games built with the runtime.
 - Never block play on Game Center or Play Games; catch up achievements and
   scores from saved progress at sign-in.
 
