@@ -9,13 +9,13 @@
     <td align="center" valign="top" width="20%">
       <a href="https://fleon.com/games/switchlings"><img src="Docs/Games/switchlings.png" width="80" height="80" alt="Switchlings icon"></a><br>
       <b><a href="https://fleon.com/games/switchlings">Switchlings</a></b><br>
-      <sub>Coming soon</sub><br>
-      <a href="https://apps.apple.com/app/id6818995219">Pre-order on the App Store</a><br>
-      <a href="https://play.google.com/store/apps/details?id=com.fleon.switchlings">Pre-register on Google Play</a>
+      <sub>Coming soon: pre-order<br>or pre-register now</sub><br>
+      <a href="https://apps.apple.com/app/id6818995219">App Store</a><br>
+      <a href="https://play.google.com/store/apps/details?id=com.fleon.switchlings">Google Play</a>
     </td>
     <td align="center" valign="top" width="20%">
       <a href="https://fleon.com/games/phantom-words"><img src="Docs/Games/phantom-words.png" width="80" height="80" alt="Phantom Words icon"></a><br>
-      <b><a href="https://fleon.com/games/phantom-words">Phantom Words</a></b><br>
+      <b><a href="https://fleon.com/games/phantom-words">Phantom&nbsp;Words</a></b><br>
       <a href="https://apps.apple.com/app/id6789995017">App Store</a><br>
       <a href="https://play.google.com/store/apps/details?id=com.fleon.phantomwords">Google Play</a>
     </td>
@@ -27,13 +27,13 @@
     </td>
     <td align="center" valign="top" width="20%">
       <a href="https://fleon.com/games/hue-rings"><img src="Docs/Games/hue-rings.png" width="80" height="80" alt="Hue Rings icon"></a><br>
-      <b><a href="https://fleon.com/games/hue-rings">Hue Rings</a></b><br>
+      <b><a href="https://fleon.com/games/hue-rings">Hue&nbsp;Rings</a></b><br>
       <a href="https://apps.apple.com/app/id6758245846">App Store</a><br>
       <a href="https://play.google.com/store/apps/details?id=com.fleon.huerings">Google Play</a>
     </td>
     <td align="center" valign="top" width="20%">
       <a href="https://fleon.com/games/sheeping-around"><img src="Docs/Games/sheeping-around.png" width="80" height="80" alt="Sheeping Around icon"></a><br>
-      <b><a href="https://fleon.com/games/sheeping-around">Sheeping Around</a></b><br>
+      <b><a href="https://fleon.com/games/sheeping-around">Sheeping&nbsp;Around</a></b><br>
       <a href="https://apps.apple.com/app/id1369538992">App Store</a><br>
       <a href="https://play.google.com/store/apps/details?id=com.fleonlabs.sheepingaround">Google Play</a>
     </td>
