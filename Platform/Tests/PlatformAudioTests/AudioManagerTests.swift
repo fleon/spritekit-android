@@ -296,6 +296,9 @@ struct MusicTests {
         harness.audio.savedDataDidSync([harness.audio.configuration.settings.soundKey])
         harness.audio.savedDataDidSync([harness.audio.configuration.settings.musicKey])
         #expect(posts == 2)
+        // A new configuration may read the switch under another key.
+        harness.audio.configure(harness.audio.configuration)
+        #expect(posts == 3)
     }
 
     @Test func aNewBackendGetsTheSoundsAndTheTrack() {

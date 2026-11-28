@@ -19,7 +19,8 @@ import PlatformCore
 public final class AudioManager {
     public static let shared = AudioManager()
 
-    /// Posted when the music switch changes, here or on another device.
+    /// Posted when the music switch may have changed: set here, synced from
+    /// another device, or read under a new configuration.
     public static let musicEnabledDidChange = Notification.Name("AudioManager.musicEnabledDidChange")
 
     public private(set) var configuration = AudioConfiguration()
@@ -70,6 +71,9 @@ public final class AudioManager {
 
     public func configure(_ configuration: AudioConfiguration) {
         self.configuration = configuration
+        // The switch may read otherwise under the game's own key or store,
+        // and whoever asked before (Android's audio focus) hears it again.
+        defer { NotificationCenter.default.post(name: Self.musicEnabledDidChange, object: self) }
         #if !SPRITEKIT_SHIM
         if backend is NullAudioBackend {
             use(AppleAudioBackend(soundExtensions: configuration.soundExtensions, musicExtensions: configuration.musicExtensions))
