@@ -120,13 +120,12 @@ const ascUploadNumbers = (uploads) => uploads
   .filter((u) => (u.attributes?.state?.state ?? u.attributes?.state) !== 'AWAITING_UPLOAD')
   .map((u) => Number(u.attributes?.cfBundleVersion)).filter(Number.isFinite);
 
-// The iOS App Store version in production for `version`, as
-// "<versionString> <state>", or null. tvOS and macOS versions don't count.
-// 1.4 and 1.4.0 are the same version.
+// The App Store version in production for `version` (any platform), as
+// "<versionString> <state>", or null. 1.4 and 1.4.0 are the same version.
 function appStoreLive(versions, version) {
   for (const v of versions) {
     const a = v.attributes ?? {};
-    if (a.platform !== 'IOS' || !sameVersion(a.versionString, version)) continue;
+    if (!sameVersion(a.versionString, version)) continue;
     const state = [a.appVersionState, a.appStoreState].find((s) => APP_STORE_LIVE.includes(s));
     if (state) return `${a.versionString} ${state}`;
   }

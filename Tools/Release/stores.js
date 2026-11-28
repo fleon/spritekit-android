@@ -57,7 +57,7 @@ function appStoreBuilds(settings) {
   return numbers;
 }
 
-// The iOS App Store version in production for `version`, or null.
+// The App Store version in production for `version` (any platform), or null.
 function appStoreLive(settings, version) {
   const versions = lib.ascData(run('asc', ['versions', 'list', '--app', settings.appStore.app, '--paginate', '--output', 'json']));
   return lib.appStoreLive(versions, version);
@@ -94,7 +94,7 @@ function writeBuild(root, settings, text, build) {
 }
 
 // The nightly's version step, in `root` (its release worktree): bump the
-// minor when the version is in production on the iOS App Store, then take
+// minor when the version is in production on the App Store, then take
 // the next build number. Play doesn't count: Android goes by build numbers
 // alone. Writes the project; returns what it did.
 function release({ root, settings, log = console.error }) {

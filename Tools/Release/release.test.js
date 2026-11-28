@@ -57,7 +57,7 @@ test('patch names count further Play uploads at one version', () => {
   assert.strictEqual(at([{ name: '53' }]), '1.1');
 });
 
-test('App Store Connect: replies a page a line, and iOS versions in production', () => {
+test('App Store Connect: replies a page a line, and versions in production', () => {
   assert.deepStrictEqual(lib.ascData('{"data":[{"id":"a"}]}'), [{ id: 'a' }]);
   assert.deepStrictEqual(lib.ascData('{"data":[{"id":"a"}]}\n{"data":[{"id":"b"}]}\n'), [{ id: 'a' }, { id: 'b' }]);
   assert.deepStrictEqual(lib.ascData(''), []);
@@ -71,7 +71,8 @@ test('App Store Connect: replies a page a line, and iOS versions in production',
     { attributes: { platform: 'IOS', versionString: '1.7', appVersionState: 'PENDING_DEVELOPER_RELEASE', appStoreState: 'PENDING_DEVELOPER_RELEASE' } },
     { attributes: { platform: 'IOS', versionString: '1.6', appVersionState: 'IN_REVIEW', appStoreState: 'IN_REVIEW' } },
     { attributes: { platform: 'IOS', versionString: '1.5', appVersionState: 'WAITING_FOR_REVIEW' } },
-    { attributes: { platform: 'TV_OS', versionString: '1.5', appVersionState: 'READY_FOR_DISTRIBUTION', appStoreState: 'READY_FOR_SALE' } },
+    { attributes: { platform: 'IOS', versionString: '1.2', appVersionState: 'WAITING_FOR_REVIEW' } },
+    { attributes: { platform: 'TV_OS', versionString: '1.2', appVersionState: 'READY_FOR_DISTRIBUTION', appStoreState: 'READY_FOR_SALE' } },
     { attributes: { platform: 'IOS', versionString: '1.4', appVersionState: 'READY_FOR_DISTRIBUTION', appStoreState: 'READY_FOR_SALE' } },
     { attributes: { platform: 'IOS', versionString: '1.3', appStoreState: 'REPLACED_WITH_NEW_VERSION' } },
   ];
@@ -80,6 +81,7 @@ test('App Store Connect: replies a page a line, and iOS versions in production',
   assert.strictEqual(lib.appStoreLive(versions, '1.5.0'), null);
   assert.strictEqual(lib.appStoreLive(versions, '1.4.0'), '1.4 READY_FOR_DISTRIBUTION');
   assert.strictEqual(lib.appStoreLive(versions, '1.3'), '1.3 REPLACED_WITH_NEW_VERSION');
+  assert.strictEqual(lib.appStoreLive(versions, '1.2'), '1.2 READY_FOR_DISTRIBUTION');
 });
 
 test('what is new: merge commits past the last build, oldest first', () => {
@@ -188,7 +190,7 @@ test('version.js: patch names and an export prefix from the settings', () => {
   assert.strictEqual(r.stdout, 'export MYGAME_VERSION_CODE=10\nexport MYGAME_VERSION_NAME=1.4.1.1\n');
 });
 
-test('version.js --release: no iOS release in production keeps the version and takes the next build', () => {
+test('version.js --release: no App Store release in production keeps the version and takes the next build', () => {
   const root = fixture();
   const r = version(root, '--release');
   assert.strictEqual(r.status, 0, r.stderr);
