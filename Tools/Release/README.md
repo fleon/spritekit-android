@@ -119,12 +119,12 @@ Tools/Release/nightly.sh --notes notes.txt               # the release (the nigh
    run nobody watches can't answer an SSH agent's prompt (1Password's waits
    for one forever). They never prompt, and give up after ten minutes.
 3. **Version.** The minor goes up (1.7 → 1.8, 1.4.1 → 1.5, a patch of 0
-   left off) once the version has an approved release on either store: an App Store version
-   Apple approved (waiting for release, live, or later replaced or removed),
-   or a production release on Play that names the version and that Google
-   approved (`play.js versions --approved`). Then the next build number. Both
-   go into a `Build <N>` commit (`Build <N> (version <v>)` when the version
-   moved), pushed only after an upload.
+   left off) once the version is in production on the App Store, on any of
+   its platforms: live, or live once and since replaced or removed. A version
+   waiting for review, in review or approved but not yet released doesn't
+   count, nor does Play: Android goes by build numbers alone. Then the next
+   build number. Both go into a `Build <N>` commit (`Build <N> (version <v>)` when
+   the version moved), pushed only after an upload.
 4. **Notes.** This build's changes, `• ` lines in plain words for players:
    `--notes`, else drafted from the PR titles (the `notes` settings).
 5. **Art.** The game's `art` steps.

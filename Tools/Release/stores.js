@@ -57,10 +57,10 @@ function appStoreBuilds(settings) {
   return numbers;
 }
 
-// The App Store version Apple approved for `version`, or null.
-function appStoreApproved(settings, version) {
+// The App Store version in production for `version` (any platform), or null.
+function appStoreLive(settings, version) {
   const versions = lib.ascData(run('asc', ['versions', 'list', '--app', settings.appStore.app, '--paginate', '--output', 'json']));
-  return lib.appStoreApproved(versions, version);
+  return lib.appStoreLive(versions, version);
 }
 
 // Where the project and the stores stand.
@@ -94,27 +94,26 @@ function writeBuild(root, settings, text, build) {
 }
 
 // The nightly's version step, in `root` (its release worktree): bump the
-// minor when the version has an approved release on either store, then take
-// the next build number. Writes the project; returns what it did.
+// minor when the version is in production on the App Store, then take
+// the next build number. Play doesn't count: Android goes by build numbers
+// alone. Writes the project; returns what it did.
 function release({ root, settings, log = console.error }) {
   const before = fs.readFileSync(projectFile(root, settings), 'utf8');
   const previous = lib.projectSetting(before, 'MARKETING_VERSION');
-  const onAppStore = settings.appStore?.app ? appStoreApproved(settings, previous) : null;
-  const play = playVersions(root, settings, previous);
-  const onPlay = play.approved;
-  const approved = [onAppStore && `App Store ${onAppStore}`, onPlay && `Play production ${onPlay.name} (${onPlay.status})`].filter(Boolean).join(', ');
+  const live = settings.appStore?.app ? appStoreLive(settings, previous) : null;
+  const play = playVersions(root, settings);
   let version = previous;
-  if (approved) {
+  if (live) {
     version = lib.bumpMinor(previous);
     fs.writeFileSync(projectFile(root, settings), lib.withVersion(before, previous, version));
-    log(`Version ${previous} is approved (${approved}): this build is ${version}.`);
+    log(`Version ${previous} is in production on the App Store (${live}): this build is ${version}.`);
   } else {
-    log(`Version ${previous} has no approved release on either store: it stays.`);
+    log(`Version ${previous} isn't in production on the App Store: it stays.`);
   }
   const s = survey({ root, settings, play });
   writeBuild(root, settings, s.text, s.next);
   log(`Build ${s.next}: one past the project's ${s.project}, App Store Connect's ${s.readsAppStore ? Math.max(0, ...s.appStore) || 'none' : 'not read'} and Play's ${s.play.highest || 'none'}.`);
-  return { previous, version, bumped: version !== previous, approved: approved || null, build: s.next, name: nameFor(settings, version, s.next, s.play) };
+  return { previous, version, bumped: version !== previous, live, build: s.next, name: nameFor(settings, version, s.next, s.play) };
 }
 
-module.exports = { loadSettings, projectFile, survey, release, nameFor, writeBuild, playVersions, appStoreBuilds, appStoreApproved, run };
+module.exports = { loadSettings, projectFile, survey, release, nameFor, writeBuild, playVersions, appStoreBuilds, appStoreLive, run };

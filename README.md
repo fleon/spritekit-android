@@ -1735,7 +1735,7 @@ commands.
 build number to TestFlight and to Play's internal and closed testing (through
 `Tools/Play/play.js`); `version.js` works out that number, one past the
 highest the project, App Store Connect and Play have taken, and bumps the
-version once it has an approved release. Each game runs them through small
+version once it's in production on the App Store. Each game runs them through small
 shims with its settings in `Tools/Release/release.json`;
 [`Tools/Release/README.md`](Tools/Release/README.md) has the settings, the
 steps and the rules.

@@ -297,7 +297,8 @@ would want.
   build to production as a draft the person rolls out, and the beta build to
   every testing track. Never promote a testing build to production.
 - A game moves to the next minor version (x.y.z to x.(y+1).0) once its
-  current version has an approved release on either store; until then each
+  current version is in production on the App Store (in review or
+  approved doesn't count, and Play never does); until then each
   build keeps the version and takes only the next build number. A patch of 0
   is left off (1.5, not 1.5.0); any other patch stays (1.4.1).
 - Google Play goes through the runtime's `Tools/Play/play.js` (its README),
