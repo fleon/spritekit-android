@@ -8,8 +8,6 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -32,7 +30,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 
 /**
- * The device's part: haptics, audio focus, battery saver, the status bar,
+ * The device's part: haptics, battery saver, the status bar,
  * the app's settings page, the battery and the connection, and re-encoding
  * images between JPEG and PNG.
  *
@@ -42,18 +40,15 @@ import java.io.ByteArrayOutputStream;
  * and a short buzz on the oldest. Played as touch feedback, so the system's
  * own "vibration & haptics" switch silences them as it does every app's.
  *
- * <p><b>Audio focus</b> for the soundtrack, which follows the game's own
- * music switch alone: while it's on, the game takes focus each time it comes
- * to the front, whatever else was playing, and holds it until it stops, not
- * merely pauses; while it's off, the game holds none and the player's own
- * music plays on ({@link AudioFocusPolicy}). A call or an alarm pauses
- * everything until it ends. Call: {@code audioFocus} with {@code wanted}.
- * Event: {@code audio} with {@code interrupted}.
+ * <p><b>No audio focus,</b> as the iOS build's ambient session: the game's
+ * soundtrack follows its own music switch alone and mixes with whatever else
+ * plays, the player's own music included, which plays on. Holding no focus,
+ * nothing (another app's playback, Android 12's fade-out) silences it.
  *
  * <p><b>Battery saver</b> is iOS's Low Power Mode: the game holds its frame
  * rate to 60 while it is on. Event: {@code powerSave}.
  */
-public final class DeviceServices implements AudioManager.OnAudioFocusChangeListener, PlatformService {
+public final class DeviceServices implements PlatformService {
     public static final String SERVICE = "device";
 
     private final Activity activity;
@@ -61,14 +56,7 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
     /** The status bar the game last asked for: null until it asks. UI thread. */
     private Boolean statusBarVisible;
     private final Vibrator vibrator;
-    private final AudioManager audio;
     private final PowerManager power;
-    private AudioFocusRequest focusRequest;
-    /** Holds a focus request: granted, or delayed until a call ends. */
-    private boolean hasFocus;
-    /** What the game was last told: a call or an alarm has the audio. */
-    private boolean interrupted;
-    private final AudioFocusPolicy focusPolicy = new AudioFocusPolicy();
 
     private final BroadcastReceiver powerSaveReceiver = new BroadcastReceiver() {
         @Override
@@ -86,7 +74,6 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
         } else {
             vibrator = (Vibrator) activity.getSystemService(Context.VIBRATOR_SERVICE);
         }
-        audio = (AudioManager) activity.getSystemService(Context.AUDIO_SERVICE);
         power = (PowerManager) activity.getSystemService(Context.POWER_SERVICE);
         IntentFilter filter = new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
         if (Build.VERSION.SDK_INT >= 33) {
@@ -108,11 +95,6 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
                     statusBarVisible = visible;
                     showStatusBar(visible);
                 });
-                return null;
-            }
-            case "audioFocus": {
-                boolean wanted = args.optBoolean("wanted", true);
-                activity.runOnUiThread(() -> apply(focusPolicy.onWanted(wanted, hasFocus)));
                 return null;
             }
             case "state":
@@ -267,20 +249,10 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
     @Override
     public void onResume() {
         postPowerSave();
-        apply(focusPolicy.onResume(hasFocus));
-        // With no focus, nothing will say an interruption ended.
-        if (!hasFocus) setInterrupted(false);
-    }
-
-    @Override
-    public void onStop() {
-        focusPolicy.onStop();
-        abandonFocus();
     }
 
     @Override
     public void onDestroy() {
-        abandonFocus();
         try {
             activity.unregisterReceiver(powerSaveReceiver);
         } catch (IllegalArgumentException alreadyGone) {
@@ -290,86 +262,6 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
 
     private void postPowerSave() {
         services.post(SERVICE, "powerSave", PlatformServices.object("enabled", power != null && power.isPowerSaveMode()));
-    }
-
-    // MARK: - Audio focus
-
-    private void apply(AudioFocusPolicy.Step step) {
-        switch (step) {
-            case REQUEST:
-                requestFocus();
-                break;
-            case ABANDON:
-                abandonFocus();
-                setInterrupted(false);
-                break;
-            case KEEP:
-                break;
-        }
-    }
-
-    private void requestFocus() {
-        if (audio == null || hasFocus) return;
-        int result;
-        if (Build.VERSION.SDK_INT >= 26) {
-            if (focusRequest == null) {
-                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_GAME)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build())
-                    // Asked during a call: granted as it ends.
-                    .setAcceptsDelayedFocusGain(true)
-                    .setOnAudioFocusChangeListener(this)
-                    .build();
-            }
-            result = audio.requestAudioFocus(focusRequest);
-        } else {
-            result = audio.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-        }
-        boolean delayed = result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED;
-        hasFocus = delayed || result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
-        setInterrupted(delayed);
-    }
-
-    private void setInterrupted(boolean interrupted) {
-        if (interrupted == this.interrupted) return;
-        this.interrupted = interrupted;
-        services.post(SERVICE, "audio", PlatformServices.object("interrupted", interrupted));
-    }
-
-    private void abandonFocus() {
-        if (audio == null || !hasFocus) return;
-        if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
-            audio.abandonAudioFocusRequest(focusRequest);
-        } else {
-            audio.abandonAudioFocus(this);
-        }
-        hasFocus = false;
-    }
-
-    @Override
-    public void onAudioFocusChange(int change) {
-        switch (change) {
-            case AudioManager.AUDIOFOCUS_GAIN:
-                hasFocus = true;
-                setInterrupted(false);
-                break;
-            case AudioManager.AUDIOFOCUS_LOSS:
-                // The player started another app's music over the game:
-                // Android fades the game out until it next comes back from a
-                // stop and asks again (`AudioFocusPolicy`).
-                abandonFocus();
-                setInterrupted(false);
-                break;
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                // A call or an alarm: everything waits.
-                setInterrupted(true);
-                break;
-            default:
-                // LOSS_TRANSIENT_CAN_DUCK: the system ducks us itself.
-                break;
-        }
     }
 
     // MARK: - Haptics

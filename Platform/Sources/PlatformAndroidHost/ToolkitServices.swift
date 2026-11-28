@@ -1,7 +1,6 @@
 #if SPRITEKIT_SHIM
 import Foundation
 import PlatformAndroid
-import PlatformAudio
 import PlatformDisplay
 import PlatformGameCenter
 import PlatformShim
@@ -14,8 +13,8 @@ extension AndroidPlatformServices.Configuration {
     /// The toolkit's managers on Google Play and the device, as most games
     /// hand them: Play Games' achievements and leaderboards to
     /// `gameCenter`, Saved Games under `ICloudSyncManager` (`syncsSavedData`),
-    /// Play Billing to `store` for its configured products, and audio focus
-    /// to `audio`, and with `statusBar` the settings' switch
+    /// Play Billing to `store` for its configured products, and with
+    /// `statusBar` the settings' switch
     /// (`StatusBarSetting`) to the status bar. A manager left nil gets
     /// nothing. Set anything else (the player for GameKit's
     /// `GKLocalPlayer`, diagnostics) on the result before
@@ -24,7 +23,6 @@ extension AndroidPlatformServices.Configuration {
         gameCenter: GameCenterManager?,
         syncsSavedData: Bool = true,
         store: StoreManager? = nil,
-        audio: AudioManager? = .shared,
         statusBar: Bool = false
     ) -> Self {
         var services = Self()
@@ -38,24 +36,10 @@ extension AndroidPlatformServices.Configuration {
         if let store {
             services.billing = .init(store: store)
         }
-        if let audio {
-            services.audio = .manager(audio)
-        }
         if statusBar {
             services.statusBar = .setting
         }
         return services
-    }
-}
-
-extension AndroidPlatformServices.Audio {
-    /// `audio`'s: focus while its music is on, calls suspending it.
-    public static func manager(_ audio: AudioManager) -> Self {
-        .init(
-            wantsFocus: { MainActor.assumeIsolated { audio.musicEnabled } },
-            changed: AudioManager.musicEnabledDidChange,
-            interrupted: { interrupted in MainActor.assumeIsolated { audio.audioFocusDidChange(interrupted: interrupted) } }
-        )
     }
 }
 

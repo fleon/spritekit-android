@@ -34,8 +34,7 @@ them changes only its imports.
 | --- | --- | --- |
 | `spritekit` | `SpriteKitActivity` | SDL's activity: launch arguments in debuggable builds, the game's orientations (`OrientationPolicy`, + its test), the environment the runtime reads (below), Back on Android 13 and later, the safe area as iOS gives it, links (`gameLink`, held until the shell can take them, a cold start's as `-LaunchLink`), the share sheet (`shareFile`), Paste over a text field (`offerPaste`), the platform channel's JNI |
 | | `PlatformServices`, `PlatformService` | The channel's Java end: a registry of services by name, dispatching `service.method` calls and queueing events (`post`) |
-| | `DeviceServices` | `device`: haptics, battery saver, audio focus, the status bar, the app's settings page (`openAppSettings`), the battery (`battery`), the connection (`connection`, with the app's `ACCESS_NETWORK_STATE`), JPEG and PNG re-encoding (`jpegToPng`, `pngToJpeg`) |
-| | `AudioFocusPolicy` (+ its test) | When to ask for audio focus and give it up: each time the game comes to the front while its music is on |
+| | `DeviceServices` | `device`: haptics, battery saver, the status bar, the app's settings page (`openAppSettings`), the battery (`battery`), the connection (`connection`, with the app's `ACCESS_NETWORK_STATE`), JPEG and PNG re-encoding (`jpegToPng`, `pngToJpeg`) |
 | | `PlayGamesServices` (+ `ScorePagingTest`) | `games`: sign-in, achievements, leaderboards (submitting, loading them and their scores, showing them at a time span and collection), the player, Saved Games |
 | | `PlayReview` | `review`: Play In-App Review, behind `SKStoreReviewController` |
 | `spritekit-billing` | `PlayBilling` | `billing`: one-time products (prices, purchases, acknowledgement, restore) and consumables (`consume`, each purchase's `quantity`) |

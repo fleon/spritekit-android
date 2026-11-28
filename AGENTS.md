@@ -180,8 +180,9 @@ would want.
   a copy of the capture scripts.
 - Scenes play sounds and music with `PlatformAudio`'s `playSound`,
   `playMusic` and `stopMusic`, never a game's own wrappers of them.
-- The soundtrack follows only the game's own music switch: no game silences
-  it for other apps' audio, which mixes in on Apple platforms.
+- The soundtrack follows only the game's own music switch: it mixes with
+  other apps' audio on every platform (ambient on Apple, no audio focus on
+  Android), and no game pauses it for other audio or calls.
 - A game's soundtrack plays its intro once and then repeats a loop on the
   beat: its masters stay out of the bundle, and the runtime's
   `Tools/Audio/music.js` (its README), through the game's own two-line

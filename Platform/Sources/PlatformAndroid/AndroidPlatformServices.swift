@@ -43,9 +43,6 @@ public enum AndroidPlatformServices {
         /// Purchases, made whether or not there's a channel.
         public var billing: Billing?
 
-        /// Audio focus for the game's soundtrack. With none, the game takes
-        /// focus every time it comes to the front and nothing hears of calls.
-        public var audio: Audio?
         /// The settings' status bar switch, shown or hidden as it changes.
         public var statusBar: StatusBar?
         /// The battery and connection a game's diagnostics read
@@ -80,25 +77,6 @@ public enum AndroidPlatformServices {
             self.serverConsumed = serverConsumed
             self.simulated = simulated
             self.receive = receive
-        }
-    }
-
-    /// When the game wants audio focus, and who hears of calls.
-    public struct Audio {
-        /// Whether the game wants focus: while its music is on. The game asks
-        /// for it each time it comes to the front, so its soundtrack plays
-        /// whatever another app was playing; with music off, the player's
-        /// own music keeps playing under the game's sounds.
-        public var wantsFocus: () -> Bool
-        /// Posted when `wantsFocus` may have changed.
-        public var changed: Notification.Name
-        /// A call or an alarm took the audio, or gave it back (the `audio` event).
-        public var interrupted: (Bool) -> Void
-
-        public init(wantsFocus: @escaping () -> Bool, changed: Notification.Name, interrupted: @escaping (Bool) -> Void) {
-            self.wantsFocus = wantsFocus
-            self.changed = changed
-            self.interrupted = interrupted
         }
     }
 
@@ -201,7 +179,6 @@ public enum AndroidPlatformServices {
             }
         }
         let center = configuration.notificationCenter
-        let audio = configuration.audio
         channel.on("device") { event, body in
             switch event {
             case "powerSave":
@@ -210,16 +187,10 @@ public enum AndroidPlatformServices {
                 Device.lowPowerMode = enabled
                 // As iOS posts Low Power Mode changing.
                 center.post(name: .NSProcessInfoPowerStateDidChange, object: nil)
-            case "audio":
-                audio?.interrupted(body.bool("interrupted") ?? false)
             default:
                 break
             }
         }
-        // The shell waits to hear before it asks for focus.
-        let wantsFocus = { _ = channel.call("device.audioFocus", ["wanted": audio?.wantsFocus() ?? true]) }
-        if let audio { installed.observers.observe(audio.changed) { _ in wantsFocus() } }
-        wantsFocus()
         if let statusBar = configuration.statusBar {
             let show = { _ = channel.call("device.statusBar", ["visible": statusBar.isVisible()]) }
             installed.observers.observe(statusBar.changed) { _ in show() }

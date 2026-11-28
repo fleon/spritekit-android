@@ -18,9 +18,9 @@ import UIKit
 ///
 /// Ambient mixes with other apps' audio, so the player's own music keeps
 /// playing under the game's, no other app's playback interrupts it, and the
-/// Ring/Silent switch silences it as it does every game. Only calls, Siri and
-/// alarms interrupt it; the soundtrack comes back as they end, or at the
-/// latest as the app is next active.
+/// Ring/Silent switch silences it as it does every game. The system still
+/// silences it for a call, Siri or an alarm; the soundtrack comes back as
+/// they end, or at the latest as the app is next active.
 public final class AppleAudioBackend: AudioBackend {
     private static let fadeStep: TimeInterval = 1.0 / 60
 
