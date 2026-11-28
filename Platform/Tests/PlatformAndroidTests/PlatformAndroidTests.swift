@@ -122,12 +122,14 @@ struct AndroidWiringTests {
     func device() {
         let java = FakeJava()
         let center = NotificationCenter()
-        var focus: (Bool, Bool)?
+        var interrupted: Bool?
+        var wantsFocus = true
+        let musicChanged = Notification.Name("test.music")
         var statusBarVisible = true
         let statusBarChanged = Notification.Name("test.statusBar")
         var config = configuration(java, center)
         config.playGames = nil
-        config.audioFocusChanged = { focus = ($0, $1) }
+        config.audio = .init(wantsFocus: { wantsFocus }, changed: musicChanged, interrupted: { interrupted = $0 })
         config.diagnostics = true
         config.statusBar = .init(isVisible: { statusBarVisible }, changed: statusBarChanged)
 
@@ -147,12 +149,17 @@ struct AndroidWiringTests {
         java.channel.deliver([
             ["service": "device", "event": "powerSave", "enabled": false],
             ["service": "device", "event": "powerSave", "enabled": false],
-            ["service": "device", "event": "audio", "otherAudio": true, "interrupted": false],
+            ["service": "device", "event": "audio", "interrupted": true],
         ])
         center.removeObserver(observer)
         #expect(!Device.lowPowerMode)
         #expect(powerChanges == 1)
-        #expect(focus.map { [$0.0, $0.1] } == [true, false])
+        #expect(interrupted == true)
+
+        #expect(java.calls.last(where: { $0.name == "device.audioFocus" })?.arguments["wanted"] as? Bool == true)
+        wantsFocus = false
+        center.post(name: musicChanged, object: nil)
+        #expect(java.calls.last(where: { $0.name == "device.audioFocus" })?.arguments["wanted"] as? Bool == false)
 
         #expect(java.calls.last(where: { $0.name == "device.statusBar" })?.arguments["visible"] as? Bool == true)
         statusBarVisible = false

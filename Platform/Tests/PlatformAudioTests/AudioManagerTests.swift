@@ -274,22 +274,28 @@ struct MusicTests {
         #expect(harness.music.last?.volume == 0.4)
     }
 
-    @Test func otherAudioHasTheSoundtrackStepAsideAndInterruptionsSuspend() {
+    @Test func interruptionsSuspendAndResumeWithoutTouchingTheTrack() {
         let harness = Harness()
         harness.audio.playMusic(Track.menu)
-        harness.audio.audioFocusDidChange(otherAudio: true, interrupted: false)
-        #expect(harness.backend.track == nil)
-        harness.audio.audioFocusDidChange(otherAudio: false, interrupted: true)
+        harness.audio.audioFocusDidChange(interrupted: true)
         #expect(harness.backend.track == "Menu")
-        harness.audio.audioFocusDidChange(otherAudio: false, interrupted: false)
+        harness.audio.audioFocusDidChange(interrupted: true)
+        harness.audio.audioFocusDidChange(interrupted: false)
+        #expect(harness.backend.track == "Menu")
         #expect(harness.backend.calls.filter { $0 == .suspend || $0 == .resume } == [.suspend, .resume])
     }
 
-    @Test func gamesMayKeepTheirMusicThroughOtherAudio() {
-        let harness = Harness { $0.stepsAsideForOtherAudio = false }
-        harness.audio.playMusic(Track.menu)
-        harness.audio.audioFocusDidChange(otherAudio: true, interrupted: false)
-        #expect(harness.backend.track == "Menu")
+    @Test func theMusicSwitchIsPostedWhenItChanges() {
+        let harness = Harness()
+        var posts = 0
+        let observer = NotificationCenter.default.addObserver(forName: AudioManager.musicEnabledDidChange, object: harness.audio, queue: nil) { _ in
+            posts += 1
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        harness.audio.musicEnabled = false
+        harness.audio.savedDataDidSync([harness.audio.configuration.settings.soundKey])
+        harness.audio.savedDataDidSync([harness.audio.configuration.settings.musicKey])
+        #expect(posts == 2)
     }
 
     @Test func aNewBackendGetsTheSoundsAndTheTrack() {

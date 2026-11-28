@@ -42,13 +42,13 @@ import java.io.ByteArrayOutputStream;
  * and a short buzz on the oldest. Played as touch feedback, so the system's
  * own "vibration & haptics" switch silences them as it does every app's.
  *
- * <p><b>Audio focus,</b> to the iOS build's ambient session: the player's
- * own music wins. If something else is playing music as the game comes to
- * the front, the game asks for no focus and keeps its soundtrack quiet
- * (its sounds still mix in); otherwise it takes focus for the soundtrack and
- * steps aside the moment another app takes it, and pauses for a call. It
- * holds focus until it stops, not merely pauses ({@link AudioFocusPolicy}).
- * Events: {@code audio} with {@code otherAudio} and {@code interrupted}.
+ * <p><b>Audio focus</b> for the soundtrack, which follows the game's own
+ * music switch alone: while it's on, the game takes focus each time it comes
+ * to the front, whatever else was playing, and holds it until it stops, not
+ * merely pauses; while it's off, the game holds none and the player's own
+ * music plays on ({@link AudioFocusPolicy}). A call or an alarm pauses
+ * everything until it ends. Call: {@code audioFocus} with {@code wanted}.
+ * Event: {@code audio} with {@code interrupted}.
  *
  * <p><b>Battery saver</b> is iOS's Low Power Mode: the game holds its frame
  * rate to 60 while it is on. Event: {@code powerSave}.
@@ -64,7 +64,10 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
     private final AudioManager audio;
     private final PowerManager power;
     private AudioFocusRequest focusRequest;
+    /** Holds a focus request: granted, or delayed until a call ends. */
     private boolean hasFocus;
+    /** What the game was last told: a call or an alarm has the audio. */
+    private boolean interrupted;
     private final AudioFocusPolicy focusPolicy = new AudioFocusPolicy();
 
     private final BroadcastReceiver powerSaveReceiver = new BroadcastReceiver() {
@@ -105,6 +108,11 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
                     statusBarVisible = visible;
                     showStatusBar(visible);
                 });
+                return null;
+            }
+            case "audioFocus": {
+                boolean wanted = args.optBoolean("wanted", true);
+                activity.runOnUiThread(() -> apply(focusPolicy.onWanted(wanted, hasFocus)));
                 return null;
             }
             case "state":
@@ -259,19 +267,9 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
     @Override
     public void onResume() {
         postPowerSave();
-        if (audio == null) return;
-        // Before SDL resumes the game's own stream, which is stopped only
-        // after a stop (`AudioFocusPolicy`).
-        switch (focusPolicy.onResume(hasFocus, audio.isMusicActive())) {
-            case OTHER_AUDIO:
-                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", true, "interrupted", false));
-                break;
-            case REQUEST:
-                requestFocus();
-                break;
-            case KEEP:
-                break;
-        }
+        apply(focusPolicy.onResume(hasFocus));
+        // With no focus, nothing will say an interruption ended.
+        if (!hasFocus) setInterrupted(false);
     }
 
     @Override
@@ -296,6 +294,20 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
 
     // MARK: - Audio focus
 
+    private void apply(AudioFocusPolicy.Step step) {
+        switch (step) {
+            case REQUEST:
+                requestFocus();
+                break;
+            case ABANDON:
+                abandonFocus();
+                setInterrupted(false);
+                break;
+            case KEEP:
+                break;
+        }
+    }
+
     private void requestFocus() {
         if (audio == null || hasFocus) return;
         int result;
@@ -306,6 +318,8 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
                         .setUsage(AudioAttributes.USAGE_GAME)
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build())
+                    // Asked during a call: granted as it ends.
+                    .setAcceptsDelayedFocusGain(true)
                     .setOnAudioFocusChangeListener(this)
                     .build();
             }
@@ -313,8 +327,15 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
         } else {
             result = audio.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
         }
-        hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
-        services.post(SERVICE, "audio", PlatformServices.object("otherAudio", !hasFocus, "interrupted", false));
+        boolean delayed = result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED;
+        hasFocus = delayed || result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        setInterrupted(delayed);
+    }
+
+    private void setInterrupted(boolean interrupted) {
+        if (interrupted == this.interrupted) return;
+        this.interrupted = interrupted;
+        services.post(SERVICE, "audio", PlatformServices.object("interrupted", interrupted));
     }
 
     private void abandonFocus() {
@@ -332,17 +353,18 @@ public final class DeviceServices implements AudioManager.OnAudioFocusChangeList
         switch (change) {
             case AudioManager.AUDIOFOCUS_GAIN:
                 hasFocus = true;
-                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", false, "interrupted", false));
+                setInterrupted(false);
                 break;
             case AudioManager.AUDIOFOCUS_LOSS:
-                // Another app's music: the soundtrack steps aside for good,
-                // until the game next comes to the front.
+                // The player started another app's music over the game:
+                // Android fades the game out until it next comes back from a
+                // stop and asks again (`AudioFocusPolicy`).
                 abandonFocus();
-                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", true, "interrupted", false));
+                setInterrupted(false);
                 break;
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
                 // A call or an alarm: everything waits.
-                services.post(SERVICE, "audio", PlatformServices.object("otherAudio", false, "interrupted", true));
+                setInterrupted(true);
                 break;
             default:
                 // LOSS_TRANSIENT_CAN_DUCK: the system ducks us itself.

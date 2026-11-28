@@ -91,7 +91,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 | --- | --- |
 | `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches, notification observers removed together (`ObserverBag`), stepping through an enum's cases (`index`, `next()`, `previous()`) |
 | `PlatformSprite` | A texture cache and sprite helpers, path and label builders, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
-| `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
+| `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle, and follows only the game's music switch, whatever other apps play |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
 | `PlatformGameCenter` | Sign-in, achievements and leaderboards that catch up from saved progress (GameKit, or Play Games) |
 | `PlatformSync` | Saved data synced across a player's devices (iCloud's key-value store, or Play's Saved Games), with sets that merge instead of overwrite |
@@ -413,9 +413,13 @@ another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
 `AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
 switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
 unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
-another device's. Android's audio focus arrives through
-`audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
-reports another app's audio itself. Whatever a backend can't do (a voice of
+another device's (posting `musicEnabledDidChange`). Other apps' audio never
+silences the soundtrack: on Apple platforms the session is ambient, so the
+player's own music mixes in and only calls, Siri and alarms interrupt (the
+soundtrack comes back as they end, or as the app is next active); on Android
+the game takes audio focus each time it comes to the front while its music
+is on (`AndroidPlatformServices.Audio`, `.manager(_:)`), and calls reach
+`audioFocusDidChange(interrupted:)`. Whatever a backend can't do (a voice of
 its own, on a backend without them) falls back to playing the sound once.
 
 ### Sprites, text and scenes (`PlatformSprite`)

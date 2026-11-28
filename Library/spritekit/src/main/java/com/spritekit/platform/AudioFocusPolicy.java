@@ -1,43 +1,51 @@
 package com.spritekit.platform;
 
 /**
- * When the game asks for audio focus, apart from Android so a unit test can
- * drive it ({@code AudioFocusPolicyTest}).
+ * When the game asks for audio focus and gives it up, apart from Android so
+ * a unit test can drive it ({@code AudioFocusPolicyTest}).
  *
- * <p>The game tells another app's music by {@code AudioManager.isMusicActive()},
- * which counts every app's stream, the game's own included. That reads true
- * only for others when the game's stream is stopped, which it is as the game
- * first starts and after a stop (SDL pauses it as the surface goes). A pause
- * without a stop (a dialog or the shade's device controls over the game, a
- * second launch intent, Play's sign-in) leaves it playing. So the game keeps
- * its focus through such a pause, gives it up only when it stops, and looks
- * for other music only as it comes back from a stop. Asking on every resume
- * once took the game's own soundtrack for another app's and kept it quiet
- * until the next time the app went to the background.
+ * <p>The game's soundtrack follows its own music switch alone. While the
+ * switch is on, the game asks for focus each time it comes back from a stop
+ * (and as it first starts), whatever another app is playing: Android fades
+ * out an app that lost focus and keeps it muted until it asks again, so a
+ * game that didn't ask would come back silent. Through a pause without a
+ * stop (a dialog or the shade's device controls over the game, a second
+ * launch intent, Play's sign-in) it keeps what it has: if the player
+ * started their own music meanwhile, it plays until the game next comes
+ * back. While the switch is off, the game holds no focus, so the player's
+ * own music plays on under the game's sounds.
  */
 final class AudioFocusPolicy {
-    /** What a resume does about focus. */
+    /** What to do about focus. */
     enum Step {
-        /** Nothing has changed that the game can see: keep what it has. */
         KEEP,
-        /** Ask for focus (the soundtrack plays once it's granted). */
         REQUEST,
-        /** Another app's music is playing: no focus, the soundtrack quiet. */
-        OTHER_AUDIO,
+        ABANDON,
     }
 
-    /** Whether the game's stream is stopped: before the first start, and after a stop. */
+    /** Whether the game is stopped: before the first start, and after a stop. */
     private boolean stopped = true;
+    /** The game's music switch: null until the game says. */
+    private Boolean wanted;
 
-    Step onResume(boolean holdsFocus, boolean musicActive) {
+    Step onResume(boolean holdsFocus) {
         boolean afterStop = stopped;
         stopped = false;
-        if (holdsFocus || !afterStop) return Step.KEEP;
-        return musicActive ? Step.OTHER_AUDIO : Step.REQUEST;
+        return afterStop && !holdsFocus && Boolean.TRUE.equals(wanted) ? Step.REQUEST : Step.KEEP;
     }
 
-    /** The game went to the background: give focus up. */
+    /** The game went to the background: it gives focus up. */
     void onStop() {
         stopped = true;
+    }
+
+    /** The game says whether it wants focus (its music switch). */
+    Step onWanted(boolean wanted, boolean holdsFocus) {
+        boolean changed = this.wanted == null || this.wanted != wanted;
+        this.wanted = wanted;
+        if (!changed || stopped) return Step.KEEP;
+        if (wanted && !holdsFocus) return Step.REQUEST;
+        if (!wanted && holdsFocus) return Step.ABANDON;
+        return Step.KEEP;
     }
 }

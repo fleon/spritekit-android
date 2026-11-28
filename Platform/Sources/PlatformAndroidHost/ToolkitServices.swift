@@ -39,14 +39,23 @@ extension AndroidPlatformServices.Configuration {
             services.billing = .init(store: store)
         }
         if let audio {
-            services.audioFocusChanged = { otherAudio, interrupted in
-                MainActor.assumeIsolated { audio.audioFocusDidChange(otherAudio: otherAudio, interrupted: interrupted) }
-            }
+            services.audio = .manager(audio)
         }
         if statusBar {
             services.statusBar = .setting
         }
         return services
+    }
+}
+
+extension AndroidPlatformServices.Audio {
+    /// `audio`'s: focus while its music is on, calls suspending it.
+    public static func manager(_ audio: AudioManager) -> Self {
+        .init(
+            wantsFocus: { MainActor.assumeIsolated { audio.musicEnabled } },
+            changed: AudioManager.musicEnabledDidChange,
+            interrupted: { interrupted in MainActor.assumeIsolated { audio.audioFocusDidChange(interrupted: interrupted) } }
+        )
     }
 }
 

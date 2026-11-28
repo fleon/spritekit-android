@@ -7,8 +7,10 @@ import PlatformCore
 ///
 /// Every decision about what should be heard is made here, the same on
 /// every platform: whether sound and music are switched on, which track the
-/// screen asked for, whether a jingle has the music ducked or another app's
-/// audio has it stepping aside. A backend only plays what it's told.
+/// screen asked for, whether a jingle has the music ducked. The soundtrack
+/// follows the game's own music switch alone: other apps' audio never
+/// silences it (it mixes in on Apple platforms; on Android the game takes
+/// audio focus while its music is on). A backend only plays what it's told.
 ///
 /// Sounds play from small pools of voices, so quick repeats overlap; one
 /// played with `playEffect` gets a voice of its own that can loop and be
@@ -16,6 +18,9 @@ import PlatformCore
 /// another crossfades to it.
 public final class AudioManager {
     public static let shared = AudioManager()
+
+    /// Posted when the music switch changes, here or on another device.
+    public static let musicEnabledDidChange = Notification.Name("AudioManager.musicEnabledDidChange")
 
     public private(set) var configuration = AudioConfiguration()
     public private(set) var backend: AudioBackend
@@ -43,7 +48,6 @@ public final class AudioManager {
     private var isPaused = false
     private var isDucked = false
     private var ducks = 0
-    private var otherAudio = false
     private var isInterrupted = false
     /// What the backend was last told: its track and volume.
     private var sentTrack: String?
@@ -81,15 +85,6 @@ public final class AudioManager {
     /// into it and starts the track the game asked for meanwhile.
     public func use(_ backend: AudioBackend) {
         self.backend = backend
-        #if !SPRITEKIT_SHIM
-        if let apple = backend as? AppleAudioBackend {
-            otherAudio = apple.isOtherAudioPlaying
-            apple.onOtherAudioChange = { [weak self] playing in
-                guard let self else { return }
-                self.audioFocusDidChange(otherAudio: playing, interrupted: self.isInterrupted)
-            }
-        }
-        #endif
         let names = configuration.sounds.map(\.name) + prepared.subtracting(configuration.sounds.map(\.name)).sorted()
         prepared = []
         prepare(names)
@@ -98,18 +93,13 @@ public final class AudioManager {
         updateMusic(fade: 0)
     }
 
-    /// What the platform says about other audio: another app's music is
-    /// playing (`otherAudio`: the soundtrack steps aside, if the game
-    /// wants it to), or a call or alarm has taken the audio altogether
-    /// (`interrupted`: everything waits). Android's audio focus arrives
-    /// here; on Apple platforms the backend reports it itself.
-    public func audioFocusDidChange(otherAudio: Bool, interrupted: Bool) {
-        if interrupted != isInterrupted {
-            isInterrupted = interrupted
-            if interrupted { backend.suspend() } else { backend.resume() }
-        }
-        self.otherAudio = otherAudio
-        updateMusic(fade: configuration.musicFadeDuration)
+    /// A call or an alarm took the audio (`interrupted`: everything waits),
+    /// or gave it back. Android's audio focus arrives here; on Apple
+    /// platforms the backend looks after interruptions itself.
+    public func audioFocusDidChange(interrupted: Bool) {
+        guard interrupted != isInterrupted else { return }
+        isInterrupted = interrupted
+        if interrupted { backend.suspend() } else { backend.resume() }
     }
 
     // MARK: Settings
@@ -142,6 +132,7 @@ public final class AudioManager {
         set {
             configuration.settings.write(newValue, configuration.settings.musicKey)
             updateMusic(fade: configuration.musicFadeDuration)
+            NotificationCenter.default.post(name: Self.musicEnabledDidChange, object: self)
         }
     }
 
@@ -152,7 +143,10 @@ public final class AudioManager {
 
     public func savedDataDidSync(_ keys: Set<String>) {
         if keys.contains(configuration.settings.soundKey), !soundEnabled { stopLoopingEffects() }
-        if keys.contains(configuration.settings.musicKey) { updateMusic(fade: configuration.musicFadeDuration) }
+        if keys.contains(configuration.settings.musicKey) {
+            updateMusic(fade: configuration.musicFadeDuration)
+            NotificationCenter.default.post(name: Self.musicEnabledDidChange, object: self)
+        }
     }
 
     // MARK: Files
@@ -330,7 +324,7 @@ public final class AudioManager {
 
     /// Tells the backend what should be heard now, if that changed.
     private func updateMusic(fade: TimeInterval) {
-        let silent = !musicEnabled || isPaused || (otherAudio && configuration.stepsAsideForOtherAudio)
+        let silent = !musicEnabled || isPaused
         let wanted = silent ? nil : requested
         let volume = isDucked ? min(configuration.duckedMusicVolume, configuration.musicVolume) : configuration.musicVolume
         guard wanted?.file != sentTrack || (wanted != nil && volume != sentVolume) else { return }
