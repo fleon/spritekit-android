@@ -91,7 +91,7 @@ IDs, achievement IDs, constants), and the module does the rest.
 | --- | --- |
 | `PlatformCore` | Geometry shorthands, timing curves and eased `SKAction`s, a node added at its z-position in one line, action keys as an enum, seeded randomness you can replay, a launch-argument reader for debug switches, notification observers removed together (`ObserverBag`), stepping through an enum's cases (`index`, `next()`, `previous()`) |
 | `PlatformSprite` | A texture cache and sprite helpers, path and label builders, colours, text and font handling, SVG paths drawn as icons, shape sprites without `SKShapeNode`, scenes built off the main thread behind a loading screen, a studio's launch splash, safe-area layout, localization, debug markers |
-| `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle and steps aside for other apps' audio |
+| `PlatformAudio` | Sound effects, and a soundtrack that loops seamlessly, crossfades between tracks, ducks for a jingle, and follows only the game's music switch, whatever other apps play |
 | `PlatformStore` | In-app purchases (StoreKit 2, or Play Billing): products, entitlements, restores, promoted purchases |
 | `PlatformGameCenter` | Sign-in, achievements and leaderboards that catch up from saved progress (GameKit, or Play Games) |
 | `PlatformSync` | Saved data synced across a player's devices (iCloud's key-value store, or Play's Saved Games), with sets that merge instead of overwrite |
@@ -413,9 +413,12 @@ another crossfades in, nil fades out), `stopMusic`, `pauseMusic`,
 `AudioManager.isSoundEnabled` and `isMusicEnabled` are the settings'
 switches, saved under `settings.soundEnabled` and `settings.musicEnabled`
 unless the configuration says otherwise, and `savedDataDidSync(_:)` follows
-another device's. Android's audio focus arrives through
-`audioFocusDidChange(otherAudio:interrupted:)`; on Apple platforms the backend
-reports another app's audio itself. Whatever a backend can't do (a voice of
+another device's. Only that switch silences the soundtrack: it mixes with
+other apps' audio, the player's own music included, which plays on (an
+ambient session on Apple platforms, no audio focus on Android). On Apple
+platforms the system still silences every app for a call, Siri or an alarm;
+the soundtrack comes back as it ends, or at the latest as the app is next
+active. Whatever a backend can't do (a voice of
 its own, on a backend without them) falls back to playing the sound once.
 
 ### Sprites, text and scenes (`PlatformSprite`)
@@ -627,7 +630,7 @@ leaves the front, synchronized as it comes back), Play Billing or simulated
 purchases to its store. Play Games needs the mapping packed in the APK
 (`PlayGamesMapping.bundled()`); without it achievements and saved data stay
 on the device. It also sets the device's hooks (haptics, battery saver as
-Low Power Mode, audio focus, and on request the status bar, battery,
+Low Power Mode, and on request the status bar, battery,
 connection and image codecs). Its sources are all `SPRITEKIT_SHIM`, so Apple
 builds compile it empty.
 
@@ -642,10 +645,10 @@ scene sized to `sceneSize(for:)` then `didLayout(_:)`, `didAppear`,
 `captureFrame`, `debugSummary`), `AudioManager.shared` (`useAudio`),
 `-FixedFrameStep` in a debug build (`0.0333` or `1/30`), and `DisplaySettingsHost`; Back, keys
 and links go untaken until the game writes its own.
-`AndroidPlatformServices.Configuration.toolkit(gameCenter:syncsSavedData:store:audio:)`
+`AndroidPlatformServices.Configuration.toolkit(gameCenter:syncsSavedData:store:statusBar:)`
 hands the toolkit's managers their Play backends (achievements and
 leaderboards, Saved Games under `ICloudSyncManager`, Play Billing for the
-store's products, audio focus), and `DisplaySettings.Configuration
+store's products, the status bar), and `DisplaySettings.Configuration
 .withLaunchSplash` keeps Auto from measuring the splash and reads
 `-RenderScale`.
 ### Input: focus, gamepads, keys (`PlatformInput`)

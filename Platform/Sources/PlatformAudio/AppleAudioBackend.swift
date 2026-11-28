@@ -12,20 +12,17 @@ import UIKit
 /// plays its intro once, then repeats its loop section seamlessly, and
 /// tracks crossfade on player nodes of their own (`MusicDeck`).
 ///
-/// It looks after the system's side itself: an ambient session (the
-/// player's own music keeps playing), and picking the soundtrack up where it
-/// was after an interruption, a route change or the app's time in the
-/// background, which stop the engine.
+/// It looks after the system's side itself: an ambient session, and picking
+/// the soundtrack up where it was after an interruption, a route change or
+/// the app's time in the background, which stop the engine.
+///
+/// Ambient mixes with other apps' audio, so the player's own music keeps
+/// playing under the game's, no other app's playback interrupts it, and the
+/// Ring/Silent switch silences it as it does every game. The system still
+/// silences it for a call, Siri or an alarm; the soundtrack comes back as
+/// they end, or at the latest as the app is next active.
 public final class AppleAudioBackend: AudioBackend {
     private static let fadeStep: TimeInterval = 1.0 / 60
-
-    /// Told when another app starts or stops playing audio
-    /// (`secondaryAudioShouldBeSilencedHint`).
-    public var onOtherAudioChange: ((Bool) -> Void)?
-
-    public var isOtherAudioPlaying: Bool {
-        AVAudioSession.sharedInstance().secondaryAudioShouldBeSilencedHint
-    }
 
     private let bundle: Bundle
     private let soundExtensions: [String]
@@ -68,10 +65,9 @@ public final class AppleAudioBackend: AudioBackend {
         self.soundExtensions = soundExtensions
         self.musicExtensions = musicExtensions
         sessionQueue.async {
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.ambient, options: [.mixWithOthers])
-            try? session.setActive(true)
+            try? AVAudioSession.sharedInstance().setCategory(.ambient)
         }
+        activateSession()
         observe()
     }
 
@@ -84,23 +80,40 @@ public final class AppleAudioBackend: AudioBackend {
                 }
             }
         }
-        on(AVAudioSession.silenceSecondaryAudioHintNotification) { backend, _ in
-            backend.onOtherAudioChange?(backend.isOtherAudioPlaying)
-        }
         on(AVAudioSession.interruptionNotification) { backend, notification in
-            let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-            if type == AVAudioSession.InterruptionType.began.rawValue {
-                backend.musicStopped(pausing: true)
-            } else {
-                backend.restartMusic()
+            let info = notification.userInfo ?? [:]
+            guard (info[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init) == .began else {
+                backend.activateSession(thenRestart: true)
+                return
             }
+            // An interruption that came while the app was suspended is told
+            // as it comes back, long over: pausing for it would keep the
+            // soundtrack quiet with no end to come.
+            guard info[AVAudioSessionInterruptionReasonKey] as? UInt != AVAudioSession.InterruptionReason.appWasSuspended.rawValue,
+                  info[AVAudioSessionInterruptionWasSuspendedKey] as? Bool != true else { return }
+            backend.musicStopped(pausing: true)
         }
         on(.AVAudioEngineConfigurationChange, engine) { backend, _ in
             backend.musicStopped(pausing: false)
             backend.restartMusic()
         }
         on(UIApplication.didEnterBackgroundNotification) { backend, _ in backend.suspend() }
-        on(UIApplication.willEnterForegroundNotification) { backend, _ in backend.resume() }
+        // Active rather than entering the foreground: the app may play only
+        // once it's active, and it's active again too after an interruption
+        // that never said it ended (Siri, a call declined).
+        on(UIApplication.didBecomeActiveNotification) { backend, _ in backend.resume() }
+    }
+
+    /// Activates the session (again, after an interruption ended it) off the
+    /// main thread, then picks the soundtrack up if `thenRestart`.
+    private func activateSession(thenRestart: Bool = false) {
+        sessionQueue.async { [weak self] in
+            try? AVAudioSession.sharedInstance().setActive(true)
+            guard thenRestart else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.restartMusic() }
+            }
+        }
     }
 
     private func url(of name: String, _ extensions: [String]) -> URL? {
@@ -217,7 +230,7 @@ public final class AppleAudioBackend: AudioBackend {
 
     public func resume() {
         isInBackground = false
-        restartMusic()
+        activateSession(thenRestart: true)
     }
 
     /// Plays the current track again if the engine stopped under it.

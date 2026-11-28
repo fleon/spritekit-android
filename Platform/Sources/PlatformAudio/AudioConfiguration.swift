@@ -71,9 +71,6 @@ public struct AudioConfiguration {
     /// The file of variant `index` (from 1) of a sound or track asked for
     /// with `variants:`.
     public var variantName: (String, Int) -> String
-    /// The soundtrack steps aside while another app plays audio (iOS's
-    /// secondary-audio hint, Android's audio focus); sounds still mix in.
-    public var stepsAsideForOtherAudio: Bool
     public var settings: Settings
     /// Told every sound asked for, by file name, whether or not sound is
     /// on: for a game that logs or records them.
@@ -92,7 +89,6 @@ public struct AudioConfiguration {
         soundExtensions: [String] = ["wav", "caf", "m4a", "mp3"],
         musicExtensions: [String] = ["m4a", "mp3", "aac", "caf", "wav"],
         variantName: @escaping (String, Int) -> String = { "\($0) \($1)" },
-        stepsAsideForOtherAudio: Bool = true,
         settings: Settings = Settings(),
         onSound: ((String) -> Void)? = nil
     ) {
@@ -108,7 +104,6 @@ public struct AudioConfiguration {
         self.soundExtensions = soundExtensions
         self.musicExtensions = musicExtensions
         self.variantName = variantName
-        self.stepsAsideForOtherAudio = stepsAsideForOtherAudio
         self.settings = settings
         self.onSound = onSound
     }

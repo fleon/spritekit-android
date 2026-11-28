@@ -118,16 +118,14 @@ struct AndroidWiringTests {
         #expect(player?.name == "Player")
     }
 
-    @Test("Haptics, battery saver, audio focus, diagnostics and the status bar reach the device")
+    @Test("Haptics, battery saver, diagnostics and the status bar reach the device")
     func device() {
         let java = FakeJava()
         let center = NotificationCenter()
-        var focus: (Bool, Bool)?
         var statusBarVisible = true
         let statusBarChanged = Notification.Name("test.statusBar")
         var config = configuration(java, center)
         config.playGames = nil
-        config.audioFocusChanged = { focus = ($0, $1) }
         config.diagnostics = true
         config.statusBar = .init(isVisible: { statusBarVisible }, changed: statusBarChanged)
 
@@ -147,12 +145,10 @@ struct AndroidWiringTests {
         java.channel.deliver([
             ["service": "device", "event": "powerSave", "enabled": false],
             ["service": "device", "event": "powerSave", "enabled": false],
-            ["service": "device", "event": "audio", "otherAudio": true, "interrupted": false],
         ])
         center.removeObserver(observer)
         #expect(!Device.lowPowerMode)
         #expect(powerChanges == 1)
-        #expect(focus.map { [$0.0, $0.1] } == [true, false])
 
         #expect(java.calls.last(where: { $0.name == "device.statusBar" })?.arguments["visible"] as? Bool == true)
         statusBarVisible = false

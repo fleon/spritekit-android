@@ -43,9 +43,6 @@ public enum AndroidPlatformServices {
         /// Purchases, made whether or not there's a channel.
         public var billing: Billing?
 
-        /// Told when audio focus changes (the `audio` event): whether other
-        /// audio is playing, and whether a call interrupted the game.
-        public var audioFocusChanged: ((_ otherAudio: Bool, _ interrupted: Bool) -> Void)?
         /// The settings' status bar switch, shown or hidden as it changes.
         public var statusBar: StatusBar?
         /// The battery and connection a game's diagnostics read
@@ -182,7 +179,6 @@ public enum AndroidPlatformServices {
             }
         }
         let center = configuration.notificationCenter
-        let audioFocusChanged = configuration.audioFocusChanged
         channel.on("device") { event, body in
             switch event {
             case "powerSave":
@@ -191,8 +187,6 @@ public enum AndroidPlatformServices {
                 Device.lowPowerMode = enabled
                 // As iOS posts Low Power Mode changing.
                 center.post(name: .NSProcessInfoPowerStateDidChange, object: nil)
-            case "audio":
-                audioFocusChanged?(body.bool("otherAudio") ?? false, body.bool("interrupted") ?? false)
             default:
                 break
             }

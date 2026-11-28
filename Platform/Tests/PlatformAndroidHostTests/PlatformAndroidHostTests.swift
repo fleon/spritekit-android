@@ -176,12 +176,10 @@ struct ToolkitServicesTests {
         #expect(services.leaderboards != nil)
         #expect(services.cloud != nil)
         #expect(services.billing == nil)
-        #expect(services.audioFocusChanged != nil)
-        let bare = AndroidPlatformServices.Configuration.toolkit(gameCenter: nil, syncsSavedData: false, audio: nil)
+        let bare = AndroidPlatformServices.Configuration.toolkit(gameCenter: nil, syncsSavedData: false)
         #expect(bare.achievements == nil)
         #expect(bare.leaderboards == nil)
         #expect(bare.cloud == nil)
-        #expect(bare.audioFocusChanged == nil)
     }
 
     @Test("Play Billing takes the store's products, its consumables and the server's")
