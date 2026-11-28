@@ -29,8 +29,10 @@ would want.
   through a shim at its own `Tools/guard.js` (README, "Memory guard"), never a
   copy. Keep scratch images small, in 8-bit buffers.
 - Every task that edits a game works in its own git worktree, on a branch
-  from the default branch, and ends in a pull request: never edit the main
-  checkout, which may hold the person's own work. Once its pull request is
+  from the remote's default branch as just fetched (`git fetch origin`, then
+  `git worktree add -b <branch> <path> origin/main`), and ends in a pull
+  request: never edit the main checkout, which may hold the person's own
+  work, and never branch from its local `main`, which is often far behind. Once its pull request is
   merged (or the work is dropped), remove the worktree, delete its local and
   remote branch and run `git worktree prune`. Leave worktrees you didn't
   make alone.
@@ -376,7 +378,8 @@ would want.
   isn't on (outside the desktop app, or refused), keep a watch running in
   the session that polls the pull requests with `gh` about once a minute,
   and re-arm it whenever it expires.
-- Branch off the default branch. When a change depends on an open pull
+- Branch off the freshly fetched `origin/main`, and fetch and rebase onto it
+  again before pushing if it moved. When a change depends on an open pull
   request, wait for that one to merge rather than stacking on it: a pull
   request based on a branch that has since merged merges into that dead
   branch, not the default one. Where stacking can't be avoided, name the
