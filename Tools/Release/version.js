@@ -10,8 +10,8 @@
 //   node <game>/version.js --offline    read neither store (--print-only says the same)
 //   node <game>/version.js --json       the same, as JSON, for scripts
 //   node <game>/version.js --release    the nightly's step: the minor goes up once the
-//                                       version has an approved release on either
-//                                       store, then --next; JSON on stdout
+//                                       version is in production on the iOS App
+//                                       Store, then --next; JSON on stdout
 //
 // The Xcode project's CURRENT_PROJECT_VERSION is the build number on both
 // platforms (the Android build reads it as its versionCode), and its

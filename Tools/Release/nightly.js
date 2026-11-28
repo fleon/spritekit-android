@@ -392,7 +392,7 @@ if (DRY) {
 heading('Report');
 const since = [PRS.length && `${PRS.length} PR${PRS.length === 1 ? '' : 's'}`, MOVES.length && `${MOVES.length} runtime move${MOVES.length === 1 ? '' : 's'}`].filter(Boolean).join(' and ');
 say(`${S.name} ${V.version}, build ${V.build}${DRY ? ' (dry run)' : ''}: ${since} since Build ${LAST.number}`);
-if (V.bumped) say(`Version: ${V.previous} had an approved release (${V.approved}), so this is ${V.version}`);
+if (V.bumped) say(`Version: ${V.previous} is in production on the App Store (${V.live}), so this is ${V.version}`);
 for (const [label, result] of RESULTS) say(`${label}: ${result}`);
 say(pushed);
 say(`Logs: ${LOGS}`);

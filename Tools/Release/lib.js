@@ -4,10 +4,11 @@
 
 const { sameVersion, namesVersion } = require('../Play/lib');
 
-// App Store states of a version Apple approved, released or not.
-const APP_STORE_APPROVED = [
-  'PENDING_DEVELOPER_RELEASE', 'PENDING_APPLE_RELEASE', 'PROCESSING_FOR_APP_STORE', 'PROCESSING_FOR_DISTRIBUTION',
-  'READY_FOR_SALE', 'READY_FOR_DISTRIBUTION', 'PREORDER_READY_FOR_SALE', 'ACCEPTED',
+// App Store states of a version that reached production: live, or live once
+// and since replaced or removed. Waiting for review, in review, approved but
+// not yet released and every other state don't count.
+const APP_STORE_LIVE = [
+  'READY_FOR_SALE', 'READY_FOR_DISTRIBUTION', 'PREORDER_READY_FOR_SALE',
   'REPLACED_WITH_NEW_VERSION', 'REMOVED_FROM_SALE', 'DEVELOPER_REMOVED_FROM_SALE',
 ];
 
@@ -119,13 +120,14 @@ const ascUploadNumbers = (uploads) => uploads
   .filter((u) => (u.attributes?.state?.state ?? u.attributes?.state) !== 'AWAITING_UPLOAD')
   .map((u) => Number(u.attributes?.cfBundleVersion)).filter(Number.isFinite);
 
-// The App Store version Apple approved for `version` (any platform), as
-// "<versionString> <state>", or null. 1.4 and 1.4.0 are the same version.
-function appStoreApproved(versions, version) {
+// The iOS App Store version in production for `version`, as
+// "<versionString> <state>", or null. tvOS and macOS versions don't count.
+// 1.4 and 1.4.0 are the same version.
+function appStoreLive(versions, version) {
   for (const v of versions) {
     const a = v.attributes ?? {};
-    if (!sameVersion(a.versionString, version)) continue;
-    const state = [a.appVersionState, a.appStoreState].find((s) => APP_STORE_APPROVED.includes(s));
+    if (a.platform !== 'IOS' || !sameVersion(a.versionString, version)) continue;
+    const state = [a.appVersionState, a.appStoreState].find((s) => APP_STORE_LIVE.includes(s));
     if (state) return `${a.versionString} ${state}`;
   }
   return null;
@@ -234,8 +236,8 @@ const HTTPS_GIT = [
 ];
 
 module.exports = {
-  APP_STORE_APPROVED, HTTPS_GIT, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor, withoutZeroPatch,
-  highestTaken, nextBuild, thisBuild, androidName, patchName, ascData, ascBuildNumbers, ascUploadNumbers, appStoreApproved,
+  APP_STORE_LIVE, HTTPS_GIT, PLATFORMS, projectSetting, withBuild, withVersion, bumpMinor, withoutZeroPatch,
+  highestTaken, nextBuild, thisBuild, androidName, patchName, ascData, ascBuildNumbers, ascUploadNumbers, appStoreLive,
   newPRs, buildInSubject, buildSubject, bulleted, plainTitle, draftNotes, FALLBACK,
   fill, settingsFrom, nightlyProblems, playRelease, sameVersion, namesVersion,
 };

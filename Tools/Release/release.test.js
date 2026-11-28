@@ -57,7 +57,7 @@ test('patch names count further Play uploads at one version', () => {
   assert.strictEqual(at([{ name: '53' }]), '1.1');
 });
 
-test('App Store Connect: replies a page a line, and approved versions', () => {
+test('App Store Connect: replies a page a line, and iOS versions in production', () => {
   assert.deepStrictEqual(lib.ascData('{"data":[{"id":"a"}]}'), [{ id: 'a' }]);
   assert.deepStrictEqual(lib.ascData('{"data":[{"id":"a"}]}\n{"data":[{"id":"b"}]}\n'), [{ id: 'a' }, { id: 'b' }]);
   assert.deepStrictEqual(lib.ascData(''), []);
@@ -68,13 +68,18 @@ test('App Store Connect: replies a page a line, and approved versions', () => {
     { attributes: { cfBundleVersion: '76', state: { state: 'FAILED' } } },
   ]), [77, 76]);
   const versions = [
-    { attributes: { versionString: '1.5', appVersionState: 'WAITING_FOR_REVIEW' } },
-    { attributes: { versionString: '1.4', appVersionState: 'READY_FOR_DISTRIBUTION', appStoreState: 'READY_FOR_SALE' } },
-    { attributes: { versionString: '1.3', appStoreState: 'REPLACED_WITH_NEW_VERSION' } },
+    { attributes: { platform: 'IOS', versionString: '1.7', appVersionState: 'PENDING_DEVELOPER_RELEASE', appStoreState: 'PENDING_DEVELOPER_RELEASE' } },
+    { attributes: { platform: 'IOS', versionString: '1.6', appVersionState: 'IN_REVIEW', appStoreState: 'IN_REVIEW' } },
+    { attributes: { platform: 'IOS', versionString: '1.5', appVersionState: 'WAITING_FOR_REVIEW' } },
+    { attributes: { platform: 'TV_OS', versionString: '1.5', appVersionState: 'READY_FOR_DISTRIBUTION', appStoreState: 'READY_FOR_SALE' } },
+    { attributes: { platform: 'IOS', versionString: '1.4', appVersionState: 'READY_FOR_DISTRIBUTION', appStoreState: 'READY_FOR_SALE' } },
+    { attributes: { platform: 'IOS', versionString: '1.3', appStoreState: 'REPLACED_WITH_NEW_VERSION' } },
   ];
-  assert.strictEqual(lib.appStoreApproved(versions, '1.5.0'), null);
-  assert.strictEqual(lib.appStoreApproved(versions, '1.4.0'), '1.4 READY_FOR_DISTRIBUTION');
-  assert.strictEqual(lib.appStoreApproved(versions, '1.3'), '1.3 REPLACED_WITH_NEW_VERSION');
+  assert.strictEqual(lib.appStoreLive(versions, '1.7'), null);
+  assert.strictEqual(lib.appStoreLive(versions, '1.6'), null);
+  assert.strictEqual(lib.appStoreLive(versions, '1.5.0'), null);
+  assert.strictEqual(lib.appStoreLive(versions, '1.4.0'), '1.4 READY_FOR_DISTRIBUTION');
+  assert.strictEqual(lib.appStoreLive(versions, '1.3'), '1.3 REPLACED_WITH_NEW_VERSION');
 });
 
 test('what is new: merge commits past the last build, oldest first', () => {
@@ -130,7 +135,7 @@ test('the Play release always goes to internal, copied to alpha, for review; --s
 });
 
 // A game on disk: its project, its settings and a stand-in for its play.js.
-function fixture(settings = {}) {
+function fixture(settings = {}, releases = [{ track: 'internal', name: '1.4.1', status: 'completed', versionCodes: [9] }]) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-test-'));
   fs.mkdirSync(path.join(root, 'Game.xcodeproj'));
   fs.writeFileSync(path.join(root, 'Game.xcodeproj/project.pbxproj'), PROJECT);
@@ -138,10 +143,11 @@ function fixture(settings = {}) {
   fs.writeFileSync(path.join(root, 'Tools/Release/release.json'), JSON.stringify({ project: 'Game.xcodeproj', playDir: 'Play', ...settings }));
   fs.mkdirSync(path.join(root, 'Play'));
   fs.writeFileSync(path.join(root, 'Play/play.js'), `
+    const releases = ${JSON.stringify(releases)};
     const approved = process.argv.includes('--approved');
-    console.log(JSON.stringify({ package: 'com.example.game', highest: 9,
-      releases: [{ track: 'internal', name: '1.4.1', status: 'completed', versionCodes: [9] }],
-      uploaded: [9], ...(approved ? { approved: null } : {}) }));`);
+    const live = releases.find((r) => r.track === 'production') ?? null;
+    console.log(JSON.stringify({ package: 'com.example.game', highest: 9, releases,
+      uploaded: [9], ...(approved ? { approved: live && { name: live.name, status: live.status } } : {}) }));`);
   return root;
 }
 const version = (root, ...argv) => spawnSync(process.execPath, [path.join(__dirname, 'version.js'), ...argv], {
@@ -182,11 +188,19 @@ test('version.js: patch names and an export prefix from the settings', () => {
   assert.strictEqual(r.stdout, 'export MYGAME_VERSION_CODE=10\nexport MYGAME_VERSION_NAME=1.4.1.1\n');
 });
 
-test('version.js --release: no approved release keeps the version and takes the next build', () => {
+test('version.js --release: no iOS release in production keeps the version and takes the next build', () => {
   const root = fixture();
   const r = version(root, '--release');
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.deepStrictEqual(JSON.parse(r.stdout), { previous: '1.4.1', version: '1.4.1', bumped: false, approved: null, build: 10, name: '1.4.1' });
+  assert.deepStrictEqual(JSON.parse(r.stdout), { previous: '1.4.1', version: '1.4.1', bumped: false, live: null, build: 10, name: '1.4.1' });
+});
+
+test('version.js --release: a production release on Play leaves the version alone', () => {
+  const root = fixture({}, [{ track: 'production', name: '1.4.1', status: 'completed', versionCodes: [9] }]);
+  const r = version(root, '--release');
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(JSON.parse(r.stdout), { previous: '1.4.1', version: '1.4.1', bumped: false, live: null, build: 10, name: '1.4.1' });
+  assert.match(r.stderr, /isn't in production on the App Store: it stays/);
 });
 
 test('nightly.js refuses --ref without --dry-run, and unknown options, before touching anything', () => {
